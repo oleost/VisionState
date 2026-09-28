@@ -23,3 +23,5 @@ export const mb = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 /** Mirrors the backend's slugify (api/common.py) so previews match what gets created. */
 export const slugify = (text: string, fallback = 'item') =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) || fallback;
+
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

@@ -6,7 +6,7 @@
   import LiveFrame from '../lib/components/LiveFrame.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
   import Timeline from '../lib/components/Timeline.svelte';
-  import { pct } from '../lib/format';
+  import { plural, pct } from '../lib/format';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
   import { POLL, SENSOR_STATUS } from '../lib/ui';
@@ -56,7 +56,7 @@
     <div class="col" style="gap:6px">
       <h1>Sensors</h1>
       <p class="muted">
-        {sensors?.length ?? 0} sensors · {labelled} labelled images
+        {plural(sensors?.length ?? 0, "sensor")} · {plural(labelled, "labelled image")}
         {#if app.status?.backbone_name}· {app.status.backbone_name}{/if}
       </p>
     </div>

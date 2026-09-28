@@ -29,8 +29,16 @@
     segments = result;
   }
 
+  // Reload when the published state changes, otherwise at most once a minute.
+  const REFRESH_MS = 60_000;
+  let loadedFor: string | null | undefined;
+  let loadedAt = 0;
+
   $effect(() => {
-    void sensor.live.published;
+    const published = sensor.live.published;
+    if (published === loadedFor && Date.now() - loadedAt < REFRESH_MS) return;
+    loadedFor = published;
+    loadedAt = Date.now();
     load().catch(() => {});
   });
 </script>
