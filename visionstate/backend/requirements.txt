@@ -1,0 +1,12 @@
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+python-multipart==0.0.20
+sqlalchemy==2.0.43
+httpx==0.28.1
+aiomqtt==2.4.0
+onnxruntime==1.30.0
+numpy==2.3.3
+pillow==11.3.0
+scikit-learn==1.7.2
+joblib==1.5.2
+av==15.1.0

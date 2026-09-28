@@ -27,3 +27,4 @@ Thumbs.db
 
 # Claude local
 .claude/settings.local.json
+models/

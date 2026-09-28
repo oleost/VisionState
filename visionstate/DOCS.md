@@ -1,0 +1,87 @@
+# VisionState
+
+Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
+`closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
+Home Assistant sensor. Everything runs on this machine; no cloud.
+
+## Requirements
+
+- **MQTT**: VisionState publishes its sensors through MQTT discovery. Install the
+  **Mosquitto broker** app and the **MQTT** integration if you do not have them yet.
+  VisionState finds the broker automatically.
+- **A camera** in Home Assistant (any `camera.*` entity: Frigate, ESP32-CAM, Reolink,
+  generic camera…), or a direct HTTP snapshot / RTSP URL.
+- amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS).
+
+## Getting started
+
+1. Open **VisionState** from the sidebar.
+2. Click **New sensor**:
+   1. Give it a name and pick a camera.
+   2. Draw a box around the thing to watch (for example the garage door). The AI only looks
+      inside the box, which makes it far more accurate.
+   3. Name the states, for example *Open*, *Closed*, *Partial*.
+3. On the **Label** tab, click the matching state button (or press `1`–`9`) while the live
+   image shows each state. The model retrains in about a second after every label.
+4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
+   you what is missing.
+
+The sensor appears in Home Assistant as a device with these entities:
+
+| Entity | What it is |
+|---|---|
+| `sensor.visionstate_<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
+| `sensor.visionstate_<name>_confidence` | How sure the AI is, in % |
+| `image.visionstate_<name>_frame` | The image region that was classified |
+| `button.visionstate_<name>_classify` | Classify right now (use it in automations) |
+| `switch.visionstate_<name>_enabled` | Pause / resume the sensor |
+
+The state entity also has a `probabilities` attribute with the score of every state.
+
+## Training tips
+
+- **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
+  frame every few seconds (near-duplicates are skipped). The current model suggests a label
+  for each frame — check them and click **Accept all suggestions**, or select frames and
+  press a state key.
+- **Review** (top menu): frames the AI was unsure about, frames where the state flipped back
+  and forth, and a few random spot checks. Answering these is the fastest way to improve.
+- **History tab**: every state change with its frame. If one was wrong, add it to the dataset
+  with the correct state.
+- Include different light: day, night (IR), sun, rain, snow.
+- Changing the region on the **Settings** tab retrains the model from the stored images.
+
+## How it decides
+
+| Setting (per sensor) | Default | Meaning |
+|---|---|---|
+| Check the camera every | 10 s | How often a frame is classified |
+| Report unknown below | 70 % | Confidence needed to report a state |
+| Change after N matching results | 2 | Avoids flicker when someone walks past |
+
+## Backup, export and import
+
+- Settings, the database and trained models live in the app's data folder and are part of
+  Home Assistant backups.
+- Training images are stored in `/media/visionstate`.
+- **Export** (on a sensor) downloads a ZIP with settings and all labelled images.
+  **Import** (dashboard or Settings) adds it as a new sensor — also on another installation.
+
+## AI model
+
+The default model (DINOv2 small, 8-bit) is included and runs on any CPU, including a
+Raspberry Pi 4. A slightly more accurate full-precision model can be selected under
+**Settings**; it is downloaded on first use (89 MB).
+
+## App options
+
+| Option | Description |
+|---|---|
+| `log_level` | Amount of logging. |
+| `history_retention_days` | How long history frames are kept. |
+| `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
+| `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
+
+## Support
+
+Report issues at <https://github.com/oleost/VisionState/issues>.

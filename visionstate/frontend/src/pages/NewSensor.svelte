@@ -1,0 +1,260 @@
+<script lang="ts">
+  import { api } from '../lib/api';
+  import { app, toast, toastError } from '../lib/app.svelte';
+  import Icon from '../lib/components/Icon.svelte';
+  import RoiEditor from '../lib/components/RoiEditor.svelte';
+  import SourcePicker from '../lib/components/SourcePicker.svelte';
+  import StatesEditor from '../lib/components/StatesEditor.svelte';
+  import { slugify } from '../lib/format';
+  import { go, href, paths } from '../lib/router.svelte';
+  import type { Roi } from '../lib/types';
+
+  const STEPS = [
+    { title: 'Camera', sub: 'Name and image source' },
+    { title: 'Region', sub: 'What to look at' },
+    { title: 'States', sub: 'What it can be' },
+  ];
+
+  let step = $state(0);
+  let name = $state('');
+  let sourceType = $state('ha_camera');
+  let source = $state('');
+  let roi = $state<Roi | null>(null);
+  let states = $state<{ name: string; color?: string }[]>([{ name: 'Open' }, { name: 'Closed' }]);
+  let previewUrl = $state<string | null>(null);
+  let previewError = $state('');
+  let saving = $state(false);
+
+  const unknown = $derived(app.config?.unknown_state ?? 'unknown');
+  const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
+  const slug = $derived(slugify(name, 'sensor'));
+  const stateKeys = $derived(states.map((s) => slugify(s.name, 'state')));
+
+  const canNext = $derived(
+    step === 0 ? name.trim().length > 0 && source.trim().length > 0 : step === 1 ? previewUrl !== null : true,
+  );
+  const statesValid = $derived(
+    states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
+  );
+
+  function loadPreview() {
+    previewError = '';
+    previewUrl = null;
+    const url = api.previewUrl(sourceType, source);
+    const img = new Image();
+    img.onload = () => (previewUrl = url);
+    img.onerror = () => (previewError = 'Could not get a frame from this source. Check the camera or URL.');
+    img.src = url;
+  }
+
+  function goto(target: number) {
+    if (target === 1 && step === 0) loadPreview();
+    step = target;
+  }
+
+  async function create() {
+    saving = true;
+    try {
+      const sensor = await api.createSensor({
+        name: name.trim(),
+        source_type: sourceType,
+        source: source.trim(),
+        roi,
+        states: states.map((s) => ({ name: s.name.trim(), color: s.color })),
+      });
+      toast(`${sensor.name} created — now label some frames`);
+      go(paths.sensor(sensor.id, 'label'));
+    } catch (err) {
+      toastError(err);
+    } finally {
+      saving = false;
+    }
+  }
+</script>
+
+<div class="page">
+  <div class="wizard card">
+    <aside>
+      <div class="col" style="gap:4px">
+        <span class="eyebrow">New sensor</span>
+        <span class="title">{name || 'Untitled'}</span>
+      </div>
+      <ol>
+        {#each STEPS as s, i (i)}
+          <li>
+            <button class:current={i === step} disabled={i > step && !canNext} onclick={() => i < step && goto(i)}>
+              <span class="num" class:done={i <= step}>{#if i < step}<Icon name="check" size={13} strokeWidth={2.4} />{:else}{i + 1}{/if}</span>
+              <span class="col" style="gap:2px"><strong>{s.title}</strong><span class="xsmall muted">{s.sub}</span></span>
+            </button>
+          </li>
+        {/each}
+      </ol>
+      <span class="spacer"></span>
+      <p class="xsmall faint">You can change everything later. Labelling starts right after you create the sensor.</p>
+    </aside>
+
+    <section class="col content">
+      {#if step === 0}
+        <div class="col" style="gap:6px">
+          <h2>Name it and pick a camera</h2>
+          <p class="muted">Any camera in Home Assistant works — Frigate, ESP32-CAM, Reolink, generic streams.</p>
+        </div>
+        <label class="field" style="max-width:420px">
+          Sensor name
+          <input class="input" bind:value={name} placeholder="Garage door" />
+        </label>
+        <SourcePicker bind:sourceType bind:source />
+      {:else if step === 1}
+        <div class="row wrap">
+          <div class="col" style="gap:6px">
+            <h2>Draw the region to watch</h2>
+            <p class="muted">Drag a box around the object. The AI only looks inside it — that makes it much more accurate.</p>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn sm" onclick={loadPreview}><Icon name="refresh" size={14} /> New frame</button>
+          <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
+        </div>
+        {#if previewError}
+          <div class="notice danger"><Icon name="alert" />{previewError}</div>
+        {:else}
+          <div class="frame">
+            <RoiEditor src={previewUrl} bind:roi editable />
+          </div>
+          <p class="small muted">Tip: leave a small margin around the object and include the parts that change between states.</p>
+        {/if}
+      {:else}
+        <div class="col" style="gap:6px">
+          <h2>Which states can it be in?</h2>
+          <p class="muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
+        </div>
+        <div style="max-width:520px"><StatesEditor bind:states /></div>
+        <div class="card pad col preview">
+          <span class="eyebrow">In Home Assistant</span>
+          <span class="mono">sensor.visionstate_{slug}</span>
+          <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
+          <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
+        </div>
+      {/if}
+
+      <span class="spacer"></span>
+      <footer class="row">
+        {#if step > 0}
+          <button class="btn" onclick={() => (step -= 1)}>Back</button>
+        {:else}
+          <a class="btn" href={href(paths.dashboard())}>Cancel</a>
+        {/if}
+        <span class="spacer"></span>
+        {#if step < STEPS.length - 1}
+          <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
+        {:else}
+          <button class="btn primary" disabled={!statesValid || saving} onclick={create}>
+            {saving ? 'Creating…' : 'Create sensor and start labelling'}
+          </button>
+        {/if}
+      </footer>
+    </section>
+  </div>
+</div>
+
+<style>
+  .wizard {
+    display: flex;
+    min-height: 680px;
+    overflow: hidden;
+  }
+  aside {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--c-sunken);
+    border-right: 1px solid var(--c-border);
+    padding: 28px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .eyebrow {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c-faint);
+  }
+  .title {
+    font: 600 20px var(--font-display);
+  }
+  ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  ol button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: none;
+    color: var(--c-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  ol button.current {
+    background: var(--c-surface-3);
+  }
+  ol button:disabled {
+    cursor: default;
+  }
+  .num {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: var(--radius-pill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-md);
+    font-weight: 600;
+    background: var(--c-surface-3);
+    color: var(--c-muted);
+  }
+  .num.done {
+    background: var(--c-accent);
+    color: var(--c-accent-ink);
+  }
+  .content {
+    flex-grow: 1;
+    padding: 28px 32px;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+  .frame {
+    max-width: 900px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .preview {
+    max-width: 520px;
+    background: var(--c-bg);
+    gap: var(--space-2);
+  }
+  footer {
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
+  }
+  @media (max-width: 900px) {
+    .wizard {
+      flex-direction: column;
+    }
+    aside {
+      width: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--c-border);
+    }
+  }
+</style>

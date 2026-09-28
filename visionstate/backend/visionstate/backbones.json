@@ -1,0 +1,29 @@
+{
+  "default": "dinov2-small-q8",
+  "backbones": {
+    "dinov2-small-q8": {
+      "name": "DINOv2 small · 8-bit (fast)",
+      "description": "Quantised model. Recommended for Raspberry Pi and older CPUs.",
+      "url": "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model_uint8.onnx",
+      "sha256": "c179f8f7f592449c4c1bca4cd124a7538021428c5ffb89afde9503935b197efb",
+      "size": 24446700,
+      "input_size": 224,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "pooling": "cls_mean",
+      "bundled": true
+    },
+    "dinov2-small": {
+      "name": "DINOv2 small · fp32 (accurate)",
+      "description": "Full precision. Slightly more accurate, about 3x slower. Downloaded on first use (89 MB).",
+      "url": "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model.onnx",
+      "sha256": "f22797eabf810a75e41de68d378541ebea372122b25c4ce3ef25ff618250c20a",
+      "size": 88532934,
+      "input_size": 224,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "pooling": "cls_mean",
+      "bundled": false
+    }
+  }
+}

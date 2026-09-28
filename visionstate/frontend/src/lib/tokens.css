@@ -1,0 +1,89 @@
+/*
+ * Design tokens — the single source for colours, type, spacing and radii.
+ * Components reference these variables; change a value here to restyle the whole app.
+ */
+:root {
+  /* Surfaces */
+  --c-bg: #0f1216;
+  --c-nav: #12161b;
+  --c-sunken: #13171c;
+  --c-surface: #171b21;
+  --c-surface-2: #1d2229;
+  --c-surface-3: #222831;
+  --c-overlay: rgba(12, 14, 17, 0.82);
+
+  /* Lines */
+  --c-border: #29303a;
+  --c-border-strong: #323a45;
+  --c-border-dashed: #3a4350;
+
+  /* Text */
+  --c-text: #e9edf1;
+  --c-text-2: #c3cad3;
+  --c-muted: #a0a9b4;
+  --c-faint: #8c96a2;
+
+  /* Accent (primary actions, focus, selection) */
+  --c-accent: #7ee2b8;
+  --c-accent-hover: #a9f0d2;
+  --c-accent-ink: #0b1a14;
+  --c-accent-soft: #13261e;
+  --c-accent-line: #2c5a45;
+
+  /* Feedback */
+  --c-warn: #f5b94a;
+  --c-warn-soft: #231d10;
+  --c-warn-line: #5a4724;
+  --c-warn-text: #f1dfb8;
+  --c-danger: #ff7b72;
+  --c-danger-soft: #2a1716;
+  --c-danger-line: #5a2f2c;
+  --c-danger-text: #ff9b94;
+  --c-info: #8fb8e0;
+  --c-badge: #ffa24c;
+  --c-badge-ink: #1d1206;
+
+  /* State colour for "unknown"; other state colours come from the API. */
+  --c-unknown: #8a94a0;
+
+  /* Type */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 15px;
+  --fs-xl: 19px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+
+  /* Shape & space */
+  --radius-sm: 6px;
+  --radius: 9px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Layout */
+  --nav-h: 64px;
+  --page-pad: 40px;
+  --page-max: 1360px;
+  --control-h: 38px;
+  --touch: 44px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --page-pad: 16px;
+  }
+}

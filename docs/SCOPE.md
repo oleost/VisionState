@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Status: **Draft v0.2** — agreed decisions from the scoping discussion (2026-09-28).
+> Status: **v0.3 — 0.1.0 implemented** — agreed decisions from the scoping discussion (2026-09-28).
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
 ## 1. Vision
@@ -66,16 +66,21 @@ re-runs the backbone.
 
 | ID | Model | Use |
 |---|---|---|
-| `fast` | MobileNetV3-Large (ImageNet features) | Default on aarch64 / weak CPUs |
-| `accurate` | DINOv2 ViT-S/14 | Default on amd64 |
+| `dinov2-small-q8` | DINOv2 ViT-S/14, 8-bit quantised (bundled) | Default everywhere |
+| `dinov2-small` | DINOv2 ViT-S/14, fp32 (downloaded on demand) | Optional, slightly more accurate |
+
+> Implementation note (0.1.0): MobileNet was dropped because the available ONNX exports only
+> expose classification logits; the 8-bit DINOv2 runs ~25 ms per frame on a desktop CPU and is
+> fast enough for Raspberry Pi 4/5. The head is logistic regression with `C=30` on
+> L2-normalised features (clear frames ≈85–95 %, ambiguous ≈50 %).
 
 - The default backbone is bundled in the image (works offline); others are downloaded on
   demand to `/data/models` with SHA-256 verification.
 - Switching backbone re-computes embeddings in the background from stored samples.
 - **Execution providers** behind one `InferenceBackend` interface: CPU (default),
   OpenVINO (Intel iGPU/CPU, bonus), Coral Edge TPU and CUDA (bonus, later).
-- Training-time augmentation: light brightness/contrast/noise/blur jitter only
-  (no flips/rotations by default — orientation can matter for a state).
+- Training-time augmentation: not in 0.1.0 (DINOv2 features are robust enough so far);
+  planned as light brightness/contrast/noise jitter only.
 - Optional "fine-tune" mode is explicitly out of scope for v1 but the pipeline must allow it.
 
 ## 6. Image sources
@@ -140,7 +145,7 @@ Follows HA light/dark theme; responsive (works in the HA mobile app).
 
 ## 10. Data model & extensibility
 
-- SQLite with versioned migrations (Alembic).
+- SQLite; schema version tracked with `PRAGMA user_version` (migrations added when the schema first changes).
 - `sensor.kind` field: `single_state` in v1; reserved for `multi_label`, `binary`, `count`.
 - Labels stored in a separate `sample_label` table (many-to-many), even though v1
   enforces one label per sample → multi-label needs no schema change.
@@ -178,7 +183,7 @@ the UI, not in app options.
 | Inference | ONNX Runtime (+ optional OpenVINO EP), NumPy, Pillow, FFmpeg |
 | Training | scikit-learn |
 | MQTT | aiomqtt |
-| Frontend | Svelte (SvelteKit static) + TypeScript, Tailwind, shadcn-svelte |
+| Frontend | Svelte 5 + Vite + TypeScript, plain CSS with design tokens (`tokens.css`), hash router (Ingress-safe) |
 | Packaging | HA app repo layout, multi-arch Docker, GitHub Actions → GHCR |
 | Quality | pytest, ruff, mypy; Vitest + Playwright; pre-commit |
 | Docs | MkDocs Material (GitHub Pages) + app `DOCS.md` |
@@ -188,8 +193,8 @@ the UI, not in app options.
 ```
 /                       repository.yaml (HA app repository)
 /visionstate            config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
-/backend                Python package + tests
-/frontend               SvelteKit app
+/visionstate/backend    Python package + tests (inside the app dir: HA builds from it)
+/visionstate/frontend   Svelte app
 /docs                   MkDocs site (incl. this file)
 /.github/workflows      lint, test, multi-arch build, release
 ```
@@ -199,9 +204,9 @@ the UI, not in app options.
 | Milestone | Content |
 |---|---|
 | **M0 – Design** | This scope, UI mockups |
-| **M1 – MVP** | HA camera source, create sensor + ROI, capture & label, train, MQTT sensor, CPU backbone, amd64+aarch64 builds |
-| **M2 – Training UX** | Bulk upload (images/ZIP/video), review queue, gallery, quality page, history |
-| **M3 – Portability** | Import/export, backbone switching, RTSP/HTTP sources, retention |
+| **M1 – MVP** ✅ | HA camera source, create sensor + ROI, capture & label, train, MQTT sensor, CPU backbone, amd64+aarch64 builds |
+| **M2 – Training UX** ✅ | Bulk upload (images/ZIP/video), review queue, gallery, quality page, history |
+| **M3 – Portability** ✅ (partly) | Import/export (create-new mode), backbone switching, RTSP/HTTP sources, retention. Merge/replace import still open. |
 | **M4 – Acceleration** | OpenVINO, Coral, Frigate event triggers |
 | **M5 – Release** | Docs site, screenshots, v1.0 public release |
 

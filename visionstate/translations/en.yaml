@@ -1,0 +1,22 @@
+configuration:
+  log_level:
+    name: Log level
+    description: How much VisionState writes to the app log.
+  history_retention_days:
+    name: History retention (days)
+    description: How long frames of state changes are kept. Frames waiting for review are kept twice as long.
+  discovery_prefix:
+    name: MQTT discovery prefix
+    description: Must match the discovery prefix of the Home Assistant MQTT integration (normally "homeassistant").
+  mqtt_host:
+    name: MQTT host
+    description: Leave empty to use the broker configured in Home Assistant (for example the Mosquitto broker app).
+  mqtt_port:
+    name: MQTT port
+    description: Only used when MQTT host is set.
+  mqtt_username:
+    name: MQTT username
+    description: Only used when MQTT host is set.
+  mqtt_password:
+    name: MQTT password
+    description: Only used when MQTT host is set.
