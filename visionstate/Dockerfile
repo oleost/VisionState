@@ -9,7 +9,7 @@ RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 ENV PYTHONDONTWRITEBYTECODE=1 \
