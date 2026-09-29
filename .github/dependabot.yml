@@ -1,32 +1,43 @@
-# Weekly update PRs for pinned dependencies. Minor and patch updates are grouped per
-# ecosystem to keep the number of PRs low; CI tests every PR before it can be merged.
+# Monthly update PRs for pinned dependencies, one grouped PR per ecosystem (major updates
+# included). CI tests and smoke-tests every PR; nothing reaches users until a release.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /visionstate/backend
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       python:
-        update-types: [minor, patch]
+        patterns: ["*"]
 
   - package-ecosystem: npm
     directory: /visionstate/frontend
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       frontend:
-        update-types: [minor, patch]
+        patterns: ["*"]
+    ignore:
+      # svelte-check does not support TypeScript 7 yet.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /visionstate
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      docker:
+        patterns: ["*"]
+    ignore:
+      # Python is upgraded deliberately together with the CI test version (see CLAUDE.md).
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
-        update-types: [minor, patch]
+        patterns: ["*"]

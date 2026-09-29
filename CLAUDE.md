@@ -26,3 +26,7 @@ from camera images using a local embedding model + lightweight per-sensor classi
   2. `git tag vX.Y.Z` and push **only the tag** (`git push origin vX.Y.Z`); wait for the CI `image`
      jobs to publish `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.Z`.
   3. Then push `main` and create the GitHub release (`gh release create vX.Y.Z`).
+- Python version: the Dockerfile image and the CI test version (`setup-python`) must be upgraded
+  together; Dependabot ignores Python image upgrades for that reason.
+- Dependency updates: Dependabot opens one grouped PR per ecosystem monthly. CI runs the tests and a
+  smoke test that starts the built image (both architectures) against a real MQTT broker.
