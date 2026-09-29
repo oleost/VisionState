@@ -147,10 +147,14 @@ the app's data folder (included in Home Assistant backups).
 
 ```
 visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
-  backend/              Python 3.12 · FastAPI · ONNX Runtime · scikit-learn
+  backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
   frontend/             Svelte 5 · Vite · TypeScript
-docs/SCOPE.md           Scope, design decisions and roadmap
+scripts/channel.py      Switches the app config between the stable and beta channel
+docs/SCOPE.md           Design as built, decisions and roadmap
 ```
+
+New features land on the `beta` branch first and reach `main` (stable) only after testing;
+please open pull requests against `beta`.
 
 <details>
 <summary>Run it locally</summary>
@@ -159,7 +163,7 @@ Backend:
 
 ```bash
 cd visionstate/backend
-python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+python3.14 -m venv .venv && . .venv/bin/activate  # Windows: py -3.14 -m venv .venv; .venv\Scripts\activate
 pip install -r requirements-dev.txt
 python -m visionstate.backbones models            # download the bundled model once
 pytest

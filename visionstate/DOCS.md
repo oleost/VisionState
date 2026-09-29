@@ -23,6 +23,8 @@ Home Assistant sensor. Everything runs on this machine; no cloud.
    2. Draw a box around the thing to watch (for example the garage door). The AI only looks
       inside the box, which makes it far more accurate.
    3. Name the states, for example *Open*, *Closed*, *Partial*.
+   4. Optionally choose when it should check the camera — for example when your motion
+      sensor or garage opener changes (see *When it checks* below). You can skip this step.
 3. On the **Label** tab, click the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
@@ -90,9 +92,19 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 
 - Settings, the database and trained models live in the app's data folder and are part of
   Home Assistant backups.
-- Training images are stored in `/media/visionstate`.
-- **Export** (on a sensor) downloads a ZIP with settings and all labelled images.
-  **Import** (dashboard or Settings) adds it as a new sensor — also on another installation.
+- Training images are stored in `/media/visionstate` (the beta app uses `/media/visionstate_beta`).
+- **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, triggers,
+  review overrides) and all its images with labels. Camera passwords are removed from the file.
+- **Import** (dashboard or Settings) adds it as a new sensor — also on another installation — and
+  trains it automatically. If the camera URL needed a password, enter it again on the sensor's
+  Settings tab.
+
+## Beta channel
+
+New versions are released as beta first. To test them, add
+`https://github.com/oleost/VisionState#beta` as a repository and install **VisionState (beta)**.
+It is a separate app with its own data: move sensors with Export/Import, and run only one of the
+two apps at a time (both publish the same entities).
 
 ## AI model
 

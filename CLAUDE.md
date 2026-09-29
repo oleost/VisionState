@@ -44,7 +44,11 @@ from camera images using a local embedding model + lightweight per-sensor classi
   4. Push the branch, open a PR to `main`, wait for CI, merge it; `gh release create vX.Y.Z --latest`.
   5. Merge `main` back into `beta`, keeping beta's config: `git switch beta && git merge main`,
      then `python scripts/channel.py beta <next beta version>` before the next beta release.
-- Python version: the Dockerfile image and the CI test version (`setup-python`) must be upgraded
-  together; Dependabot ignores Python image upgrades for that reason.
+- Python version is **3.14** (Dockerfile image, CI `setup-python`, ruff `target-version`, local
+  `.venv` created with `py -3.14`). Upgrade all of them together; Dependabot ignores Python image
+  upgrades for that reason.
+- **Docs checklist** — when behaviour, defaults, versions or the workflow change, update in the same
+  change: `visionstate/DOCS.md` (user guide in HA), `README.md` (front page), `docs/SCOPE.md`
+  (design as built, roadmap), `visionstate/CHANGELOG.md`, and this file.
 - Dependency updates: Dependabot opens one grouped PR per ecosystem monthly. CI runs the tests and a
   smoke test that starts the built image (both architectures) against a real MQTT broker.
