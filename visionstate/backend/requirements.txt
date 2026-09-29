@@ -9,5 +9,5 @@ numpy==2.3.3
 pillow==11.3.0
 scikit-learn==1.7.2
 joblib==1.5.2
-av==15.1.0
+av==18.1.0
 websockets==15.0.1
