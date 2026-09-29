@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: visionstate/backend/requirements*.txt
       - run: pip install -r requirements-dev.txt
       - name: Cache AI model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: visionstate/backend/models
           key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json') }}
