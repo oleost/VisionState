@@ -53,12 +53,12 @@ without writing code or leaving Home Assistant:
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/promo/label.png" alt="Labelling live frames"></td>
-    <td width="50%"><img src="docs/promo/review.png" alt="Review queue"></td>
+    <td width="50%" valign="top"><img src="docs/promo/label.png" alt="Labelling live frames" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/review.png" alt="Review queue" width="100%"></td>
   </tr>
   <tr>
-    <td><b>Label</b> — live camera image with the region you drew, the current prediction, day/night coverage and one button per state.</td>
-    <td><b>Review</b> — frames the AI was unsure about. Confirm or correct with a single key press.</td>
+    <td valign="top"><b>Label</b> — live camera image with the region you drew, the current prediction, day/night coverage and one button per state.</td>
+    <td valign="top"><b>Review</b> — frames the AI was unsure about. Confirm or correct with a single key press.</td>
   </tr>
 </table>
 
