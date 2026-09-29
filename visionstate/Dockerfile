@@ -2,7 +2,7 @@
 # Home Assistant passes BUILD_FROM/BUILD_ARCH/BUILD_VERSION; we use our own base images
 # because onnxruntime needs glibc (the default HA base images are Alpine/musl).
 
-FROM node:22-bookworm-slim AS frontend
+FROM node:26-bookworm-slim AS frontend
 WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund

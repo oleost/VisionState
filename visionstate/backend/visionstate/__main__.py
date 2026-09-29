@@ -11,14 +11,21 @@ from .settings import load_settings
 
 
 def main() -> None:
-    if sys.platform == "win32":  # local development: aiomqtt needs a selector event loop
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     settings = load_settings()
-    level = settings.log_level.upper()
-    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    uvicorn.run(
-        create_app(settings), host="0.0.0.0", port=settings.port, log_level=settings.log_level.lower(), access_log=False
-    )  # noqa: S104
+    logging.basicConfig(level=settings.log_level.upper(), format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    config = uvicorn.Config(
+        create_app(settings),
+        host="0.0.0.0",  # noqa: S104 - only reachable through Home Assistant Ingress
+        port=settings.port,
+        log_level=settings.log_level.lower(),
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    if sys.platform == "win32":
+        # Local development only: uvicorn picks a Proactor loop on Windows, which aiomqtt cannot use.
+        asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        server.run()
 
 
 if __name__ == "__main__":
