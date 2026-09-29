@@ -69,8 +69,7 @@ without writing code or leaving Home Assistant:
 
 1. Click **Add repository** above — or go to **Settings → Apps** (called *Add-ons* in older
    versions) **→ App store → ⋮ → Repositories** and add `https://github.com/oleost/VisionState`.
-2. Install **VisionState**. The first install builds the app on your machine and takes 5–15
-   minutes (longer on a Raspberry Pi).
+2. Install **VisionState** (it downloads a ready-made image for your machine).
 3. Start it and open **VisionState** from the sidebar.
 
 ## Get your first sensor in five minutes

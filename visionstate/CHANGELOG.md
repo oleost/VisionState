@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Installs and updates now download a ready-made image instead of building on your machine:
+  seconds instead of minutes (especially on Raspberry Pi).
+
 ## 0.3.0
 
 - **Adjustable review queue**: global rules under *Settings → Review queue*, with per-sensor

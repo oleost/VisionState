@@ -20,4 +20,9 @@ from camera images using a local embedding model + lightweight per-sensor classi
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
   (tests need the model: `python -m visionstate.backbones models`).
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
-- Bump `version` in `visionstate/config.yaml` and add a `CHANGELOG.md` entry for every release.
+- Releases: Home Assistant pulls prebuilt images (`image:` in `visionstate/config.yaml`), so a
+  version must never reach `main` before its image exists. For every release:
+  1. Bump `version` in `visionstate/config.yaml` and add a `visionstate/CHANGELOG.md` entry; commit.
+  2. `git tag vX.Y.Z` and push **only the tag** (`git push origin vX.Y.Z`); wait for the CI `image`
+     jobs to publish `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.Z`.
+  3. Then push `main` and create the GitHub release (`gh release create vX.Y.Z`).

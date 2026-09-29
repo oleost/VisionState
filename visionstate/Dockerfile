@@ -11,6 +11,7 @@ RUN npm run build
 
 FROM python:3.12-slim-bookworm
 ARG BUILD_VERSION=dev
+ARG BUILD_ARCH=amd64
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -31,6 +32,7 @@ COPY --from=frontend /src/dist /app/frontend/dist
 
 LABEL io.hass.type="addon" \
       io.hass.version="${BUILD_VERSION}" \
+      io.hass.arch="${BUILD_ARCH}" \
       org.opencontainers.image.source="https://github.com/oleost/VisionState" \
       org.opencontainers.image.licenses="Apache-2.0"
 
