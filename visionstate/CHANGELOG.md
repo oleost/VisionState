@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1b3
+
+- Fixed: stopping the app showed **Error** instead of **Stopped** in Home Assistant. The app
+  already shut down cleanly, but ended with a non-zero exit code; it now exits normally.
+
 ## 0.4.1b2
 
 - Runs on Python 3.14 (was 3.12). All tests and the image smoke test run on 3.14.

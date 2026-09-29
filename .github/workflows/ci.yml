@@ -100,7 +100,8 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --name mqtt -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
-          docker run -d --name app --platform "$PLATFORM" --network host \
+          # --init: Home Assistant runs apps with an init process (tini) as PID 1.
+          docker run -d --init --name app --platform "$PLATFORM" --network host \
             -e VISIONSTATE_DATA=/tmp/data -e VISIONSTATE_MEDIA=/tmp/media -e VISIONSTATE_MQTT_HOST=127.0.0.1 \
             visionstate-test:ci
           ok=""
@@ -118,6 +119,10 @@ jobs:
             | jq -e '.options == ["a", "b", "unknown"]'
           docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate/review_queue/config' -C 1 -W 30 >/dev/null
           if docker logs app 2>&1 | grep -q Traceback; then docker logs app; exit 1; fi
+          # Home Assistant stops apps with SIGTERM; a non-zero exit code shows up as "Error".
+          docker stop -t 30 app
+          code=$(docker inspect -f '{{.State.ExitCode}}' app)
+          if [ "$code" != "0" ]; then echo "::error::exit code $code after docker stop"; docker logs app | tail -20; exit 1; fi
           echo "smoke test passed"
       - name: Publish image (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')

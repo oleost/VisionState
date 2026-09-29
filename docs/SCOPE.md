@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.4.1b2 / stable 0.4.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.4.1b3 / stable 0.4.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -222,7 +222,7 @@ sensor settings) lives in the UI.
 | **Review rules** ✅ | Global rules with per-sensor overrides | 0.3.0 |
 | **Prebuilt images** ✅ | GHCR images, releases | 0.3.1 |
 | **Data quality** ✅ | Possibly mislabelled samples, review queue entity, wizard triggers step | 0.4.0 |
-| **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14 | 0.4.1b1–b2 |
+| **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14, clean exit on stop | 0.4.1b1–b3 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
@@ -246,6 +246,7 @@ Assistant; UI tests; reading numbers (meters) as a new sensor kind; issue templa
   media folder. The maintainer runs it permanently.
 - **main** branch: stable; changes only by promoting a tested beta through a PR
   (branch-protected, CI required).
-- CI builds, tests and smoke-tests the image on both architectures before publishing, refuses
+- CI builds, tests and smoke-tests the image on both architectures (start, MQTT, discovery, clean
+  `docker stop` with exit code 0) before publishing, refuses
   tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
 - Step-by-step procedures are in `CLAUDE.md`.

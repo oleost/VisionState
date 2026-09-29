@@ -1,5 +1,5 @@
 name: VisionState (beta)
-version: "0.4.1b2"
+version: "0.4.1b3"
 slug: visionstate
 description: Teach a local AI to recognise states (open, closed, …) in your camera images
 url: https://github.com/oleost/VisionState
