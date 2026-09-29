@@ -38,6 +38,9 @@ The sensor appears in Home Assistant as a device with these entities:
 | `button.visionstate_<name>_classify` | Classify right now (use it in automations) |
 | `switch.visionstate_<name>_enabled` | Pause / resume the sensor |
 
+In addition, the **VisionState** device has `sensor.visionstate_review_queue`: the number of
+frames waiting for review (with a per-sensor breakdown as attribute).
+
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
 
@@ -54,6 +57,9 @@ The state entity also has a `probabilities` attribute with the score of every st
   80 %, or turn review off for it. Empty sensor fields use the global value.
 - **History tab**: every state change with its frame. If one was wrong, add it to the dataset
   with the correct state.
+- **Quality tab → Possibly mislabelled**: after each training VisionState checks every image
+  against a model trained on the *other* images. Images it strongly disagrees with are listed —
+  usually a wrong click. Keep the label, change it or delete the image.
 - Include different light: day, night (IR), sun, rain, snow.
 - Changing the region on the **Settings** tab retrains the model from the stored images.
 

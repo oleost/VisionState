@@ -135,6 +135,8 @@ export const api = {
     request<{ updated: number }>(`sensors/${id}/samples/label`, send('POST', { sample_ids: sampleIds, state_key: stateKey })),
   acceptSuggestions: (id: number, sampleIds: number[]) =>
     request<{ updated: number }>(`sensors/${id}/samples/accept-suggestions`, send('POST', { sample_ids: sampleIds })),
+  verifySamples: (id: number, sampleIds: number[]) =>
+    request<{ verified: number }>(`sensors/${id}/samples/verify`, send('POST', { sample_ids: sampleIds })),
   deleteSamples: (id: number, sampleIds: number[]) =>
     request<{ deleted: number }>(`sensors/${id}/samples/delete`, send('POST', { sample_ids: sampleIds })),
   sampleImageUrl: (sampleId: number, size: 'thumb' | 'full' = 'thumb') => `${BASE}samples/${sampleId}/image?size=${size}`,

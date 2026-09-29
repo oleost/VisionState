@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .. import bundle
-from ..db import ModelInfo, Prediction, Sensor, State
+from ..db import ModelInfo, Prediction, Sample, Sensor, State
 from ..settings import QUALITY, SENSOR_DEFAULTS, SENSOR_LIMITS, STATE_PALETTE
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
@@ -203,9 +203,18 @@ async def retrain(sensor_id: int, request: Request) -> dict:
     return {"ok": True}
 
 
-def quality_tips(states: list[dict], counts: dict, confusion: dict | None) -> list[dict]:
+def quality_tips(states: list[dict], counts: dict, confusion: dict | None, suspects: int = 0) -> list[dict]:
     """Human-readable suggestions derived from the dataset. Thresholds live in settings.QUALITY."""
     tips: list[dict] = []
+    if suspects:
+        tips.append(
+            {
+                "level": "warn",
+                "title": f"{suspects} image{'s' if suspects != 1 else ''} may be labelled wrong",
+                "text": "Check them under “Possibly mislabelled” below — one wrong label can pull the whole sensor down.",
+                "action": "suspects",
+            }
+        )
     per_state = counts["per_state"]
     names = {s["key"]: s["name"] for s in states}
     totals = {k: v["day"] + v["night"] for k, v in per_state.items()}
@@ -270,14 +279,34 @@ def quality(sensor_id: int, request: Request) -> dict:
         info = s.get(ModelInfo, sensor_id)
         counts = sample_counts(s, sensor)
         confusion = info.confusion if info else None
+        suspects = current_suspects(s, sensor, info)
         return {
             "sensor": view,
             "counts": counts,
             "confusion": confusion,
             "accuracy": info.accuracy if info else None,
-            "tips": quality_tips(view["states"], counts, confusion),
+            "suspects": suspects,
+            "tips": quality_tips(view["states"], counts, confusion, len(suspects)),
             "targets": QUALITY,
         }
+
+
+def current_suspects(session, sensor: Sensor, info: ModelInfo | None) -> list[dict]:
+    """Suspects from the last training that still exist, are unverified and still carry that label."""
+    if info is None or not info.suspects:
+        return []
+    key_by_state = {st.id: st.key for st in sensor.states}
+    ids = [item["sample_id"] for item in info.suspects]
+    samples = {x.id: x for x in session.scalars(select(Sample).where(Sample.id.in_(ids)))}
+    result = []
+    for item in info.suspects:
+        sample = samples.get(item["sample_id"])
+        if sample is None or sample.verified:
+            continue
+        labels = [key_by_state.get(lab.state_id) for lab in sample.labels]
+        if item["label"] in labels:
+            result.append(item)
+    return result
 
 
 def prediction_view(p: Prediction) -> dict:

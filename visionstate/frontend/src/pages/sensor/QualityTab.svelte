@@ -2,6 +2,7 @@
   import { api } from '../../lib/api';
   import { stateInfo, toast, toastError } from '../../lib/app.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import SuspectsCard from '../../lib/components/SuspectsCard.svelte';
   import { ago, pct } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import type { Quality, Sensor } from '../../lib/types';
@@ -133,7 +134,9 @@
       <div class="tip">
         <span class="dot" style:background={tip.level === 'ok' ? 'var(--c-accent)' : 'var(--c-warn)'}></span>
         <span class="col" style="gap:2px;flex-grow:1"><strong>{tip.title}</strong><span class="small muted">{tip.text}</span></span>
-        {#if link}
+        {#if tip.action === 'suspects'}
+          <button class="linkish small" onclick={() => document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' })}>Show</button>
+        {:else if link}
           <a class="small" href={href(link.review ? paths.review() : paths.sensor(sensor.id, link.tab))}>{link.label}</a>
         {/if}
       </div>
@@ -143,9 +146,21 @@
   </div>
 </section>
 
+{#if quality}
+  <SuspectsCard {sensor} suspects={quality.suspects} onchange={load} />
+{/if}
+
 <style>
   .tile {
     gap: 4px;
+  }
+  .linkish {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--c-accent);
+    font: inherit;
+    cursor: pointer;
   }
   .value {
     font: 600 var(--fs-3xl) var(--font-display);

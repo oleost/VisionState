@@ -13,12 +13,12 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from . import backbones, classifier, imaging
 from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener
-from .mqtt import MqttBridge, SensorDescriptor, topics
+from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, topics
 from .redact import redact
 from .settings import RUNTIME, UNKNOWN_STATE, Settings, merge_review, merge_triggers
 from .sources import FrameGrabber, HomeAssistant, SourceError
@@ -180,10 +180,12 @@ class Runtime:
         self._retrain_handles: dict[int, asyncio.TimerHandle] = {}
         self._background: set[asyncio.Task] = set()
         self._sem = asyncio.Semaphore(RUNTIME["max_concurrent_inferences"])
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # --- lifecycle ---------------------------------------------------------
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
         backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
         provider = self.db.get_setting("execution_provider", "CPUExecutionProvider")
@@ -281,9 +283,27 @@ class Runtime:
         (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
         await asyncio.to_thread(self.storage.delete_sensor, sensor_id)
+        await self.publish_review_count()
         await self.refresh_trigger_entities()
 
+    def _on_loop(self, func, *args) -> bool:
+        """Run ``func`` on the event loop. Returns True when called from another thread (deferred).
+
+        Sync API endpoints and ``asyncio.to_thread`` workers run in threads; asyncio objects
+        (events, timers) may only be touched from the loop thread.
+        """
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if self._loop is not None and running is not self._loop:
+            self._loop.call_soon_threadsafe(func, *args)
+            return True
+        return False
+
     def wake(self, sensor_id: int, force: bool = False) -> None:
+        if self._on_loop(self.wake, sensor_id, force):
+            return
         if force:
             self.live_state(sensor_id).force = True
         event = self._wake.get(sensor_id)
@@ -453,6 +473,8 @@ class Runtime:
                 changed,
                 reason,
             )
+            if reason:
+                await self.publish_review_count()
 
     def _record_prediction(self, sensor_id, image, top, published, confidence, probs, changed, reason) -> None:
         frame = self.storage.save_history(sensor_id, image)
@@ -484,8 +506,30 @@ class Runtime:
         t = topics(cfg.slug)
         await self.mqtt.publish_discovery(cfg.descriptor)
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
+        live = self.live.get(cfg.id)
+        if live and live.debouncer.published is not None:
+            # Re-send the last state so it is not lost when discovery is (re)published.
+            await self.mqtt.publish(t["state"], live.debouncer.published, retain=True)
+
+    def _review_counts(self) -> tuple[int, dict[str, int]]:
+        with self.db.session() as s:
+            rows = s.execute(
+                select(Sensor.name, func.count(Prediction.id))
+                .join(Prediction, Prediction.sensor_id == Sensor.id)
+                .where(Prediction.reviewed.is_(False))
+                .group_by(Sensor.name)
+            ).all()
+        per_sensor = {name: count for name, count in rows}
+        return sum(per_sensor.values()), per_sensor
+
+    async def publish_review_count(self) -> None:
+        total, per_sensor = await asyncio.to_thread(self._review_counts)
+        await self.mqtt.publish(REVIEW_TOPICS["count"], str(total), retain=True)
+        await self.mqtt.publish(REVIEW_TOPICS["attributes"], {"per_sensor": per_sensor}, retain=True)
 
     async def _on_mqtt_connect(self) -> None:
+        await self.mqtt.publish_hub_discovery()
+        await self.publish_review_count()
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
             if cfg:
@@ -517,6 +561,9 @@ class Runtime:
 
     def schedule_retrain(self, sensor_id: int, delay: float | None = None) -> None:
         """Retrain soon; repeated calls within the delay are coalesced into one run."""
+        if self._on_loop(self.schedule_retrain, sensor_id, delay):
+            self.training.add(sensor_id)  # show "training" right away
+            return
         loop = asyncio.get_running_loop()
         handle = self._retrain_handles.pop(sensor_id, None)
         if handle:
@@ -564,6 +611,11 @@ class Runtime:
             info = s.get(ModelInfo, sensor_id)
             version = (info.version if info else 0) + 1
         result = classifier.train(vectors, labels, self.embedder.spec.id, version, cfg.state_keys)
+        suspects = [
+            {"sample_id": samples[item["index"]].id, **{k: v for k, v in item.items() if k != "index"}}
+            for item in result.suspects
+            if not samples[item["index"]].verified
+        ]
         head_path = self.settings.heads_dir / f"{sensor_id}.joblib"
         if result.head is None:
             self.heads.pop(sensor_id, None)
@@ -579,6 +631,7 @@ class Runtime:
             info.n_samples = result.n_samples
             info.accuracy = result.accuracy
             info.confusion = result.confusion
+            info.suspects = suspects
             info.train_seconds = result.seconds
             s.merge(info)
         log.info(
@@ -664,6 +717,7 @@ class Runtime:
         while True:
             try:
                 await asyncio.to_thread(self._cleanup)
+                await self.publish_review_count()
             except Exception:  # noqa: BLE001
                 log.exception("Cleanup failed")
             await asyncio.sleep(RUNTIME["cleanup_interval_s"])

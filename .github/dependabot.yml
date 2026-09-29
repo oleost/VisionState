@@ -1,0 +1,32 @@
+# Weekly update PRs for pinned dependencies. Minor and patch updates are grouped per
+# ecosystem to keep the number of PRs low; CI tests every PR before it can be merged.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /visionstate/backend
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /visionstate/frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /visionstate
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]

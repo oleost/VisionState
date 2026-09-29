@@ -186,7 +186,14 @@ export interface Tip {
   level: 'ok' | 'warn';
   title: string;
   text: string;
-  action: 'label' | 'upload' | 'review' | null;
+  action: 'label' | 'upload' | 'review' | 'suspects' | null;
+}
+
+export interface Suspect {
+  sample_id: number;
+  label: string;
+  predicted: string;
+  confidence: number;
 }
 
 export interface Quality {
@@ -194,6 +201,7 @@ export interface Quality {
   counts: Counts;
   confusion: { keys: string[]; matrix: number[][] } | null;
   accuracy: number | null;
+  suspects: Suspect[];
   tips: Tip[];
   targets: AppConfig['quality'];
 }

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+- **Possibly mislabelled images** (Quality tab): images the AI disagrees with after training.
+  Confirm the label, change it or delete the image with one click — a single wrong label can pull
+  a whole sensor down.
+- **Review queue entity**: `sensor.visionstate_review_queue` shows how many frames are waiting,
+  with a per-sensor breakdown, for dashboards and automations.
+- **New sensor wizard**: optional fourth step to set up triggers (motion sensor, opener, image
+  change detection) right away.
+- Fixed: changing or deleting labelled images (Dataset, Upload, Quality) showed an error and did
+  not retrain the model.
+- Weekly dependency updates via Dependabot.
+
 ## 0.3.1
 
 - Installs and updates now download a ready-made image instead of building on your machine:

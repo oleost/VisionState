@@ -130,6 +130,40 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
     ]
 
 
+REVIEW_TOPICS = {
+    "count": f"{APP_SLUG}/review/count",
+    "attributes": f"{APP_SLUG}/review/attributes",
+}
+
+
+def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
+    """App-wide entities (not tied to one sensor), grouped under a "VisionState" device."""
+    device = {
+        "identifiers": [APP_SLUG],
+        "name": "VisionState",
+        "manufacturer": "VisionState",
+        "model": "VisionState app",
+        "sw_version": VERSION,
+    }
+    return [
+        (
+            f"{prefix}/sensor/{APP_SLUG}/review_queue/config",
+            {
+                "unique_id": f"{APP_SLUG}_review_queue",
+                "default_entity_id": f"sensor.{APP_SLUG}_review_queue",
+                "name": "Review queue",
+                "state_topic": REVIEW_TOPICS["count"],
+                "json_attributes_topic": REVIEW_TOPICS["attributes"],
+                "unit_of_measurement": "frames",
+                "state_class": "measurement",
+                "icon": "mdi:image-check-outline",
+                "availability": [{"topic": BRIDGE_AVAILABILITY}],
+                "device": device,
+            },
+        )
+    ]
+
+
 @dataclass
 class MqttConfig:
     host: str
@@ -255,6 +289,10 @@ class MqttBridge:
 
     async def publish_discovery(self, sensor: SensorDescriptor) -> None:
         for topic, payload in discovery_messages(self.settings.discovery_prefix, sensor):
+            await self.publish(topic, payload, retain=True)
+
+    async def publish_hub_discovery(self) -> None:
+        for topic, payload in hub_discovery_messages(self.settings.discovery_prefix):
             await self.publish(topic, payload, retain=True)
 
     async def remove_discovery(self, sensor: SensorDescriptor) -> None:

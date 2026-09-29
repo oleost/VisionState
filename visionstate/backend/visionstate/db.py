@@ -23,13 +23,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
 MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     2: [("sensor", "triggers", "JSON")],
     3: [("sensor", "review", "JSON")],
+    4: [("model_info", "suspects", "JSON"), ("sample", "verified", "BOOLEAN NOT NULL DEFAULT 0")],
 }
 
 
@@ -91,6 +92,8 @@ class Sample(Base):
     is_night: Mapped[bool] = mapped_column(Boolean, default=False)
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
+    # The user confirmed this label is right; it is no longer listed as possibly mislabelled.
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     # Many-to-many on purpose: single-state sensors use one label, multi-label can use more.
@@ -141,6 +144,8 @@ class ModelInfo(Base):
     n_samples: Mapped[int] = mapped_column(Integer, default=0)
     accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
     confusion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Samples whose cross-validated prediction disagrees with their label.
+    suspects: Mapped[list | None] = mapped_column(JSON, nullable=True)
     train_seconds: Mapped[float] = mapped_column(Float, default=0.0)
 
 

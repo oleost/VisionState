@@ -189,6 +189,18 @@ async def accept_suggestions(sensor_id: int, body: IdsIn, request: Request) -> d
     return {"updated": len(suggestions)}
 
 
+@router.post("/sensors/{sensor_id}/samples/verify")
+def verify_samples(sensor_id: int, body: IdsIn, request: Request) -> dict:
+    """The user confirms these labels are right (removes them from "possibly mislabelled")."""
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id)
+        samples = s.scalars(select(Sample).where(Sample.sensor_id == sensor_id, Sample.id.in_(body.sample_ids))).all()
+        for sample in samples:
+            sample.verified = True
+    return {"verified": len(samples)}
+
+
 @router.post("/sensors/{sensor_id}/samples/delete")
 def delete_samples(sensor_id: int, body: IdsIn, request: Request) -> dict:
     rt = runtime(request)

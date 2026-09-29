@@ -5,14 +5,16 @@
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
+  import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { Roi } from '../lib/types';
+  import type { Roi, Triggers } from '../lib/types';
 
   const STEPS = [
     { title: 'Camera', sub: 'Name and image source' },
     { title: 'Region', sub: 'What to look at' },
     { title: 'States', sub: 'What it can be' },
+    { title: 'Checks', sub: 'When to look (optional)' },
   ];
 
   let step = $state(0);
@@ -24,19 +26,28 @@
   let previewUrl = $state<string | null>(null);
   let previewError = $state('');
   let saving = $state(false);
+  // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
+  let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
+  let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
 
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
   const slug = $derived(slugify(name, 'sensor'));
   const stateKeys = $derived(states.map((s) => slugify(s.name, 'state')));
 
-  const canNext = $derived(
-    step === 0 ? name.trim().length > 0 && source.trim().length > 0 : step === 1 ? previewUrl !== null : true,
-  );
   const statesValid = $derived(
     states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
   );
 
+  const canNext = $derived(
+    step === 0
+      ? name.trim().length > 0 && source.trim().length > 0
+      : step === 1
+        ? previewUrl !== null
+        : step === 2
+          ? statesValid
+          : true,
+  );
   function loadPreview() {
     previewError = '';
     previewUrl = null;
@@ -61,6 +72,8 @@
         source: source.trim(),
         roi,
         states: states.map((s) => ({ name: s.name.trim(), color: s.color })),
+        interval_s,
+        triggers,
       });
       toast(`${sensor.name} created — now label some frames`);
       go(paths.sensor(sensor.id, 'label'));
@@ -122,7 +135,7 @@
           </div>
           <p class="small muted">Tip: leave a small margin around the object and include the parts that change between states.</p>
         {/if}
-      {:else}
+      {:else if step === 2}
         <div class="col" style="gap:6px">
           <h2>Which states can it be in?</h2>
           <p class="muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
@@ -134,6 +147,15 @@
           <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
           <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
         </div>
+      {:else}
+        <div class="col" style="gap:6px">
+          <h2>When should it check the camera?</h2>
+          <p class="muted">
+            Optional — the defaults work. Adding a motion sensor or the garage opener makes the sensor react faster and
+            check the camera less often. You can change this later under the sensor's Settings.
+          </p>
+        </div>
+        <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
       {/if}
 
       <span class="spacer"></span>

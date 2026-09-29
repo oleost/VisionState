@@ -42,6 +42,8 @@ without writing code or leaving Home Assistant:
   skipped, and the current model suggests a label for each one.
 - ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes,
   or when the image itself changes. No more polling every few seconds.
+- 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
+  doesn't drag the sensor down.
 - 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
   one click turns them into training data.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
@@ -90,6 +92,7 @@ That's it — `sensor.visionstate_garage_door` is now in Home Assistant:
 | `image.visionstate_<name>_frame` | The region that was classified |
 | `button.visionstate_<name>_classify` | Check right now (handy in automations) |
 | `switch.visionstate_<name>_enabled` | Pause / resume |
+| `sensor.visionstate_review_queue` | Frames waiting for review (all sensors) |
 
 ```yaml
 # Example: notify when the garage door has been open for 10 minutes

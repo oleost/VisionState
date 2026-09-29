@@ -120,6 +120,7 @@ QUALITY = {
     "min_night_samples": 5,
     "cv_folds": 5,
     "imbalance_ratio": 0.5,  # smallest state below this share of the largest -> warning
+    "max_suspects": 50,  # most "possibly mislabelled" samples listed on the Quality tab
 }
 
 # --- Runtime ------------------------------------------------------------------

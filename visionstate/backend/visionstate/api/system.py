@@ -230,6 +230,7 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
             image = await asyncio.to_thread(lambda: Image.open(path).convert("RGB"))
             await asyncio.to_thread(rt.add_sample, sensor_id, image, "review", state_id)
             rt.schedule_retrain(sensor_id)
+    await rt.publish_review_count()
     return {"ok": True}
 
 
