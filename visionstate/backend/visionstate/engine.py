@@ -195,7 +195,9 @@ class Runtime:
             log.exception("Could not load backbone %s", backbone_id)
             self.embedder_error = str(err)
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
-            self.heads_load(sensor_id)
+            if self.heads_load(sensor_id):
+                log.info("Sensor %s: model from another version, retraining from stored images", sensor_id)
+                self.schedule_retrain(sensor_id, delay=0)
             self._start_loop(sensor_id)
         await self.refresh_trigger_entities()
         self.ha_events.start()
@@ -554,10 +556,14 @@ class Runtime:
 
     # --- training ------------------------------------------------------------
 
-    def heads_load(self, sensor_id: int) -> None:
-        head = classifier.load(self.settings.heads_dir / f"{sensor_id}.joblib")
+    def heads_load(self, sensor_id: int) -> bool:
+        """Loads a sensor's head. Returns True when it must be retrained (missing, unreadable or outdated)."""
+        path = self.settings.heads_dir / f"{sensor_id}.joblib"
+        head = classifier.load(path)
         if head is not None:
-            self.heads[sensor_id] = head
+            self.heads[sensor_id] = head  # keep using it until the retrain finishes
+        backbone = self.embedder.spec.id if self.embedder else None
+        return path.exists() and (head is None or not classifier.is_current(head, backbone))
 
     def schedule_retrain(self, sensor_id: int, delay: float | None = None) -> None:
         """Retrain soon; repeated calls within the delay are coalesced into one run."""

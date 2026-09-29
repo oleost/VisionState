@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import joblib
 import numpy as np
+import sklearn
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
 from .settings import CLASSIFIER, QUALITY
+
+# Heads are pickled scikit-learn objects: after a scikit-learn upgrade they are retrained.
+SKLEARN_VERSION = sklearn.__version__
 
 
 @dataclass
@@ -20,6 +25,7 @@ class Head:
     keys: list[str]  # class order of the model
     model: LogisticRegression
     version: int = 0
+    sklearn_version: str = ""  # scikit-learn version that trained this head ("" = unknown/older)
 
     def predict(self, vectors: np.ndarray, all_keys: list[str]) -> list[dict[str, float]]:
         """Probabilities per state key; states without training data get 0."""
@@ -58,7 +64,13 @@ def train(vectors: np.ndarray, labels: list[str], backbone: str, version: int, s
 
     y = np.array(labels)
     model = make_model().fit(vectors, y)
-    head = Head(backbone=backbone, keys=[str(c) for c in model.classes_], model=model, version=version)
+    head = Head(
+        backbone=backbone,
+        keys=[str(c) for c in model.classes_],
+        model=model,
+        version=version,
+        sklearn_version=SKLEARN_VERSION,
+    )
 
     accuracy = confusion = None
     suspects: list[dict] = []
@@ -107,6 +119,14 @@ def load(path: Path) -> Head | None:
     if not path.exists():
         return None
     try:
-        return joblib.load(path)
-    except Exception:  # noqa: BLE001 - a corrupt head is simply retrained
+        with warnings.catch_warnings():
+            # Pickles from another scikit-learn version warn; is_current() decides to retrain instead.
+            warnings.simplefilter("ignore")
+            return joblib.load(path)
+    except Exception:  # noqa: BLE001 - a corrupt or incompatible head is simply retrained
         return None
+
+
+def is_current(head: Head, backbone: str | None) -> bool:
+    """True when the head was trained by this scikit-learn version and for the active backbone."""
+    return getattr(head, "sklearn_version", "") == SKLEARN_VERSION and (backbone is None or head.backbone == backbone)

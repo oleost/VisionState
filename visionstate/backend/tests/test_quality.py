@@ -90,3 +90,35 @@ def test_relabel_and_delete_retrain_without_errors(tmp_path, model_dir):
         resp = client.post(f"/api/v1/sensors/{sid}/samples/delete", json={"sample_ids": [ids[1]]})
         assert resp.status_code == 200
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["n_samples"] == 5)
+
+
+@requires_model
+def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir):
+    """A head pickled by another scikit-learn version is retrained automatically at startup."""
+    import joblib
+
+    settings = Settings(
+        data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
+    )
+    camera = FakeCamera()
+    body = {"name": "Door", "source_type": "http", "source": "x", "states": [{"name": "Open"}, {"name": "Closed"}]}
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        for state in ("open", "closed"):
+            camera.state = state
+            for _ in range(3):
+                client.post(f"/api/v1/sensors/{sid}/capture", json={"state_key": state})
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"] is not None)
+        version = client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"]
+
+    # Pretend the stored head came from an older scikit-learn.
+    path = settings.heads_dir / f"{sid}.joblib"
+    head = joblib.load(path)
+    head.sklearn_version = "0.0-old"
+    joblib.dump(head, path)
+
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] > version)
+        assert client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok"
