@@ -54,6 +54,10 @@ VISIONSTATE_DATA=./dev/data VISIONSTATE_MEDIA=./dev/media VISIONSTATE_BUNDLED_MO
   VISIONSTATE_MQTT_HOST=<broker> python -m visionstate
 ```
 
+> ⚠️ Outside Home Assistant the app has **no login**: anyone who can reach port 8099 can use it.
+> Only run it like this on your own machine or behind a reverse proxy with authentication.
+> Inside Home Assistant access goes through Ingress, which requires a Home Assistant login.
+
 Frontend (proxies `/api` to the backend on port 8099):
 
 ```bash

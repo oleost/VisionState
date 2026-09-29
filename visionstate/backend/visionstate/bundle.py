@@ -10,7 +10,8 @@ from pathlib import Path
 from sqlalchemy import select
 
 from .db import Database, Sample, Sensor
-from .settings import VERSION
+from .redact import has_credentials, redact
+from .settings import EXPORT_STRIP_CREDENTIALS, UPLOAD_LIMITS, VERSION
 from .storage import Storage
 
 BUNDLE_SCHEMA = 1
@@ -33,7 +34,8 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                 "name": sensor.name,
                 "kind": sensor.kind,
                 "source_type": sensor.source_type,
-                "source": sensor.source,
+                "source": redact(sensor.source) if EXPORT_STRIP_CREDENTIALS else sensor.source,
+                "source_redacted": EXPORT_STRIP_CREDENTIALS and has_credentials(sensor.source),
                 "roi": sensor.roi,
                 "interval_s": sensor.interval_s,
                 "threshold": sensor.threshold,
@@ -78,4 +80,7 @@ def read_manifest(path: Path) -> dict:
 
 def read_sample_bytes(path: Path, filename: str) -> bytes:
     with zipfile.ZipFile(path) as archive:
-        return archive.read(f"samples/{filename}")
+        info = archive.getinfo(f"samples/{filename}")
+        if info.file_size > UPLOAD_LIMITS["max_zip_member_mb"] * 1_000_000:
+            raise ValueError(f"{filename} is too large")
+        return archive.read(info)

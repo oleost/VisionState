@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import tempfile
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from sqlalchemy import delete, func, select
 from .. import imaging, uploads
 from ..db import Sample, SampleLabel
 from ..engine import SensorConfig
-from ..settings import VIDEO
+from ..settings import UPLOAD_LIMITS, VIDEO
 from .common import API_PREFIX, get_sensor, iso, runtime, state_id_for
 
 router = APIRouter(prefix=API_PREFIX, tags=["samples"])
@@ -33,6 +32,17 @@ class LabelIn(BaseModel):
 
 class IdsIn(BaseModel):
     sample_ids: list[int]
+
+
+def copy_limited(source, target, max_bytes: int, chunk: int = 1 << 20) -> bool:
+    """Copies at most ``max_bytes``; returns False if the source was larger."""
+    total = 0
+    while data := source.read(chunk):
+        total += len(data)
+        if total > max_bytes:
+            return False
+        target.write(data)
+    return True
 
 
 def _retrain(request: Request, sensor_id: int) -> None:
@@ -73,8 +83,12 @@ async def upload(
     for upload_file in files:
         name = upload_file.filename or "upload"
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as tmp:
-            shutil.copyfileobj(upload_file.file, tmp)
             tmp_path = Path(tmp.name)
+            too_large = not copy_limited(upload_file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
+        if too_large:
+            tmp_path.unlink(missing_ok=True)
+            errors.append(f"{name}: larger than {UPLOAD_LIMITS['max_file_mb']} MB")
+            continue
         try:
             created += await asyncio.to_thread(
                 _ingest, rt, sensor_id, tmp_path, name, frame_interval_s, state_id, use_roi

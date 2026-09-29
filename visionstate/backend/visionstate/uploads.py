@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import imaging
-from .settings import IMAGE_EXTENSIONS, VIDEO, VIDEO_EXTENSIONS
+from .settings import IMAGE_EXTENSIONS, UPLOAD_LIMITS, VIDEO, VIDEO_EXTENSIONS
 
 log = logging.getLogger(__name__)
 
@@ -46,8 +46,16 @@ def frames_from_file(path: Path, filename: str, frame_interval_s: float) -> Iter
 
 def _frames_from_zip(path: Path) -> Iterator[tuple[Image.Image, str]]:
     with zipfile.ZipFile(path) as archive:
-        for info in archive.infolist():
-            if info.is_dir() or kind_of(info.filename) != "image" or "__MACOSX" in info.filename:
+        members = [
+            info
+            for info in archive.infolist()
+            if not info.is_dir() and kind_of(info.filename) == "image" and "__MACOSX" not in info.filename
+        ]
+        if len(members) > UPLOAD_LIMITS["max_zip_members"]:
+            raise UploadError(f"ZIP has more than {UPLOAD_LIMITS['max_zip_members']} images")
+        for info in members:
+            if info.file_size > UPLOAD_LIMITS["max_zip_member_mb"] * 1_000_000:
+                log.warning("Skipping %s in ZIP: too large", info.filename)
                 continue
             try:
                 yield imaging.decode(archive.read(info)), "upload"

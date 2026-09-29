@@ -47,14 +47,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sensors.router)
     app.include_router(samples.router)
 
-    index = settings.frontend_dir / "index.html"
+    frontend = settings.frontend_dir.resolve()
+    index = frontend / "index.html"
     if index.exists():
-        app.mount("/assets", StaticFiles(directory=settings.frontend_dir / "assets"), name="assets")
+        app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str):
-            candidate = settings.frontend_dir / path
-            if path and candidate.is_file() and settings.frontend_dir in candidate.resolve().parents:
+            candidate = (frontend / path).resolve()
+            if path and frontend in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
             return FileResponse(index, headers={"Cache-Control": "no-cache"})
 

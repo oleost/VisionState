@@ -8,6 +8,7 @@ import logging
 
 import httpx
 
+from .redact import redact
 from .settings import RUNTIME, SUPERVISOR_URL, Settings
 
 log = logging.getLogger(__name__)
@@ -114,7 +115,7 @@ class FrameGrabber:
             if source_type == "rtsp":
                 return await asyncio.to_thread(grab_rtsp, source)
         except httpx.HTTPError as err:
-            raise SourceError(str(err)) from err
+            raise SourceError(redact(str(err))) from err
         raise SourceError(f"Unknown source type {source_type!r}")
 
 
@@ -128,5 +129,5 @@ def grab_rtsp(url: str) -> bytes:
                 frame.to_image().save(buf, format="JPEG", quality=90)
                 return buf.getvalue()
     except av.FFmpegError as err:
-        raise SourceError(str(err)) from err
+        raise SourceError(redact(str(err))) from err
     raise SourceError("No video frame received")

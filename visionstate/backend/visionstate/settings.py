@@ -81,6 +81,12 @@ REVIEW = {
 
 # --- Uploads ----------------------------------------------------------------
 
+UPLOAD_LIMITS = {
+    "max_file_mb": 2048,  # per uploaded file (videos can be large)
+    "max_zip_members": 5000,  # images read from one ZIP archive
+    "max_zip_member_mb": 50,  # uncompressed size of one image inside a ZIP
+}
+
 VIDEO = {
     "frame_interval_s": 5.0,
     "dedupe_distance": 4,  # max hamming distance between perceptual hashes to count as duplicate
@@ -125,6 +131,13 @@ def merge_triggers(stored: dict | None) -> dict:
     merged["entities"] = list(merged.get("entities") or [])
     return merged
 
+
+# --- Privacy -----------------------------------------------------------------
+
+# Query parameters whose values are hidden in logs, error messages and exports (e.g. Reolink ?user=&password=).
+SECRET_QUERY_KEYS = ("user", "username", "password", "pass", "pwd", "token", "access_token", "key", "apikey", "auth")
+# Remove camera credentials from exported sensor bundles (the importer re-enters them).
+EXPORT_STRIP_CREDENTIALS = True
 
 SUPERVISOR_URL = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"

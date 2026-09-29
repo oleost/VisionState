@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   backend:
@@ -53,6 +52,9 @@ jobs:
   image:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # only needed to push images on version tags
     strategy:
       matrix:
         arch: [amd64, aarch64]

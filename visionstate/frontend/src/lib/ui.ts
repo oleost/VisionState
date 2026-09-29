@@ -65,5 +65,8 @@ export const TRIGGER_SOURCES: Record<string, string> = {
   change: 'Image changed',
 };
 
+/** Placeholder the backend puts where credentials were removed from an exported URL (redact.MASK). */
+export const REDACTED_MARK = '***';
+
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;

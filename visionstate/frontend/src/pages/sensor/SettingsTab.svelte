@@ -11,6 +11,7 @@
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { go, paths } from '../../lib/router.svelte';
   import type { Roi, Sensor } from '../../lib/types';
+  import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
 
@@ -63,6 +64,11 @@
 
 <div class="layout">
   <div class="col" style="gap:var(--space-5)">
+    {#if source.includes(REDACTED_MARK)}
+      <div class="notice warn">
+        The camera password was removed when this sensor was exported. Enter the full URL again below and save.
+      </div>
+    {/if}
     <section class="card pad col">
       <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>

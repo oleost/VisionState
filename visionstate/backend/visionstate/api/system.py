@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import tempfile
 from pathlib import Path
 
@@ -25,11 +24,13 @@ from ..settings import (
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
+    UPLOAD_LIMITS,
     VERSION,
     VIDEO,
 )
 from ..sources import SOURCE_TYPES, SourceError
-from .common import API_PREFIX, get_sensor, runtime, state_id_for, unique_slug
+from .common import API_PREFIX, get_sensor, runtime, slugify, state_id_for, unique_slug, validate_states
+from .samples import copy_limited
 from .sensors import prediction_view
 
 router = APIRouter(prefix=API_PREFIX, tags=["system"])
@@ -237,8 +238,11 @@ def history_image(prediction_id: int, request: Request, size: str = "full") -> F
 async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
     rt = runtime(request)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-        shutil.copyfileobj(file.file, tmp)
         path = Path(tmp.name)
+        within_limit = copy_limited(file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
+    if not within_limit:
+        path.unlink(missing_ok=True)
+        raise HTTPException(413, f"Bundle is larger than {UPLOAD_LIMITS['max_file_mb']} MB")
     try:
         sensor_id = await asyncio.to_thread(_import_sync, rt, path)
     except (ValueError, KeyError, OSError) as err:
@@ -251,31 +255,67 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
 
 
 def _import_sync(rt, path: Path) -> int:
+    from pydantic import ValidationError
+
+    from .sensors import SensorIn
+
     manifest = bundle.read_manifest(path)
     data = manifest["sensor"]
+    # Validate exactly like a sensor created in the UI (limits, source type, states, triggers).
+    try:
+        spec = SensorIn.model_validate(
+            {
+                key: data[key]
+                for key in (
+                    "name",
+                    "source_type",
+                    "source",
+                    "roi",
+                    "states",
+                    "interval_s",
+                    "threshold",
+                    "debounce",
+                    "triggers",
+                )
+                if data.get(key) is not None
+            }
+        )
+    except ValidationError as err:
+        raise ValueError(f"invalid sensor in bundle: {err.errors()[0].get('msg')}") from err
+    if spec.source_type not in SOURCE_TYPES:
+        raise ValueError(f"unknown source type {spec.source_type!r}")
+    validate_states(spec.states)
+    samples = manifest.get("samples", [])
+    if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
+        raise ValueError("too many samples in bundle")
     with rt.db.session() as s:
         sensor = Sensor(
-            slug=unique_slug(s, data["name"]),
-            name=data["name"],
-            kind=data.get("kind", "single_state"),
-            source_type=data["source_type"],
-            source=data["source"],
-            roi=imaging.normalise_roi(data.get("roi")),
-            interval_s=data.get("interval_s", SENSOR_DEFAULTS["interval_s"]),
-            threshold=data.get("threshold", SENSOR_DEFAULTS["threshold"]),
-            debounce=data.get("debounce", SENSOR_DEFAULTS["debounce"]),
+            slug=unique_slug(s, spec.name),
+            name=spec.name,
+            source_type=spec.source_type,
+            source=spec.source,
+            roi=imaging.normalise_roi(spec.roi.model_dump() if spec.roi else None),
+            interval_s=spec.interval_s,
+            threshold=spec.threshold,
+            debounce=spec.debounce,
             enabled=True,
-            triggers=data.get("triggers"),
+            triggers=spec.triggers.model_dump() if spec.triggers else None,
         )
         sensor.states = [
-            State(key=st["key"], name=st["name"], color=st["color"], position=i) for i, st in enumerate(data["states"])
+            State(
+                key=st.key or slugify(st.name, "state"),
+                name=st.name,
+                color=st.color or STATE_PALETTE[i % len(STATE_PALETTE)],
+                position=i,
+            )
+            for i, st in enumerate(spec.states)
         ]
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id
         state_ids = {st.key: st.id for st in sensor.states}
-    for item in manifest.get("samples", []):
-        image = imaging.decode(bundle.read_sample_bytes(path, item["file"]))
+    for item in samples:
+        image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
         labels = [state_ids[k] for k in item.get("labels", []) if k in state_ids]
         rt.add_sample(sensor_id, image, "import", labels[0] if labels else None, item.get("use_roi", True))
     return sensor_id

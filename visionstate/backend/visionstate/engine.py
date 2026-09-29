@@ -19,6 +19,7 @@ from . import backbones, classifier, imaging
 from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener
 from .mqtt import MqttBridge, SensorDescriptor, topics
+from .redact import redact
 from .settings import REVIEW, RUNTIME, UNKNOWN_STATE, Settings, merge_triggers
 from .sources import FrameGrabber, HomeAssistant, SourceError
 from .storage import Storage
@@ -301,8 +302,8 @@ class Runtime:
                 except asyncio.CancelledError:
                     raise
                 except Exception as err:  # noqa: BLE001
-                    live.error = str(err)
-                    log.exception("Sensor %s failed", cfg.slug)
+                    live.error = redact(str(err))
+                    log.error("Sensor %s failed: %s", cfg.slug, live.error)
                 due_at, _ = next_check_at(cfg, live, time.time())
             timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
             try:
@@ -349,7 +350,7 @@ class Runtime:
             _, data = await self.grab(cfg)
             image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
-            live.available, live.error = False, str(err)
+            live.available, live.error = False, redact(str(err))
             return
         if live.signature is None:
             # No baseline (first run or the region changed): classify this frame, which sets one.
@@ -380,7 +381,7 @@ class Runtime:
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
-            live.available, live.error = False, str(err)
+            live.available, live.error = False, redact(str(err))
             await self.mqtt.publish(t["availability"], "offline", retain=True)
             return
         live.available, live.error = True, ""

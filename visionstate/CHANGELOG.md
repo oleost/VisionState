@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+Security and privacy hardening.
+
+- Camera passwords in RTSP/HTTP URLs (including `?user=&password=`) are hidden in logs and error messages.
+- Exported sensor bundles no longer contain camera credentials; after import you are asked to re-enter the URL.
+- Imported bundles are validated exactly like sensors created in the UI.
+- Size limits for uploads and ZIP archives (see `UPLOAD_LIMITS` in `settings.py`).
+- Stricter static file serving.
+
 ## 0.2.0
 
 - **Triggers** (sensor → Settings → *When to check*):
