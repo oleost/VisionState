@@ -30,12 +30,10 @@
 
 ## Why VisionState?
 
-Object detectors like Frigate tell you *there is a car*. They can't tell you that *the garage
-door is half open*, that *the gate is unlocked* or that *the lights in the shed are still on*.
-Those are **states**, and they are different for every home.
-
-VisionState lets you teach them yourself, in minutes, without writing code or leaving Home
-Assistant:
+Your cameras already see whether *the garage door is half open*, *the gate is shut* or *the
+lights in the shed are still on*. VisionState turns what they see into **states** you can use in
+Home Assistant — and because every home is different, you teach it yourself, in minutes,
+without writing code or leaving Home Assistant:
 
 - 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
   The model retrains in about a second after every click.
@@ -48,7 +46,7 @@ Assistant:
   one click turns them into training data.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
 - 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery.
-- 🎥 **Any camera** — every `camera.*` entity (Frigate, ESP32-CAM, Reolink, UniFi, generic…),
+- 🎥 **Any camera** — every `camera.*` entity in Home Assistant (ESP32-CAM, IP cameras, NVRs…),
   or a direct RTSP / HTTP snapshot URL.
 
 ## A look inside
