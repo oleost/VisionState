@@ -2,6 +2,7 @@
 import type {
   AppConfig,
   Camera,
+  HaEntity,
   Prediction,
   Quality,
   ReviewItem,
@@ -79,6 +80,7 @@ export const api = {
   saveSettings: (backbone: string, execution_provider: string) =>
     request<SettingsInfo>('settings', send('PUT', { backbone, execution_provider })),
   cameras: () => request<Camera[]>('cameras'),
+  entities: () => request<HaEntity[]>('entities'),
   previewUrl: (sourceType: string, source: string) =>
     `${BASE}preview?${qs({ source_type: sourceType, source, t: Date.now() })}`,
 

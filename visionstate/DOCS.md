@@ -36,7 +36,8 @@ The sensor appears in Home Assistant as a device with these entities:
 | `button.visionstate_<name>_classify` | Classify right now (use it in automations) |
 | `switch.visionstate_<name>_enabled` | Pause / resume the sensor |
 
-The state entity also has a `probabilities` attribute with the score of every state.
+The state entity also has a `probabilities` attribute with the score of every state and a
+`last_trigger` attribute telling what caused the last check.
 
 ## Training tips
 
@@ -51,11 +52,26 @@ The state entity also has a `probabilities` attribute with the score of every st
 - Include different light: day, night (IR), sun, rain, snow.
 - Changing the region on the **Settings** tab retrains the model from the stored images.
 
+## When it checks (triggers)
+
+Set up per sensor under **Settings → When to check**:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Regular check | every 10 s | The safety net. With triggers set up it can be minutes. |
+| Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… |
+| Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
+| After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. |
+
+A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
+trigger entities, and change detection on for cameras without a motion sensor.
+
+You can still call `button.visionstate_<name>_classify` from your own automations.
+
 ## How it decides
 
 | Setting (per sensor) | Default | Meaning |
 |---|---|---|
-| Check the camera every | 10 s | How often a frame is classified |
 | Report unknown below | 70 % | Confidence needed to report a state |
 | Change after N matching results | 2 | Avoids flicker when someone walks past |
 

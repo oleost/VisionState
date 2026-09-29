@@ -18,11 +18,18 @@ from sqlalchemy import (
     String,
     create_engine,
     event,
+    inspect,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Schema upgrades for existing databases, keyed on the version they upgrade to.
+# Each step is a list of (table, column, SQL type) columns to add.
+MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
+    2: [("sensor", "triggers", "JSON")],
+}
 
 
 def utcnow() -> datetime:
@@ -48,6 +55,8 @@ class Sensor(Base):
     threshold: Mapped[float] = mapped_column(Float)
     debounce: Mapped[int] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # When to check the camera besides the interval; see settings.TRIGGER_DEFAULTS.
+    triggers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(
@@ -153,10 +162,16 @@ class Database:
         self._factory = sessionmaker(self.engine, expire_on_commit=False)
 
     def init(self) -> None:
+        fresh = not inspect(self.engine).has_table("sensor")
         Base.metadata.create_all(self.engine)
         with self.engine.begin() as conn:
-            conn.execute(text("PRAGMA user_version")).scalar()
-            # Future schema migrations go here, keyed on PRAGMA user_version.
+            version = conn.execute(text("PRAGMA user_version")).scalar() or 0
+            if not fresh:
+                for target in sorted(v for v in MIGRATIONS if v > version):
+                    for table, column, sql_type in MIGRATIONS[target]:
+                        columns = {c["name"] for c in inspect(conn).get_columns(table)}
+                        if column not in columns:
+                            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
             conn.execute(text(f"PRAGMA user_version = {SCHEMA_VERSION}"))
 
     @contextmanager

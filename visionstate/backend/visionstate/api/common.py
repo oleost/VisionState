@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import Runtime
-from ..settings import APP_SLUG, MAX_STATES, UNKNOWN_STATE
+from ..settings import (
+    APP_SLUG,
+    MAX_STATES,
+    TRIGGER_DEFAULTS,
+    TRIGGER_LIMITS,
+    TRIGGER_MAX_ENTITIES,
+    UNKNOWN_STATE,
+    merge_triggers,
+)
 
 API_PREFIX = "/api/v1"
 
@@ -63,6 +72,39 @@ class Roi(BaseModel):
     y: float = Field(ge=0, le=1)
     w: float = Field(gt=0, le=1)
     h: float = Field(gt=0, le=1)
+
+
+ENTITY_ID = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+_tlo = {k: v[0] for k, v in TRIGGER_LIMITS.items()}
+_thi = {k: v[1] for k, v in TRIGGER_LIMITS.items()}
+
+
+class Triggers(BaseModel):
+    """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
+
+    entities: list[str] = Field(default_factory=list, max_length=TRIGGER_MAX_ENTITIES)
+    burst_interval_s: float = Field(
+        TRIGGER_DEFAULTS["burst_interval_s"], ge=_tlo["burst_interval_s"], le=_thi["burst_interval_s"]
+    )
+    burst_duration_s: float = Field(
+        TRIGGER_DEFAULTS["burst_duration_s"], ge=_tlo["burst_duration_s"], le=_thi["burst_duration_s"]
+    )
+    change_detection: bool = TRIGGER_DEFAULTS["change_detection"]
+    change_interval_s: float = Field(
+        TRIGGER_DEFAULTS["change_interval_s"], ge=_tlo["change_interval_s"], le=_thi["change_interval_s"]
+    )
+    change_threshold: float = Field(
+        TRIGGER_DEFAULTS["change_threshold"], ge=_tlo["change_threshold"], le=_thi["change_threshold"]
+    )
+
+    @field_validator("entities")
+    @classmethod
+    def _valid_entities(cls, value: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(v.strip() for v in value if v.strip()))
+        for entity in cleaned:
+            if not ENTITY_ID.match(entity):
+                raise ValueError(f"Not an entity id: {entity!r}")
+        return cleaned
 
 
 class StateIn(BaseModel):
@@ -125,6 +167,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "threshold": sensor.threshold,
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
+        "triggers": merge_triggers(sensor.triggers),
         "entity_id": f"sensor.{APP_SLUG}_{sensor.slug}",
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,
@@ -138,6 +181,9 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "confidence": live.confidence if live else 0.0,
             "probs": live.probs if live else {},
             "last_run": live.last_run if live else None,
+            "in_burst": bool(live and live.burst_until > time.time()),
+            "change_score": live.change_score if live else None,
+            "last_trigger": live.last_trigger if live else None,
         },
         "model": {
             "backbone": info.backbone,

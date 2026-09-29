@@ -38,6 +38,7 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                 "interval_s": sensor.interval_s,
                 "threshold": sensor.threshold,
                 "debounce": sensor.debounce,
+                "triggers": sensor.triggers,
                 "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
             },
             "samples": [],

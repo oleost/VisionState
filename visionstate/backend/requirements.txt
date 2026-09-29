@@ -10,3 +10,4 @@ pillow==11.3.0
 scikit-learn==1.7.2
 joblib==1.5.2
 av==15.1.0
+websockets==15.0.1

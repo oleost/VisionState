@@ -6,6 +6,7 @@
   import ProbBars from '../../lib/components/ProbBars.svelte';
   import { ago, pct } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
+  import { TRIGGER_SOURCES } from '../../lib/ui';
   import type { SampleItem, Sensor } from '../../lib/types';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -119,6 +120,19 @@
       {:else}
         <p class="small muted">Label at least two different states to train the first model.</p>
       {/if}
+      <div class="trigger">
+        {#if sensor.live.in_burst}<span class="chip info">Checking every {sensor.triggers.burst_interval_s} s</span>{/if}
+        {#if sensor.live.last_trigger}
+          <span class="xsmall muted">
+            {TRIGGER_SOURCES[sensor.live.last_trigger.source] ?? 'Triggered'} {ago(sensor.live.last_trigger.at)}:
+            <span class="mono">{sensor.live.last_trigger.detail}</span>
+          </span>
+        {:else}
+          <span class="xsmall faint">
+            No triggers yet. <a href={href(paths.sensor(sensor.id, 'settings'))}>Set up motion or change triggers</a>.
+          </span>
+        {/if}
+      </div>
     </section>
 
     <section class="card pad">
@@ -212,6 +226,15 @@
   }
   aside {
     gap: var(--space-4);
+  }
+  .trigger {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
   }
   table {
     width: 100%;

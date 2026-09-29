@@ -99,8 +99,10 @@ A single camera can feed multiple sensors, each with its own ROI.
 
 ## 7. Inference & post-processing
 
-- **Triggers:** per-sensor interval (default 10 s), MQTT `classify_now` button
-  (usable from automations), and later Frigate events.
+- **Triggers (0.2.0):** per-sensor interval as a safety net; state changes of chosen HA
+  entities (WebSocket API) and optional region change detection start a *burst* of
+  faster checks; plus the MQTT `classify_now` button. Stored in `sensor.triggers` (JSON),
+  merged with `settings.TRIGGER_DEFAULTS`.
 - **Unknown state:** if top probability < threshold (default 0.70) → `unknown`.
 - **Debounce:** state changes only after *N* consecutive agreeing predictions (default 2).
 - Both configurable per sensor.
@@ -207,7 +209,8 @@ the UI, not in app options.
 | **M1 – MVP** ✅ | HA camera source, create sensor + ROI, capture & label, train, MQTT sensor, CPU backbone, amd64+aarch64 builds |
 | **M2 – Training UX** ✅ | Bulk upload (images/ZIP/video), review queue, gallery, quality page, history |
 | **M3 – Portability** ✅ (partly) | Import/export (create-new mode), backbone switching, RTSP/HTTP sources, retention. Merge/replace import still open. |
-| **M4 – Acceleration** | OpenVINO, Coral, Frigate event triggers |
+| **M3.5 – Triggers** ✅ (0.2.0) | HA entity triggers (WebSocket `subscribe_trigger`), region change detection, follow-up bursts; all per sensor, defaults in `settings.TRIGGER_DEFAULTS` |
+| **M4 – Acceleration** | OpenVINO, Coral, Frigate snapshots of events |
 | **M5 – Release** | Docs site, screenshots, v1.0 public release |
 
 ## 17. Identity

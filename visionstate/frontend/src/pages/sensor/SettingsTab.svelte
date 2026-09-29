@@ -8,6 +8,7 @@
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
+  import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { go, paths } from '../../lib/router.svelte';
   import type { Roi, Sensor } from '../../lib/types';
 
@@ -23,6 +24,7 @@
   let interval_s = $state(initial.interval_s);
   let threshold = $state(initial.threshold);
   let debounce = $state(initial.debounce);
+  let triggers = $state(initial.triggers);
   let saving = $state(false);
 
   async function save() {
@@ -37,6 +39,7 @@
         interval_s,
         threshold,
         debounce,
+        triggers,
       });
       toast('Settings saved');
       onchange();
@@ -84,8 +87,13 @@
     </section>
 
     <section class="card pad col">
+      <h3>When to check</h3>
+      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} />
+    </section>
+
+    <section class="card pad col">
       <h3>Sensor output</h3>
-      <SensorParams bind:interval_s bind:threshold bind:debounce />
+      <SensorParams bind:threshold bind:debounce />
     </section>
 
     <div class="row">

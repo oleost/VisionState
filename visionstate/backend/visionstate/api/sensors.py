@@ -20,6 +20,7 @@ from .common import (
     API_PREFIX,
     Roi,
     StateIn,
+    Triggers,
     get_sensor,
     iso,
     runtime,
@@ -46,6 +47,7 @@ class SensorIn(BaseModel):
     threshold: float = Field(SENSOR_DEFAULTS["threshold"], ge=lo["threshold"], le=hi["threshold"])
     debounce: int = Field(SENSOR_DEFAULTS["debounce"], ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
+    triggers: Triggers | None = None
 
 
 class SensorPatch(BaseModel):
@@ -59,6 +61,7 @@ class SensorPatch(BaseModel):
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool | None = None
+    triggers: Triggers | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -108,6 +111,7 @@ async def create_sensor(body: SensorIn, request: Request) -> dict:
             threshold=body.threshold,
             debounce=body.debounce,
             enabled=body.enabled,
+            triggers=body.triggers.model_dump() if body.triggers else None,
         )
         _apply_states(sensor, body.states)
         s.add(sensor)
@@ -137,6 +141,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             value = getattr(body, field)
             if value is not None:
                 setattr(sensor, field, value)
+        if body.triggers is not None:
+            sensor.triggers = body.triggers.model_dump()
         if body.clear_roi:
             sensor.roi = None
         elif body.roi is not None:

@@ -28,6 +28,33 @@ SENSOR_LIMITS = {
 }
 UNKNOWN_STATE = "unknown"
 
+# --- Triggers: when a sensor checks its camera ---------------------------------
+#
+# 1. The regular interval (SENSOR_DEFAULTS["interval_s"]) is the safety net.
+# 2. A change of any listed Home Assistant entity (motion sensor, door contact, cover…)
+#    starts a burst: frequent checks for a while, to catch both the movement and the end state.
+# 3. Optional change detection compares a small greyscale copy of the region often and only
+#    runs the AI (and starts a burst) when enough pixels changed.
+
+TRIGGER_DEFAULTS = {
+    "entities": [],  # Home Assistant entity ids that trigger a check when their state changes
+    "burst_interval_s": 2.0,  # seconds between checks during a burst
+    "burst_duration_s": 30.0,  # how long a burst lasts after the last trigger
+    "change_detection": False,
+    "change_interval_s": 2.0,  # how often the region is compared
+    "change_threshold": 0.04,  # mean pixel difference (0-1) in the region that counts as a change
+}
+TRIGGER_LIMITS = {
+    "burst_interval_s": (0.5, 60.0),
+    "burst_duration_s": (0.0, 600.0),
+    "change_interval_s": (0.5, 60.0),
+    "change_threshold": (0.005, 0.5),
+}
+TRIGGER_MAX_ENTITIES = 20
+# New entity states that are ignored (the entity going offline is not a real event).
+TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
+CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
+
 # Colours handed out to new states, in order. The UI reads colours from the API.
 STATE_PALETTE = [
     "#ffa24c",
@@ -88,7 +115,16 @@ RUNTIME = {
     "cleanup_interval_s": 3600,
     "http_timeout_s": 15.0,
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
+    "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
 }
+
+
+def merge_triggers(stored: dict | None) -> dict:
+    """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS."""
+    merged = {**TRIGGER_DEFAULTS, **(stored or {})}
+    merged["entities"] = list(merged.get("entities") or [])
+    return merged
+
 
 SUPERVISOR_URL = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"

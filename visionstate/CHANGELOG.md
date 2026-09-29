@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+- **Triggers** (sensor → Settings → *When to check*):
+  - Check when any chosen Home Assistant entity changes state (motion sensor, door contact, garage opener, …).
+  - Optional change detection: compares the region every few seconds and only runs the AI when it changed;
+    shows the measured change so the sensitivity is easy to tune.
+  - After a trigger the sensor keeps checking at a faster pace for a while (burst) to catch the final state.
+  - The regular interval stays as a safety net and can now be set much longer.
+- Label tab shows what triggered the last check; Settings shows the trigger event connection.
+- `last_trigger` attribute on the state entity.
+- Existing databases are upgraded automatically.
+
 ## 0.1.0
 
 First test release.

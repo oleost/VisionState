@@ -17,8 +17,9 @@ from sqlalchemy import delete, select
 
 from . import backbones, classifier, imaging
 from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
+from .ha_events import HaEventListener
 from .mqtt import MqttBridge, SensorDescriptor, topics
-from .settings import REVIEW, RUNTIME, UNKNOWN_STATE, Settings
+from .settings import REVIEW, RUNTIME, UNKNOWN_STATE, Settings, merge_triggers
 from .sources import FrameGrabber, HomeAssistant, SourceError
 from .storage import Storage
 
@@ -42,6 +43,7 @@ class SensorConfig:
     debounce: int
     enabled: bool
     states: list[dict]
+    triggers: dict = field(default_factory=lambda: merge_triggers(None))
 
     @property
     def state_keys(self) -> list[str]:
@@ -65,6 +67,7 @@ class SensorConfig:
             debounce=row.debounce,
             enabled=row.enabled,
             states=[{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in row.states],
+            triggers=merge_triggers(row.triggers),
         )
 
 
@@ -107,6 +110,19 @@ def review_reason(
     return None
 
 
+def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float, str]:
+    """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
+    if live.last_run is None:
+        return now, "full"
+    in_burst = now < live.burst_until
+    full_at = live.last_run + (cfg.triggers["burst_interval_s"] if in_burst else cfg.interval_s)
+    if cfg.triggers["change_detection"]:
+        probe_at = max(live.last_run, live.last_probe) + cfg.triggers["change_interval_s"]
+        if probe_at < full_at:
+            return probe_at, "probe"
+    return full_at, "full"
+
+
 @dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
@@ -120,6 +136,11 @@ class LiveState:
     last_flag: float = 0.0
     changes: deque = field(default_factory=lambda: deque(maxlen=50))
     force: bool = False
+    burst_until: float = 0.0
+    last_probe: float = 0.0
+    signature: np.ndarray | None = None  # region thumbnail of the last classified frame
+    change_score: float | None = None  # last measured difference, shown in the UI for tuning
+    last_trigger: dict | None = None  # {"source": ..., "detail": ..., "at": epoch seconds}
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"
@@ -141,6 +162,8 @@ class Runtime:
         self.ha = HomeAssistant(settings)
         self.grabber = FrameGrabber(self.ha)
         self.mqtt = MqttBridge(settings, self._on_command, self._on_mqtt_connect)
+        self.ha_events = HaEventListener(settings, self._on_ha_state)
+        self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.heads: dict[int, classifier.Head] = {}
@@ -165,6 +188,8 @@ class Runtime:
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self.heads_load(sensor_id)
             self._start_loop(sensor_id)
+        await self.refresh_trigger_entities()
+        self.ha_events.start()
         self.mqtt.start()
         self._spawn(self._cleanup_loop())
 
@@ -172,6 +197,7 @@ class Runtime:
         for task in [*self._tasks.values(), *self._background]:
             task.cancel()
         await self.mqtt.stop()
+        await self.ha_events.stop()
         await self.grabber.close()
         await self.ha.close()
 
@@ -226,6 +252,7 @@ class Runtime:
         if cfg:
             await self.publish_discovery(cfg)
         self._start_loop(sensor_id)
+        await self.refresh_trigger_entities()
 
     async def sensor_updated(self, sensor_id: int, retrain: bool) -> None:
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
@@ -234,6 +261,8 @@ class Runtime:
         await self.publish_discovery(cfg)
         if retrain:
             self.schedule_retrain(sensor_id, delay=0)
+        self.live_state(sensor_id).signature = None  # the region may have moved
+        await self.refresh_trigger_entities()
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
@@ -245,6 +274,7 @@ class Runtime:
         (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
         await asyncio.to_thread(self.storage.delete_sensor, sensor_id)
+        await self.refresh_trigger_entities()
 
     def wake(self, sensor_id: int, force: bool = False) -> None:
         if force:
@@ -260,32 +290,93 @@ class Runtime:
             if cfg is None:
                 return
             live = self.live_state(sensor_id)
-            if cfg.enabled or live.force:
-                live.force = False
+            due_at, kind = next_check_at(cfg, live, time.time())
+            if live.force or (cfg.enabled and due_at <= time.time()):
+                forced, live.force = live.force, False
                 try:
-                    await self.run_once(cfg)
+                    if forced or kind == "full":
+                        await self.run_once(cfg)
+                    else:
+                        await self.probe(cfg)
                 except asyncio.CancelledError:
                     raise
                 except Exception as err:  # noqa: BLE001
                     live.error = str(err)
                     log.exception("Sensor %s failed", cfg.slug)
+                due_at, _ = next_check_at(cfg, live, time.time())
+            timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
             try:
-                await asyncio.wait_for(event.wait(), timeout=cfg.interval_s)
+                await asyncio.wait_for(event.wait(), timeout=timeout)
             except TimeoutError:
                 pass
             event.clear()
+
+    # --- triggers --------------------------------------------------------------
+
+    def _trigger_index(self) -> dict[str, set[int]]:
+        index: dict[str, set[int]] = {}
+        with self.db.session() as s:
+            for row in s.scalars(select(Sensor)):
+                for entity in merge_triggers(row.triggers)["entities"]:
+                    index.setdefault(entity, set()).add(row.id)
+        return index
+
+    async def refresh_trigger_entities(self) -> None:
+        self._entity_index = await asyncio.to_thread(self._trigger_index)
+        self.ha_events.set_entities(set(self._entity_index))
+
+    def start_burst(self, sensor_id: int, source: str, detail: str) -> None:
+        """Check now, then keep checking at the burst pace for the configured duration."""
+        cfg = self.load_sensor(sensor_id)
+        if cfg is None or not cfg.enabled:
+            return
+        live = self.live_state(sensor_id)
+        now = time.time()
+        live.burst_until = now + cfg.triggers["burst_duration_s"]
+        live.last_trigger = {"source": source, "detail": detail, "at": now}
+        self.wake(sensor_id, force=True)
+
+    async def _on_ha_state(self, entity_id: str, old: str | None, new: str | None) -> None:
+        for sensor_id in self._entity_index.get(entity_id, set()):
+            log.debug("Sensor %s triggered by %s: %s -> %s", sensor_id, entity_id, old, new)
+            await asyncio.to_thread(self.start_burst, sensor_id, "entity", f"{entity_id}: {old} → {new}")
+
+    async def probe(self, cfg: SensorConfig) -> None:
+        """Cheap check: compare the region with the last classified frame; classify only if it changed."""
+        live = self.live_state(cfg.id)
+        live.last_probe = time.time()
+        try:
+            _, data = await self.grab(cfg)
+            image = await asyncio.to_thread(imaging.decode, data)
+        except (SourceError, OSError) as err:
+            live.available, live.error = False, str(err)
+            return
+        if live.signature is None:
+            # No baseline (first run or the region changed): classify this frame, which sets one.
+            await self.run_once(cfg, data=data, image=image)
+            return
+        signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+        score = imaging.change_score(live.signature, signature)
+        live.change_score = score
+        if score >= cfg.triggers["change_threshold"]:
+            now = time.time()
+            live.burst_until = now + cfg.triggers["burst_duration_s"]
+            live.last_trigger = {"source": "change", "detail": f"{score:.1%} of the region changed", "at": now}
+            await self.run_once(cfg, data=data, image=image)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         data = await self.grabber.grab(cfg.source_type, cfg.source)
         return self.live_state(cfg.id).remember(data), data
 
-    async def run_once(self, cfg: SensorConfig) -> None:
+    async def run_once(self, cfg: SensorConfig, data: bytes | None = None, image: Image.Image | None = None) -> None:
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
         try:
-            _, data = await self.grab(cfg)
-            image = await asyncio.to_thread(imaging.decode, data)
+            if data is None:
+                _, data = await self.grab(cfg)
+            if image is None:
+                image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
@@ -293,6 +384,10 @@ class Runtime:
             await self.mqtt.publish(t["availability"], "offline", retain=True)
             return
         live.available, live.error = True, ""
+        signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+        if live.signature is not None:
+            live.change_score = imaging.change_score(live.signature, signature)
+        live.signature = signature
         await self.mqtt.publish(t["availability"], "online", retain=True)
 
         probs = await self.classify_image(cfg, image)
@@ -317,6 +412,7 @@ class Runtime:
                 "top_state": top,
                 "last_update": datetime.now(UTC).isoformat(),
                 "trained": bool(probs),
+                "last_trigger": live.last_trigger,
             },
             retain=True,
         )

@@ -7,7 +7,7 @@ import io
 import numpy as np
 from PIL import Image, ImageOps
 
-from .settings import JPEG_QUALITY, RUNTIME, THUMB_SIZE
+from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, RUNTIME, THUMB_SIZE
 
 FULL_FRAME_KEY = "full"
 
@@ -92,3 +92,16 @@ def thumbnail(image: Image.Image, size: int = THUMB_SIZE) -> Image.Image:
     image = image.copy()
     image.thumbnail((size, size), Image.Resampling.BICUBIC)
     return image
+
+
+def region_signature(image: Image.Image, roi: dict | None, size: int = CHANGE_SIGNATURE_SIZE) -> np.ndarray:
+    """Small greyscale copy of the region, used to detect that something changed."""
+    small = crop(image, roi).convert("L").resize((size, size), Image.Resampling.BILINEAR)
+    return np.asarray(small, dtype=np.float32) / 255.0
+
+
+def change_score(previous: np.ndarray | None, current: np.ndarray) -> float:
+    """Mean absolute pixel difference between two signatures (0 = identical, 1 = inverted)."""
+    if previous is None or previous.shape != current.shape:
+        return 0.0
+    return float(np.abs(current - previous).mean())

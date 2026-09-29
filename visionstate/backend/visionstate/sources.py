@@ -57,6 +57,23 @@ class HomeAssistant:
         ]
         return sorted(cams, key=lambda c: c["name"].lower())
 
+    async def entities(self) -> list[dict]:
+        """All entities (id, name, domain, state), for picking trigger entities."""
+        if not self.enabled:
+            return []
+        resp = await self._client.get(f"{self.base}/states")
+        resp.raise_for_status()
+        items = [
+            {
+                "entity_id": s["entity_id"],
+                "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]),
+                "domain": s["entity_id"].split(".", 1)[0],
+                "state": s.get("state"),
+            }
+            for s in resp.json()
+        ]
+        return sorted(items, key=lambda e: (e["domain"], e["name"].lower()))
+
     async def snapshot(self, entity_id: str) -> bytes:
         if not self.enabled:
             raise SourceError("Home Assistant API is not configured")

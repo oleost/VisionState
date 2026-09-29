@@ -21,6 +21,9 @@ from ..settings import (
     SENSOR_DEFAULTS,
     SENSOR_LIMITS,
     STATE_PALETTE,
+    TRIGGER_DEFAULTS,
+    TRIGGER_LIMITS,
+    TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
     VERSION,
     VIDEO,
@@ -45,6 +48,9 @@ def ui_config() -> dict:
         "source_types": SOURCE_TYPES,
         "video": VIDEO,
         "quality": QUALITY,
+        "trigger_defaults": TRIGGER_DEFAULTS,
+        "trigger_limits": TRIGGER_LIMITS,
+        "trigger_max_entities": TRIGGER_MAX_ENTITIES,
     }
 
 
@@ -75,6 +81,12 @@ async def status(request: Request) -> dict:
             "error": mqtt.last_error,
         },
         "home_assistant": rt.ha.enabled,
+        "ha_events": {
+            "enabled": rt.ha_events.enabled,
+            "connected": rt.ha_events.connected,
+            "entities": len(rt.ha_events.entities),
+            "error": rt.ha_events.last_error,
+        },
         "supervised": rt.settings.is_supervised,
     }
 
@@ -127,6 +139,14 @@ async def cameras(request: Request) -> list[dict]:
         return await runtime(request).ha.cameras()
     except Exception as err:  # noqa: BLE001
         raise HTTPException(502, f"Could not list cameras: {err}") from err
+
+
+@router.get("/entities")
+async def entities(request: Request) -> list[dict]:
+    try:
+        return await runtime(request).ha.entities()
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(502, f"Could not list entities: {err}") from err
 
 
 @router.get("/preview")
@@ -245,6 +265,7 @@ def _import_sync(rt, path: Path) -> int:
             threshold=data.get("threshold", SENSOR_DEFAULTS["threshold"]),
             debounce=data.get("debounce", SENSOR_DEFAULTS["debounce"]),
             enabled=True,
+            triggers=data.get("triggers"),
         )
         sensor.states = [
             State(key=st["key"], name=st["name"], color=st["color"], position=i) for i, st in enumerate(data["states"])

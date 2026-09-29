@@ -2,11 +2,7 @@
   // How the AI result becomes a Home Assistant state. Limits come from the backend config.
   import { app } from '../app.svelte';
 
-  let {
-    interval_s = $bindable(),
-    threshold = $bindable(),
-    debounce = $bindable(),
-  }: { interval_s: number; threshold: number; debounce: number } = $props();
+  let { threshold = $bindable(), debounce = $bindable() }: { threshold: number; debounce: number } = $props();
 
   const limits = $derived(app.config?.sensor_limits);
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
@@ -14,12 +10,6 @@
 
 {#if limits}
   <div class="col params">
-    <label class="line">
-      <span>Check the camera every</span>
-      <span class="row"
-        ><input class="input sm num" type="number" min={limits.interval_s[0]} max={limits.interval_s[1]} step="1" bind:value={interval_s} /> s</span
-      >
-    </label>
     <label class="line">
       <span>Report <span class="mono">{unknown}</span> when the AI is less sure than</span>
       <span class="row"

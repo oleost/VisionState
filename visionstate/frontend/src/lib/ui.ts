@@ -54,5 +54,16 @@ export const SENSOR_TABS = [
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 
+/** Domains listed first when picking trigger entities (the most useful triggers). */
+export const TRIGGER_DOMAINS_FIRST = ['binary_sensor', 'cover', 'switch', 'input_boolean', 'lock', 'light', 'button', 'sensor'];
+export const ENTITY_SEARCH_LIMIT = 50;
+/** Mirrors ENTITY_ID in the backend (api/common.py). */
+export const ENTITY_ID_PATTERN = /^[a-z0-9_]+\.[a-z0-9_]+$/;
+
+export const TRIGGER_SOURCES: Record<string, string> = {
+  entity: 'Entity changed',
+  change: 'Image changed',
+};
+
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;

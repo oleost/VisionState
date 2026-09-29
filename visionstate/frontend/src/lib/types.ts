@@ -14,6 +14,21 @@ export interface StateDef {
   color: string;
 }
 
+export interface Triggers {
+  entities: string[];
+  burst_interval_s: number;
+  burst_duration_s: number;
+  change_detection: boolean;
+  change_interval_s: number;
+  change_threshold: number;
+}
+
+export interface TriggerInfo {
+  source: 'entity' | 'change';
+  detail: string;
+  at: number;
+}
+
 export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
 
 export interface Live {
@@ -24,6 +39,9 @@ export interface Live {
   confidence: number;
   probs: Record<string, number>;
   last_run: number | null;
+  in_burst: boolean;
+  change_score: number | null;
+  last_trigger: TriggerInfo | null;
 }
 
 export interface ModelSummary {
@@ -53,6 +71,7 @@ export interface Sensor {
   threshold: number;
   debounce: number;
   enabled: boolean;
+  triggers: Triggers;
   entity_id: string;
   states: StateDef[];
   status: SensorStatus;
@@ -73,6 +92,7 @@ export interface SensorInput {
   threshold?: number;
   debounce?: number;
   enabled?: boolean;
+  triggers?: Triggers;
 }
 
 export interface AppConfig {
@@ -85,6 +105,9 @@ export interface AppConfig {
   source_types: Record<string, string>;
   video: { frame_interval_s: number; dedupe_distance: number; max_frames: number };
   quality: { min_samples_per_state: number; min_night_samples: number; cv_folds: number };
+  trigger_defaults: Triggers;
+  trigger_limits: Record<'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold', [number, number]>;
+  trigger_max_entities: number;
 }
 
 export interface Status {
@@ -97,7 +120,15 @@ export interface Status {
   backbone_error: string;
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
+  ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
   supervised: boolean;
+}
+
+export interface HaEntity {
+  entity_id: string;
+  name: string;
+  domain: string;
+  state: string;
 }
 
 export interface Camera {

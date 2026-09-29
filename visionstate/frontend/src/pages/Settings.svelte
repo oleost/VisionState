@@ -62,6 +62,15 @@
           },
           { label: 'Home Assistant API', value: app.status.home_assistant ? 'available' : 'not configured', ok: app.status.home_assistant },
           {
+            label: 'Trigger events',
+            value: !app.status.ha_events.entities
+              ? 'no trigger entities configured'
+              : app.status.ha_events.connected
+                ? `listening to ${app.status.ha_events.entities} entities`
+                : app.status.ha_events.error || 'connecting…',
+            ok: !app.status.ha_events.entities || app.status.ha_events.connected,
+          },
+          {
             label: 'AI model',
             value: app.status.backbone_error || `${app.status.backbone_name} on ${app.status.provider}`,
             ok: !app.status.backbone_error,
