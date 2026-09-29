@@ -1,5 +1,7 @@
 # VisionState
 
+![Labelling a garage door](https://raw.githubusercontent.com/oleost/VisionState/main/docs/promo/label.png)
+
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
 Home Assistant sensor. Everything runs on this machine; no cloud.
