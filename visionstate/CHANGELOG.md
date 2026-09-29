@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1b2
+
+- Runs on Python 3.14 (was 3.12). All tests and the image smoke test run on 3.14.
+- SQLite connections are closed cleanly when the app stops.
+
 ## 0.4.1b1
 
 First beta on the new beta channel.
