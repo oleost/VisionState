@@ -80,5 +80,8 @@ export const TRIGGER_SOURCES: Record<string, string> = {
 /** Placeholder the backend puts where credentials were removed from an exported URL (redact.MASK). */
 export const REDACTED_MARK = '***';
 
+/** Beta versions look like 0.4.1b1 (mirrors scripts/channel.py). */
+export const BETA_VERSION_PATTERN = /^\d+\.\d+\.\d+b\d+$/;
+
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;

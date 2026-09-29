@@ -74,6 +74,16 @@ without writing code or leaving Home Assistant:
 2. Install **VisionState** (it downloads a ready-made image for your machine).
 3. Start it and open **VisionState** from the sidebar.
 
+### Beta channel
+
+New features are released as **beta** first and move to the stable app once they are tested. To
+help test them, add `https://github.com/oleost/VisionState#beta` as a repository and install
+**VisionState (beta)**.
+
+- The beta is a separate app with its own data; move sensors over with **Export** (stable) and
+  **Import** (beta). Entity ids stay the same, so automations keep working.
+- Run only one of the two apps at a time — both publish the same sensors.
+
 ## Get your first sensor in five minutes
 
 1. **New sensor** → name it, pick a camera.

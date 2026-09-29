@@ -1,9 +1,10 @@
 # Monthly update PRs for pinned dependencies, one grouped PR per ecosystem (major updates
-# included). CI tests and smoke-tests every PR; nothing reaches users until a release.
+# included). PRs target the beta branch: updates reach stable only through a tested beta.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /visionstate/backend
+    target-branch: beta
     schedule:
       interval: monthly
     groups:
@@ -12,6 +13,7 @@ updates:
 
   - package-ecosystem: npm
     directory: /visionstate/frontend
+    target-branch: beta
     schedule:
       interval: monthly
     groups:
@@ -24,6 +26,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /visionstate
+    target-branch: beta
     schedule:
       interval: monthly
     groups:
@@ -36,6 +39,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: beta
     schedule:
       interval: monthly
     groups:

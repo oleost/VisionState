@@ -20,12 +20,30 @@ from camera images using a local embedding model + lightweight per-sensor classi
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
   (tests need the model: `python -m visionstate.backbones models`).
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
-- Releases: Home Assistant pulls prebuilt images (`image:` in `visionstate/config.yaml`), so a
-  version must never reach `main` before its image exists. For every release:
-  1. Bump `version` in `visionstate/config.yaml` and add a `visionstate/CHANGELOG.md` entry; commit.
-  2. `git tag vX.Y.Z` and push **only the tag** (`git push origin vX.Y.Z`); wait for the CI `image`
-     jobs to publish `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.Z`.
-  3. Then push `main` and create the GitHub release (`gh release create vX.Y.Z`).
+- **Branches and channels — never commit to `main` directly.**
+  - `beta` is the working branch: every change lands here first (directly or via PR to `beta`).
+    Its `visionstate/config.yaml` is the beta channel ("VisionState (beta)", versions `X.Y.ZbN`,
+    own media folder). Home Assistant users get it via `https://github.com/oleost/VisionState#beta`.
+  - `main` is the stable channel and only changes by promoting a tested beta (PR from a
+    `promote/X.Y.Z` branch). `main` is branch-protected.
+  - `scripts/channel.py` is the only way to change name/version/channel fields in config.yaml.
+  - Home Assistant pulls prebuilt images (`image:` in config.yaml), so a version must never reach a
+    branch before its images exist. CI refuses tags that do not match config.yaml and branches that
+    carry the wrong channel.
+- **Beta release** (on `beta`):
+  1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`, commit.
+  2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**); wait until CI (tests + smoke test)
+     published `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.ZbN`.
+  3. `git push origin beta`; `gh release create vX.Y.ZbN --prerelease`.
+- **Promote to stable** (only when the user says the beta is tested):
+  1. `git switch -c promote/X.Y.Z beta`; `python scripts/channel.py stable X.Y.Z`; in the changelog,
+     merge the `X.Y.ZbN` entries into one `## X.Y.Z` entry; commit.
+  2. `git merge origin/main`; if `visionstate/config.yaml` conflicts, re-run
+     `python scripts/channel.py stable X.Y.Z` to resolve it; commit.
+  3. `git tag vX.Y.Z && git push origin vX.Y.Z` (tag only); wait for the images.
+  4. Push the branch, open a PR to `main`, wait for CI, merge it; `gh release create vX.Y.Z --latest`.
+  5. Merge `main` back into `beta`, keeping beta's config: `git switch beta && git merge main`,
+     then `python scripts/channel.py beta <next beta version>` before the next beta release.
 - Python version: the Dockerfile image and the CI test version (`setup-python`) must be upgraded
   together; Dependabot ignores Python image upgrades for that reason.
 - Dependency updates: Dependabot opens one grouped PR per ecosystem monthly. CI runs the tests and a

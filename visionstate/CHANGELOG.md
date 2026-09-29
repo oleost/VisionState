@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1b1
+
+First beta on the new beta channel.
+
+- Dependencies updated (web server, database, image and video libraries, AI/ML libraries).
+- Models trained by an older library version are retrained automatically at startup (seconds).
+- The released images are now started and tested (both architectures) before they are published.
+- A **BETA** badge in the menu shows when the beta app is running.
+
 ## 0.4.0
 
 - **Possibly mislabelled images** (Quality tab): images the AI disagrees with after training.
