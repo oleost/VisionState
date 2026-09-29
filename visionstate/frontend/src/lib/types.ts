@@ -23,6 +23,18 @@ export interface Triggers {
   change_threshold: number;
 }
 
+export interface ReviewRules {
+  enabled: boolean;
+  below: number;
+  cooldown_s: number;
+  flip_limit: number;
+  flip_window_s: number;
+  spot_rate: number;
+}
+
+/** Per-sensor overrides: null = use the global value. */
+export type ReviewOverrides = { [K in keyof ReviewRules]: ReviewRules[K] | null };
+
 export interface TriggerInfo {
   source: 'entity' | 'change';
   detail: string;
@@ -72,6 +84,8 @@ export interface Sensor {
   debounce: number;
   enabled: boolean;
   triggers: Triggers;
+  review: ReviewOverrides;
+  review_effective: ReviewRules;
   entity_id: string;
   states: StateDef[];
   status: SensorStatus;
@@ -93,6 +107,7 @@ export interface SensorInput {
   debounce?: number;
   enabled?: boolean;
   triggers?: Triggers;
+  review?: Partial<ReviewOverrides>;
 }
 
 export interface AppConfig {
@@ -108,6 +123,8 @@ export interface AppConfig {
   trigger_defaults: Triggers;
   trigger_limits: Record<'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold', [number, number]>;
   trigger_max_entities: number;
+  review_defaults: ReviewRules;
+  review_limits: Record<Exclude<keyof ReviewRules, 'enabled'>, [number, number]>;
 }
 
 export interface Status {

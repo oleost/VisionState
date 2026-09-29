@@ -20,7 +20,7 @@ from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel,
 from .ha_events import HaEventListener
 from .mqtt import MqttBridge, SensorDescriptor, topics
 from .redact import redact
-from .settings import REVIEW, RUNTIME, UNKNOWN_STATE, Settings, merge_triggers
+from .settings import RUNTIME, UNKNOWN_STATE, Settings, merge_review, merge_triggers
 from .sources import FrameGrabber, HomeAssistant, SourceError
 from .storage import Storage
 
@@ -45,6 +45,7 @@ class SensorConfig:
     enabled: bool
     states: list[dict]
     triggers: dict = field(default_factory=lambda: merge_triggers(None))
+    review: dict = field(default_factory=dict)  # sensor overrides only; see Runtime.review_rules
 
     @property
     def state_keys(self) -> list[str]:
@@ -69,6 +70,7 @@ class SensorConfig:
             enabled=row.enabled,
             states=[{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in row.states],
             triggers=merge_triggers(row.triggers),
+            review=dict(row.review or {}),
         )
 
 
@@ -93,20 +95,22 @@ class Debouncer:
 
 
 def review_reason(
+    rules: dict,
     confidence: float,
     threshold: float,
     recent_changes: int,
     seconds_since_flag: float,
     roll: float,
 ) -> str | None:
-    """Decide whether a frame should go to the review queue, and why."""
-    if seconds_since_flag < REVIEW["cooldown_s"]:
+    """Decide whether a frame should go to the review queue, and why (rules: see merge_review)."""
+    if not rules["enabled"] or seconds_since_flag < rules["cooldown_s"]:
         return None
-    if confidence < threshold + REVIEW["margin"]:
+    # Frames below the reporting threshold (reported as unknown) always qualify.
+    if confidence < max(rules["below"], threshold):
         return "low_confidence"
-    if recent_changes >= REVIEW["flip_limit"]:
+    if recent_changes >= rules["flip_limit"]:
         return "flip"
-    if roll < REVIEW["spot_rate"]:
+    if roll < rules["spot_rate"]:
         return "spot_check"
     return None
 
@@ -165,6 +169,7 @@ class Runtime:
         self.mqtt = MqttBridge(settings, self._on_command, self._on_mqtt_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
+        self.global_review: dict = {}  # global review rules (DB setting "review")
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.heads: dict[int, classifier.Head] = {}
@@ -179,6 +184,7 @@ class Runtime:
     # --- lifecycle ---------------------------------------------------------
 
     async def start(self) -> None:
+        self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
         backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
         provider = self.db.get_setting("execution_provider", "CPUExecutionProvider")
         try:
@@ -312,6 +318,15 @@ class Runtime:
                 pass
             event.clear()
 
+    # --- review rules -----------------------------------------------------------
+
+    def review_rules(self, cfg: SensorConfig) -> dict:
+        return merge_review(self.global_review, cfg.review)
+
+    def set_global_review(self, rules: dict) -> None:
+        self.global_review = dict(rules)
+        self.db.set_setting("review", self.global_review)
+
     # --- triggers --------------------------------------------------------------
 
     def _trigger_index(self) -> dict[str, set[int]]:
@@ -421,8 +436,9 @@ class Runtime:
 
         reason = None
         if probs:
-            recent = sum(1 for ts in live.changes if now - ts <= REVIEW["flip_window_s"])
-            reason = review_reason(confidence, cfg.threshold, recent, now - live.last_flag, random.random())
+            rules = self.review_rules(cfg)
+            recent = sum(1 for ts in live.changes if now - ts <= rules["flip_window_s"])
+            reason = review_reason(rules, confidence, cfg.threshold, recent, now - live.last_flag, random.random())
             if reason:
                 live.last_flag = now
         if changed or reason:

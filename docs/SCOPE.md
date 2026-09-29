@@ -210,6 +210,7 @@ the UI, not in app options.
 | **M2 – Training UX** ✅ | Bulk upload (images/ZIP/video), review queue, gallery, quality page, history |
 | **M3 – Portability** ✅ (partly) | Import/export (create-new mode), backbone switching, RTSP/HTTP sources, retention. Merge/replace import still open. |
 | **M3.5 – Triggers** ✅ (0.2.0) | HA entity triggers (WebSocket `subscribe_trigger`), region change detection, follow-up bursts; all per sensor, defaults in `settings.TRIGGER_DEFAULTS` |
+| **Review rules** ✅ (0.3.0) | Global review rules (DB setting) with per-sensor overrides (`sensor.review`), defaults in `settings.REVIEW_DEFAULTS` |
 | **M4 – Acceleration** | OpenVINO, Coral, Frigate snapshots of events |
 | **M5 – Release** | Docs site, screenshots, v1.0 public release |
 

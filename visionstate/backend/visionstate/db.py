@@ -23,12 +23,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
 MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     2: [("sensor", "triggers", "JSON")],
+    3: [("sensor", "review", "JSON")],
 }
 
 
@@ -57,6 +58,8 @@ class Sensor(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # When to check the camera besides the interval; see settings.TRIGGER_DEFAULTS.
     triggers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Per-sensor overrides of the review rules; missing/None fields use the global rules.
+    review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(

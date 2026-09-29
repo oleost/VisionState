@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- **Adjustable review queue**: global rules under *Settings → Review queue*, with per-sensor
+  overrides on the sensor's Settings tab (empty field = use the global value, or turn review off
+  for a sensor).
+  - "Send to review below" is now an absolute percentage (default 85 %) instead of threshold + 15.
+  - Minimum time between reviews, flip-flop detection and random spot checks are adjustable.
+  - Random spot checks are now **off** by default.
+
 ## 0.2.1
 
 Security and privacy hardening.

@@ -99,3 +99,17 @@ def test_static_files_cannot_escape_frontend_dir(client):
     for path in ("/../secret.txt", "/%2e%2e/secret.txt", "/..%2Fsecret.txt"):
         resp = client.get(path)
         assert "top secret" not in resp.text
+
+
+def test_review_rules_global_and_per_sensor(client):
+    assert client.get("/api/v1/review-rules").json()["spot_rate"] == 0.0
+    rules = client.put("/api/v1/review-rules", json={"below": 0.8, "cooldown_s": 600}).json()
+    assert rules["below"] == 0.8 and rules["cooldown_s"] == 600
+    sid = client.post("/api/v1/sensors", json=sensor_body(review={"below": 0.6})).json()["id"]
+    sensor = client.get(f"/api/v1/sensors/{sid}").json()
+    assert sensor["review"]["below"] == 0.6 and sensor["review"]["cooldown_s"] is None
+    assert sensor["review_effective"]["below"] == 0.6
+    assert sensor["review_effective"]["cooldown_s"] == 600  # inherited from the global rules
+    cleared = client.patch(f"/api/v1/sensors/{sid}", json={"review": {}}).json()
+    assert cleared["review_effective"]["below"] == 0.8
+    assert client.put("/api/v1/review-rules", json={"below": 2}).status_code == 422

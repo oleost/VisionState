@@ -45,8 +45,11 @@ The state entity also has a `probabilities` attribute with the score of every st
   frame every few seconds (near-duplicates are skipped). The current model suggests a label
   for each frame — check them and click **Accept all suggestions**, or select frames and
   press a state key.
-- **Review** (top menu): frames the AI was unsure about, frames where the state flipped back
-  and forth, and a few random spot checks. Answering these is the fastest way to improve.
+- **Review** (top menu): frames the AI was unsure about and frames where the state flipped back
+  and forth (optionally also random spot checks). Answering these is the fastest way to improve.
+  Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
+  e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
+  80 %, or turn review off for it. Empty sensor fields use the global value.
 - **History tab**: every state change with its frame. If one was wrong, add it to the dataset
   with the correct state.
 - Include different light: day, night (IR), sun, rain, snow.

@@ -2,15 +2,36 @@
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
   import { mb } from '../lib/format';
   import { go, paths } from '../lib/router.svelte';
-  import type { SettingsInfo } from '../lib/types';
+  import type { ReviewRules, SettingsInfo } from '../lib/types';
 
   let info = $state<SettingsInfo | null>(null);
   let backbone = $state('');
   let provider = $state('');
   let saving = $state(false);
   let importInput: HTMLInputElement;
+  let reviewRules = $state<ReviewRules | null>(null);
+  let savingReview = $state(false);
+
+  api
+    .reviewRules()
+    .then((r) => (reviewRules = r))
+    .catch(toastError);
+
+  async function saveReview() {
+    if (!reviewRules) return;
+    savingReview = true;
+    try {
+      reviewRules = await api.saveReviewRules(reviewRules);
+      toast('Review rules saved');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      savingReview = false;
+    }
+  }
 
   api
     .settings()
@@ -65,7 +86,9 @@
             label: 'Trigger events',
             value: !app.status.ha_events.entities
               ? 'no trigger entities configured'
-              : app.status.ha_events.connected
+              : !app.status.ha_events.enabled
+                ? 'Home Assistant API not available'
+                : app.status.ha_events.connected
                 ? `listening to ${app.status.ha_events.entities} entities`
                 : app.status.ha_events.error || 'connecting…',
             ok: !app.status.ha_events.entities || app.status.ha_events.connected,
@@ -119,6 +142,17 @@
           </button>
           <span class="xsmall faint">Switching retrains every sensor from its stored images.</span>
         </div>
+      {/if}
+    </section>
+
+    <section class="card pad col">
+      <h3>Review queue</h3>
+      <p class="small muted">Which frames are collected for review. Each sensor can override these on its Settings tab.</p>
+      {#if reviewRules}
+        <ReviewRulesEditor bind:value={reviewRules} />
+        <button class="btn primary" style="align-self:flex-start" disabled={savingReview} onclick={saveReview}>
+          {savingReview ? 'Saving…' : 'Save review rules'}
+        </button>
       {/if}
     </section>
 

@@ -17,6 +17,8 @@ from ..db import Prediction, Sensor, State
 from ..settings import (
     MAX_STATES,
     QUALITY,
+    REVIEW_DEFAULTS,
+    REVIEW_LIMITS,
     SENSOR_DEFAULTS,
     SENSOR_LIMITS,
     STATE_PALETTE,
@@ -27,9 +29,10 @@ from ..settings import (
     UPLOAD_LIMITS,
     VERSION,
     VIDEO,
+    merge_review,
 )
 from ..sources import SOURCE_TYPES, SourceError
-from .common import API_PREFIX, get_sensor, runtime, slugify, state_id_for, unique_slug, validate_states
+from .common import API_PREFIX, ReviewRules, get_sensor, runtime, slugify, state_id_for, unique_slug, validate_states
 from .samples import copy_limited
 from .sensors import prediction_view
 
@@ -52,6 +55,8 @@ def ui_config() -> dict:
         "trigger_defaults": TRIGGER_DEFAULTS,
         "trigger_limits": TRIGGER_LIMITS,
         "trigger_max_entities": TRIGGER_MAX_ENTITIES,
+        "review_defaults": REVIEW_DEFAULTS,
+        "review_limits": REVIEW_LIMITS,
     }
 
 
@@ -165,6 +170,18 @@ async def preview(source_type: str, source: str, request: Request) -> Response:
 # --- review queue -------------------------------------------------------------
 
 
+@router.get("/review-rules")
+def get_review_rules(request: Request) -> dict:
+    return merge_review(runtime(request).global_review, None)
+
+
+@router.put("/review-rules")
+async def put_review_rules(body: ReviewRules, request: Request) -> dict:
+    rt = runtime(request)
+    await asyncio.to_thread(rt.set_global_review, body.model_dump())
+    return merge_review(rt.global_review, None)
+
+
 class ReviewIn(BaseModel):
     action: str  # confirm | label | skip
     state_key: str | None = None
@@ -276,6 +293,7 @@ def _import_sync(rt, path: Path) -> int:
                     "threshold",
                     "debounce",
                     "triggers",
+                    "review",
                 )
                 if data.get(key) is not None
             }
@@ -300,6 +318,7 @@ def _import_sync(rt, path: Path) -> int:
             debounce=spec.debounce,
             enabled=True,
             triggers=spec.triggers.model_dump() if spec.triggers else None,
+            review=spec.review.stored() if spec.review else None,
         )
         sensor.states = [
             State(

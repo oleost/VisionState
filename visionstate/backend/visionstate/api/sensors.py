@@ -18,6 +18,7 @@ from ..settings import QUALITY, SENSOR_DEFAULTS, SENSOR_LIMITS, STATE_PALETTE
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
+    ReviewOverrides,
     Roi,
     StateIn,
     Triggers,
@@ -48,6 +49,7 @@ class SensorIn(BaseModel):
     debounce: int = Field(SENSOR_DEFAULTS["debounce"], ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
     triggers: Triggers | None = None
+    review: ReviewOverrides | None = None
 
 
 class SensorPatch(BaseModel):
@@ -62,6 +64,7 @@ class SensorPatch(BaseModel):
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool | None = None
     triggers: Triggers | None = None
+    review: ReviewOverrides | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -112,6 +115,7 @@ async def create_sensor(body: SensorIn, request: Request) -> dict:
             debounce=body.debounce,
             enabled=body.enabled,
             triggers=body.triggers.model_dump() if body.triggers else None,
+            review=body.review.stored() if body.review else None,
         )
         _apply_states(sensor, body.states)
         s.add(sensor)
@@ -141,6 +145,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             value = getattr(body, field)
             if value is not None:
                 setattr(sensor, field, value)
+        if body.review is not None:
+            sensor.review = body.review.stored()
         if body.triggers is not None:
             sensor.triggers = body.triggers.model_dump()
         if body.clear_roi:

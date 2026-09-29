@@ -5,12 +5,13 @@
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
+  import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { go, paths } from '../../lib/router.svelte';
-  import type { Roi, Sensor } from '../../lib/types';
+  import type { ReviewRules, Roi, Sensor } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -26,6 +27,9 @@
   let threshold = $state(initial.threshold);
   let debounce = $state(initial.debounce);
   let triggers = $state(initial.triggers);
+  let review = $state(initial.review);
+  let globalReview = $state<ReviewRules | null>(null);
+  api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
 
   async function save() {
@@ -41,6 +45,7 @@
         threshold,
         debounce,
         triggers,
+        review,
       });
       toast('Settings saved');
       onchange();
@@ -100,6 +105,13 @@
     <section class="card pad col">
       <h3>Sensor output</h3>
       <SensorParams bind:threshold bind:debounce />
+    </section>
+
+    <section class="card pad col">
+      <h3>Review</h3>
+      {#if globalReview}
+        <ReviewRulesEditor bind:value={review} inherited={globalReview} {threshold} />
+      {/if}
     </section>
 
     <div class="row">

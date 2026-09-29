@@ -5,7 +5,7 @@ from visionstate import classifier, imaging
 from visionstate.api.sensors import quality_tips
 from visionstate.engine import Debouncer, review_reason
 from visionstate.mqtt import SensorDescriptor, discovery_messages, topics
-from visionstate.settings import REVIEW, UNKNOWN_STATE
+from visionstate.settings import REVIEW_DEFAULTS, UNKNOWN_STATE, merge_review
 
 
 def test_debouncer_publishes_first_value_immediately_then_waits():
@@ -28,11 +28,24 @@ def test_debouncer_resets_on_flicker():
 
 
 def test_review_reason_priorities():
-    assert review_reason(0.5, 0.7, 0, 10_000, 0.5) == "low_confidence"
-    assert review_reason(0.99, 0.7, REVIEW["flip_limit"], 10_000, 0.5) == "flip"
-    assert review_reason(0.99, 0.7, 0, 10_000, 0.0) == "spot_check"
-    assert review_reason(0.99, 0.7, 0, 10_000, 0.9) is None
-    assert review_reason(0.1, 0.7, 0, 1, 0.0) is None  # cooldown
+    rules = merge_review(None, {"spot_rate": 0.05})
+    assert review_reason(rules, 0.5, 0.7, 0, 10_000, 0.5) == "low_confidence"
+    assert review_reason(rules, 0.99, 0.7, REVIEW_DEFAULTS["flip_limit"], 10_000, 0.5) == "flip"
+    assert review_reason(rules, 0.99, 0.7, 0, 10_000, 0.0) == "spot_check"
+    assert review_reason(rules, 0.99, 0.7, 0, 10_000, 0.9) is None
+    assert review_reason(rules, 0.1, 0.7, 0, 1, 0.0) is None  # cooldown
+
+
+def test_review_rules_layering():
+    assert merge_review(None, None)["spot_rate"] == 0.0  # no random spot checks by default
+    rules = merge_review({"below": 0.8, "cooldown_s": 60}, {"below": 0.6, "cooldown_s": None})
+    assert rules["below"] == 0.6  # sensor override wins
+    assert rules["cooldown_s"] == 60  # empty override falls back to global
+    # 83 % is not flagged with a 80 % review limit ...
+    assert review_reason(rules | {"below": 0.8}, 0.83, 0.7, 0, 10_000, 0.5) is None
+    # ... and the review limit never drops below the reporting threshold.
+    assert review_reason(rules | {"below": 0.3}, 0.65, 0.7, 0, 10_000, 0.5) == "low_confidence"
+    assert review_reason(rules | {"enabled": False}, 0.1, 0.7, 0, 10_000, 0.0) is None
 
 
 def test_roi_normalisation_and_crop():

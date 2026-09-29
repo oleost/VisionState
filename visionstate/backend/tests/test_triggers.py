@@ -12,7 +12,7 @@ from PIL import Image
 
 from visionstate import imaging
 from visionstate.api.common import Triggers
-from visionstate.db import Database
+from visionstate.db import SCHEMA_VERSION, Database
 from visionstate.engine import LiveState, SensorConfig, next_check_at
 from visionstate.ha_events import HaEventListener, parse_trigger_event, trigger_subscription
 from visionstate.main import create_app
@@ -114,8 +114,8 @@ def test_migration_adds_triggers_column(tmp_path):
     Database(path).init()
     con = sqlite3.connect(path)
     columns = {row[1] for row in con.execute("PRAGMA table_info(sensor)")}
-    assert "triggers" in columns
-    assert con.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert {"triggers", "review"} <= columns
+    assert con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 class FakeHomeAssistant:

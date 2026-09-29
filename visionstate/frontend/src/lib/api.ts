@@ -5,6 +5,7 @@ import type {
   HaEntity,
   Prediction,
   Quality,
+  ReviewRules,
   ReviewItem,
   SampleItem,
   Sensor,
@@ -144,6 +145,8 @@ export const api = {
     `${BASE}history/${predictionId}/image?size=${size}`,
   exportUrl: (id: number) => `${BASE}sensors/${id}/export`,
 
+  reviewRules: () => request<ReviewRules>('review-rules'),
+  saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
   review: () => request<{ total: number; items: ReviewItem[] }>('review'),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>
     request(`review/${predictionId}`, send('POST', { action, state_key: stateKey })),

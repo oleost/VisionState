@@ -16,10 +16,13 @@ from ..engine import Runtime
 from ..settings import (
     APP_SLUG,
     MAX_STATES,
+    REVIEW_DEFAULTS,
+    REVIEW_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
+    merge_review,
     merge_triggers,
 )
 
@@ -107,6 +110,36 @@ class Triggers(BaseModel):
         return cleaned
 
 
+_rlo = {k: v[0] for k, v in REVIEW_LIMITS.items()}
+_rhi = {k: v[1] for k, v in REVIEW_LIMITS.items()}
+
+
+class ReviewRules(BaseModel):
+    """Global review rules. Defaults and limits: settings.REVIEW_*."""
+
+    enabled: bool = REVIEW_DEFAULTS["enabled"]
+    below: float = Field(REVIEW_DEFAULTS["below"], ge=_rlo["below"], le=_rhi["below"])
+    cooldown_s: float = Field(REVIEW_DEFAULTS["cooldown_s"], ge=_rlo["cooldown_s"], le=_rhi["cooldown_s"])
+    flip_limit: int = Field(REVIEW_DEFAULTS["flip_limit"], ge=_rlo["flip_limit"], le=_rhi["flip_limit"])
+    flip_window_s: float = Field(REVIEW_DEFAULTS["flip_window_s"], ge=_rlo["flip_window_s"], le=_rhi["flip_window_s"])
+    spot_rate: float = Field(REVIEW_DEFAULTS["spot_rate"], ge=_rlo["spot_rate"], le=_rhi["spot_rate"])
+
+
+class ReviewOverrides(BaseModel):
+    """Per-sensor overrides; None = use the global value."""
+
+    enabled: bool | None = None
+    below: float | None = Field(None, ge=_rlo["below"], le=_rhi["below"])
+    cooldown_s: float | None = Field(None, ge=_rlo["cooldown_s"], le=_rhi["cooldown_s"])
+    flip_limit: int | None = Field(None, ge=_rlo["flip_limit"], le=_rhi["flip_limit"])
+    flip_window_s: float | None = Field(None, ge=_rlo["flip_window_s"], le=_rhi["flip_window_s"])
+    spot_rate: float | None = Field(None, ge=_rlo["spot_rate"], le=_rhi["spot_rate"])
+
+    def stored(self) -> dict | None:
+        values = self.model_dump(exclude_none=True)
+        return values or None
+
+
 class StateIn(BaseModel):
     key: str | None = None
     name: str = Field(min_length=1, max_length=64)
@@ -168,6 +201,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
         "triggers": merge_triggers(sensor.triggers),
+        "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
+        "review_effective": merge_review(rt.global_review, sensor.review),
         "entity_id": f"sensor.{APP_SLUG}_{sensor.slug}",
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,

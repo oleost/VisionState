@@ -36,6 +36,18 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   spot_check: { label: 'Spot check', tone: 'muted', help: 'A random confident frame, to catch silent mistakes.' },
 };
 
+/**
+ * Review rule fields as shown in the UI. `scale` converts the stored value to the displayed one
+ * (fractions → %, seconds → minutes). Limits come from the backend config.
+ */
+export const REVIEW_FIELDS = [
+  { key: 'below', label: 'Send to review when the AI is less sure than', unit: '%', scale: 100, step: 1 },
+  { key: 'cooldown_s', label: 'At most one review per sensor every', unit: 'min', scale: 1 / 60, step: 1 },
+  { key: 'flip_limit', label: 'Flip-flopping: the state changes', unit: 'times', scale: 1, step: 1 },
+  { key: 'flip_window_s', label: '… within', unit: 'min', scale: 1 / 60, step: 1 },
+  { key: 'spot_rate', label: 'Random spot checks of confident frames', unit: '%', scale: 100, step: 0.5 },
+] as const;
+
 export const SAMPLE_ORIGINS: Record<string, string> = {
   snapshot: 'Snapshot',
   upload: 'Upload',

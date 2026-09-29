@@ -71,12 +71,22 @@ MAX_STATES = 9  # keys 1-9 in the UI
 
 # --- Review queue (active learning) ----------------------------------------
 
-REVIEW = {
-    "margin": 0.15,  # flag frames whose confidence is below threshold + margin
+# Built-in defaults. The global rules are editable in the UI (stored in the database) and
+# every sensor can override single fields; an unset field falls back to the global value.
+REVIEW_DEFAULTS = {
+    "enabled": True,
+    "below": 0.85,  # flag frames whose confidence is below this (never lower than the sensor threshold)
     "cooldown_s": 300,  # at most one flagged frame per sensor per cooldown
     "flip_limit": 3,  # this many published changes ...
     "flip_window_s": 600,  # ... within this window counts as flip-flopping
-    "spot_rate": 0.01,  # share of confident frames sent for a random spot check
+    "spot_rate": 0.0,  # share of confident frames sent for a random spot check
+}
+REVIEW_LIMITS = {
+    "below": (0.0, 1.0),
+    "cooldown_s": (0, 86_400),
+    "flip_limit": (2, 50),
+    "flip_window_s": (60, 86_400),
+    "spot_rate": (0.0, 0.5),
 }
 
 # --- Uploads ----------------------------------------------------------------
@@ -123,6 +133,13 @@ RUNTIME = {
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
 }
+
+
+def merge_review(global_rules: dict | None, sensor_overrides: dict | None) -> dict:
+    """Effective review rules: built-in defaults < global rules < non-empty sensor overrides."""
+    merged = {**REVIEW_DEFAULTS, **(global_rules or {})}
+    merged.update({k: v for k, v in (sensor_overrides or {}).items() if v is not None and k in REVIEW_DEFAULTS})
+    return merged
 
 
 def merge_triggers(stored: dict | None) -> dict:
