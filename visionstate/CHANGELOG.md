@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0b1
+
+- **Object sensors**: find people, cars, bicycles, cats, dogs and 75 more common objects — no
+  training. Choose *Objects* in step 3 of the new sensor wizard, pick the objects (popular ones
+  first, all others under *Show all*) and see a test on a fresh frame right away.
+  - Each object becomes an on/off `binary_sensor` and a `…_count` sensor in Home Assistant.
+  - An object counts when it stands inside the region; it is cleared a while after it was last
+    seen (default 30 s), so a person turning around does not flicker.
+  - **Live** tab with the checked frame and its boxes, **History** of when objects appeared and
+    cleared, and the Home Assistant image shows the boxes too.
+  - Detector: D-FINE S (Apache-2.0) is included; D-FINE N (faster) can be chosen under Settings.
+    It is only loaded while at least one object sensor exists.
+- The models you use now stay selected when a later version recommends other ones.
+
 ## 0.4.1b6
 
 - Fixed: on phones, swiping on a camera image (sensor overview, Label tab, Review) did not

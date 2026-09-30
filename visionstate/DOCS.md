@@ -4,7 +4,8 @@
 
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
-Home Assistant sensor. Everything runs on this machine; no cloud.
+Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — without
+any training. Everything runs on this machine; no cloud.
 
 ## Requirements
 
@@ -25,7 +26,8 @@ Home Assistant sensor. Everything runs on this machine; no cloud.
       shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
       double-click / double-tap (or press and hold) a corner to remove it. Everything outside
       the shape is ignored. **Reset to rectangle** goes back to a plain box.
-   3. Name the states, for example *Open*, *Closed*, *Partial*.
+   3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*)
+      or **Objects** (see *Object sensors* below). This can not be changed later.
    4. Optionally choose when it should check the camera — for example when your motion
       sensor or garage opener changes (see *When it checks* below). You can skip this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
@@ -49,7 +51,40 @@ frames waiting for review (with a per-sensor breakdown as attribute).
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
 
-## Training tips
+## Object sensors
+
+An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 70 more —
+with a pretrained detector. There is nothing to label: pick the objects in the wizard (popular
+ones first, all others under **Show all**) and the wizard tests it on a fresh frame right away.
+
+- **The region** decides what counts: an object counts when the bottom of its box (where a
+  person or car stands) is inside it. The detector sees a little more than the region, so an
+  object at the edge is still recognised whole.
+- Each object you pick becomes two entities:
+
+  | Entity | What it is |
+  |---|---|
+  | `binary_sensor.visionstate_<name>_<object>` | `on` while the object is there (occupancy) |
+  | `sensor.visionstate_<name>_<object>_count` | How many there are |
+
+  plus `image.…_frame` (the region with boxes drawn), `button.…_classify` (detect now) and
+  `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence
+  and the boxes. Removing an object from the list removes its entities.
+- **Settings tab → Sensor output**:
+
+  | Setting | Default | Meaning |
+  |---|---|---|
+  | Count an object when the AI is at least … sure | 60 % | Weaker boxes are ignored |
+  | Report it after this many checks in a row | 1 | Raise it if single false detections turn it on |
+  | Clear it when not seen for | 30 s | Keeps a person detected while they turn around |
+  | Ignore objects smaller than | 0 % | Share of the region; filters far-away or tiny false hits |
+
+- **Live** shows the last checked frame with every box, **History** lists when each object
+  appeared and cleared (tap a row for the frame).
+- Object sensors use the same triggers as state sensors. **Detect changes in the image** is
+  a good fit: the detector only runs when something in the region changes.
+
+## Training tips (state sensors)
 
 - **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
   frame every few seconds (near-duplicates are skipped). The current model suggests a label
@@ -96,8 +131,8 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 - Settings, the database and trained models live in the app's data folder and are part of
   Home Assistant backups.
 - Training images are stored in `/media/visionstate` (the beta app uses `/media/visionstate_beta`).
-- **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, triggers,
-  review overrides) and all its images with labels. Camera passwords are removed from the file.
+- **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states or objects,
+  triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
   Settings tab.
@@ -109,11 +144,18 @@ New versions are released as beta first. To test them, add
 It is a separate app with its own data: move sensors with Export/Import, and run only one of the
 two apps at a time (both publish the same entities).
 
-## AI model
+## AI models
 
-The default model (DINOv2 small, 8-bit) is included and runs on any CPU, including a
-Raspberry Pi 4. A slightly more accurate full-precision model can be selected under
-**Settings**; it is downloaded on first use (89 MB).
+Two models, chosen under **Settings → AI model** for all sensors of a kind:
+
+- **State sensors:** DINOv2 small, 8-bit — included, runs on any CPU including a Raspberry
+  Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB).
+  Switching retrains every state sensor from its stored images.
+- **Object sensors:** D-FINE S — included, about 0.1 s per check on a modern PC and a few
+  seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
+  first use, 15 MB). The detector is only loaded while at least one object sensor exists.
+
+A choice you made stays when a later version recommends another model.
 
 ## App options
 

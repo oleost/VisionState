@@ -7,7 +7,8 @@
 
 <p align="center">
   <b>Teach a local AI what your camera sees — and turn it into a Home Assistant sensor.</b><br>
-  Garage door open, closed or halfway? Gate shut? Car in the driveway? Click a few examples and you have a sensor.
+  Garage door open, closed or halfway? Gate shut? Click a few examples and you have a sensor.<br>
+  Person at the door, car in the driveway, cat on the lawn? Pick the objects — no training needed.
 </p>
 
 <p align="center">
@@ -37,7 +38,10 @@ without writing code or leaving Home Assistant:
 
 - 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
   The model retrains in about a second after every click.
-- 🎯 **Watch only what matters** — draw a box around the door; the AI ignores everything else.
+- 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
+  count and an on/off sensor for each. Pick them, done.
+- 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
+  the AI ignores everything else.
 - 📦 **Bulk upload** — drop images, ZIP archives or a **video**; frames are extracted, duplicates
   skipped, and the current model suggests a label for each one.
 - ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes,
@@ -133,6 +137,10 @@ A pre-trained vision model ([DINOv2](https://github.com/facebookresearch/dinov2)
 region into a feature vector. On top of that, each sensor gets its own small classifier trained
 on *your* labelled images — which is why a handful of examples is enough and training takes
 about a second. Results are debounced so someone walking past doesn't flip the state.
+
+Object sensors use a pretrained detector instead ([D-FINE](https://github.com/Peterande/D-FINE),
+Apache-2.0, trained on the COCO objects). It finds every object in the region; each object you
+picked is reported with a count and cleared a while after it was last seen.
 
 Everything stays on your machine: images live in `/media/visionstate`, models and settings in
 the app's data folder (included in Home Assistant backups).

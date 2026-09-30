@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.4.1b6 / stable 0.4.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.5.0b1 / stable 0.4.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -11,6 +11,9 @@ A Home Assistant app (formerly "add-on") that lets anyone teach a local AI to re
 and exposes the result as a regular Home Assistant sensor. Training happens by clicking
 the matching state on a live image, or by bulk-uploading images/video. Everything runs
 locally, on any CPU, with a polished UI inside Home Assistant.
+
+A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
+pretrained detector and needs no training.
 
 ## 2. Goals / Non-goals
 
@@ -23,7 +26,8 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 - Import/export of sensors with their training images.
 
 **Non-goals (for now)**
-- Object detection / tracking of moving objects with bounding boxes.
+- Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
+  custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
 - Reading numbers (e.g. meters) — discussed, see §16 open ideas.
 - Cloud training or cloud inference; telemetry of any kind.
@@ -33,7 +37,7 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 
 | Term | Meaning |
 |---|---|
-| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. |
+| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states) or `objects` (detector), fixed at creation. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
 | **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
 | **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
@@ -41,6 +45,8 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 | **Backbone** | Pre-trained vision model that turns an image into an embedding vector. |
 | **Head** | Small per-sensor classifier trained on embeddings. |
 | **Trigger** | Something that makes a sensor check its camera besides the regular interval. |
+| **Detector** | Pretrained object detector used by object sensors (registry `detectors.json`). |
+| **Class** | One object type an object sensor looks for (a COCO label, e.g. `person`). |
 
 ## 4. Platform & deployment
 
@@ -83,6 +89,33 @@ so retraining only runs the backbone on new or changed samples.
 - **Quality check:** after each training, cross-validated predictions give the accuracy, the
   confusion matrix and a list of *possibly mislabelled* samples (label ≠ out-of-fold prediction).
 - Not implemented: training-time augmentation (not needed so far), fine-tuning.
+
+**Object sensors** use a pretrained detector instead (registry `backend/visionstate/detectors.json`,
+with the 80 COCO labels, their keys, groups and the popular ones):
+
+| ID | Model | Use |
+|---|---|---|
+| `dfine-s-coco` | D-FINE S, COCO, fp32 ONNX (bundled, 42 MB) | Default; ~0.1 s per check on a desktop CPU |
+| `dfine-n-coco` | D-FINE N, COCO, fp32 ONNX (downloaded on demand, 15 MB) | Faster, misses more |
+
+1. Crop the ROI's bounding box plus a margin (`DETECTION["context_margin"]`) so edge objects are
+   seen whole; stretch to 640×640 (no letterbox), scale to 0–1.
+2. DETR-style outputs (300 queries × 80 class logits, cx/cy/w/h boxes) → sigmoid → per-class
+   non-maximum suppression → boxes mapped back to the frame.
+3. An object counts when its bottom centre is inside the ROI (polygon aware), its score is at
+   least the sensor threshold (default 60 %) and it is at least `min_size` of the region.
+4. Per class: on after *N* checks in a row (`debounce`, default 1); off after `clear_after_s`
+   (default 30 s) without it.
+
+- Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
+  terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
+  of D-FINE N was found broken during evaluation; tests with real CC0 photos
+  (`tests/assets`) now guard every model file. 8-bit variants were slower and worse on CPU.
+- **Model choice is global per kind** (Settings), so at most two models are loaded. The
+  detector is loaded on first use and released when the last object sensor is deleted. The
+  chosen backbone and detector are stored in the database at first start, so a later release
+  that recommends other defaults does not change an installation. Registry entries are never
+  changed or removed once released.
 
 ## 6. Image sources
 
@@ -127,6 +160,11 @@ One HA **device** per sensor:
 | `button.…_classify` | `button` | Check now (automations) |
 | `switch.…_enabled` | `switch` | Pause / resume |
 
+**Object sensors** replace the first two with two entities per selected class:
+`binary_sensor.visionstate_<slug>_<class>` (`device_class: occupancy`, attributes: confidence,
+boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
+boxes; the button is named "Detect now". Deselecting a class removes its entities.
+
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
 for review, per-sensor breakdown as attribute).
 
@@ -140,7 +178,8 @@ removes its entities.
 Principle: **easy by default, details on demand.** Dark theme, responsive.
 
 1. **Dashboard** — cards per sensor: live thumbnail, state, confidence, 24 h timeline, health.
-2. **New sensor wizard** — camera → region → states → optional triggers.
+2. **New sensor wizard** — camera → region → *detect*: states (names) or objects (popular
+   first, all 80 behind "Show all", with a test on a fresh frame) → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
@@ -151,14 +190,22 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
-10. **Settings** — status, AI model and execution provider, global review rules, import.
+10. **Settings** — status, AI models (state backbone, object detector) and execution provider,
+    global review rules, import.
+
+Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
+per-class status), **History** (appeared / cleared, expandable to the frame with boxes) and
+**Settings** (objects, region, triggers, output).
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v4).
-- `sensor.kind`: `single_state` today; reserved for `multi_label`, `binary`, `count`.
+- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v5).
+- `sensor.kind`: `single_state` or `objects` (`sensor.objects` holds classes, `min_size`,
+  `clear_after_s`); reserved for `multi_label`. Object events are `prediction` rows (class,
+  `on`/`off`, `detections`).
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
-- Extension points: backbone registry (`backbones.json`), `sources.SOURCE_TYPES`, trigger settings.
+- Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
+  `sources.SOURCE_TYPES`, trigger settings.
 - Versioned REST API (`/api/v1`) used by the frontend; `GET /api/v1/config` exposes every
   default and limit so the UI never hard-codes them.
 
@@ -224,11 +271,14 @@ sensor settings) lives in the UI.
 | **Data quality** ✅ | Possibly mislabelled samples, review queue entity, wizard triggers step | 0.4.0 |
 | **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14, clean exit on stop | 0.4.1b1–b3 |
 | **Region shapes & mobile** ✅ (beta) | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.4.1b5–b6 |
+| **Object sensors** ✅ (beta) | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.5.0b1 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; reading numbers (meters) as a new sensor kind; issue templates.
+Assistant; reading numbers (meters) as a new sensor kind; issue templates; per-sensor model
+choice with unloading of idle models; a "not a person" button that trains a DINOv2 filter on
+rejected detections; zones and line crossing for object sensors.
 
 ## 17. Identity
 
