@@ -17,10 +17,16 @@ from ..engine import ObjectTrack, Runtime
 from ..settings import (
     APP_SLUG,
     KIND_OBJECTS,
+    KIND_READING,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    READING_DEFAULTS,
+    READING_DEVICE_CLASSES,
+    READING_DISPLAYS,
+    READING_LIMITS,
+    READING_MODES,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -29,6 +35,7 @@ from ..settings import (
     TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
     merge_objects,
+    merge_reading,
     merge_review,
     merge_triggers,
 )
@@ -67,7 +74,7 @@ def get_sensor(session: Session, sensor_id: int, kind: str | None = None) -> Sen
     if sensor is None:
         raise HTTPException(404, "Sensor not found")
     if kind is not None and sensor.kind != kind:
-        what = "Object sensors" if sensor.kind == KIND_OBJECTS else "State sensors"
+        what = {KIND_OBJECTS: "Object sensors", KIND_READING: "Reading sensors"}.get(sensor.kind, "State sensors")
         raise HTTPException(400, f"{what} do not support this")
     return sensor
 
@@ -148,6 +155,47 @@ class ObjectsIn(BaseModel):
         if unknown:
             raise ValueError(f"Unknown object {unknown[0]!r}")
         return cleaned
+
+
+_dlo = {k: v[0] for k, v in READING_LIMITS.items()}
+_dhi = {k: v[1] for k, v in READING_LIMITS.items()}
+
+
+class ReadingIn(BaseModel):
+    """How a reading sensor turns what it reads into a value. Defaults and limits: settings.READING_*."""
+
+    mode: str = READING_DEFAULTS["mode"]
+    decimals: int = Field(READING_DEFAULTS["decimals"], ge=_dlo["decimals"], le=_dhi["decimals"])
+    unit: str = Field(READING_DEFAULTS["unit"], max_length=16)
+    device_class: str = READING_DEFAULTS["device_class"]
+    display: str = READING_DEFAULTS["display"]
+    max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
+
+    @field_validator("mode")
+    @classmethod
+    def _mode(cls, value: str) -> str:
+        if value not in READING_MODES:
+            raise ValueError(f"Unknown mode {value!r}")
+        return value
+
+    @field_validator("display")
+    @classmethod
+    def _display(cls, value: str) -> str:
+        if value not in READING_DISPLAYS:
+            raise ValueError(f"Unknown display {value!r}")
+        return value
+
+    @field_validator("device_class")
+    @classmethod
+    def _device_class(cls, value: str) -> str:
+        if value not in READING_DEVICE_CLASSES:
+            raise ValueError(f"Unknown device class {value!r}")
+        return value
+
+    @field_validator("unit")
+    @classmethod
+    def _unit(cls, value: str) -> str:
+        return value.strip()
 
 
 _rlo = {k: v[0] for k, v in REVIEW_LIMITS.items()}
@@ -246,13 +294,24 @@ def objects_view(sensor: Sensor, live) -> dict | None:
     return {**settings, "live": per_class, "detections": live.detections if live else []}
 
 
+def reading_view(sensor: Sensor, live) -> dict | None:
+    if sensor.kind != KIND_READING:
+        return None
+    return {
+        **merge_reading(sensor.reading),
+        "value": live.debouncer.published if live else None,
+        "last": live.reading if live else None,
+        "has_image": bool(live and live.reading_image),
+    }
+
+
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     live = rt.live.get(sensor.id)
     info = session.get(ModelInfo, sensor.id)
     head = rt.heads.get(sensor.id)
     counts = sample_counts(session, sensor)
-    if sensor.kind == KIND_OBJECTS:
-        trained = True  # the detector needs no training
+    if sensor.kind in (KIND_OBJECTS, KIND_READING):
+        trained = True  # pretrained models, no training
     else:
         trained = head is not None and rt.embedder is not None and head.backbone == rt.embedder.spec.id
     if not sensor.enabled:
@@ -281,6 +340,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "entity_id": entity_ids(sensor)[0],
         "entity_ids": entity_ids(sensor),
         "objects": objects_view(sensor, live),
+        "reading": reading_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,
         "trained": trained,

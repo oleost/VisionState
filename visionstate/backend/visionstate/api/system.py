@@ -13,17 +13,23 @@ from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from .. import backbones, bundle, detectors, imaging
+from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sensor
 from ..settings import (
     DETECTION,
-    KIND_OBJECTS,
+    KIND_STATES,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
+    READING_DEFAULTS,
+    READING_DEVICE_CLASSES,
+    READING_DISPLAYS,
+    READING_LIMITS,
+    READING_MODES,
+    READING_SENSOR_DEFAULTS,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -39,10 +45,11 @@ from ..settings import (
     VERSION,
     VIDEO,
     merge_objects,
+    merge_reading,
     merge_review,
 )
 from ..sources import SOURCE_TYPES, SourceError
-from .common import API_PREFIX, ReviewRules, Roi, get_sensor, runtime, state_id_for, unique_slug
+from .common import API_PREFIX, ReadingIn, ReviewRules, Roi, get_sensor, runtime, state_id_for, unique_slug
 from .samples import copy_limited
 from .sensors import prediction_view
 
@@ -75,6 +82,12 @@ def ui_config() -> dict:
         "object_max_classes": OBJECT_MAX_CLASSES,
         "object_labels": [{"key": x.key, "name": x.name, "group": x.group} for x in detectors.LABELS.labels],
         "object_popular": list(detectors.LABELS.popular),
+        "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
+        "reading_defaults": READING_DEFAULTS,
+        "reading_limits": READING_LIMITS,
+        "reading_modes": READING_MODES,
+        "reading_displays": READING_DISPLAYS,
+        "reading_device_classes": READING_DEVICE_CLASSES,
     }
 
 
@@ -102,6 +115,9 @@ async def status(request: Request) -> dict:
         "detector": rt.detector.spec.id if rt.detector else None,
         "detector_name": rt.detector.spec.name if rt.detector else None,
         "detector_error": rt.detector_error,
+        "reader": rt.reader.spec.id if rt.reader else None,
+        "reader_name": rt.reader.spec.name if rt.reader else None,
+        "reader_error": rt.reader_error,
         "mqtt": {
             "connected": mqtt.connected,
             "host": mqtt.config.host if mqtt.config else None,
@@ -122,6 +138,7 @@ class SettingsIn(BaseModel):
     backbone: str
     execution_provider: str = "CPUExecutionProvider"
     detector: str | None = None  # object sensors; None keeps the current one
+    reader: str | None = None  # reading sensors; None keeps the current one
 
 
 @router.get("/settings")
@@ -153,6 +170,19 @@ def get_settings(request: Request) -> dict:
             }
             for spec in detectors.DETECTORS.values()
         ],
+        "reader": rt.db.get_setting("reader", readers.DEFAULT_READER),
+        "readers": [
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "description": spec.description,
+                "installed": rt.model_path(spec) is not None,
+                "size": spec.size,
+                "license": spec.license,
+                "source": spec.source,
+            }
+            for spec in readers.READERS.values()
+        ],
         "providers": backbones.available_providers(),
         "options": {
             "history_retention_days": rt.settings.history_retention_days,
@@ -169,6 +199,8 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown backbone")
     if body.detector is not None and body.detector not in detectors.DETECTORS:
         raise HTTPException(400, "Unknown detector")
+    if body.reader is not None and body.reader not in readers.READERS:
+        raise HTTPException(400, "Unknown reader")
     current = get_settings(request)
     # Only reload what changed: a new backbone retrains every state sensor.
     if (body.backbone, body.execution_provider) != (current["backbone"], current["execution_provider"]):
@@ -181,6 +213,11 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
             await rt.set_detector(body.detector)
         except Exception as err:  # noqa: BLE001
             raise HTTPException(500, f"Could not load detector: {err}") from err
+    if body.reader is not None and body.reader != current["reader"]:
+        try:
+            await rt.set_reader(body.reader)
+        except Exception as err:  # noqa: BLE001
+            raise HTTPException(500, f"Could not load reader: {err}") from err
     return get_settings(request)
 
 
@@ -243,6 +280,39 @@ async def preview_detect(body: DetectPreviewIn, request: Request) -> dict:
         "width": image.width,
         "height": image.height,
         "detections": found,
+    }
+
+
+class ReadPreviewIn(BaseModel):
+    source_type: str
+    source: str
+    roi: Roi | None = None
+    reading: ReadingIn = ReadingIn()
+
+
+@router.post("/preview/read")
+async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
+    """A frame from a source and what the number reader makes of its region (new sensor wizard)."""
+    rt = runtime(request)
+    if body.source_type not in SOURCE_TYPES:
+        raise HTTPException(400, "Unknown source type")
+    try:
+        data = await rt.grabber.grab(body.source_type, body.source)
+    except SourceError as err:
+        raise HTTPException(502, f"Camera unavailable: {err}") from err
+    image = await asyncio.to_thread(imaging.decode, data)
+    settings = merge_reading(body.reading.model_dump())
+    try:
+        text, used = await rt.read_number(image, body.roi.normalised() if body.roi else None, settings)
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(503, f"Number reader unavailable: {err}") from err
+    used_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+    return {
+        "image": "data:image/jpeg;base64," + base64.b64encode(data).decode(),
+        "read_image": "data:image/jpeg;base64," + base64.b64encode(used_jpeg).decode(),
+        "text": text.text,
+        "score": round(text.score, 4),
+        "value": readers.format_value(readers.parse(text.text, settings), settings),
     }
 
 
@@ -348,7 +418,7 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
         path.unlink(missing_ok=True)
     await rt.sensor_created(sensor_id)
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
-    if cfg and not cfg.is_objects:
+    if cfg and cfg.kind == KIND_STATES:
         rt.schedule_retrain(sensor_id, delay=0)
     return {"id": sensor_id}
 
@@ -373,6 +443,7 @@ def _import_sync(rt, path: Path) -> int:
                     "roi",
                     "states",
                     "objects",
+                    "reading",
                     "interval_s",
                     "threshold",
                     "debounce",
@@ -387,7 +458,7 @@ def _import_sync(rt, path: Path) -> int:
         raise ValueError(f"invalid sensor in bundle: {err.errors()[0].get('msg')}") from err
     except HTTPException as err:
         raise ValueError(f"invalid sensor in bundle: {err.detail}") from err
-    samples = manifest.get("samples", []) if spec.kind != KIND_OBJECTS else []
+    samples = manifest.get("samples", []) if spec.kind == KIND_STATES else []
     if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
         raise ValueError("too many samples in bundle")
     spec.enabled = True

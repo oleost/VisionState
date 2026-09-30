@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json') }}
+          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
       - run: python -m visionstate.backbones models
       - run: ruff check visionstate tests
       - run: ruff format --check visionstate tests
@@ -64,7 +64,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json') }}
+          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
       - run: python -m visionstate.backbones models
         working-directory: visionstate/backend
       - uses: actions/setup-node@v7
@@ -167,6 +167,12 @@ jobs:
           curl -sf -X POST localhost:8099/api/v1/sensors -H 'Content-Type: application/json' -d '{"name":"Yard","kind":"objects","source_type":"http","source":"http://127.0.0.1:8765/beach.jpg","objects":{"classes":["dog"]}}' >/dev/null
           docker exec mqtt mosquitto_sub -t 'homeassistant/binary_sensor/visionstate_yard/dog/config' -C 1 -W 60             | jq -e '.device_class == "occupancy"' >/dev/null
           docker exec mqtt mosquitto_sub -t 'visionstate/yard/objects/dog/state' -C 1 -W 300 | grep -q ON
+          # The number reader runs in the image and reads a drawn LCD.
+          read=$(curl -s --max-time 120 -X POST localhost:8099/api/v1/preview/read -H 'Content-Type: application/json' -d '{"source_type":"http","source":"http://127.0.0.1:8765/lcd.png","reading":{"mode":"counter","decimals":1}}')
+          if ! echo "$read" | jq -e '.value == "123456.7"' >/dev/null; then echo "read: ${read:0:300}"; docker logs app | tail -30; exit 1; fi
+          curl -sf -X POST localhost:8099/api/v1/sensors -H 'Content-Type: application/json' -d '{"name":"Meter","kind":"reading","source_type":"http","source":"http://127.0.0.1:8765/lcd.png","reading":{"mode":"counter","decimals":1,"unit":"kWh","device_class":"energy"}}' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate_meter/state/config' -C 1 -W 60 | jq -e '.state_class == "total_increasing"' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'visionstate/meter/state' -C 1 -W 300 | grep -q '123456.7'
           if docker logs app 2>&1 | grep -q Traceback; then docker logs app; exit 1; fi
           # Home Assistant stops apps with SIGTERM; a non-zero exit code shows up as "Error".
           docker stop -t 30 app

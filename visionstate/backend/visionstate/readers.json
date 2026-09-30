@@ -1,0 +1,31 @@
+{
+  "default": "ppocrv6-tiny",
+  "readers": {
+    "ppocrv6-tiny": {
+      "name": "PP-OCRv6 tiny (fast)",
+      "description": "Recommended. Reads LCD, LED and printed numbers; a few milliseconds per reading.",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx/resolve/2612ab37152ae0a677521bae4e1e3d4fb4cf7c30/inference.onnx",
+      "sha256": "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6",
+      "size": 4462639,
+      "input_height": 48,
+      "classes": 6906,
+      "chars": {"0": 33, "1": 34, "2": 35, "3": 36, "4": 37, "5": 38, "6": 39, "7": 40, "8": 41, "9": 42, ".": 14, ",": 12, ":": 16, "-": 13},
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx",
+      "bundled": true
+    },
+    "ppocrv6-small": {
+      "name": "PP-OCRv6 small",
+      "description": "Larger model; can help on unusual fonts. Downloaded on first use (21 MB).",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+      "size": 21159378,
+      "input_height": 48,
+      "classes": 18710,
+      "chars": {"0": 33, "1": 34, "2": 35, "3": 36, "4": 37, "5": 38, "6": 39, "7": 40, "8": 41, "9": 42, ".": 14, ",": 12, ":": 16, "-": 13},
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
+      "bundled": false
+    }
+  }
+}

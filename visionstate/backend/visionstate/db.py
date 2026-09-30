@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -32,6 +32,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     3: [("sensor", "review", "JSON")],
     4: [("model_info", "suspects", "JSON"), ("sample", "verified", "BOOLEAN NOT NULL DEFAULT 0")],
     5: [("sensor", "objects", "JSON"), ("prediction", "detections", "JSON")],
+    6: [("sensor", "reading", "JSON")],
 }
 
 
@@ -49,7 +50,8 @@ class Sensor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(128))
-    # settings.SENSOR_KINDS: "single_state" (learned states) or "objects" (detector). Fixed at creation.
+    # settings.SENSOR_KINDS: "single_state" (learned states), "objects" (detector) or "reading"
+    # (number on a display, OCR). Fixed at creation.
     kind: Mapped[str] = mapped_column(String(32), default="single_state")
     source_type: Mapped[str] = mapped_column(String(32))  # see sources.SOURCE_TYPES
     source: Mapped[str] = mapped_column(String(1024))
@@ -64,6 +66,8 @@ class Sensor(Base):
     review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Object sensors: classes and filters; see settings.OBJECT_DEFAULTS.
     objects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Reading sensors: mode, decimals, unit …; see settings.READING_DEFAULTS.
+    reading: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(
@@ -124,6 +128,8 @@ class Prediction(Base):
 
     Object sensors store one row per object class that appeared (published_key "on") or
     cleared ("off"), with state_key = the class and the frame's detections.
+    Reading sensors store accepted new values (state_key "reading", published_key = the value)
+    and rejected readings (published_key None); probs holds {"text", "value", "reason"}.
     """
 
     __tablename__ = "prediction"

@@ -10,7 +10,16 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from .settings import APP_SLUG, KIND_OBJECTS, KIND_STATES, SUPERVISOR_URL, UNKNOWN_STATE, VERSION, Settings
+from .settings import (
+    APP_SLUG,
+    KIND_OBJECTS,
+    KIND_READING,
+    KIND_STATES,
+    SUPERVISOR_URL,
+    UNKNOWN_STATE,
+    VERSION,
+    Settings,
+)
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +55,7 @@ class SensorDescriptor:
     state_keys: list[str]
     kind: str = KIND_STATES
     objects: list[tuple[str, str]] = field(default_factory=list)  # (key, display name) per class
+    reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
@@ -53,11 +63,12 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
     t = topics(sensor.slug)
     uid = f"{APP_SLUG}_{sensor.slug}"
     objects = sensor.kind == KIND_OBJECTS
+    reading = sensor.kind == KIND_READING
     device = {
         "identifiers": [uid],
         "name": sensor.name,
         "manufacturer": "VisionState",
-        "model": "Object sensor" if objects else "Image state sensor",
+        "model": "Object sensor" if objects else "Reading sensor" if reading else "Image state sensor",
         "sw_version": VERSION,
     }
     bridge_only = {"availability": [{"topic": BRIDGE_AVAILABILITY}]}
@@ -70,7 +81,25 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         payload = {"unique_id": f"{uid}_{object_id}", "device": device, **payload}
         return f"{prefix}/{component}/{uid}/{object_id}/config", payload
 
-    if objects:
+    if reading:
+        kind_specific = [
+            config("sensor", "state", {"name": None, **reading_entity(sensor.reading or {}, uid, t), **with_camera}),
+            config(
+                "sensor",
+                "confidence",
+                {
+                    "name": "Confidence",
+                    "default_entity_id": f"sensor.{uid}_confidence",
+                    "state_topic": t["confidence"],
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "icon": "mdi:percent-circle-outline",
+                    **with_camera,
+                },
+            ),
+        ]
+    elif objects:
         kind_specific = []
         for key, name in sensor.objects:
             ot = object_topics(sensor.slug, key)
@@ -150,7 +179,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             "button",
             "classify",
             {
-                "name": "Detect now" if objects else "Classify now",
+                "name": "Detect now" if objects else "Read now" if reading else "Classify now",
                 "default_entity_id": f"button.{uid}_classify",
                 "command_topic": t["classify"],
                 "payload_press": "PRESS",
@@ -173,6 +202,35 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             },
         ),
     ]
+
+
+def reading_entity(reading: dict, uid: str, t: dict[str, str]) -> dict:
+    """Discovery fields of a reading sensor's value: unit, device class and state class.
+
+    Counters are ``total_increasing`` so they work in the Energy dashboard; a money value may
+    not have a measurement state class in Home Assistant, so it gets none.
+    """
+    mode = reading.get("mode", "value")
+    unit = "min" if mode == "time_left" else reading.get("unit") or None
+    device_class = "duration" if mode == "time_left" else reading.get("device_class") or None
+    if mode == "counter":
+        state_class = "total_increasing"
+    elif device_class == "monetary":
+        state_class = None
+    else:
+        state_class = "measurement"
+    payload = {
+        "default_entity_id": f"sensor.{uid}",
+        "state_topic": t["state"],
+        "json_attributes_topic": t["attributes"],
+        "icon": "mdi:counter" if mode == "counter" else "mdi:timer-outline" if mode == "time_left" else "mdi:numeric",
+        "unit_of_measurement": unit,
+        "device_class": device_class,
+        "state_class": state_class,
+    }
+    if mode != "time_left":
+        payload["suggested_display_precision"] = int(reading.get("decimals", 0))
+    return {k: v for k, v in payload.items() if v is not None}
 
 
 REVIEW_TOPICS = {

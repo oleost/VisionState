@@ -2,8 +2,8 @@
 
 Available backbones are declared in ``backbones.json``; adding a model is a new entry there.
 Entries are never changed or removed once released, so a stored choice keeps working.
-Run ``python -m visionstate.backbones <dest>`` to download all bundled models, backbones and
-detectors (used by the Dockerfile and CI). ``download``/``locate`` work for both kinds of spec.
+Run ``python -m visionstate.backbones <dest>`` to download all bundled models (backbones,
+detectors, readers) for the Dockerfile and CI. ``download``/``locate`` work for every kind of spec.
 """
 
 from __future__ import annotations
@@ -155,11 +155,11 @@ class Embedder:
 
 
 if __name__ == "__main__":
-    from . import detectors
+    from . import detectors, readers
 
     logging.basicConfig(level=logging.INFO)
     destination = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
-    # Every bundled model: backbones (states) and detectors (objects).
-    for spec in [*BACKBONES.values(), *detectors.DETECTORS.values()]:
+    # Every bundled model: backbones (states), detectors (objects) and readers (readings).
+    for spec in [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]:
         if spec.bundled:
             print(download(spec, destination))

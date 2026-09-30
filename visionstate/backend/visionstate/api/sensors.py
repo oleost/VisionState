@@ -16,9 +16,11 @@ from .. import bundle
 from ..db import ModelInfo, Prediction, Sample, Sensor, State
 from ..settings import (
     KIND_OBJECTS,
+    KIND_READING,
     KIND_STATES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
+    READING_SENSOR_DEFAULTS,
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
@@ -28,6 +30,7 @@ from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
     ObjectsIn,
+    ReadingIn,
     ReviewOverrides,
     Roi,
     StateIn,
@@ -56,6 +59,7 @@ class SensorIn(BaseModel):
     roi: Roi | None = None
     states: list[StateIn] = Field(default_factory=list)  # state sensors
     objects: ObjectsIn | None = None  # object sensors
+    reading: ReadingIn | None = None  # reading sensors
     # Unset: the defaults of the sensor's kind (SENSOR_DEFAULTS / OBJECT_SENSOR_DEFAULTS).
     interval_s: float | None = Field(None, ge=lo["interval_s"], le=hi["interval_s"])
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
@@ -69,15 +73,20 @@ class SensorIn(BaseModel):
         if self.kind not in SENSOR_KINDS:
             raise HTTPException(400, f"Unknown sensor kind {self.kind!r}")
         _check_source_type(self.source_type)
+        if self.kind != KIND_STATES and self.states:
+            raise HTTPException(400, "Only state sensors have states")
+        if self.kind != KIND_OBJECTS and self.objects is not None:
+            raise HTTPException(400, "Only object sensors have objects")
+        if self.kind != KIND_READING and self.reading is not None:
+            raise HTTPException(400, "Only reading sensors have reading settings")
         if self.kind == KIND_OBJECTS:
-            if self.states:
-                raise HTTPException(400, "Object sensors have no states")
             self.objects = self.objects or ObjectsIn()
             defaults = OBJECT_SENSOR_DEFAULTS
+        elif self.kind == KIND_READING:
+            self.reading = self.reading or ReadingIn()
+            defaults = READING_SENSOR_DEFAULTS
         else:
             validate_states(self.states)
-            if self.objects is not None:
-                raise HTTPException(400, "Only object sensors have objects")
             defaults = SENSOR_DEFAULTS
         for key in ("interval_s", "threshold", "debounce"):
             if getattr(self, key) is None:
@@ -99,6 +108,7 @@ class SensorIn(BaseModel):
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
             objects=self.objects.model_dump() if self.objects else None,
+            reading=self.reading.model_dump() if self.reading else None,
         )
         _apply_states(sensor, self.states)
         return sensor
@@ -118,6 +128,7 @@ class SensorPatch(BaseModel):
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
     objects: ObjectsIn | None = None
+    reading: ReadingIn | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -179,10 +190,12 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         validate_states(body.states)
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id)
-        if sensor.kind == KIND_OBJECTS and body.states is not None:
-            raise HTTPException(400, "Object sensors have no states")
+        if sensor.kind != KIND_STATES and body.states is not None:
+            raise HTTPException(400, "Only state sensors have states")
         if sensor.kind != KIND_OBJECTS and body.objects is not None:
             raise HTTPException(400, "Only object sensors have objects")
+        if sensor.kind != KIND_READING and body.reading is not None:
+            raise HTTPException(400, "Only reading sensors have reading settings")
         old_roi, old_keys = sensor.roi, [st.key for st in sensor.states]
         for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled"):
             value = getattr(body, field)
@@ -200,6 +213,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             _apply_states(sensor, body.states)
         if body.objects is not None:
             sensor.objects = body.objects.model_dump()
+        if body.reading is not None:
+            sensor.reading = body.reading.model_dump()
         s.flush()
         changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
         retrain = changed and sensor.kind == KIND_STATES
@@ -245,6 +260,15 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
         except SourceError as err:
             raise HTTPException(502, f"Camera unavailable: {err}") from err
     return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": frame_id, "Cache-Control": "no-store"})
+
+
+@router.get("/{sensor_id}/reading/image")
+async def reading_image(sensor_id: int, request: Request) -> Response:
+    """The image the number reader saw in the last check (region after display processing)."""
+    live = runtime(request).live.get(sensor_id)
+    if live is None or live.reading_image is None:
+        raise HTTPException(404, "No reading yet")
+    return Response(live.reading_image, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{sensor_id}/classify")

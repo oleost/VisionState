@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import delete, func, select
 
-from . import backbones, classifier, detectors, imaging
+from . import backbones, classifier, detectors, imaging, readers
 from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener
 from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, topics
@@ -23,11 +23,14 @@ from .redact import redact
 from .settings import (
     DETECTION,
     KIND_OBJECTS,
+    KIND_READING,
     KIND_STATES,
+    READING,
     RUNTIME,
     UNKNOWN_STATE,
     Settings,
     merge_objects,
+    merge_reading,
     merge_review,
     merge_triggers,
 )
@@ -59,6 +62,7 @@ class SensorConfig:
     review: dict = field(default_factory=dict)  # sensor overrides only; see Runtime.review_rules
     kind: str = KIND_STATES
     objects: dict = field(default_factory=lambda: merge_objects(None))  # object sensors only
+    reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
 
     @property
     def state_keys(self) -> list[str]:
@@ -69,10 +73,15 @@ class SensorConfig:
         return self.kind == KIND_OBJECTS
 
     @property
+    def is_reading(self) -> bool:
+        return self.kind == KIND_READING
+
+    @property
     def descriptor(self) -> SensorDescriptor:
         names = detectors.LABELS.by_key
         objects = [(k, names[k].name) for k in self.objects["classes"] if k in names] if self.is_objects else []
-        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects)
+        reading = self.reading if self.is_reading else None
+        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading)
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
@@ -92,6 +101,7 @@ class SensorConfig:
             review=dict(row.review or {}),
             kind=row.kind or KIND_STATES,
             objects=merge_objects(row.objects),
+            reading=merge_reading(row.reading),
         )
 
 
@@ -247,6 +257,12 @@ class LiveState:
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check
+    # Reading sensors: the last read {"text", "score", "value", "reason", "at"} and the image
+    # the reader saw (JPEG), shown in the UI so a bad region or display setting is easy to spot.
+    reading: dict | None = None
+    reading_image: bytes | None = None
+    reading_restored: bool = False  # last published value loaded from the history after a restart
+    last_rejected: float = 0.0
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"
@@ -277,6 +293,9 @@ class Runtime:
         self.detector_error = ""
         self._detector_lock = asyncio.Lock()
         self._published_classes: dict[int, set[str]] = {}  # object sensor -> classes in discovery
+        self.reader: readers.Reader | None = None  # loaded on first use by a reading sensor
+        self.reader_error = ""
+        self._reader_lock = asyncio.Lock()
         self.heads: dict[int, classifier.Head] = {}
         self.live: dict[int, LiveState] = {}
         self.training: set[int] = set()
@@ -295,6 +314,7 @@ class Runtime:
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
+        await asyncio.to_thread(self._pin_setting, "reader", readers.DEFAULT_READER)
         backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
         provider = self.db.get_setting("execution_provider", "CPUExecutionProvider")
         try:
@@ -350,6 +370,9 @@ class Runtime:
         if self.detector is not None and self.detector.provider != provider:
             async with self._detector_lock:
                 await self.load_detector(self.detector.spec.id, provider)
+        if self.reader is not None and self.reader.provider != provider:
+            async with self._reader_lock:
+                await self.load_reader(self.reader.spec.id, provider)
 
     def _pin_setting(self, key: str, default: str) -> None:
         if self.db.get_setting(key) is None:
@@ -389,6 +412,50 @@ class Runtime:
         await asyncio.to_thread(self.db.set_setting, "detector", detector_id)
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
+
+    # --- reader (reading sensors) --------------------------------------------------------
+
+    async def load_reader(self, reader_id: str, provider: str) -> None:
+        spec = readers.READERS.get(reader_id) or readers.READERS[readers.DEFAULT_READER]
+        path = self.model_path(spec)
+        if path is None:
+            path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
+        self.reader = await asyncio.to_thread(readers.Reader, spec, path, provider)
+        self.reader_error = ""
+        log.info("Reader %s loaded (%s)", spec.id, self.reader.provider)
+
+    async def ensure_reader(self) -> readers.Reader:
+        """The number reader, loaded on first use so installations without reading sensors never pay for it."""
+        async with self._reader_lock:
+            if self.reader is None:
+                reader_id = await asyncio.to_thread(self.db.get_setting, "reader", readers.DEFAULT_READER)
+                provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
+                try:
+                    await self.load_reader(reader_id, provider)
+                except Exception as err:
+                    self.reader_error = redact(str(err))
+                    log.exception("Could not load reader %s", reader_id)
+                    raise
+            return self.reader
+
+    async def set_reader(self, reader_id: str) -> None:
+        provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
+        reading_sensors = await asyncio.to_thread(self._sensor_ids, KIND_READING)
+        if self.reader is not None or reading_sensors:
+            async with self._reader_lock:
+                await self.load_reader(reader_id, provider)
+        await asyncio.to_thread(self.db.set_setting, "reader", reader_id)
+        for sensor_id in reading_sensors:
+            self.wake(sensor_id, force=True)
+
+    async def read_number(
+        self, image: Image.Image, roi: dict | None, reading: dict
+    ) -> tuple[readers.Text, Image.Image]:
+        """Read the region of ``image``; returns the text and the image the reader used."""
+        reader = await self.ensure_reader()
+        region = imaging.crop_box(image, imaging.region_box(roi))
+        async with self._sem:
+            return await asyncio.to_thread(reader.read_display, region, reading["display"])
 
     async def detect_objects(
         self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False
@@ -459,6 +526,8 @@ class Runtime:
         await self.refresh_trigger_entities()
         if descriptor.kind == KIND_OBJECTS and not await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS):
             self.detector = None  # the last object sensor is gone: free the memory
+        if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
+            self.reader = None
 
     def _on_loop(self, func, *args) -> bool:
         """Run ``func`` on the event loop. Returns True when called from another thread (deferred).
@@ -609,6 +678,9 @@ class Runtime:
         if cfg.is_objects:
             await self._run_objects(cfg, image)
             return
+        if cfg.is_reading:
+            await self._run_reading(cfg, image)
+            return
 
         probs = await self.classify_image(cfg, image)
         if probs:
@@ -718,6 +790,94 @@ class Runtime:
                     reviewed=True,  # nothing to review: the detector is not trained here
                     detections=found,
                 )
+            )
+
+    async def _run_reading(self, cfg: SensorConfig, image: Image.Image) -> None:
+        """One check of a reading sensor: read the number, check it and publish it.
+
+        A value is published after ``debounce`` equal readings in a row. Unsure, empty and
+        implausible readings (a counter going down, a jump above ``max_step``) are rejected:
+        the last value stays and the rejected reading is kept in the history (rate limited).
+        """
+        live = self.live_state(cfg.id)
+        settings = cfg.reading
+        if not live.reading_restored:
+            live.reading_restored = True
+            if live.debouncer.published is None:
+                live.debouncer.published = await asyncio.to_thread(self._last_reading, cfg.id)
+        try:
+            text, used = await self.read_number(image, cfg.roi, settings)
+        except Exception as err:  # noqa: BLE001 - reader missing or failed to load
+            live.error = f"Number reader unavailable: {redact(str(err))}"
+            return
+        now = time.time()
+        value = readers.parse(text.text, settings)
+        last = float(live.debouncer.published) if live.debouncer.published is not None else None
+        if value is None:
+            reason = "nothing read"
+        elif text.score < cfg.threshold:
+            reason = "unsure"
+        else:
+            reason = readers.implausible(value, last, settings)
+        shown = readers.format_value(value, settings)
+        live.reading = {"text": text.text, "score": round(text.score, 4), "value": shown, "reason": reason, "at": now}
+        live.reading_image = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+        live.top, live.confidence = shown, text.score
+
+        t = topics(cfg.slug)
+        changed = False
+        if reason is None:
+            changed = live.debouncer.update(shown, cfg.debounce)
+            if changed:
+                live.changes.append(now)
+        if live.debouncer.published is not None:
+            await self.mqtt.publish(t["state"], live.debouncer.published, retain=True)
+        await self.mqtt.publish(t["confidence"], f"{text.score * 100:.1f}", retain=True)
+        await self.mqtt.publish(
+            t["attributes"],
+            {
+                "read_text": text.text,
+                "last_update": datetime.now(UTC).isoformat(),
+                "rejected": reason,
+                "last_trigger": live.last_trigger,
+            },
+            retain=True,
+        )
+        crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
+        await self.mqtt.publish(t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+
+        record = changed or (reason is not None and now - live.last_rejected >= READING["rejected_cooldown_s"])
+        if reason is not None and record:
+            live.last_rejected = now
+        if record:
+            published = live.debouncer.published if reason is None else None
+            details = {"text": text.text, "value": shown, "reason": reason}
+            await asyncio.to_thread(self._record_reading, cfg.id, image, published, text.score, details, changed)
+
+    def _record_reading(self, sensor_id, image, published, score, details, changed) -> None:
+        frame = self.storage.save_history(sensor_id, image)
+        with self.db.session() as s:
+            s.add(
+                Prediction(
+                    sensor_id=sensor_id,
+                    state_key="reading",
+                    published_key=published,
+                    confidence=score,
+                    probs=details,
+                    frame=frame,
+                    is_change=changed,
+                    reviewed=True,  # readings are not reviewed; rejected ones are listed in the history
+                )
+            )
+
+    def _last_reading(self, sensor_id: int) -> str | None:
+        """The last published value of a reading sensor (so a restart keeps checking against it)."""
+        with self.db.session() as s:
+            return s.scalar(
+                select(Prediction.published_key)
+                .where(Prediction.sensor_id == sensor_id, Prediction.published_key.is_not(None))
+                .order_by(Prediction.created_at.desc())
+                .limit(1)
             )
 
     def _record_prediction(self, sensor_id, image, top, published, confidence, probs, changed, reason) -> None:
@@ -860,7 +1020,7 @@ class Runtime:
         if self.embedder is None:
             return
         cfg, samples, labels = self._labelled_samples(sensor_id)
-        if cfg is None or cfg.is_objects:
+        if cfg is None or cfg.kind != KIND_STATES:
             return
         vectors = self.vectors_for(cfg, samples)
         with self.db.session() as s:
