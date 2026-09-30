@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/promo/dashboard.png" alt="VisionState dashboard with a garage door sensor" width="900">
+  <img src="docs/promo/dashboard.png" alt="VisionState dashboard with a garage door, a driveway and a power meter sensor" width="900">
 </p>
 
 ## Why VisionState?
@@ -62,12 +62,18 @@ without writing code or leaving Home Assistant:
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src="docs/promo/label.png" alt="Labelling live frames" width="100%"></td>
-    <td width="50%" valign="top"><img src="docs/promo/review.png" alt="Review queue" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/objects.png" alt="An object sensor finding dogs and a person" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/reading.png" alt="A reading sensor reading a power meter" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top"><b>Label</b> — live camera image with the region you drew, the current prediction, day/night coverage and one button per state.</td>
-    <td valign="top"><b>Review</b> — frames the AI was unsure about. Confirm or correct with a single key press.</td>
+    <td valign="top"><b>Objects</b> — people, cars, animals and more, found without any training. Each one becomes an on/off sensor and a count in Home Assistant.</td>
+    <td valign="top"><b>Reading</b> — the number on a meter or display, checked before it is published: a counter never goes down.</td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top"><img src="docs/promo/wizard.png" alt="The new sensor wizard testing an object sensor on a fresh frame" width="100%"></td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top"><b>New sensor</b> — pick a camera, draw the region and choose what to detect: your own states, objects or a number. The wizard tests it on a fresh frame right away.</td>
   </tr>
 </table>
 
