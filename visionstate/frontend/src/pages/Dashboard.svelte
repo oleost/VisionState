@@ -10,6 +10,8 @@
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
   import { isObjectSensor, objectName } from '../lib/objects';
+  import { isReadingSensor, readingText, readingUnit } from '../lib/reading';
+  import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
   import { POLL, SENSOR_STATUS } from '../lib/ui';
@@ -48,6 +50,10 @@
 
   function meta(s: Sensor) {
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
+    if (isReadingSensor(s) && s.reading) {
+      const unit = readingUnit(s.reading);
+      return `Reads a ${READING_MODE_INFO[s.reading.mode].title.toLowerCase()}${unit ? ` in ${unit}` : ''}`;
+    }
     const n = s.counts.labelled;
     if (s.model?.accuracy != null) return `${n} samples · ${pct(s.model.accuracy)} accuracy`;
     const target = app.config?.quality.min_samples_per_state ?? 20;
@@ -97,6 +103,9 @@
             {#if isObjectSensor(s)}
               <AnalysedFrame sensor={s} labels={false} />
               <span class="pill-pos"><ObjectChips sensor={s} overlay /></span>
+            {:else if isReadingSensor(s)}
+              <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
+              <span class="pill-pos"><StatePill overlay name={readingText(s)} color="var(--c-accent)" /></span>
             {:else}
               <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
               <span class="pill-pos">
@@ -114,7 +123,7 @@
               <span class="mono xsmall muted">{s.entity_id}</span>
               <span class="small muted">{meta(s)}</span>
             </div>
-            {#if isObjectSensor(s)}
+            {#if isObjectSensor(s) || isReadingSensor(s)}
               <div class="actions">
                 <a class="btn sm" href={href(paths.sensor(s.id, 'live'))}>Live</a>
                 <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
@@ -134,7 +143,7 @@
       <a class="card new" href={href(paths.newSensor())}>
         <span class="plus"><Icon name="plus" size={22} /></span>
         <h2>New sensor</h2>
-        <span class="small muted">Watch a state you teach it, or find people, cars and animals.</span>
+        <span class="small muted">Watch a state you teach it, find people, cars and animals, or read a number.</span>
       </a>
     </div>
   {/if}

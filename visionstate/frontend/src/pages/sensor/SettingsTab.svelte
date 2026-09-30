@@ -1,18 +1,21 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
-  import { toast, toastError } from '../../lib/app.svelte';
+  import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
+  import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor } from '../../lib/objects';
+  import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor } from '../../lib/types';
@@ -36,6 +39,9 @@
   let classes = $state<string[]>(initial.objects?.classes ?? []);
   let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
   let minSize = $state(initial.objects?.min_size ?? 0);
+  const readingSensor = isReadingSensor(initial);
+  const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
+  let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
@@ -50,7 +56,9 @@
         ...(roi ? { roi } : { clear_roi: true }),
         ...(objectSensor
           ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize } }
-          : { states, review }),
+          : readingSensor
+            ? { reading }
+            : { states, review }),
         interval_s,
         threshold,
         debounce,
@@ -103,14 +111,21 @@
         Drag to draw a new box, move it, or shape it with corners.
         {objectSensor
           ? 'An object counts when it stands inside it (the bottom of its box).'
-          : 'Changing it retrains the model.'}
+          : readingSensor
+            ? 'Draw it tightly around the digits only — no labels or units.'
+            : 'Changing it retrains the model.'}
       </p>
       <div class="frame"><LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000} /></div>
     </section>
   </div>
 
   <div class="col" style="gap:var(--space-5)">
-    {#if objectSensor}
+    {#if readingSensor}
+      <section class="card pad col">
+        <h3>Reading</h3>
+        <ReadingEditor bind:value={reading} />
+      </section>
+    {:else if objectSensor}
       <section class="card pad col">
         <h3>Objects</h3>
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
@@ -133,12 +148,14 @@
       <h3>Sensor output</h3>
       {#if objectSensor}
         <ObjectParams bind:threshold bind:debounce bind:clearAfter bind:minSize />
+      {:else if readingSensor}
+        <ReadingParams bind:threshold bind:debounce bind:maxStep={reading.max_step} mode={reading.mode} unit={reading.unit} />
       {:else}
         <SensorParams bind:threshold bind:debounce />
       {/if}
     </section>
 
-    {#if !objectSensor}
+    {#if !objectSensor && !readingSensor}
       <section class="card pad col">
         <h3>Review</h3>
         {#if globalReview}

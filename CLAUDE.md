@@ -13,10 +13,10 @@ from camera images using a local embedding model + lightweight per-sensor classi
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile).
   - `backend/visionstate/settings.py` holds every backend default/tunable; import from there.
-  - `backend/visionstate/backbones.json` (state sensors) and `detectors.json` (object sensors) are
-    the model registries. Entries are never changed or removed once released (a new model gets a
+  - `backend/visionstate/backbones.json` (state sensors), `detectors.json` (object sensors) and
+    `readers.json` (reading sensors) are the model registries. Entries are never changed or removed once released (a new model gets a
     new id); `python -m visionstate.backbones <dir>` downloads every bundled model of both.
-  - Sensor kinds (`settings.SENSOR_KINDS`): `single_state` and `objects`; the UI's tabs per kind
+  - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects` and `reading`; the UI's tabs per kind
     are in `ui.ts` (`TABS_BY_KIND`). New features must say which kind(s) they apply to.
   - `frontend/src/lib/tokens.css` holds all colours/type/spacing; `ui.ts` holds UI constants;
     `api.ts` is the only place that builds API URLs; `router.svelte.ts` defines app paths.

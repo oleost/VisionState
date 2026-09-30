@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, PHOTO_URL } from './env';
+import { CAMERA_URL, DISPLAY_URL, PHOTO_URL } from './env';
 import {
   center,
   doubleTap,
@@ -12,6 +12,7 @@ import {
   isTouch,
   press,
   seededObjectSensorId,
+  seededReadingSensorId,
   seededSensorId,
   watchErrors,
 } from './helpers';
@@ -19,6 +20,7 @@ import {
 test('every page renders without errors and fits the screen', async ({ page, request }, info) => {
   const id = await seededSensorId(request);
   const objectId = await seededObjectSensorId(request);
+  const readingId = await seededReadingSensorId(request);
   const pages: [string, string, RegExp | string][] = [
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
@@ -31,6 +33,9 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['objects-live', `sensors/${objectId}/live`, 'Right now'],
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
     ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
+    ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
+    ['reading-history', `sensors/${readingId}/history`, 'Every new value and the readings that were rejected'],
+    ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
@@ -130,6 +135,50 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('new reading sensor through the wizard', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Washer');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(DISPLAY_URL('1:05', 'led'));
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.locator('.roi img')).toBeVisible();
+  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+
+  await press(page.getByRole('radio', { name: /Reading/ }), info);
+  await expect(page.getByText(/Read “1:05”/)).toBeVisible({ timeout: 60_000 });
+  // Switching the mode re-tests: "1:05" is 65 minutes left.
+  await press(page.getByRole('radio', { name: /Time left/ }), info);
+  await expect(page.getByText('65 min')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByAltText('The region as the number reader saw it')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .kind, .mode, .card');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-reading.png'), fullPage: true });
+
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.locator('.value-card .value')).toHaveText('65 min', { timeout: 60_000 });
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('reading sensor shows its value everywhere', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  await page.goto(`#/sensors/${id}/live`);
+  await expect(page.locator('.value-card .value')).toHaveText('12345.6 kWh');
+  await expect(page.getByText('Last reading accepted')).toBeVisible();
+  await page.goto(`#/sensors/${id}/history`);
+  await expect(page.getByText('12345.6 kWh').first()).toBeVisible();
+  await page.goto('#/');
+  await expect(page.getByText('12345.6 kWh').first()).toBeVisible();
+  await expect(page.getByText('Reads a counter in kWh')).toBeVisible();
+  errors.expectNone();
 });
 
 test('object sensor shows boxes and history', async ({ page, request }, info) => {

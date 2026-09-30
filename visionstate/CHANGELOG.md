@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0b1
+
+- **Reading sensors**: read a number from a display — power meters, fuel prices, the minutes left
+  on a washing machine. Choose *Reading* in step 3 of the new sensor wizard; it reads a fresh
+  frame right away and shows the value and what the reader saw.
+  - Modes: *Counter* (only goes up, works in the Energy dashboard), *Value* and *Time left*
+    (`1:25` = 85 minutes).
+  - Unsure or implausible readings (a counter going down, too big a jump) are rejected and the
+    last value stays — also after a restart. The History tab lists new values and rejected
+    readings with the reason.
+  - Reader: PP-OCRv6 tiny (Apache-2.0) is included; PP-OCRv6 small can be chosen under Settings.
+    Only loaded while at least one reading sensor exists.
+  - Not yet for mechanical counters with rolling digits (most water meters).
+
 ## 0.5.0b1
 
 - **Object sensors**: find people, cars, bicycles, cats, dogs and 75 more common objects — no

@@ -1,24 +1,28 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ObjectPicker from '../lib/components/ObjectPicker.svelte';
+  import ReadingEditor from '../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
   import { objectCount } from '../lib/objects';
+  import { readingUnit } from '../lib/reading';
+  import { pct } from '../lib/format';
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { Detection, Roi, SensorKind, Triggers } from '../lib/types';
+  import type { Detection, ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
   import { SENSOR_KIND_INFO } from '../lib/ui';
 
   const STEPS = [
     { title: 'Camera', sub: 'Name and image source' },
     { title: 'Region', sub: 'What to look at' },
-    { title: 'Detect', sub: 'States or objects' },
+    { title: 'Detect', sub: 'States, objects or a number' },
     { title: 'Checks', sub: 'When to look (optional)' },
   ];
 
@@ -35,6 +39,11 @@
   let detections = $state<Detection[]>([]);
   let detecting = $state(false);
   let detectError = $state('');
+  let reading = $state<ReadingSettings>({ ...app.config!.reading_defaults });
+  // Reading preview: the frame, what the reader saw, and what it read.
+  let readResult = $state<{ image: string; read_image: string; text: string; score: number; value: string | null } | null>(null);
+  let readError = $state('');
+  let readingBusy = $state(false);
   let previewUrl = $state<string | null>(null);
   let previewError = $state('');
   let saving = $state(false);
@@ -50,7 +59,7 @@
   const statesValid = $derived(
     states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
   );
-  const detectValid = $derived(kind === 'objects' ? classes.length > 0 : statesValid);
+  const detectValid = $derived(kind === 'objects' ? classes.length > 0 : kind === 'reading' ? true : statesValid);
   const found = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const d of detections) counts.set(d.key, (counts.get(d.key) ?? 0) + 1);
@@ -71,9 +80,40 @@
     }
   }
 
+  async function readTest() {
+    readingBusy = true;
+    readError = '';
+    try {
+      readResult = await api.previewRead(sourceType, source, roi, reading);
+    } catch (err) {
+      readError = (err as Error).message;
+    } finally {
+      readingBusy = false;
+    }
+  }
+
+  // Re-test when the reading settings change, so the value shown matches the chosen mode/decimals.
+  let retestTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const snapshot = JSON.stringify(reading);
+    // readResult is read untracked: the test itself updates it and must not re-trigger this.
+    if (kind !== 'reading' || step !== 2 || !untrack(() => readResult)) return;
+    clearTimeout(retestTimer);
+    retestTimer = setTimeout(() => snapshot && readTest(), 400);
+    return () => clearTimeout(retestTimer);
+  });
+
+  const KIND_DEFAULTS = {
+    single_state: () => app.config!.sensor_defaults,
+    objects: () => app.config!.object_sensor_defaults,
+    reading: () => app.config!.reading_sensor_defaults,
+  } as const;
+
   function chooseKind(value: SensorKind) {
     kind = value;
+    interval_s = KIND_DEFAULTS[value]().interval_s; // e.g. meters change slowly: 30 s
     if (value === 'objects' && !detectImage && !detecting) detect();
+    if (value === 'reading' && !readResult && !readingBusy) readTest();
   }
 
   const canNext = $derived(
@@ -97,28 +137,33 @@
 
   function goto(target: number) {
     if (target === 1 && step === 0) loadPreview();
-    if (target === 2 && step === 1) detectImage = null; // the region may have changed
+    if (target === 2 && step === 1) {
+      detectImage = null; // the region may have changed
+      readResult = null;
+    }
     if (target === 2 && kind === 'objects' && !detectImage) detect();
+    if (target === 2 && kind === 'reading' && !readResult) readTest();
     step = target;
   }
 
   async function create() {
     saving = true;
     try {
-      const objects = kind === 'objects';
+      const learned = kind === 'single_state';
       const sensor = await api.createSensor({
         name: name.trim(),
         kind,
         source_type: sourceType,
         source: source.trim(),
         roi,
-        states: objects ? [] : states.map((s) => ({ name: s.name.trim(), color: s.color })),
-        ...(objects ? { objects: { ...app.config!.object_defaults, classes } } : {}),
+        states: learned ? states.map((s) => ({ name: s.name.trim(), color: s.color })) : [],
+        ...(kind === 'objects' ? { objects: { ...app.config!.object_defaults, classes } } : {}),
+        ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
       });
-      toast(objects ? `${sensor.name} created` : `${sensor.name} created — now label some frames`);
-      go(paths.sensor(sensor.id, objects ? 'live' : 'label'));
+      toast(learned ? `${sensor.name} created — now label some frames` : `${sensor.name} created`);
+      go(paths.sensor(sensor.id, learned ? 'label' : 'live'));
     } catch (err) {
       toastError(err);
     } finally {
@@ -147,7 +192,7 @@
       <span class="spacer"></span>
       <p class="xsmall faint hint">
         You can change everything later.
-        {kind === 'objects' ? 'Object sensors work right away.' : 'Labelling starts right after you create the sensor.'}
+        {kind === 'single_state' ? 'Labelling starts right after you create the sensor.' : 'This sensor works right away.'}
       </p>
     </aside>
 
@@ -207,7 +252,48 @@
           {/each}
         </div>
 
-        {#if kind === 'objects'}
+        {#if kind === 'reading'}
+          <div class="col" style="gap:var(--space-3)">
+            <h3>What is the number?</h3>
+            <ReadingEditor bind:value={reading} />
+          </div>
+          <div class="card col test">
+            <div class="row wrap bar">
+              <span class="small">
+                {#if readingBusy}
+                  <span class="muted">Reading… the first time loads the reader, which takes a moment.</span>
+                {:else if readError}
+                  <span class="danger-text">{readError}</span>
+                {:else if readResult?.value}
+                  Read <span class="mono">“{readResult.text}”</span> →
+                  <strong class="mono">{readResult.value} {readingUnit(reading)}</strong> · {pct(readResult.score)} sure
+                {:else if readResult}
+                  <span class="muted">No number found. Draw the region tightly around the digits (step 2).</span>
+                {/if}
+              </span>
+              <span class="spacer"></span>
+              <button class="btn sm" disabled={readingBusy} onclick={readTest}><Icon name="refresh" size={14} /> Test again</button>
+            </div>
+            {#if readResult}
+              <div class="read-images">
+                <RoiEditor src={readResult.image} {roi} />
+                <div class="col" style="gap:6px">
+                  <span class="xsmall faint">What the reader sees</span>
+                  <img class="seen" src={readResult.read_image} alt="The region as the number reader saw it" />
+                </div>
+              </div>
+            {/if}
+          </div>
+          <div class="card pad col preview">
+            <span class="eyebrow">In Home Assistant</span>
+            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono xsmall muted">
+              {reading.mode === 'counter' ? 'state_class: total_increasing' : 'state_class: measurement'}{readingUnit(reading)
+                ? ` · unit: ${readingUnit(reading)}`
+                : ''}
+            </span>
+          </div>
+        {:else if kind === 'objects'}
           <div class="col" style="gap:var(--space-3)">
             <h3>Which objects?</h3>
             <ObjectPicker bind:selected={classes} />
@@ -381,9 +467,9 @@
   }
   .kinds {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-3);
-    max-width: 720px;
+    max-width: 960px;
   }
   .kind {
     display: flex;
@@ -424,8 +510,21 @@
   .danger-text {
     color: var(--c-danger);
   }
+  .read-images {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: 0 16px 16px;
+    align-items: start;
+  }
+  .seen {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--c-border);
+  }
   @media (max-width: 600px) {
-    .kinds {
+    .kinds,
+    .read-images {
       grid-template-columns: minmax(0, 1fr);
     }
   }

@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.5.0b1 / stable 0.4.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.6.0b1 / stable 0.4.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -13,7 +13,8 @@ the matching state on a live image, or by bulk-uploading images/video. Everythin
 locally, on any CPU, with a polished UI inside Home Assistant.
 
 A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
-pretrained detector and needs no training.
+pretrained detector, and a third, **reading sensors**, reads a number from a display with a
+text recognizer. Neither needs training.
 
 ## 2. Goals / Non-goals
 
@@ -29,7 +30,7 @@ pretrained detector and needs no training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading numbers (e.g. meters) — discussed, see §16 open ideas.
+- Reading mechanical counters with rolling digits (most water meters) — see §16 open ideas.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -47,6 +48,7 @@ pretrained detector and needs no training.
 | **Trigger** | Something that makes a sensor check its camera besides the regular interval. |
 | **Detector** | Pretrained object detector used by object sensors (registry `detectors.json`). |
 | **Class** | One object type an object sensor looks for (a COCO label, e.g. `person`). |
+| **Reader** | Text recognizer used by reading sensors (registry `readers.json`). |
 
 ## 4. Platform & deployment
 
@@ -111,8 +113,30 @@ with the 80 COCO labels, their keys, groups and the popular ones):
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
   (`tests/assets`) now guard every model file. 8-bit variants were slower and worse on CPU.
-- **Model choice is global per kind** (Settings), so at most two models are loaded. The
-  detector is loaded on first use and released when the last object sensor is deleted. The
+**Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
+
+| ID | Model | Use |
+|---|---|---|
+| `ppocrv6-tiny` | PP-OCRv6 tiny rec, ONNX (bundled, 4.5 MB) | Default; ~2 ms per read on a desktop CPU |
+| `ppocrv6-small` | PP-OCRv6 small rec, ONNX (downloaded on demand, 21 MB) | Unusual fonts |
+
+1. Crop the ROI's bounding box (no margin, no mask). Display *auto*: autocontrast greyscale;
+   when the read is unsure (< `READING["segments_fallback_below"]`) also try the digits' own
+   segments (two-stage Otsu on brightness for light-on-dark, on darkness for dark-on-light,
+   removing faint unlit segments) and keep the more confident read. *led* / *lcd* force that.
+2. Resize to height 48, BGR, scale to −1…1; greedy CTC decoding **limited to** `0-9 . , : -`
+   (the class indices are stored in the registry, so the dictionary file is not needed).
+3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
+   reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
+   going down, or a change above `max_step`; otherwise publish after `debounce` equal reads.
+   The last published value is restored from the history after a restart.
+
+- Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
+  displays correctly (7/7 with a tight region); it fails on rolling counter wheels and on small
+  blurry LCDs. DINOv2 per digit (4/23) and a CNN trained on synthetic digits (12/23) were
+  worse. The public meter-digit datasets/models found carry no licence, so they are not used.
+- **Model choice is global per kind** (Settings), so at most three models are loaded. The
+  detector and the reader are loaded on first use and released when the last sensor of their kind is deleted. The
   chosen backbone and detector are stored in the database at first start, so a later release
   that recommends other defaults does not change an installation. Registry entries are never
   changed or removed once released.
@@ -165,6 +189,11 @@ One HA **device** per sensor:
 boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
 boxes; the button is named "Detect now". Deselecting a class removes its entities.
 
+**Reading sensors** publish the value on `sensor.visionstate_<slug>` with `unit_of_measurement`,
+`device_class` and `state_class` from the mode (counter → `total_increasing`, value →
+`measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
+Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
+
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
 for review, per-sensor breakdown as attribute).
 
@@ -193,18 +222,25 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 10. **Settings** — status, AI models (state backbone, object detector) and execution provider,
     global review rules, import.
 
+Reading sensors have the same three tabs: **Live** (value, last read, the analysed frame and the
+image the reader saw), **History** (new values and rejected readings) and **Settings** (mode,
+decimals, unit, device class, display, limits).
+
 Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
 per-class status), **History** (appeared / cleared, expandable to the frame with boxes) and
 **Settings** (objects, region, triggers, output).
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v5).
-- `sensor.kind`: `single_state` or `objects` (`sensor.objects` holds classes, `min_size`,
-  `clear_after_s`); reserved for `multi_label`. Object events are `prediction` rows (class,
-  `on`/`off`, `detections`).
+- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v6).
+- `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
+  `clear_after_s`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
+  display, `max_step`); reserved for `multi_label`. Object events are `prediction` rows (class,
+  `on`/`off`, `detections`); readings are `prediction` rows with `state_key` "reading" and the
+  value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
 - Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
+  reader registry (`readers.json`),
   `sources.SOURCE_TYPES`, trigger settings.
 - Versioned REST API (`/api/v1`) used by the frontend; `GET /api/v1/config` exposes every
   default and limit so the UI never hard-codes them.
@@ -272,11 +308,13 @@ sensor settings) lives in the UI.
 | **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14, clean exit on stop | 0.4.1b1–b3 |
 | **Region shapes & mobile** ✅ (beta) | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.4.1b5–b6 |
 | **Object sensors** ✅ (beta) | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.5.0b1 |
+| **Reading sensors** ✅ (beta) | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0b1 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; reading numbers (meters) as a new sensor kind; issue templates; per-sensor model
+Assistant; rolling-digit meters (learn each digit of one meter from corrections, or a licensed
+digit model); several readings per sensor (a sign with four prices); issue templates; per-sensor model
 choice with unloading of idle models; a "not a person" button that trains a DINOv2 filter on
 rejected detections; zones and line crossing for object sensors.
 

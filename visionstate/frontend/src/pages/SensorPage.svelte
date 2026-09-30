@@ -6,6 +6,7 @@
   import ObjectChips from '../lib/components/ObjectChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
   import { isObjectSensor } from '../lib/objects';
+  import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
   import { POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
@@ -14,6 +15,8 @@
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
   import ObjectHistoryTab from './sensor/ObjectHistoryTab.svelte';
+  import ReadingHistoryTab from './sensor/ReadingHistoryTab.svelte';
+  import ReadingLiveTab from './sensor/ReadingLiveTab.svelte';
   import QualityTab from './sensor/QualityTab.svelte';
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
@@ -70,6 +73,8 @@
             <h1>{sensor.name}</h1>
             {#if isObjectSensor(sensor)}
               <ObjectChips {sensor} />
+            {:else if isReadingSensor(sensor)}
+              <StatePill name={readingText(sensor)} color="var(--c-accent)" />
             {:else}
               <StatePill name={current.name} color={current.color} confidence={shownConfidence(sensor)} />
             {/if}
@@ -98,7 +103,9 @@
   </header>
 
   <div class="page">
-    {#if tab === 'live'}
+    {#if tab === 'live' && isReadingSensor(sensor)}
+      <ReadingLiveTab {sensor} onchange={load} />
+    {:else if tab === 'live'}
       <LiveTab {sensor} onchange={load} />
     {:else if tab === 'label'}
       <LabelTab {sensor} onchange={load} />
@@ -108,6 +115,8 @@
       <DatasetTab {sensor} onchange={load} />
     {:else if tab === 'quality'}
       <QualityTab {sensor} />
+    {:else if tab === 'history' && isReadingSensor(sensor)}
+      <ReadingHistoryTab {sensor} />
     {:else if tab === 'history' && isObjectSensor(sensor)}
       <ObjectHistoryTab {sensor} />
     {:else if tab === 'history'}

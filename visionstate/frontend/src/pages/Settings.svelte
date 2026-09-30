@@ -11,6 +11,7 @@
   let backbone = $state('');
   let provider = $state('');
   let detector = $state('');
+  let reader = $state('');
   let saving = $state(false);
   let importInput: HTMLInputElement;
   let reviewRules = $state<ReviewRules | null>(null);
@@ -41,20 +42,22 @@
       backbone = s.backbone;
       provider = s.execution_provider;
       detector = s.detector;
+      reader = s.reader;
     })
     .catch(toastError);
 
   const selected = $derived(info?.backbones.find((b) => b.id === backbone));
   const selectedDetector = $derived(info?.detectors.find((d) => d.id === detector));
+  const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
   const retrains = $derived(info !== null && (backbone !== info.backbone || provider !== info.execution_provider));
-  const changed = $derived(info !== null && (retrains || detector !== info.detector));
+  const changed = $derived(info !== null && (retrains || detector !== info.detector || reader !== info.reader));
 
   async function save() {
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, execution_provider: provider, detector });
-      toast(retrained ? 'AI model changed — state sensors are retraining' : 'Object detector changed');
+      info = await api.saveSettings({ backbone, execution_provider: provider, detector, reader });
+      toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
     } catch (err) {
       toastError(err);
@@ -108,6 +111,11 @@
             value: app.status.detector_error || app.status.detector_name || 'loaded when an object sensor exists',
             ok: !app.status.detector_error,
           },
+          {
+            label: 'Number reader',
+            value: app.status.reader_error || app.status.reader_name || 'loaded when a reading sensor exists',
+            ok: !app.status.reader_error,
+          },
         ]
       : [],
   );
@@ -154,6 +162,20 @@
           {/if}
         </label>
         <label class="field">
+          Reading sensors
+          <select class="input" bind:value={reader}>
+            {#each info.readers as r (r.id)}
+              <option value={r.id}>{r.name}{r.installed ? '' : ` · download ${mb(r.size)}`}</option>
+            {/each}
+          </select>
+          {#if selectedReader}
+            <span class="hint"
+              >{selectedReader.description} PaddleOCR ({selectedReader.license}),
+              <a href={selectedReader.source} target="_blank" rel="noreferrer">source</a>.</span
+            >
+          {/if}
+        </label>
+        <label class="field">
           Runs on
           <select class="input" bind:value={provider}>
             {#each info.providers as p (p)}<option value={p}>{p.replace('ExecutionProvider', '')}</option>{/each}
@@ -164,7 +186,7 @@
           <button class="btn primary" disabled={!changed || saving} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}
           </button>
-          <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object sensors need no training.</span>
+          <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object and reading sensors need no training.</span>
         </div>
       {/if}
     </section>

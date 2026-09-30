@@ -1,6 +1,6 @@
 // Creates a trained sensor (plus review items and one wrong label) that the UI tests look at.
 import { expect, test as setup } from '@playwright/test';
-import { CAMERA_URL, OBJECT_SENSOR_NAME, PHOTO_URL, SENSOR_NAME } from './env';
+import { CAMERA_URL, DISPLAY_URL, OBJECT_SENSOR_NAME, PHOTO_URL, READING_SENSOR_NAME, SENSOR_NAME } from './env';
 
 setup('seed a trained sensor', async ({ request }) => {
   const created = await request.post('api/v1/sensors', {
@@ -60,4 +60,23 @@ setup('seed an object sensor', async ({ request }) => {
       { timeout: 90_000 },
     )
     .toBe(2);
+});
+
+setup('seed a reading sensor', async ({ request }) => {
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: READING_SENSOR_NAME,
+      kind: 'reading',
+      source_type: 'http',
+      source: DISPLAY_URL('0012345.6'),
+      reading: { mode: 'counter', decimals: 1, unit: 'kWh', device_class: 'energy' },
+      interval_s: 5,
+      debounce: 1,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const sensor = await created.json();
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
+    .toBe('12345.6');
 });

@@ -45,8 +45,39 @@ export interface TriggerInfo {
 
 export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
 
-/** 'single_state' learns the user's own states; 'objects' finds common objects (no training). */
-export type SensorKind = 'single_state' | 'objects';
+/**
+ * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a
+ * number from a display. Only state sensors are trained.
+ */
+export type SensorKind = 'single_state' | 'objects' | 'reading';
+
+export type ReadingMode = 'counter' | 'value' | 'time_left';
+export type ReadingDisplay = 'auto' | 'led' | 'lcd';
+
+export interface ReadingSettings {
+  mode: ReadingMode;
+  decimals: number;
+  unit: string;
+  device_class: string;
+  display: ReadingDisplay;
+  max_step: number;
+}
+
+/** The last read of a reading sensor; reason = why it was rejected (null = accepted). */
+export interface ReadingResult {
+  text: string;
+  score: number;
+  value: string | null;
+  reason: string | null;
+  at: number;
+}
+
+export interface SensorReading extends ReadingSettings {
+  /** The published value (formatted), null until the first accepted reading. */
+  value: string | null;
+  last: ReadingResult | null;
+  has_image: boolean;
+}
 
 /** One object found in a frame; box = [x1, y1, x2, y2] normalised to the whole frame. */
 export interface Detection {
@@ -129,6 +160,7 @@ export interface Sensor {
   entity_ids: string[];
   states: StateDef[];
   objects: SensorObjects | null;
+  reading: SensorReading | null;
   status: SensorStatus;
   trained: boolean;
   training: boolean;
@@ -145,6 +177,7 @@ export interface SensorInput {
   roi: Roi | null;
   states: { key?: string; name: string; color?: string }[];
   objects?: ObjectSettings;
+  reading?: ReadingSettings;
   interval_s?: number;
   threshold?: number;
   debounce?: number;
@@ -176,6 +209,12 @@ export interface AppConfig {
   object_max_classes: number;
   object_labels: ObjectLabel[];
   object_popular: string[];
+  reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
+  reading_defaults: ReadingSettings;
+  reading_limits: Record<'decimals' | 'max_step', [number, number]>;
+  reading_modes: ReadingMode[];
+  reading_displays: ReadingDisplay[];
+  reading_device_classes: string[];
 }
 
 export interface Status {
@@ -189,6 +228,9 @@ export interface Status {
   detector: string | null;
   detector_name: string | null;
   detector_error: string;
+  reader: string | null;
+  reader_name: string | null;
+  reader_error: string;
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -281,6 +323,8 @@ export interface SettingsInfo {
   backbones: BackboneInfo[];
   detector: string;
   detectors: DetectorInfo[];
+  reader: string;
+  readers: DetectorInfo[];
   providers: string[];
   options: Record<string, string | number>;
 }

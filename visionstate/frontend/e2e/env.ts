@@ -9,3 +9,7 @@ export const SENSOR_NAME = 'Garage door';
 /** An object sensor looking at a real photo (a person with dogs, see backend/tests/assets). */
 export const OBJECT_SENSOR_NAME = 'Beach';
 export const PHOTO_URL = (name: string) => `${CAMERA_URL}/photo/${name}.jpg`;
+/** A reading sensor looking at a drawn LCD counter. */
+export const READING_SENSOR_NAME = 'Power meter';
+export const DISPLAY_URL = (text: string, style: 'lcd' | 'led' = 'lcd') =>
+  `${CAMERA_URL}/display.jpg?text=${encodeURIComponent(text)}&style=${style}`;

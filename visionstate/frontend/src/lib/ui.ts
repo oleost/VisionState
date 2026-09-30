@@ -1,5 +1,5 @@
 // UI constants: polling intervals, labels and tones. Change behaviour of the UI here.
-import type { SensorKind, SensorStatus } from './types';
+import type { ReadingDisplay, ReadingMode, SensorKind, SensorStatus } from './types';
 
 /** Refresh intervals in milliseconds. */
 export const POLL = {
@@ -71,6 +71,7 @@ export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
   single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
   objects: ['live', 'history', 'settings'],
+  reading: ['live', 'history', 'settings'],
 };
 
 /** The two kinds as offered in the new sensor wizard. */
@@ -85,6 +86,40 @@ export const SENSOR_KIND_INFO: Record<SensorKind, { title: string; text: string;
     text: 'People, cars, animals and more. Works right away, no training.',
     example: 'e.g. a person or a car in the driveway',
   },
+  reading: {
+    title: 'Reading',
+    text: 'A number from a display or counter. Works right away, no training.',
+    example: 'e.g. kWh on the power meter, minutes left on the washer',
+  },
+};
+
+/** Reading modes as offered in the UI; `units` are suggestions for the unit field. */
+export const READING_MODE_INFO: Record<ReadingMode, { title: string; text: string; units: string[] }> = {
+  counter: {
+    title: 'Counter',
+    text: 'Only goes up — power, water or gas meters. Works in the Energy dashboard.',
+    units: ['kWh', 'm³', 'L', 'Wh'],
+  },
+  value: { title: 'Value', text: 'Any number that can go up and down — prices, readouts.', units: ['kr', 'NOK', 'kr/L', '€', '°C'] },
+  time_left: { title: 'Time left', text: 'A countdown like 1:25 on an appliance. Reported in minutes.', units: [] },
+};
+
+export const READING_DISPLAY_INFO: Record<ReadingDisplay, string> = {
+  auto: 'Auto (recommended)',
+  led: 'Light digits on dark (LED)',
+  lcd: 'Dark digits on light (LCD)',
+};
+
+/** Default Home Assistant device class for a unit (the user can change it). */
+export const UNIT_DEVICE_CLASS: Record<string, string> = {
+  kWh: 'energy',
+  Wh: 'energy',
+  'm³': 'water',
+  L: 'water',
+  kr: 'monetary',
+  NOK: 'monetary',
+  '€': 'monetary',
+  '°C': 'temperature',
 };
 
 /** Domains listed first when picking trigger entities (the most useful triggers). */

@@ -4,8 +4,8 @@
 
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
-Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — without
-any training. Everything runs on this machine; no cloud.
+Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — or **read a
+number** from a display, without any training. Everything runs on this machine; no cloud.
 
 ## Requirements
 
@@ -26,8 +26,9 @@ any training. Everything runs on this machine; no cloud.
       shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
       double-click / double-tap (or press and hold) a corner to remove it. Everything outside
       the shape is ignored. **Reset to rectangle** goes back to a plain box.
-   3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*)
-      or **Objects** (see *Object sensors* below). This can not be changed later.
+   3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
+      **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
+      This can not be changed later.
    4. Optionally choose when it should check the camera — for example when your motion
       sensor or garage opener changes (see *When it checks* below). You can skip this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
@@ -84,6 +85,35 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 - Object sensors use the same triggers as state sensors. **Detect changes in the image** is
   a good fit: the detector only runs when something in the region changes.
 
+## Reading sensors
+
+A reading sensor reads a **number** from a display or counter — the kWh on a power meter, a fuel
+price, the minutes left on a washing machine. Nothing to label: draw the region **tightly around
+the digits** (no labels or units inside it), pick what the number is, and the wizard reads a
+fresh frame right away, showing both the value and the image the reader saw.
+
+| Mode | For | In Home Assistant |
+|---|---|---|
+| **Counter** | Power, water and gas meters — only goes up | `state_class: total_increasing`, works in the Energy dashboard |
+| **Value** | Prices and other numbers that go up and down | `measurement` (none for money, as Home Assistant requires) |
+| **Time left** | Countdowns like `1:25` on appliances | minutes (`1:25` = 85 min), device class *duration* |
+
+- **Digits after the decimal point** decide where the decimal point is. Dots and commas on the
+  display are ignored, because a stray dot is the most common misread.
+- **Display**: *Auto* works for most displays. Choose *LED* (light digits on dark) or *LCD*
+  (dark digits on light) if faint, unlit segments are read as digits — a 3 read as 8.
+- **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
+  than the minimum (default 70 %), finds no number, a counter reads lower than before, or the value
+  changes more than the limit you set. Rejected readings are listed in the **History** tab with
+  the reason. A new value is published after 2 equal readings in a row (adjustable).
+- The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
+  `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
+  last reading was rejected, if it was.
+- Works best on LCD and LED displays and printed signs. **Mechanical counters with rolling digits**
+  (most water meters) are not read reliably yet.
+- The default check interval is 30 s; a trigger (for example a motion sensor or image change
+  detection) makes it read right away.
+
 ## Training tips (state sensors)
 
 - **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
@@ -131,8 +161,8 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 - Settings, the database and trained models live in the app's data folder and are part of
   Home Assistant backups.
 - Training images are stored in `/media/visionstate` (the beta app uses `/media/visionstate_beta`).
-- **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states or objects,
-  triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
+- **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
+  reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
   Settings tab.
@@ -154,6 +184,9 @@ Two models, chosen under **Settings → AI model** for all sensors of a kind:
 - **Object sensors:** D-FINE S — included, about 0.1 s per check on a modern PC and a few
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
+- **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
+  PP-OCRv6 small is larger and can help with unusual fonts (downloaded on first use, 21 MB).
+  Only loaded while at least one reading sensor exists.
 
 A choice you made stays when a later version recommends another model.
 
