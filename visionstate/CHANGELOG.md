@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.1b4
+## 0.4.1b5
 
 - **Shape the region**: besides a rectangle, the region can now be any shape. Drag a **+** on an
   edge to add a corner, drag corners to fit an object at an angle, and double-click / double-tap

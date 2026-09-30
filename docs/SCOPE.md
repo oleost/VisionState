@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.4.1b4 / stable 0.4.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.4.1b5 / stable 0.4.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -223,7 +223,7 @@ sensor settings) lives in the UI.
 | **Prebuilt images** ✅ | GHCR images, releases | 0.3.1 |
 | **Data quality** ✅ | Possibly mislabelled samples, review queue entity, wizard triggers step | 0.4.0 |
 | **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14, clean exit on stop | 0.4.1b1–b3 |
-| **Region shapes & mobile** ✅ (beta) | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.4.1b4 |
+| **Region shapes & mobile** ✅ (beta) | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.4.1b5 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
