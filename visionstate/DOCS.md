@@ -112,6 +112,10 @@ or adjust the region right on that test image; it is read again straight away.
   last reading was rejected, if it was.
 - Works best on LCD and LED displays and printed signs. **Mechanical counters with rolling digits**
   (most water meters) are not read reliably yet.
+- Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
+  lot: what the display is, whether it read correctly, and a screenshot of *What the reader
+  sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
+  issue.
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change
   detection) makes it read right away.
 

@@ -27,6 +27,10 @@ before; the database is upgraded automatically.
     readings with the reason.
   - Reader: PP-OCRv6 tiny (Apache-2.0) is included; PP-OCRv6 small can be chosen under Settings.
   - Not yet for mechanical counters with rolling digits (most water meters).
+  - **New and looking for testers**: reading has been tested on drawn displays and a set of
+    photos, but hardly on real cameras yet. Please share how it works on your meter or display
+    — what it is, whether it read correctly, and a screenshot of *What the reader sees* — in
+    [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an issue.
 - **Shape the region**: besides a rectangle, the region can be any shape. Drag a **+** on an edge
   to add a corner, drag corners to fit an object at an angle, and double-click / double-tap or
   hold a corner to remove it. Everything outside the shape is ignored.
