@@ -34,8 +34,9 @@ test('every page renders without errors and fits the screen', async ({ page, req
       const errors = watchErrors(page);
       await page.goto(`#/${route}`);
       await expect(page.getByText(ready).first()).toBeVisible();
-      // The app polls live frames, so the network never goes idle: wait for images instead.
-      await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+      // The app polls live frames, so the network never goes idle: wait for images instead
+      // (lazy ones off-screen never load, so they don't count).
+      await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
       await expectNoHorizontalOverflow(page);
       await expectNoClipping(page, '.btn, .state-btn, .chip, .pill');
       await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, `${name}.png`), fullPage: true });
