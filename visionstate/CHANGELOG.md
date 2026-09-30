@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.6.0b3
+## 0.6.0b4
 
 - New sensor wizard: the region can be drawn or adjusted right on the test image in step 3
   (reading and object sensors); it is tested again straight away. Before, the preview could not
   be edited and the region had to be changed back in step 2.
+- While it tests again, the last result stays on screen, so the page no longer jumps on phones.
 
 ## 0.6.0b2
 

@@ -262,7 +262,8 @@
           <div class="card col test">
             <div class="row wrap bar">
               <span class="small">
-                {#if readingBusy}
+                <!-- While re-testing, the last result stays so the page does not jump. -->
+                {#if readingBusy && !readResult}
                   <span class="muted">Reading… the first time loads the reader, which takes a moment.</span>
                 {:else if readError}
                   <span class="danger-text">{readError}</span>
@@ -272,6 +273,7 @@
                 {:else if readResult}
                   <span class="muted">No number found. Drag a tight box around the digits in the image below.</span>
                 {/if}
+                {#if readingBusy && readResult}<span class="faint"> (reading…)</span>{/if}
               </span>
               <span class="spacer"></span>
               <button class="btn sm" disabled={readingBusy} onclick={readTest}><Icon name="refresh" size={14} /> Test again</button>
@@ -306,7 +308,7 @@
           <div class="card col test">
             <div class="row wrap bar">
               <span class="small">
-                {#if detecting}
+                {#if detecting && !detectImage}
                   <span class="muted">Looking… the first check loads the detector, which takes a few seconds.</span>
                 {:else if detectError}
                   <span class="danger-text">{detectError}</span>
@@ -315,6 +317,7 @@
                 {:else if detectImage}
                   <span class="muted">Nothing found in the region right now — that is fine if it is empty.</span>
                 {/if}
+                {#if detecting && detectImage}<span class="faint"> (looking…)</span>{/if}
               </span>
               <span class="spacer"></span>
               <button class="btn sm" disabled={detecting} onclick={detect}><Icon name="refresh" size={14} /> Test again</button>
