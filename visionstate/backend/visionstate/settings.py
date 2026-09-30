@@ -28,6 +28,78 @@ SENSOR_LIMITS = {
 }
 UNKNOWN_STATE = "unknown"
 
+# --- Sensor kinds ---------------------------------------------------------------------
+#
+# "single_state": learns the user's own states from labelled examples (one state at a time).
+# "objects": finds common objects (people, cars, animals …) with a pretrained detector, no training.
+# The kind is chosen when the sensor is created and never changes.
+
+KIND_STATES = "single_state"
+KIND_OBJECTS = "objects"
+KIND_READING = "reading"  # a number read from a display or counter (OCR), no training
+SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS, KIND_READING)
+
+# Object sensors reuse threshold ("minimum confidence") and debounce ("detections in a row
+# before on"), with their own defaults. Limits are the same as in SENSOR_LIMITS.
+OBJECT_SENSOR_DEFAULTS = {
+    "interval_s": 10.0,
+    "threshold": 0.60,  # weak false detections cluster around 0.5-0.55
+    "debounce": 1,
+}
+OBJECT_DEFAULTS = {
+    "classes": ["person"],
+    "min_size": 0.0,  # smallest box, as a share of the region's area (0 = any size)
+    "clear_after_s": 30.0,  # an object stays "detected" this long after it was last seen
+}
+OBJECT_LIMITS = {
+    "min_size": (0.0, 0.5),
+    "clear_after_s": (0.0, 3600.0),
+}
+OBJECT_MAX_CLASSES = 20  # two Home Assistant entities per class
+
+# Reading sensors reuse threshold (minimum OCR confidence) and debounce (equal readings in a row
+# before a new value is published).
+READING_SENSOR_DEFAULTS = {
+    "interval_s": 30.0,
+    "threshold": 0.70,  # clean LCDs read at ~0.99, LED displays at ~0.8
+    "debounce": 2,
+}
+# counter: only goes up (energy/water/gas meters); value: any number (prices);
+# time_left: "h:mm" or minutes on an appliance display, reported in minutes.
+READING_MODES = ("counter", "value", "time_left")
+# How the reader treats the region: "auto" reads it as it is and falls back to removing faint
+# unlit segments when unsure; "led" (light digits on dark) and "lcd" (dark digits on light)
+# always remove unlit segments, for displays where they show clearly.
+READING_DISPLAYS = ("auto", "led", "lcd")
+# Home Assistant device classes offered for readings ("" = none).
+READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
+READING_DEFAULTS = {
+    "mode": "counter",
+    "decimals": 0,  # digits after the decimal point; the reader's own dots and commas are ignored
+    "unit": "",
+    "device_class": "",
+    "display": "auto",
+    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
+}
+READING_LIMITS = {
+    "decimals": (0, 4),
+    "max_step": (0.0, 1e9),
+}
+READING = {
+    "chars": "0123456789.,:-",  # the reader may only output these characters
+    "rejected_cooldown_s": 300,  # at most one rejected reading per sensor is kept in the history per period
+    "segments_fallback_below": 0.6,  # "auto" display: below this confidence also try without unlit segments
+}
+
+DETECTION = {
+    "nms_iou": 0.7,  # boxes of one class overlapping more than this are the same object
+    "max_detections": 100,
+    "preview_threshold": 0.5,  # used by the wizard preview before a threshold is chosen
+    # The detector also sees this share of the region's size on each side, so objects at the
+    # edge are seen whole (their bottom centre then decides whether they are inside).
+    "context_margin": 0.25,
+}
+
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
 # 1. The regular interval (SENSOR_DEFAULTS["interval_s"]) is the safety net.
@@ -54,6 +126,13 @@ TRIGGER_MAX_ENTITIES = 20
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
+
+# --- Region of interest ------------------------------------------------------------
+
+ROI_MAX_POINTS = 32  # corners of a polygon region
+# Colour for everything outside a polygon region and for letterbox padding: the ImageNet
+# mean, i.e. "nothing" for the AI model.
+NEUTRAL_FILL = (124, 116, 104)
 
 # Colours handed out to new states, in order. The UI reads colours from the API.
 STATE_PALETTE = [
@@ -141,6 +220,18 @@ def merge_review(global_rules: dict | None, sensor_overrides: dict | None) -> di
     merged = {**REVIEW_DEFAULTS, **(global_rules or {})}
     merged.update({k: v for k, v in (sensor_overrides or {}).items() if v is not None and k in REVIEW_DEFAULTS})
     return merged
+
+
+def merge_objects(stored: dict | None) -> dict:
+    """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
+    merged = {**OBJECT_DEFAULTS, **(stored or {})}
+    merged["classes"] = list(merged.get("classes") or [])
+    return merged
+
+
+def merge_reading(stored: dict | None) -> dict:
+    """Reading settings of a sensor: stored values on top of READING_DEFAULTS."""
+    return {**READING_DEFAULTS, **(stored or {})}
 
 
 def merge_triggers(stored: dict | None) -> dict:

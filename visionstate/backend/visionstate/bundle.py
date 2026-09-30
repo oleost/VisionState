@@ -42,6 +42,8 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                 "debounce": sensor.debounce,
                 "triggers": sensor.triggers,
                 "review": sensor.review,
+                "objects": sensor.objects,
+                "reading": sensor.reading,
                 "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
             },
             "samples": [],

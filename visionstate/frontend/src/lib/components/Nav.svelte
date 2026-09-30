@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from '../app.svelte';
   import { href, paths, route } from '../router.svelte';
+  import { BETA_VERSION_PATTERN } from '../ui';
   import Logo from './Logo.svelte';
 
   const section = $derived(route.parts[0] === 'review' ? 'review' : route.parts[0] === 'settings' ? 'settings' : 'sensors');
@@ -15,6 +16,9 @@
   <a class="brand" href={href(paths.dashboard())}>
     <Logo />
     <span>VisionState</span>
+    {#if app.status && BETA_VERSION_PATTERN.test(app.status.version)}
+      <span class="beta" title="Beta version {app.status.version}">BETA</span>
+    {/if}
   </a>
   <div class="links">
     {#each items as item (item.id)}
@@ -57,6 +61,14 @@
     gap: 10px;
     color: var(--c-text);
     font: 600 var(--fs-xl) var(--font-display);
+  }
+  .beta {
+    font: 600 var(--fs-xs) var(--font-body);
+    letter-spacing: 0.08em;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--c-badge);
+    color: var(--c-badge-ink);
   }
   .links {
     display: flex;

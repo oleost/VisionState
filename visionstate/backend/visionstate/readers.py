@@ -1,0 +1,245 @@
+"""Number reader registry and inference (ONNX Runtime) for reading sensors.
+
+Available readers are declared in ``readers.json``; adding a model is a new entry there.
+Entries are never changed or removed once released, so a stored choice keeps working.
+Bundled readers are downloaded together with the backbones (``python -m visionstate.backbones``).
+
+A reader is a text recognition model with CTC output (PP-OCR). Decoding is limited to the
+characters in ``settings.READING["chars"]``, so a reading can never contain a letter.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import re
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageFilter, ImageOps
+
+from .settings import READING
+
+REGISTRY_FILE = Path(__file__).with_name("readers.json")
+MAX_WIDTH = 1600  # widest input (pixels at height 48); longer numbers are squeezed
+
+
+@dataclass(frozen=True)
+class ReaderSpec:
+    id: str
+    name: str
+    description: str
+    url: str
+    sha256: str
+    size: int
+    input_height: int
+    classes: int
+    chars: dict[str, int]  # character -> output class (0 is the CTC blank)
+    license: str
+    source: str
+    bundled: bool
+
+    @property
+    def filename(self) -> str:
+        return f"{self.id}.onnx"
+
+
+def load_registry() -> tuple[str, dict[str, ReaderSpec]]:
+    raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+    specs = {
+        key: ReaderSpec(
+            id=key,
+            name=v["name"],
+            description=v.get("description", ""),
+            url=v["url"],
+            sha256=v["sha256"],
+            size=int(v.get("size", 0)),
+            input_height=int(v["input_height"]),
+            classes=int(v["classes"]),
+            chars={c: int(i) for c, i in v["chars"].items()},
+            license=v.get("license", ""),
+            source=v.get("source", ""),
+            bundled=bool(v.get("bundled", False)),
+        )
+        for key, v in raw["readers"].items()
+    }
+    return raw["default"], specs
+
+
+DEFAULT_READER, READERS = load_registry()
+
+
+# --- preprocessing ----------------------------------------------------------------------------
+
+
+def _otsu(values: np.ndarray) -> float | None:
+    """Threshold that best splits ``values`` (0-255) into two groups; None when there is only one level."""
+    hist, _ = np.histogram(values, bins=256, range=(0, 256))
+    p = hist / max(1, hist.sum())  # float: pixel counts squared overflow integers on large images
+    omega = np.cumsum(p)
+    mu = np.cumsum(p * np.arange(256))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        between = ((mu[-1] * omega - mu) ** 2 / (omega * (1.0 - omega)))[:-1]
+    if not np.isfinite(between).any():
+        return None
+    return float(np.nanargmax(np.where(np.isfinite(between), between, np.nan)))
+
+
+def is_light_on_dark(image: Image.Image) -> bool:
+    """LED-style display: the border (background) is darker than the image on average."""
+    grey = np.asarray(image.convert("L"), dtype=np.float32)
+    edge = max(1, min(grey.shape) // 10)
+    border = np.concatenate(
+        [grey[:edge].ravel(), grey[-edge:].ravel(), grey[:, :edge].ravel(), grey[:, -edge:].ravel()]
+    )
+    return float(np.median(border)) < float(grey.mean())
+
+
+def segments(image: Image.Image, light_digits: bool) -> Image.Image:
+    """Keep only the digits' own segments, as dark text on white.
+
+    ``light_digits``: lit segments on a dark panel (LED); otherwise dark segments on a light one
+    (LCD). Two thresholds: the first separates the background, the second separates the real
+    segments from unlit ones that still show faintly (otherwise a "3" reads as "8").
+    """
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
+    strength = rgb.max(axis=2) if light_digits else 255.0 - rgb.min(axis=2)
+    threshold = _otsu(strength)
+    if threshold is None:
+        return plain(image)
+    strong = strength[strength > threshold]
+    if strong.size > 20:
+        second = _otsu(strong)
+        threshold = threshold if second is None else second
+    mask = Image.fromarray((strength > threshold).astype(np.uint8) * 255)
+    # A little blur joins the dots of dot-matrix digits into strokes.
+    blurred = mask.filter(ImageFilter.GaussianBlur(max(1.0, image.height / 200)))
+    return ImageOps.invert(blurred).convert("RGB")
+
+
+def plain(image: Image.Image) -> Image.Image:
+    return ImageOps.autocontrast(image.convert("L"), cutoff=1).convert("RGB")
+
+
+# --- reading ------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Text:
+    text: str
+    score: float  # mean probability of the read characters (0 when nothing was read)
+
+
+class Reader:
+    """Reads a line of digits with one ONNX text recognition model."""
+
+    def __init__(self, spec: ReaderSpec, model_path: Path, provider: str = "CPUExecutionProvider"):
+        import onnxruntime as ort
+
+        self.spec = spec
+        providers = [provider] if provider in ort.get_available_providers() else []
+        if "CPUExecutionProvider" not in providers:
+            providers.append("CPUExecutionProvider")
+        options = ort.SessionOptions()
+        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self.session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
+        self.provider = self.session.get_providers()[0]
+        self.input_name = self.session.get_inputs()[0].name
+        allowed = [c for c in READING["chars"] if c in spec.chars]
+        self._chars = ["", *allowed]  # index 0 = CTC blank
+        self._classes = np.array([0, *(spec.chars[c] for c in allowed)])
+        self._lock = threading.Lock()
+
+    def preprocess(self, image: Image.Image) -> np.ndarray:
+        height = self.spec.input_height
+        width = max(height // 3, min(MAX_WIDTH, math.ceil(height * image.width / max(1, image.height))))
+        rgb = np.asarray(image.convert("RGB").resize((width, height), Image.Resampling.BILINEAR), dtype=np.float32)
+        bgr = rgb[:, :, ::-1]  # PP-OCR models are trained on BGR images
+        return ((bgr / 255.0 - 0.5) / 0.5).transpose(2, 0, 1)[None].astype(np.float32)
+
+    def read(self, image: Image.Image) -> Text:
+        batch = self.preprocess(image)
+        with self._lock:
+            probs = self.session.run(None, {self.input_name: batch})[0][0]  # time steps × classes
+        return decode(probs[:, self._classes], self._chars)
+
+    def read_display(self, image: Image.Image, display: str) -> tuple[Text, Image.Image]:
+        """Read a region for a display type (settings.READING_DISPLAYS); returns the read and the image used.
+
+        "auto" reads the image as it is (best for most displays and signs when the region is
+        tight) and only when that is unsure also tries the digits' own segments, keeping the
+        more confident read: removing faint unlit segments rescues some displays but can drop
+        thin digits on others, so it is a fallback. "led" / "lcd" always remove unlit segments
+        (light digits on dark / dark digits on light).
+        """
+        if display in ("led", "lcd"):
+            cleaned = segments(image, light_digits=display == "led")
+            return self.read(cleaned), cleaned
+        first = plain(image)
+        result = self.read(first)
+        if result.text and result.score >= READING["segments_fallback_below"]:
+            return result, first
+        cleaned = segments(image, light_digits=is_light_on_dark(image))
+        second = self.read(cleaned)
+        return (second, cleaned) if second.score > result.score else (result, first)
+
+
+def decode(probs: np.ndarray, chars: list[str]) -> Text:
+    """Greedy CTC decoding: best class per time step, repeats merged, blanks (0) dropped."""
+    best = probs.argmax(axis=1)
+    conf = probs.max(axis=1)
+    text, scores, previous = [], [], -1
+    for index, p in zip(best, conf, strict=True):
+        if index != previous and index != 0:
+            text.append(chars[index])
+            scores.append(float(p))
+        previous = index
+    return Text("".join(text), float(np.mean(scores)) if scores else 0.0)
+
+
+# --- interpretation -------------------------------------------------------------------------------
+
+
+def parse(text: str, settings: dict) -> float | None:
+    """The number a reading stands for, or None when there is none.
+
+    Only digits count: dots and commas read on the display are ignored and the configured
+    number of decimals decides where the decimal point is (a stray dot is a common misread).
+    ``time_left`` reads "h:mm" (or plain minutes) and returns minutes.
+    """
+    if settings["mode"] == "time_left":
+        if ":" in text:
+            hours, _, minutes = text.rpartition(":")
+            h, m = re.sub(r"\D", "", hours), re.sub(r"\D", "", minutes)
+            if not m or len(m) > 2 or int(m) > 59:
+                return None
+            return float(int(h or 0) * 60 + int(m))
+        digits = re.sub(r"\D", "", text)
+        return float(int(digits)) if digits else None
+    digits = re.sub(r"\D", "", text)
+    if not digits:
+        return None
+    return int(digits) / 10 ** int(settings["decimals"])
+
+
+def implausible(value: float, last: float | None, settings: dict) -> str | None:
+    """Why a new value can not be right compared with the last accepted one, or None."""
+    if last is None:
+        return None
+    if settings["mode"] == "counter" and value < last:
+        return "went down"
+    step = float(settings["max_step"])
+    if step and abs(value - last) > step:
+        return "changed too much"
+    return None
+
+
+def format_value(value: float | None, settings: dict) -> str | None:
+    """Value as published: fixed decimals for numbers, whole minutes for time left."""
+    if value is None:
+        return None
+    if settings["mode"] == "time_left":
+        return str(int(value))
+    return f"{value:.{int(settings['decimals'])}f}"

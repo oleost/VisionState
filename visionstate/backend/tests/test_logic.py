@@ -102,3 +102,23 @@ def test_quality_tips_flag_small_states():
     titles = [t["title"] for t in quality_tips(states, counts, None)]
     assert any("Closed has 3 samples" in t for t in titles)
     assert any("Closed has only 0 night images" in t for t in titles)
+
+
+def test_polygon_roi_normalises_masks_and_keys():
+    from visionstate.settings import NEUTRAL_FILL
+
+    triangle = {"x": 0, "y": 0, "w": 1, "h": 1, "points": [[0.1, 0.1], [0.9, 0.1], [0.1, 0.9]]}
+    roi = imaging.normalise_roi(triangle)
+    assert roi == {"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8, "points": [[0.1, 0.1], [0.9, 0.1], [0.1, 0.9]]}
+    # A polygon that is just the rectangle is stored as a rectangle.
+    square = {"x": 0, "y": 0, "w": 1, "h": 1, "points": [[0.2, 0.2], [0.6, 0.2], [0.6, 0.7], [0.2, 0.7]]}
+    assert imaging.normalise_roi(square) == {"x": 0.2, "y": 0.2, "w": 0.4, "h": 0.5}
+    # Different shapes with the same bounding box get different cache keys.
+    other = {**triangle, "points": [[0.9, 0.9], [0.9, 0.1], [0.1, 0.9]]}
+    assert imaging.roi_key(triangle) != imaging.roi_key(other) != imaging.roi_key(square)
+
+    white = Image.new("RGB", (100, 100), (255, 255, 255))
+    out = imaging.crop(white, roi)
+    assert out.size == (80, 80)
+    assert out.getpixel((5, 5)) == (255, 255, 255)  # inside the triangle
+    assert out.getpixel((75, 75)) == NEUTRAL_FILL  # outside -> neutral

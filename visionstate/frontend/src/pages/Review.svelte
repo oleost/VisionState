@@ -19,6 +19,7 @@
       items = result.items;
       total = result.total;
       index = 0;
+      refreshStatus(); // keep the nav badge in step with the list
       answers = {};
     } catch (err) {
       toastError(err);
@@ -119,7 +120,7 @@
             {/each}
             <button class="btn lg ghost" disabled={busy} onclick={() => answer('skip')}>Skip</button>
           </div>
-          <span class="xsmall faint">Enter = yes · 1–9 = pick state · S = skip</span>
+          <span class="xsmall faint kbd-only">Enter = yes · 1–9 = pick state · S = skip</span>
         </div>
       {:else}
         <div class="col center empty">

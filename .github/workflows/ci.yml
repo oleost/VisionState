@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
     tags: ["v*"]
   pull_request:
 
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: visionstate/backend/requirements*.txt
       - run: pip install -r requirements-dev.txt
@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json') }}
+          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
       - run: python -m visionstate.backbones models
       - run: ruff check visionstate tests
       - run: ruff format --check visionstate tests
@@ -49,8 +49,47 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+  e2e:
+    # UI tests in a real browser, on desktop (mouse) and a phone (touch). See visionstate/frontend/e2e.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: visionstate/backend/requirements*.txt
+      - run: pip install -r visionstate/backend/requirements.txt
+      - name: Cache AI model
+        uses: actions/cache@v6
+        with:
+          path: visionstate/backend/models
+          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
+      - run: python -m visionstate.backbones models
+        working-directory: visionstate/backend
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: visionstate/frontend/package-lock.json
+      - working-directory: visionstate/frontend
+        run: |
+          npm ci
+          npm run build
+          npx playwright install --with-deps chromium
+          npm run e2e
+      - name: Upload report and screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            visionstate/frontend/playwright-report
+            visionstate/frontend/test-results
+          retention-days: 14
+
   image:
-    needs: [backend, frontend]
+    needs: [backend, frontend, e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,13 +99,22 @@ jobs:
         arch: [amd64, aarch64]
     steps:
       - uses: actions/checkout@v7
-      - name: Read version
+      - name: Read version and check the release channel
         id: meta
         run: |
           version=$(grep -E '^version:' visionstate/config.yaml | cut -d '"' -f 2)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$ ]]; then channel=beta; else channel=latest; fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          # main carries stable versions, beta carries beta versions (see scripts/channel.py).
+          if [[ "$GITHUB_REF" == refs/heads/main && "$channel" == beta ]]; then echo "::error::main has a beta version"; exit 1; fi
+          if [[ "$GITHUB_REF" == refs/heads/beta && "$channel" != beta ]]; then echo "::error::beta has a stable version"; exit 1; fi
+          # A release tag must match the version in config.yaml, or Home Assistant would pull a wrong image.
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match config.yaml version $version"; exit 1
+          fi
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
@@ -74,7 +122,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build image for testing
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: visionstate
           platforms: ${{ matrix.arch == 'amd64' && 'linux/amd64' || 'linux/arm64' }}
@@ -91,7 +139,8 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --name mqtt -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
-          docker run -d --name app --platform "$PLATFORM" --network host \
+          # --init: Home Assistant runs apps with an init process (tini) as PID 1.
+          docker run -d --init --name app --platform "$PLATFORM" --network host \
             -e VISIONSTATE_DATA=/tmp/data -e VISIONSTATE_MEDIA=/tmp/media -e VISIONSTATE_MQTT_HOST=127.0.0.1 \
             visionstate-test:ci
           ok=""
@@ -108,11 +157,31 @@ jobs:
           docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate_smoke/state/config' -C 1 -W 60 \
             | jq -e '.options == ["a", "b", "unknown"]'
           docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate/review_queue/config' -C 1 -W 30 >/dev/null
+          # The object detector runs in the image (both architectures) on a real photo.
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory visionstate/backend/tests/assets >/dev/null 2>&1 &
+          for i in $(seq 1 20); do curl -sf -o /dev/null http://127.0.0.1:8765/beach.jpg && break; sleep 0.5; done
+          detect=$(curl -s --max-time 300 -X POST localhost:8099/api/v1/preview/detect -H 'Content-Type: application/json' -d '{"source_type":"http","source":"http://127.0.0.1:8765/beach.jpg"}')
+          if ! echo "$detect" | jq -e '[.detections[].key] | index("dog") and index("person")' >/dev/null; then
+            echo "detect: ${detect:0:500}"; docker logs app | tail -30; exit 1
+          fi
+          curl -sf -X POST localhost:8099/api/v1/sensors -H 'Content-Type: application/json' -d '{"name":"Yard","kind":"objects","source_type":"http","source":"http://127.0.0.1:8765/beach.jpg","objects":{"classes":["dog"]}}' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'homeassistant/binary_sensor/visionstate_yard/dog/config' -C 1 -W 60             | jq -e '.device_class == "occupancy"' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'visionstate/yard/objects/dog/state' -C 1 -W 300 | grep -q ON
+          # The number reader runs in the image and reads a drawn LCD.
+          read=$(curl -s --max-time 120 -X POST localhost:8099/api/v1/preview/read -H 'Content-Type: application/json' -d '{"source_type":"http","source":"http://127.0.0.1:8765/lcd.png","reading":{"mode":"counter","decimals":1}}')
+          if ! echo "$read" | jq -e '.value == "123456.7"' >/dev/null; then echo "read: ${read:0:300}"; docker logs app | tail -30; exit 1; fi
+          curl -sf -X POST localhost:8099/api/v1/sensors -H 'Content-Type: application/json' -d '{"name":"Meter","kind":"reading","source_type":"http","source":"http://127.0.0.1:8765/lcd.png","reading":{"mode":"counter","decimals":1,"unit":"kWh","device_class":"energy"}}' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate_meter/state/config' -C 1 -W 60 | jq -e '.state_class == "total_increasing"' >/dev/null
+          docker exec mqtt mosquitto_sub -t 'visionstate/meter/state' -C 1 -W 300 | grep -q '123456.7'
           if docker logs app 2>&1 | grep -q Traceback; then docker logs app; exit 1; fi
+          # Home Assistant stops apps with SIGTERM; a non-zero exit code shows up as "Error".
+          docker stop -t 30 app
+          code=$(docker inspect -f '{{.State.ExitCode}}' app)
+          if [ "$code" != "0" ]; then echo "::error::exit code $code after docker stop"; docker logs app | tail -20; exit 1; fi
           echo "smoke test passed"
       - name: Publish image (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: visionstate
           platforms: ${{ matrix.arch == 'amd64' && 'linux/amd64' || 'linux/arm64' }}
@@ -122,5 +191,5 @@ jobs:
           push: true
           tags: |
             ghcr.io/oleost/visionstate-${{ matrix.arch }}:${{ steps.meta.outputs.version }}
-            ghcr.io/oleost/visionstate-${{ matrix.arch }}:latest
+            ghcr.io/oleost/visionstate-${{ matrix.arch }}:${{ steps.meta.outputs.channel }}
           cache-from: type=gha,scope=${{ matrix.arch }}

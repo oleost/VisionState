@@ -1,7 +1,9 @@
 """Backbone registry and embedding extraction (ONNX Runtime).
 
 Available backbones are declared in ``backbones.json``; adding a model is a new entry there.
-Run ``python -m visionstate.backbones <dest>`` to download all bundled models (used by the Dockerfile).
+Entries are never changed or removed once released, so a stored choice keeps working.
+Run ``python -m visionstate.backbones <dest>`` to download all bundled models (backbones,
+detectors, readers) for the Dockerfile and CI. ``download``/``locate`` work for every kind of spec.
 """
 
 from __future__ import annotations
@@ -82,7 +84,7 @@ def download(spec: BackboneSpec, dest_dir: Path) -> Path:
     if target.exists() and sha256_file(target) == spec.sha256:
         return target
     tmp = target.with_suffix(".part")
-    log.info("Downloading backbone %s from %s", spec.id, spec.url)
+    log.info("Downloading model %s from %s", spec.id, spec.url)
     with urllib.request.urlopen(spec.url, timeout=60) as resp, tmp.open("wb") as out:  # noqa: S310
         while chunk := resp.read(1 << 20):
             out.write(chunk)
@@ -153,8 +155,11 @@ class Embedder:
 
 
 if __name__ == "__main__":
+    from . import detectors, readers
+
     logging.basicConfig(level=logging.INFO)
     destination = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
-    for backbone in BACKBONES.values():
-        if backbone.bundled:
-            print(download(backbone, destination))
+    # Every bundled model: backbones (states), detectors (objects) and readers (readings).
+    for spec in [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]:
+        if spec.bundled:
+            print(download(spec, destination))

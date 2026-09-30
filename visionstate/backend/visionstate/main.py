@@ -30,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         log.info("VisionState %s started", VERSION)
         yield
         await app.state.runtime.stop()
+        db.engine.dispose()  # close SQLite connections cleanly on shutdown
 
     app = FastAPI(title="VisionState", version=VERSION, lifespan=lifespan)
 

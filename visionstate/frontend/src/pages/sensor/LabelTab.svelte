@@ -96,13 +96,13 @@
     <div class="row">
       <h2>What state is this?</h2>
       <span class="spacer"></span>
-      <span class="small muted">Press 1–{sensor.states.length} · F freezes the frame</span>
+      <span class="small muted kbd-only">Press 1–{sensor.states.length} · F freezes the frame</span>
     </div>
-    <div class="buttons" style:grid-template-columns="repeat({Math.min(sensor.states.length, 4)}, minmax(0, 1fr))">
+    <div class="buttons" class:many={sensor.states.length > 3} style:--cols={Math.min(sensor.states.length, 4)}>
       {#each sensor.states as s, i (s.key)}
         {@const c = sensor.counts.per_state[s.key] ?? { day: 0, night: 0 }}
         <button class="state-btn" style:border-top-color={s.color} disabled={busy} onclick={() => label(s.key)}>
-          <span class="row" style="gap:10px"><span class="kbd">{i + 1}</span><span class="name">{s.name}</span></span>
+          <span class="row" style="gap:10px"><span class="kbd kbd-only">{i + 1}</span><span class="name">{s.name}</span></span>
           <span class="small muted">{c.day + c.night} samples</span>
         </button>
       {/each}
@@ -196,6 +196,7 @@
   }
   .buttons {
     display: grid;
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
     gap: 14px;
   }
   .state-btn {
@@ -223,6 +224,21 @@
   }
   .name {
     font: 600 20px var(--font-display);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 600px) {
+    .buttons {
+      gap: 10px;
+    }
+    .buttons.many {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .state-btn {
+      padding: 0 12px;
+    }
+    .name {
+      font-size: 17px;
+    }
   }
   aside {
     gap: var(--space-4);

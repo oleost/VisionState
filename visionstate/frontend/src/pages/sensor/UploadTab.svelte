@@ -101,12 +101,14 @@
   </section>
 </div>
 
-<div class="row">
+<div class="row wrap">
   <h2>Needs a label</h2>
   <span class="small muted">
-    {items.length
-      ? 'Click frames to select them, then pick a state (or press 1–9). Suggestions come from the current model.'
-      : 'Nothing waiting. Upload files above, or label live frames on the Label tab.'}
+    {#if items.length}
+      Select frames, then pick a state<span class="kbd-only"> (or press 1–9)</span>. Suggestions come from the current model.
+    {:else}
+      Nothing waiting. Upload files above, or label live frames on the Label tab.
+    {/if}
   </span>
 </div>
 

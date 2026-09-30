@@ -6,11 +6,20 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
-from .settings import APP_SLUG, SUPERVISOR_URL, UNKNOWN_STATE, VERSION, Settings
+from .settings import (
+    APP_SLUG,
+    KIND_OBJECTS,
+    KIND_READING,
+    KIND_STATES,
+    SUPERVISOR_URL,
+    UNKNOWN_STATE,
+    VERSION,
+    Settings,
+)
 
 log = logging.getLogger(__name__)
 
@@ -33,22 +42,33 @@ def topics(slug: str) -> dict[str, str]:
     }
 
 
+def object_topics(slug: str, key: str) -> dict[str, str]:
+    """Topics of one object class of an object sensor."""
+    base = f"{APP_SLUG}/{slug}/objects/{key}"
+    return {"state": f"{base}/state", "count": f"{base}/count", "attributes": f"{base}/attributes"}
+
+
 @dataclass
 class SensorDescriptor:
     slug: str
     name: str
     state_keys: list[str]
+    kind: str = KIND_STATES
+    objects: list[tuple[str, str]] = field(default_factory=list)  # (key, display name) per class
+    reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
     """Home Assistant MQTT discovery configs for one sensor (one device, several entities)."""
     t = topics(sensor.slug)
     uid = f"{APP_SLUG}_{sensor.slug}"
+    objects = sensor.kind == KIND_OBJECTS
+    reading = sensor.kind == KIND_READING
     device = {
         "identifiers": [uid],
         "name": sensor.name,
         "manufacturer": "VisionState",
-        "model": "Image state sensor",
+        "model": "Object sensor" if objects else "Reading sensor" if reading else "Image state sensor",
         "sw_version": VERSION,
     }
     bridge_only = {"availability": [{"topic": BRIDGE_AVAILABILITY}]}
@@ -61,35 +81,89 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         payload = {"unique_id": f"{uid}_{object_id}", "device": device, **payload}
         return f"{prefix}/{component}/{uid}/{object_id}/config", payload
 
+    if reading:
+        kind_specific = [
+            config("sensor", "state", {"name": None, **reading_entity(sensor.reading or {}, uid, t), **with_camera}),
+            config(
+                "sensor",
+                "confidence",
+                {
+                    "name": "Confidence",
+                    "default_entity_id": f"sensor.{uid}_confidence",
+                    "state_topic": t["confidence"],
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "icon": "mdi:percent-circle-outline",
+                    **with_camera,
+                },
+            ),
+        ]
+    elif objects:
+        kind_specific = []
+        for key, name in sensor.objects:
+            ot = object_topics(sensor.slug, key)
+            kind_specific += [
+                config(
+                    "binary_sensor",
+                    key,
+                    {
+                        "name": name,
+                        "default_entity_id": f"binary_sensor.{uid}_{key}",
+                        "state_topic": ot["state"],
+                        "json_attributes_topic": ot["attributes"],
+                        "payload_on": "ON",
+                        "payload_off": "OFF",
+                        "device_class": "occupancy",
+                        **with_camera,
+                    },
+                ),
+                config(
+                    "sensor",
+                    f"{key}_count",
+                    {
+                        "name": f"{name} count",
+                        "default_entity_id": f"sensor.{uid}_{key}_count",
+                        "state_topic": ot["count"],
+                        "state_class": "measurement",
+                        "icon": "mdi:counter",
+                        **with_camera,
+                    },
+                ),
+            ]
+    else:
+        kind_specific = [
+            config(
+                "sensor",
+                "state",
+                {
+                    "name": None,
+                    "default_entity_id": f"sensor.{uid}",
+                    "state_topic": t["state"],
+                    "json_attributes_topic": t["attributes"],
+                    "device_class": "enum",
+                    "options": [*sensor.state_keys, UNKNOWN_STATE],
+                    "icon": "mdi:eye-check-outline",
+                    **with_camera,
+                },
+            ),
+            config(
+                "sensor",
+                "confidence",
+                {
+                    "name": "Confidence",
+                    "default_entity_id": f"sensor.{uid}_confidence",
+                    "state_topic": t["confidence"],
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "icon": "mdi:percent-circle-outline",
+                    **with_camera,
+                },
+            ),
+        ]
     return [
-        config(
-            "sensor",
-            "state",
-            {
-                "name": None,
-                "default_entity_id": f"sensor.{uid}",
-                "state_topic": t["state"],
-                "json_attributes_topic": t["attributes"],
-                "device_class": "enum",
-                "options": [*sensor.state_keys, UNKNOWN_STATE],
-                "icon": "mdi:eye-check-outline",
-                **with_camera,
-            },
-        ),
-        config(
-            "sensor",
-            "confidence",
-            {
-                "name": "Confidence",
-                "default_entity_id": f"sensor.{uid}_confidence",
-                "state_topic": t["confidence"],
-                "unit_of_measurement": "%",
-                "state_class": "measurement",
-                "entity_category": "diagnostic",
-                "icon": "mdi:percent-circle-outline",
-                **with_camera,
-            },
-        ),
+        *kind_specific,
         config(
             "image",
             "frame",
@@ -105,7 +179,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             "button",
             "classify",
             {
-                "name": "Classify now",
+                "name": "Detect now" if objects else "Read now" if reading else "Classify now",
                 "default_entity_id": f"button.{uid}_classify",
                 "command_topic": t["classify"],
                 "payload_press": "PRESS",
@@ -128,6 +202,35 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             },
         ),
     ]
+
+
+def reading_entity(reading: dict, uid: str, t: dict[str, str]) -> dict:
+    """Discovery fields of a reading sensor's value: unit, device class and state class.
+
+    Counters are ``total_increasing`` so they work in the Energy dashboard; a money value may
+    not have a measurement state class in Home Assistant, so it gets none.
+    """
+    mode = reading.get("mode", "value")
+    unit = "min" if mode == "time_left" else reading.get("unit") or None
+    device_class = "duration" if mode == "time_left" else reading.get("device_class") or None
+    if mode == "counter":
+        state_class = "total_increasing"
+    elif device_class == "monetary":
+        state_class = None
+    else:
+        state_class = "measurement"
+    payload = {
+        "default_entity_id": f"sensor.{uid}",
+        "state_topic": t["state"],
+        "json_attributes_topic": t["attributes"],
+        "icon": "mdi:counter" if mode == "counter" else "mdi:timer-outline" if mode == "time_left" else "mdi:numeric",
+        "unit_of_measurement": unit,
+        "device_class": device_class,
+        "state_class": state_class,
+    }
+    if mode != "time_left":
+        payload["suggested_display_precision"] = int(reading.get("decimals", 0))
+    return {k: v for k, v in payload.items() if v is not None}
 
 
 REVIEW_TOPICS = {
@@ -299,4 +402,17 @@ class MqttBridge:
         for topic, _ in discovery_messages(self.settings.discovery_prefix, sensor):
             await self.publish(topic, "", retain=True)
         for topic in topics(sensor.slug).values():
+            await self.publish(topic, "", retain=True)
+        for key, _ in sensor.objects:
+            await self.remove_object_class(sensor.slug, key, discovery=False)
+
+    async def remove_object_class(self, slug: str, key: str, discovery: bool = True) -> None:
+        """Forget one class of an object sensor (deselected): its entities and retained values."""
+        if discovery:
+            uid = f"{APP_SLUG}_{slug}"
+            for component, object_id in (("binary_sensor", key), ("sensor", f"{key}_count")):
+                await self.publish(
+                    f"{self.settings.discovery_prefix}/{component}/{uid}/{object_id}/config", "", retain=True
+                )
+        for topic in object_topics(slug, key).values():
             await self.publish(topic, "", retain=True)

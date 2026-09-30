@@ -7,7 +7,9 @@
 
 <p align="center">
   <b>Teach a local AI what your camera sees — and turn it into a Home Assistant sensor.</b><br>
-  Garage door open, closed or halfway? Gate shut? Car in the driveway? Click a few examples and you have a sensor.
+  Garage door open, closed or halfway? Gate shut? Click a few examples and you have a sensor.<br>
+  Person at the door, car in the driveway, cat on the lawn? Pick the objects — no training needed.<br>
+  kWh on the meter, minutes left on the washer? Read the number.
 </p>
 
 <p align="center">
@@ -37,7 +39,12 @@ without writing code or leaving Home Assistant:
 
 - 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
   The model retrains in about a second after every click.
-- 🎯 **Watch only what matters** — draw a box around the door; the AI ignores everything else.
+- 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
+  count and an on/off sensor for each. Pick them, done.
+- 🔢 **Read numbers** — power meters, prices, the minutes left on the washing machine. Counters
+  only go up and land straight in the Energy dashboard; implausible readings are rejected.
+- 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
+  the AI ignores everything else.
 - 📦 **Bulk upload** — drop images, ZIP archives or a **video**; frames are extracted, duplicates
   skipped, and the current model suggests a label for each one.
 - ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes,
@@ -74,10 +81,20 @@ without writing code or leaving Home Assistant:
 2. Install **VisionState** (it downloads a ready-made image for your machine).
 3. Start it and open **VisionState** from the sidebar.
 
+### Beta channel
+
+New features are released as **beta** first and move to the stable app once they are tested. To
+help test them, add `https://github.com/oleost/VisionState#beta` as a repository and install
+**VisionState (beta)**.
+
+- The beta is a separate app with its own data; move sensors over with **Export** (stable) and
+  **Import** (beta). Entity ids stay the same, so automations keep working.
+- Run only one of the two apps at a time — both publish the same sensors.
+
 ## Get your first sensor in five minutes
 
 1. **New sensor** → name it, pick a camera.
-2. Draw a box around the thing to watch.
+2. Draw a box around the thing to watch (drag its corners to shape it to the object).
 3. Name the states, e.g. *Open*, *Closed*, *Partial*.
 4. On the **Label** tab, press the matching state a few times for each situation — about
    **20 per state**, including some at night.
@@ -124,6 +141,14 @@ region into a feature vector. On top of that, each sensor gets its own small cla
 on *your* labelled images — which is why a handful of examples is enough and training takes
 about a second. Results are debounced so someone walking past doesn't flip the state.
 
+Object sensors use a pretrained detector instead ([D-FINE](https://github.com/Peterande/D-FINE),
+Apache-2.0, trained on the COCO objects). It finds every object in the region; each object you
+picked is reported with a count and cleared a while after it was last seen.
+
+Reading sensors read the digits in the region with a small text recognizer
+([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,
+then check the value (a counter never goes down) before publishing it.
+
 Everything stays on your machine: images live in `/media/visionstate`, models and settings in
 the app's data folder (included in Home Assistant backups).
 
@@ -137,10 +162,14 @@ the app's data folder (included in Home Assistant backups).
 
 ```
 visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
-  backend/              Python 3.12 · FastAPI · ONNX Runtime · scikit-learn
+  backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
   frontend/             Svelte 5 · Vite · TypeScript
-docs/SCOPE.md           Scope, design decisions and roadmap
+scripts/channel.py      Switches the app config between the stable and beta channel
+docs/SCOPE.md           Design as built, decisions and roadmap
 ```
+
+New features land on the `beta` branch first and reach `main` (stable) only after testing;
+please open pull requests against `beta`.
 
 <details>
 <summary>Run it locally</summary>
@@ -149,7 +178,7 @@ Backend:
 
 ```bash
 cd visionstate/backend
-python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+python3.14 -m venv .venv && . .venv/bin/activate  # Windows: py -3.14 -m venv .venv; .venv\Scripts\activate
 pip install -r requirements-dev.txt
 python -m visionstate.backbones models            # download the bundled model once
 pytest
@@ -167,6 +196,16 @@ Frontend (proxies `/api` to the backend on port 8099):
 cd visionstate/frontend
 npm install
 npm run dev
+```
+
+UI tests (Playwright) start the backend and a fake camera by themselves and run every page on a
+desktop browser and on an emulated phone with touch:
+
+```bash
+cd visionstate/frontend
+npx playwright install chromium   # once
+npm run build
+VS_PYTHON=../backend/.venv/bin/python npm run e2e
 ```
 
 </details>

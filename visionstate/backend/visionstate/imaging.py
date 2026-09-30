@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
-from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, RUNTIME, THUMB_SIZE
+from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, NEUTRAL_FILL, ROI_MAX_POINTS, RUNTIME, THUMB_SIZE
 
 FULL_FRAME_KEY = "full"
 
@@ -24,10 +25,42 @@ def encode_jpeg(image: Image.Image, quality: int = JPEG_QUALITY) -> bytes:
     return buf.getvalue()
 
 
+def _clamp(value: float) -> float:
+    return min(max(float(value), 0.0), 1.0)
+
+
+def _normalise_points(points) -> list[list[float]] | None:
+    """Clamped polygon corners, or None when there is no real polygon (missing, <3 points)."""
+    if not points or len(points) < 3:
+        return None
+    return [[round(_clamp(p[0]), 4), round(_clamp(p[1]), 4)] for p in points[:ROI_MAX_POINTS]]
+
+
+def _is_axis_rectangle(points: list[list[float]], x: float, y: float, w: float, h: float) -> bool:
+    corners = {(x, y), (round(x + w, 4), y), (x, round(y + h, 4)), (round(x + w, 4), round(y + h, 4))}
+    return len(points) == 4 and {(p[0], p[1]) for p in points} == corners
+
+
 def normalise_roi(roi: dict | None) -> dict | None:
-    """Clamp a region to the unit square. Returns None for a missing or full-frame region."""
+    """Clamp a region to the unit square. Returns None for a missing or full-frame region.
+
+    A region is a rectangle ``{x, y, w, h}``, optionally with polygon ``points`` ([[x, y], ...]).
+    For a polygon, ``x/y/w/h`` is recomputed as its bounding box; a polygon that is just the
+    rectangle is stored as a plain rectangle.
+    """
     if not roi:
         return None
+    points = _normalise_points(roi.get("points"))
+    if points:
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        x, y = min(xs), min(ys)
+        w, h = max(xs) - x, max(ys) - y
+        if w < 0.01 or h < 0.01:
+            return None
+        box = {"x": round(x, 4), "y": round(y, 4), "w": round(w, 4), "h": round(h, 4)}
+        if _is_axis_rectangle(points, box["x"], box["y"], box["w"], box["h"]):
+            return normalise_roi(box)
+        return {**box, "points": points}
     x = min(max(float(roi.get("x", 0)), 0.0), 1.0)
     y = min(max(float(roi.get("y", 0)), 0.0), 1.0)
     w = min(max(float(roi.get("w", 1)), 0.0), 1.0 - x)
@@ -44,7 +77,11 @@ def roi_key(roi: dict | None) -> str:
     roi = normalise_roi(roi)
     if roi is None:
         return FULL_FRAME_KEY
-    return f"{roi['x']:.4f},{roi['y']:.4f},{roi['w']:.4f},{roi['h']:.4f}"
+    key = f"{roi['x']:.4f},{roi['y']:.4f},{roi['w']:.4f},{roi['h']:.4f}"
+    if roi.get("points"):
+        digest = hashlib.sha1(repr(roi["points"]).encode(), usedforsecurity=False).hexdigest()[:12]
+        key += f",p{digest}"
+    return key
 
 
 def crop(image: Image.Image, roi: dict | None) -> Image.Image:
@@ -58,10 +95,17 @@ def crop(image: Image.Image, roi: dict | None) -> Image.Image:
         int((roi["x"] + roi["w"]) * width),
         int((roi["y"] + roi["h"]) * height),
     )
-    return image.crop(box)
+    cropped = image.crop(box)
+    if not roi.get("points"):
+        return cropped
+    # Polygon: keep the inside, paint the rest of the bounding box neutral.
+    polygon = [(p[0] * width - box[0], p[1] * height - box[1]) for p in roi["points"]]
+    mask = Image.new("L", cropped.size, 0)
+    ImageDraw.Draw(mask).polygon(polygon, fill=255)
+    return Image.composite(cropped, Image.new("RGB", cropped.size, NEUTRAL_FILL), mask)
 
 
-def letterbox(image: Image.Image, size: int, fill: tuple[int, int, int] = (124, 116, 104)) -> Image.Image:
+def letterbox(image: Image.Image, size: int, fill: tuple[int, int, int] = NEUTRAL_FILL) -> Image.Image:
     """Resize keeping aspect ratio and pad to a square (fill = ImageNet mean colour)."""
     image = image.copy()
     image.thumbnail((size, size), Image.Resampling.BICUBIC)
@@ -105,3 +149,69 @@ def change_score(previous: np.ndarray | None, current: np.ndarray) -> float:
     if previous is None or previous.shape != current.shape:
         return 0.0
     return float(np.abs(current - previous).mean())
+
+
+# --- Object detection helpers ---------------------------------------------------------------
+
+
+Box = tuple[float, float, float, float]  # normalised x1, y1, x2, y2
+
+
+def region_box(roi: dict | None, margin: float = 0.0) -> Box:
+    """Bounding box of a region, grown by ``margin`` × its size on each side and clamped to the frame.
+
+    The whole frame when there is no region.
+    """
+    roi = normalise_roi(roi)
+    if roi is None:
+        return 0.0, 0.0, 1.0, 1.0
+    dx, dy = roi["w"] * margin, roi["h"] * margin
+    return (
+        max(0.0, roi["x"] - dx),
+        max(0.0, roi["y"] - dy),
+        min(1.0, roi["x"] + roi["w"] + dx),
+        min(1.0, roi["y"] + roi["h"] + dy),
+    )
+
+
+def crop_box(image: Image.Image, box: Box) -> Image.Image:
+    """Crop a normalised box without masking (a detector needs to see whole objects)."""
+    x1, y1, x2, y2 = box
+    width, height = image.size
+    return image.crop((int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)))
+
+
+def in_region(x: float, y: float, roi: dict | None) -> bool:
+    """Whether a normalised point lies inside the region (polygon or rectangle)."""
+    roi = normalise_roi(roi)
+    if roi is None:
+        return True
+    points = roi.get("points")
+    if not points:
+        return roi["x"] <= x <= roi["x"] + roi["w"] and roi["y"] <= y <= roi["y"] + roi["h"]
+    inside = False  # ray casting
+    j = len(points) - 1
+    for i, (xi, yi) in enumerate(points):
+        xj, yj = points[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def draw_detections(image: Image.Image, detections: list[dict], names: dict[str, str], color: str) -> Image.Image:
+    """A copy of ``image`` with labelled boxes; detection boxes are normalised to ``image``."""
+    out = image.copy()
+    draw = ImageDraw.Draw(out)
+    width, height = out.size
+    line = max(2, round(min(width, height) / 200))
+    for det in detections:
+        x1, y1, x2, y2 = det["box"]
+        box = (x1 * width, y1 * height, x2 * width, y2 * height)
+        draw.rectangle(box, outline=color, width=line)
+        label = f"{names.get(det['key'], det['key'])} {det['score']:.0%}"
+        text_box = draw.textbbox((box[0], box[1]), label)
+        top = max(0, box[1] - (text_box[3] - text_box[1]) - 2 * line)
+        draw.rectangle((box[0], top, box[0] + text_box[2] - text_box[0] + 2 * line, box[1]), fill=color)
+        draw.text((box[0] + line, top + line // 2), label, fill="#12151a")
+    return out

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.6.0
+
+VisionState now has **three kinds of sensors**. Besides states you teach it, it can find
+**objects** and **read numbers** — neither needs any training. Existing sensors keep working as
+before; the database is upgraded automatically.
+
+### New
+
+- **Object sensors**: find people, cars, bicycles, cats, dogs and 75 more common objects. Choose
+  *Objects* in step 3 of the new sensor wizard, pick the objects (popular ones first, all others
+  under *Show all*) and see a test on a fresh frame right away.
+  - Each object becomes an on/off `binary_sensor` and a `…_count` sensor in Home Assistant.
+  - An object counts when it stands inside the region; it is cleared a while after it was last
+    seen (default 30 s), so a person turning around does not flicker.
+  - **Live** tab with the checked frame and its boxes, **History** of when objects appeared and
+    cleared; the Home Assistant image shows the boxes too.
+  - Detector: D-FINE S (Apache-2.0) is included; D-FINE N (faster) can be chosen under Settings.
+- **Reading sensors**: read a number from a display — power meters, fuel prices, the minutes left
+  on a washing machine. Choose *Reading* in step 3; it reads a fresh frame right away and shows
+  the value and what the reader saw.
+  - Modes: *Counter* (only goes up, works in the Energy dashboard), *Value* and *Time left*
+    (`1:25` = 85 minutes).
+  - Unsure or implausible readings (a counter going down, too big a jump) are rejected and the
+    last value stays — also after a restart. The History tab lists new values and rejected
+    readings with the reason.
+  - Reader: PP-OCRv6 tiny (Apache-2.0) is included; PP-OCRv6 small can be chosen under Settings.
+  - Not yet for mechanical counters with rolling digits (most water meters).
+  - **New and looking for testers**: reading has been tested on drawn displays and a set of
+    photos, but hardly on real cameras yet. Please share how it works on your meter or display
+    — what it is, whether it read correctly, and a screenshot of *What the reader sees* — in
+    [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an issue.
+- **Shape the region**: besides a rectangle, the region can be any shape. Drag a **+** on an edge
+  to add a corner, drag corners to fit an object at an angle, and double-click / double-tap or
+  hold a corner to remove it. Everything outside the shape is ignored.
+- **Adjust the region on the test image** in step 3 of the wizard (object and reading sensors);
+  it is tested again straight away.
+- **Beta channel**: new versions can be tried first as a separate *VisionState (beta)* app (see the
+  documentation); a **BETA** badge in the menu shows when it is running.
+
+### Improved
+
+- **Phones**: the wizard steps fit on one row, state buttons and history rows no longer get
+  squeezed, the Quality figures sit two per row, keyboard hints are hidden on touch screens, the
+  dataset's selection bar only follows the scroll while something is selected, and swiping on a
+  camera image scrolls the page.
+- AI models are only loaded while a sensor of their kind exists, and the models you use stay
+  selected when a later version recommends other ones.
+- Models trained by an older library version are retrained automatically at startup (seconds).
+- The Review badge in the menu updates when the review list is opened.
+- Runs on Python 3.14; dependencies updated (web server, database, image, video and AI libraries).
+
+### Fixed
+
+- Stopping the app showed **Error** instead of **Stopped** in Home Assistant — both because of the
+  exit code and because it waited for an AI check still in progress on slow devices.
+- SQLite connections are closed cleanly when the app stops.
+
+### Behind the scenes
+
+- Every release is tested in real browsers on desktop and on a phone with touch, and the images
+  are started and tested (both architectures, including an object detection and a reading)
+  before they are published.
+
 ## 0.4.0
 
 - **Possibly mislabelled images** (Quality tab): images the AI disagrees with after training.

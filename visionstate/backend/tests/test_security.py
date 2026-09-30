@@ -113,3 +113,16 @@ def test_review_rules_global_and_per_sensor(client):
     cleared = client.patch(f"/api/v1/sensors/{sid}", json={"review": {}}).json()
     assert cleared["review_effective"]["below"] == 0.8
     assert client.put("/api/v1/review-rules", json={"below": 2}).status_code == 422
+
+
+def test_polygon_region_round_trip(client):
+    points = [[0.1, 0.2], [0.8, 0.25], [0.7, 0.9], [0.2, 0.8], [0.05, 0.5]]
+    body = sensor_body(roi={"x": 0, "y": 0, "w": 1, "h": 1, "points": points})
+    sensor = client.post("/api/v1/sensors", json=body).json()
+    assert sensor["roi"]["points"] == points
+    assert sensor["roi"]["x"] == 0.05 and sensor["roi"]["h"] == 0.7  # bounding box recomputed
+    too_many = [[i / 40, (i % 2) / 2] for i in range(40)]
+    resp = client.patch(
+        f"/api/v1/sensors/{sensor['id']}", json={"roi": {"x": 0, "y": 0, "w": 1, "h": 1, "points": too_many}}
+    )
+    assert resp.status_code == 422

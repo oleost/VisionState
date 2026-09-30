@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select
 from .. import imaging, uploads
 from ..db import Sample, SampleLabel
 from ..engine import SensorConfig
-from ..settings import UPLOAD_LIMITS, VIDEO
+from ..settings import KIND_STATES, UPLOAD_LIMITS, VIDEO
 from .common import API_PREFIX, get_sensor, iso, runtime, state_id_for
 
 router = APIRouter(prefix=API_PREFIX, tags=["samples"])
@@ -54,7 +54,7 @@ async def capture(sensor_id: int, body: CaptureIn, request: Request) -> dict:
     """Label the frame the user is looking at (by frame id), or a fresh one."""
     rt = runtime(request)
     with rt.db.session() as s:
-        state_id = state_id_for(get_sensor(s, sensor_id), body.state_key)
+        state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), body.state_key)
     data = rt.live_state(sensor_id).frame(body.frame_id) if body.frame_id else None
     if data is None:
         cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
@@ -76,7 +76,7 @@ async def upload(
 ) -> dict:
     rt = runtime(request)
     with rt.db.session() as s:
-        state_id = state_id_for(get_sensor(s, sensor_id), state_key or None)
+        state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), state_key or None)
 
     created: list[int] = []
     errors: list[str] = []

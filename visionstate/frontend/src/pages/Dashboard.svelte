@@ -2,11 +2,16 @@
   import { onDestroy } from 'svelte';
   import { api } from '../lib/api';
   import { app, shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import AnalysedFrame from '../lib/components/AnalysedFrame.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import LiveFrame from '../lib/components/LiveFrame.svelte';
+  import ObjectChips from '../lib/components/ObjectChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
+  import { isObjectSensor, objectName } from '../lib/objects';
+  import { isReadingSensor, readingText, readingUnit } from '../lib/reading';
+  import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
   import { POLL, SENSOR_STATUS } from '../lib/ui';
@@ -33,7 +38,7 @@
     try {
       const { id } = await api.importBundle(file);
       toast('Sensor imported');
-      go(paths.sensor(id, 'quality'));
+      go(paths.sensor(id));
     } catch (err) {
       toastError(err);
     } finally {
@@ -44,6 +49,11 @@
   const labelled = $derived(sensors?.reduce((n, s) => n + s.counts.labelled, 0) ?? 0);
 
   function meta(s: Sensor) {
+    if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
+    if (isReadingSensor(s) && s.reading) {
+      const unit = readingUnit(s.reading);
+      return `Reads a ${READING_MODE_INFO[s.reading.mode].title.toLowerCase()}${unit ? ` in ${unit}` : ''}`;
+    }
     const n = s.counts.labelled;
     if (s.model?.accuracy != null) return `${n} samples · ${pct(s.model.accuracy)} accuracy`;
     const target = app.config?.quality.min_samples_per_state ?? 20;
@@ -90,10 +100,18 @@
         {@const status = SENSOR_STATUS[s.status]}
         <article class="card sensor">
           <a class="thumb" href={href(paths.sensor(s.id))} aria-label="Open {s.name}">
-            <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
-            <span class="pill-pos">
-              <StatePill overlay name={current.name} color={current.color} confidence={shownConfidence(s)} />
-            </span>
+            {#if isObjectSensor(s)}
+              <AnalysedFrame sensor={s} labels={false} />
+              <span class="pill-pos"><ObjectChips sensor={s} overlay /></span>
+            {:else if isReadingSensor(s)}
+              <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
+              <span class="pill-pos"><StatePill overlay name={readingText(s)} color="var(--c-accent)" /></span>
+            {:else}
+              <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
+              <span class="pill-pos">
+                <StatePill overlay name={current.name} color={current.color} confidence={shownConfidence(s)} />
+              </span>
+            {/if}
           </a>
           <div class="body col">
             <div class="row">
@@ -105,19 +123,27 @@
               <span class="mono xsmall muted">{s.entity_id}</span>
               <span class="small muted">{meta(s)}</span>
             </div>
-            <Timeline sensor={s} />
-            <div class="actions">
-              <a class="btn sm" href={href(paths.sensor(s.id, 'label'))}>Label</a>
-              <a class="btn sm" href={href(paths.sensor(s.id, 'upload'))}>Upload</a>
-              <a class="btn sm" href={href(paths.sensor(s.id, 'quality'))}>Quality</a>
-            </div>
+            {#if isObjectSensor(s) || isReadingSensor(s)}
+              <div class="actions">
+                <a class="btn sm" href={href(paths.sensor(s.id, 'live'))}>Live</a>
+                <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
+                <a class="btn sm" href={href(paths.sensor(s.id, 'settings'))}>Settings</a>
+              </div>
+            {:else}
+              <Timeline sensor={s} />
+              <div class="actions">
+                <a class="btn sm" href={href(paths.sensor(s.id, 'label'))}>Label</a>
+                <a class="btn sm" href={href(paths.sensor(s.id, 'upload'))}>Upload</a>
+                <a class="btn sm" href={href(paths.sensor(s.id, 'quality'))}>Quality</a>
+              </div>
+            {/if}
           </div>
         </article>
       {/each}
       <a class="card new" href={href(paths.newSensor())}>
         <span class="plus"><Icon name="plus" size={22} /></span>
         <h2>New sensor</h2>
-        <span class="small muted">Pick a camera, draw the region to watch and name the states.</span>
+        <span class="small muted">Watch a state you teach it, find people, cars and animals, or read a number.</span>
       </a>
     </div>
   {/if}
@@ -167,6 +193,11 @@
     text-align: center;
     padding: var(--space-6);
     color: var(--c-text);
+  }
+  @media (max-width: 760px) {
+    .new {
+      min-height: 0; /* stacked under the sensors, no need to match their height */
+    }
   }
   .plus {
     width: 48px;

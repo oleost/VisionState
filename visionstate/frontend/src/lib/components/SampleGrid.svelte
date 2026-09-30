@@ -112,7 +112,7 @@
     <span class="small muted">Label as</span>
     {#each sensor.states as s, i (s.key)}
       <button class="btn state" style:border-left-color={s.color} disabled={!count || busy} onclick={() => label(s.key)}>
-        <span class="kbd">{i + 1}</span>{s.name}
+        <span class="kbd kbd-only">{i + 1}</span>{s.name}
       </button>
     {/each}
     <span class="spacer"></span>
@@ -210,6 +210,7 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
   .actions.idle {
+    position: static; /* only follow the scroll while something is selected */
     opacity: 0.6;
   }
   .state {
