@@ -6,3 +6,6 @@ export const CAMERA_URL = `http://127.0.0.1:${CAMERA_PORT}`;
 export const PYTHON = process.env.VS_PYTHON ?? 'python';
 
 export const SENSOR_NAME = 'Garage door';
+/** An object sensor looking at a real photo (a person with dogs, see backend/tests/assets). */
+export const OBJECT_SENSOR_NAME = 'Beach';
+export const PHOTO_URL = (name: string) => `${CAMERA_URL}/photo/${name}.jpg`;

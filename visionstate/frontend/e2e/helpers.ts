@@ -1,6 +1,6 @@
 // Shared helpers for the UI tests: error collection, layout checks and real touch/mouse gestures.
 import { expect, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { SENSOR_NAME } from './env';
+import { OBJECT_SENSOR_NAME, SENSOR_NAME } from './env';
 
 export type Point = { x: number; y: number };
 
@@ -94,9 +94,11 @@ export async function press(locator: Locator, info: TestInfo) {
   } else await locator.click();
 }
 
-export async function seededSensorId(request: APIRequestContext): Promise<number> {
+export async function seededSensorId(request: APIRequestContext, name = SENSOR_NAME): Promise<number> {
   const sensors: { id: number; name: string }[] = await (await request.get('api/v1/sensors')).json();
-  const sensor = sensors.find((s) => s.name === SENSOR_NAME);
-  if (!sensor) throw new Error('seeded sensor missing');
+  const sensor = sensors.find((s) => s.name === name);
+  if (!sensor) throw new Error(`seeded sensor ${name} missing`);
   return sensor.id;
 }
+
+export const seededObjectSensorId = (request: APIRequestContext) => seededSensorId(request, OBJECT_SENSOR_NAME);

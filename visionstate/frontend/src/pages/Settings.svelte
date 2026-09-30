@@ -10,6 +10,7 @@
   let info = $state<SettingsInfo | null>(null);
   let backbone = $state('');
   let provider = $state('');
+  let detector = $state('');
   let saving = $state(false);
   let importInput: HTMLInputElement;
   let reviewRules = $state<ReviewRules | null>(null);
@@ -39,17 +40,21 @@
       info = s;
       backbone = s.backbone;
       provider = s.execution_provider;
+      detector = s.detector;
     })
     .catch(toastError);
 
   const selected = $derived(info?.backbones.find((b) => b.id === backbone));
-  const changed = $derived(info !== null && (backbone !== info.backbone || provider !== info.execution_provider));
+  const selectedDetector = $derived(info?.detectors.find((d) => d.id === detector));
+  const retrains = $derived(info !== null && (backbone !== info.backbone || provider !== info.execution_provider));
+  const changed = $derived(info !== null && (retrains || detector !== info.detector));
 
   async function save() {
     saving = true;
     try {
-      info = await api.saveSettings(backbone, provider);
-      toast('AI model changed — all sensors are retraining');
+      const retrained = retrains;
+      info = await api.saveSettings({ backbone, execution_provider: provider, detector });
+      toast(retrained ? 'AI model changed — state sensors are retraining' : 'Object detector changed');
       refreshStatus();
     } catch (err) {
       toastError(err);
@@ -64,7 +69,7 @@
     try {
       const { id } = await api.importBundle(file);
       toast('Sensor imported');
-      go(paths.sensor(id, 'quality'));
+      go(paths.sensor(id));
     } catch (err) {
       toastError(err);
     } finally {
@@ -98,6 +103,11 @@
             value: app.status.backbone_error || `${app.status.backbone_name} on ${app.status.provider}`,
             ok: !app.status.backbone_error,
           },
+          {
+            label: 'Object detector',
+            value: app.status.detector_error || app.status.detector_name || 'loaded when an object sensor exists',
+            ok: !app.status.detector_error,
+          },
         ]
       : [],
   );
@@ -121,13 +131,27 @@
       <h3>AI model</h3>
       {#if info}
         <label class="field">
-          Backbone
+          State sensors (learned)
           <select class="input" bind:value={backbone}>
             {#each info.backbones as b (b.id)}
               <option value={b.id}>{b.name}{b.installed ? '' : ` · download ${mb(b.size)}`}</option>
             {/each}
           </select>
           {#if selected}<span class="hint">{selected.description}</span>{/if}
+        </label>
+        <label class="field">
+          Object sensors
+          <select class="input" bind:value={detector}>
+            {#each info.detectors as d (d.id)}
+              <option value={d.id}>{d.name}{d.installed ? '' : ` · download ${mb(d.size)}`}</option>
+            {/each}
+          </select>
+          {#if selectedDetector}
+            <span class="hint"
+              >{selectedDetector.description} Pretrained on COCO ({selectedDetector.license}),
+              <a href={selectedDetector.source} target="_blank" rel="noreferrer">source</a>.</span
+            >
+          {/if}
         </label>
         <label class="field">
           Runs on
@@ -140,7 +164,7 @@
           <button class="btn primary" disabled={!changed || saving} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}
           </button>
-          <span class="xsmall faint">Switching retrains every sensor from its stored images.</span>
+          <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object sensors need no training.</span>
         </div>
       {/if}
     </section>

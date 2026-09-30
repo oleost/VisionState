@@ -1,20 +1,24 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
+  import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ObjectPicker from '../lib/components/ObjectPicker.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
+  import { objectCount } from '../lib/objects';
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { Roi, Triggers } from '../lib/types';
+  import type { Detection, Roi, SensorKind, Triggers } from '../lib/types';
+  import { SENSOR_KIND_INFO } from '../lib/ui';
 
   const STEPS = [
     { title: 'Camera', sub: 'Name and image source' },
     { title: 'Region', sub: 'What to look at' },
-    { title: 'States', sub: 'What it can be' },
+    { title: 'Detect', sub: 'States or objects' },
     { title: 'Checks', sub: 'When to look (optional)' },
   ];
 
@@ -23,7 +27,14 @@
   let sourceType = $state('ha_camera');
   let source = $state('');
   let roi = $state<Roi | null>(null);
+  let kind = $state<SensorKind>('single_state');
   let states = $state<{ name: string; color?: string }[]>([{ name: 'Open' }, { name: 'Closed' }]);
+  let classes = $state<string[]>([...(app.config?.object_defaults.classes ?? [])]);
+  // Object preview: a fresh frame with everything the detector finds in the region.
+  let detectImage = $state<string | null>(null);
+  let detections = $state<Detection[]>([]);
+  let detecting = $state(false);
+  let detectError = $state('');
   let previewUrl = $state<string | null>(null);
   let previewError = $state('');
   let saving = $state(false);
@@ -39,6 +50,31 @@
   const statesValid = $derived(
     states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
   );
+  const detectValid = $derived(kind === 'objects' ? classes.length > 0 : statesValid);
+  const found = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const d of detections) counts.set(d.key, (counts.get(d.key) ?? 0) + 1);
+    return [...counts].map(([key, n]) => ({ key, n, picked: classes.includes(key) }));
+  });
+
+  async function detect() {
+    detecting = true;
+    detectError = '';
+    try {
+      const result = await api.previewDetect(sourceType, source, roi);
+      detectImage = result.image;
+      detections = result.detections;
+    } catch (err) {
+      detectError = (err as Error).message;
+    } finally {
+      detecting = false;
+    }
+  }
+
+  function chooseKind(value: SensorKind) {
+    kind = value;
+    if (value === 'objects' && !detectImage && !detecting) detect();
+  }
 
   const canNext = $derived(
     step === 0
@@ -46,7 +82,7 @@
       : step === 1
         ? previewUrl !== null
         : step === 2
-          ? statesValid
+          ? detectValid
           : true,
   );
   function loadPreview() {
@@ -61,23 +97,28 @@
 
   function goto(target: number) {
     if (target === 1 && step === 0) loadPreview();
+    if (target === 2 && step === 1) detectImage = null; // the region may have changed
+    if (target === 2 && kind === 'objects' && !detectImage) detect();
     step = target;
   }
 
   async function create() {
     saving = true;
     try {
+      const objects = kind === 'objects';
       const sensor = await api.createSensor({
         name: name.trim(),
+        kind,
         source_type: sourceType,
         source: source.trim(),
         roi,
-        states: states.map((s) => ({ name: s.name.trim(), color: s.color })),
+        states: objects ? [] : states.map((s) => ({ name: s.name.trim(), color: s.color })),
+        ...(objects ? { objects: { ...app.config!.object_defaults, classes } } : {}),
         interval_s,
         triggers,
       });
-      toast(`${sensor.name} created — now label some frames`);
-      go(paths.sensor(sensor.id, 'label'));
+      toast(objects ? `${sensor.name} created` : `${sensor.name} created — now label some frames`);
+      go(paths.sensor(sensor.id, objects ? 'live' : 'label'));
     } catch (err) {
       toastError(err);
     } finally {
@@ -104,7 +145,10 @@
         {/each}
       </ol>
       <span class="spacer"></span>
-      <p class="xsmall faint hint">You can change everything later. Labelling starts right after you create the sensor.</p>
+      <p class="xsmall faint hint">
+        You can change everything later.
+        {kind === 'objects' ? 'Object sensors work right away.' : 'Labelling starts right after you create the sensor.'}
+      </p>
     </aside>
 
     <section class="col content">
@@ -141,16 +185,77 @@
         {/if}
       {:else if step === 2}
         <div class="col" style="gap:6px">
-          <h2>Which states can it be in?</h2>
-          <p class="muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
+          <h2>What should this sensor detect?</h2>
+          <p class="muted">This can not be changed later — create another sensor for the other kind.</p>
         </div>
-        <div style="max-width:520px"><StatesEditor bind:states /></div>
-        <div class="card pad col preview">
-          <span class="eyebrow">In Home Assistant</span>
-          <span class="mono">sensor.visionstate_{slug}</span>
-          <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
-          <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
+        <div class="kinds" role="radiogroup" aria-label="Sensor kind">
+          {#each Object.entries(SENSOR_KIND_INFO) as [value, info] (value)}
+            <button
+              class="kind"
+              class:selected={kind === value}
+              role="radio"
+              aria-checked={kind === value}
+              onclick={() => chooseKind(value as SensorKind)}
+            >
+              <span class="radio" aria-hidden="true"></span>
+              <span class="col" style="gap:4px">
+                <strong>{info.title}</strong>
+                <span class="small muted">{info.text}</span>
+                <span class="xsmall faint">{info.example}</span>
+              </span>
+            </button>
+          {/each}
         </div>
+
+        {#if kind === 'objects'}
+          <div class="col" style="gap:var(--space-3)">
+            <h3>Which objects?</h3>
+            <ObjectPicker bind:selected={classes} />
+          </div>
+          <div class="card col test">
+            <div class="row wrap bar">
+              <span class="small">
+                {#if detecting}
+                  <span class="muted">Looking… the first check loads the detector, which takes a few seconds.</span>
+                {:else if detectError}
+                  <span class="danger-text">{detectError}</span>
+                {:else if found.length}
+                  Found {found.map((f) => objectCount(f.n, f.key) + (f.picked ? '' : ' (not selected)')).join(', ')}
+                {:else if detectImage}
+                  <span class="muted">Nothing found in the region right now — that is fine if it is empty.</span>
+                {/if}
+              </span>
+              <span class="spacer"></span>
+              <button class="btn sm" disabled={detecting} onclick={detect}><Icon name="refresh" size={14} /> Test again</button>
+            </div>
+            {#if detectImage}
+              <RoiEditor src={detectImage} {roi}>
+                <DetectionBoxes {detections} {classes} />
+              </RoiEditor>
+            {/if}
+          </div>
+          <div class="card pad col preview">
+            <span class="eyebrow">In Home Assistant</span>
+            {#each classes as key (key)}
+              <span class="mono small">binary_sensor.visionstate_{slug}_{key}</span>
+              <span class="mono xsmall muted">sensor.visionstate_{slug}_{key}_count</span>
+            {:else}
+              <span class="xsmall muted">Pick at least one object.</span>
+            {/each}
+          </div>
+        {:else}
+          <div class="col" style="gap:var(--space-3)">
+            <h3>Which states can it be in?</h3>
+            <p class="small muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
+          </div>
+          <div style="max-width:520px"><StatesEditor bind:states /></div>
+          <div class="card pad col preview">
+            <span class="eyebrow">In Home Assistant</span>
+            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
+            <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
+          </div>
+        {/if}
       {:else}
         <div class="col" style="gap:6px">
           <h2>When should it check the camera?</h2>
@@ -173,8 +278,8 @@
         {#if step < STEPS.length - 1}
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
-          <button class="btn primary" disabled={!statesValid || saving} onclick={create}>
-            {saving ? 'Creating…' : 'Create sensor and start labelling'}
+          <button class="btn primary" disabled={!detectValid || saving} onclick={create}>
+            {saving ? 'Creating…' : kind === 'objects' ? 'Create sensor' : 'Create sensor and start labelling'}
           </button>
         {/if}
       </footer>
@@ -268,10 +373,61 @@
     max-width: 520px;
     background: var(--c-bg);
     gap: var(--space-2);
+    overflow-wrap: anywhere; /* long entity ids on phones */
   }
   footer {
     padding-top: var(--space-3);
     border-top: 1px solid var(--c-border);
+  }
+  .kinds {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    max-width: 720px;
+  }
+  .kind {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--c-border-strong);
+    background: var(--c-surface);
+    color: var(--c-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .kind.selected {
+    border-color: var(--c-accent);
+    box-shadow: 0 0 0 1px var(--c-accent);
+  }
+  .radio {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--c-border-strong);
+  }
+  .kind.selected .radio {
+    border: 5px solid var(--c-accent);
+  }
+  .test {
+    max-width: 900px;
+    overflow: hidden;
+  }
+  .test .bar {
+    padding: 12px 16px;
+    gap: var(--space-3);
+  }
+  .danger-text {
+    color: var(--c-danger);
+  }
+  @media (max-width: 600px) {
+    .kinds {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   @media (max-width: 900px) {
     .wizard {

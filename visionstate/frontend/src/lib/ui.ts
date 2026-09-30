@@ -1,5 +1,5 @@
 // UI constants: polling intervals, labels and tones. Change behaviour of the UI here.
-import type { SensorStatus } from './types';
+import type { SensorKind, SensorStatus } from './types';
 
 /** Refresh intervals in milliseconds. */
 export const POLL = {
@@ -57,6 +57,7 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
 };
 
 export const SENSOR_TABS = [
+  { id: 'live', label: 'Live' },
   { id: 'label', label: 'Label' },
   { id: 'upload', label: 'Upload' },
   { id: 'dataset', label: 'Dataset' },
@@ -65,6 +66,26 @@ export const SENSOR_TABS = [
   { id: 'settings', label: 'Settings' },
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
+
+/** Tabs per sensor kind, in order; the first one is where the sensor opens. */
+export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
+  single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
+  objects: ['live', 'history', 'settings'],
+};
+
+/** The two kinds as offered in the new sensor wizard. */
+export const SENSOR_KIND_INFO: Record<SensorKind, { title: string; text: string; example: string }> = {
+  single_state: {
+    title: 'States',
+    text: 'Your own states, learned from a few labelled examples.',
+    example: 'e.g. garage door open / closed / partial',
+  },
+  objects: {
+    title: 'Objects',
+    text: 'People, cars, animals and more. Works right away, no training.',
+    example: 'e.g. a person or a car in the driveway',
+  },
+};
 
 /** Domains listed first when picking trigger entities (the most useful triggers). */
 export const TRIGGER_DOMAINS_FIRST = ['binary_sensor', 'cover', 'switch', 'input_boolean', 'lock', 'light', 'button', 'sensor'];

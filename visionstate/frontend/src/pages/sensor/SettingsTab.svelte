@@ -5,11 +5,14 @@
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
+  import ObjectParams from '../../lib/components/ObjectParams.svelte';
+  import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
+  import { isObjectSensor } from '../../lib/objects';
   import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor } from '../../lib/types';
@@ -29,6 +32,10 @@
   let debounce = $state(initial.debounce);
   let triggers = $state(initial.triggers);
   let review = $state(initial.review);
+  const objectSensor = isObjectSensor(initial);
+  let classes = $state<string[]>(initial.objects?.classes ?? []);
+  let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
+  let minSize = $state(initial.objects?.min_size ?? 0);
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
@@ -41,12 +48,13 @@
         source_type: sourceType,
         source,
         ...(roi ? { roi } : { clear_roi: true }),
-        states,
+        ...(objectSensor
+          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize } }
+          : { states, review }),
         interval_s,
         threshold,
         debounce,
         triggers,
-        review,
       });
       toast('Settings saved');
       onchange();
@@ -91,17 +99,30 @@
           <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
         </span>
       </div>
-      <p class="small muted">Drag to draw a new box, move it, or shape it with corners. Changing it retrains the model.</p>
+      <p class="small muted">
+        Drag to draw a new box, move it, or shape it with corners.
+        {objectSensor
+          ? 'An object counts when it stands inside it (the bottom of its box).'
+          : 'Changing it retrains the model.'}
+      </p>
       <div class="frame"><LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000} /></div>
     </section>
   </div>
 
   <div class="col" style="gap:var(--space-5)">
-    <section class="card pad col">
-      <h3>States</h3>
-      <p class="small muted">Removing a state also removes its labels. Renaming keeps the Home Assistant value.</p>
-      <StatesEditor bind:states />
-    </section>
+    {#if objectSensor}
+      <section class="card pad col">
+        <h3>Objects</h3>
+        <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
+        <ObjectPicker bind:selected={classes} />
+      </section>
+    {:else}
+      <section class="card pad col">
+        <h3>States</h3>
+        <p class="small muted">Removing a state also removes its labels. Renaming keeps the Home Assistant value.</p>
+        <StatesEditor bind:states />
+      </section>
+    {/if}
 
     <section class="card pad col">
       <h3>When to check</h3>
@@ -110,18 +131,24 @@
 
     <section class="card pad col">
       <h3>Sensor output</h3>
-      <SensorParams bind:threshold bind:debounce />
-    </section>
-
-    <section class="card pad col">
-      <h3>Review</h3>
-      {#if globalReview}
-        <ReviewRulesEditor bind:value={review} inherited={globalReview} {threshold} />
+      {#if objectSensor}
+        <ObjectParams bind:threshold bind:debounce bind:clearAfter bind:minSize />
+      {:else}
+        <SensorParams bind:threshold bind:debounce />
       {/if}
     </section>
 
+    {#if !objectSensor}
+      <section class="card pad col">
+        <h3>Review</h3>
+        {#if globalReview}
+          <ReviewRulesEditor bind:value={review} inherited={globalReview} {threshold} />
+        {/if}
+      </section>
+    {/if}
+
     <div class="row">
-      <button class="btn primary" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+      <button class="btn primary" disabled={saving || (objectSensor && !classes.length)} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
       <span class="spacer"></span>
       <ConfirmButton onconfirm={remove} confirmLabel="Click again to delete everything">
         <Icon name="trash" size={14} /> Delete sensor

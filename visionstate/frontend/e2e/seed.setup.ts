@@ -1,6 +1,6 @@
 // Creates a trained sensor (plus review items and one wrong label) that the UI tests look at.
 import { expect, test as setup } from '@playwright/test';
-import { CAMERA_URL, SENSOR_NAME } from './env';
+import { CAMERA_URL, OBJECT_SENSOR_NAME, PHOTO_URL, SENSOR_NAME } from './env';
 
 setup('seed a trained sensor', async ({ request }) => {
   const created = await request.post('api/v1/sensors', {
@@ -35,4 +35,29 @@ setup('seed a trained sensor', async ({ request }) => {
   await expect
     .poll(async () => (await (await request.get('api/v1/review')).json()).total, { timeout: 60_000 })
     .toBeGreaterThan(0);
+});
+
+setup('seed an object sensor', async ({ request }) => {
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: OBJECT_SENSOR_NAME,
+      kind: 'objects',
+      source_type: 'http',
+      source: PHOTO_URL('beach'),
+      objects: { classes: ['dog', 'person', 'car'] },
+      interval_s: 5,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const sensor = await created.json();
+  // The detector loads on first use; then the dogs and the person are reported.
+  await expect
+    .poll(
+      async () => {
+        const view = await (await request.get(`api/v1/sensors/${sensor.id}`)).json();
+        return view.objects.live.filter((o: { on: boolean }) => o.on).length;
+      },
+      { timeout: 90_000 },
+    )
+    .toBe(2);
 });

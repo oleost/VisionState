@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL } from './env';
+import { CAMERA_URL, PHOTO_URL } from './env';
 import {
   center,
   doubleTap,
@@ -11,12 +11,14 @@ import {
   hold,
   isTouch,
   press,
+  seededObjectSensorId,
   seededSensorId,
   watchErrors,
 } from './helpers';
 
 test('every page renders without errors and fits the screen', async ({ page, request }, info) => {
   const id = await seededSensorId(request);
+  const objectId = await seededObjectSensorId(request);
   const pages: [string, string, RegExp | string][] = [
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
@@ -26,6 +28,9 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['quality', `sensors/${id}/quality`, 'What gets mixed up'],
     ['history', `sensors/${id}/history`, 'State changes and frames flagged for review'],
     ['sensor-settings', `sensors/${id}/settings`, 'When to check'],
+    ['objects-live', `sensors/${objectId}/live`, 'Right now'],
+    ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
+    ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
@@ -38,7 +43,7 @@ test('every page renders without errors and fits the screen', async ({ page, req
       // (lazy ones off-screen never load, so they don't count).
       await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
       await expectNoHorizontalOverflow(page);
-      await expectNoClipping(page, '.btn, .state-btn, .chip, .pill');
+      await expectNoClipping(page, '.btn, .state-btn, .chip, .pill, .card');
       await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, `${name}.png`), fullPage: true });
       errors.expectNone();
     });
@@ -90,6 +95,57 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   errors.expectNone();
   await page.goto('about:blank'); // stop live-frame polling before the sensor disappears
   await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('new object sensor through the wizard', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Driveway test');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(PHOTO_URL('driveway'));
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.locator('.roi img')).toBeVisible();
+  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+
+  await press(page.getByRole('radio', { name: /Objects/ }), info);
+  // The test on a fresh frame finds the cars (not selected yet) and the person.
+  await expect(page.getByText(/Found .*cars \(not selected\)/)).toBeVisible({ timeout: 60_000 });
+  await press(page.getByRole('button', { name: 'Car', exact: true }), info);
+  await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // Everything else is behind "Show all", with search.
+  await press(page.getByRole('button', { name: /Show all \d+ objects/ }), info);
+  await page.getByPlaceholder(/Search \d+ objects/).fill('bicy');
+  await expect(page.getByRole('button', { name: 'Bicycle' })).toHaveCount(1);
+  await expect(page.getByText('binary_sensor.visionstate_driveway_test_car')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-objects.png'), fullPage: true });
+  await expectNoClipping(page, '.btn, .chip-btn, .kind, .card');
+
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByText('Right now')).toBeVisible();
+  await expect(page.locator('.count.on').first()).toBeVisible({ timeout: 60_000 });
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('object sensor shows boxes and history', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededObjectSensorId(request);
+  await page.goto(`#/sensors/${id}/live`);
+  await expect(page.getByText(/The AI sees .*dogs/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.roi .box').first()).toBeVisible();
+  await page.goto(`#/sensors/${id}/history`);
+  const row = page.getByRole('button', { name: /Dog detected/ }).first();
+  await press(row, info);
+  await expect(page.locator('.full .box').first()).toBeVisible();
+  await page.goto('#/');
+  await expect(page.getByText(/\d+ dogs, 1 person|1 person, \d+ dogs/).first()).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
 });
 
 test('region editor: move, add and remove corners', async ({ page, request }, info) => {

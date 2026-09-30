@@ -20,7 +20,8 @@
   onDestroy(() => clearInterval(timer));
 
   const [section, id, tab] = $derived(route.parts);
-  const sensorTab = $derived((SENSOR_TABS.some((t) => t.id === tab) ? tab : 'label') as SensorTab);
+  // '' = the sensor's first tab, which depends on its kind (resolved by SensorPage).
+  const sensorTab = $derived((SENSOR_TABS.some((t) => t.id === tab) ? tab : '') as SensorTab | '');
 </script>
 
 <Nav />

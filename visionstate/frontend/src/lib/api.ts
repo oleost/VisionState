@@ -2,10 +2,12 @@
 import type {
   AppConfig,
   Camera,
+  Detection,
   HaEntity,
   Prediction,
   Quality,
   ReviewRules,
+  Roi,
   ReviewItem,
   SampleItem,
   Sensor,
@@ -78,12 +80,18 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
-  saveSettings: (backbone: string, execution_provider: string) =>
-    request<SettingsInfo>('settings', send('PUT', { backbone, execution_provider })),
+  saveSettings: (body: { backbone: string; execution_provider: string; detector?: string }) =>
+    request<SettingsInfo>('settings', send('PUT', body)),
   cameras: () => request<Camera[]>('cameras'),
   entities: () => request<HaEntity[]>('entities'),
   previewUrl: (sourceType: string, source: string) =>
     `${BASE}preview?${qs({ source_type: sourceType, source, t: Date.now() })}`,
+  /** A fresh frame (as a data URL) plus every object found in the region. */
+  previewDetect: (sourceType: string, source: string, roi: Roi | null) =>
+    request<{ image: string; width: number; height: number; detections: Detection[] }>(
+      'preview/detect',
+      send('POST', { source_type: sourceType, source, roi }),
+    ),
 
   sensors: () => request<Sensor[]>('sensors'),
   sensor: (id: number) => request<Sensor>(`sensors/${id}`),
@@ -99,6 +107,8 @@ export const api = {
     if (!resp.ok) throw await errorFrom(resp);
     return { frameId: resp.headers.get('X-Frame-Id'), url: URL.createObjectURL(await resp.blob()) };
   },
+  /** The exact frame a check analysed (while cached); stable URL, so the browser can cache it. */
+  analysedFrameUrl: (id: number, frameId: string) => `${BASE}sensors/${id}/frame?${qs({ frame_id: frameId })}`,
   capture: (id: number, stateKey: string, frameId: string | null) =>
     request<{ id: number }>(`sensors/${id}/capture`, send('POST', { state_key: stateKey, frame_id: frameId })),
 

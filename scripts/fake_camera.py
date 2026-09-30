@@ -5,15 +5,19 @@
 GET /snapshot.jpg                returns a synthetic garage door frame (random lighting noise)
 GET /set?state=open|closed|partial   changes what the camera shows
 GET /set?night=1                 switches to a greyscale "IR" image
+GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/assets (for object sensors)
 """
 
 import io
 import random
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from PIL import Image, ImageDraw
+
+PHOTOS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "tests" / "assets"
 
 STATE = {"state": "closed", "night": False}
 DOOR_HEIGHT = {"open": 0.08, "closed": 1.0, "partial": 0.5}
@@ -59,6 +63,12 @@ class Handler(BaseHTTPRequestHandler):
             if "night" in query:
                 STATE["night"] = query["night"][0] == "1"
             self._send(str(STATE).encode(), "text/plain")
+        elif url.path.startswith("/photo/"):
+            photo = PHOTOS / Path(url.path).name  # name only: no paths outside the folder
+            if photo.suffix != ".jpg" or not photo.is_file():
+                self.send_error(404)
+                return
+            self._send(photo.read_bytes(), "image/jpeg")
         else:
             self._send(render(), "image/jpeg")
 
