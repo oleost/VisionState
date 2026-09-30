@@ -15,18 +15,29 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import delete, func, select
 
-from . import backbones, classifier, imaging
+from . import backbones, classifier, detectors, imaging
 from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener
-from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, topics
+from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, topics
 from .redact import redact
-from .settings import RUNTIME, UNKNOWN_STATE, Settings, merge_review, merge_triggers
+from .settings import (
+    DETECTION,
+    KIND_OBJECTS,
+    KIND_STATES,
+    RUNTIME,
+    UNKNOWN_STATE,
+    Settings,
+    merge_objects,
+    merge_review,
+    merge_triggers,
+)
 from .sources import FrameGrabber, HomeAssistant, SourceError
 from .storage import Storage
 
 log = logging.getLogger(__name__)
 
 EMBED_BATCH = 16
+OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an object sensor
 
 
 @dataclass
@@ -46,14 +57,22 @@ class SensorConfig:
     states: list[dict]
     triggers: dict = field(default_factory=lambda: merge_triggers(None))
     review: dict = field(default_factory=dict)  # sensor overrides only; see Runtime.review_rules
+    kind: str = KIND_STATES
+    objects: dict = field(default_factory=lambda: merge_objects(None))  # object sensors only
 
     @property
     def state_keys(self) -> list[str]:
         return [s["key"] for s in self.states]
 
     @property
+    def is_objects(self) -> bool:
+        return self.kind == KIND_OBJECTS
+
+    @property
     def descriptor(self) -> SensorDescriptor:
-        return SensorDescriptor(self.slug, self.name, self.state_keys)
+        names = detectors.LABELS.by_key
+        objects = [(k, names[k].name) for k in self.objects["classes"] if k in names] if self.is_objects else []
+        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects)
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
@@ -71,6 +90,8 @@ class SensorConfig:
             states=[{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in row.states],
             triggers=merge_triggers(row.triggers),
             review=dict(row.review or {}),
+            kind=row.kind or KIND_STATES,
+            objects=merge_objects(row.objects),
         )
 
 
@@ -115,6 +136,83 @@ def review_reason(
     return None
 
 
+@dataclass
+class ObjectTrack:
+    """Published state of one object class of an object sensor."""
+
+    on: bool = False
+    count: int = 0  # published count; kept while "on" until the object has cleared
+    streak: int = 0  # checks in a row with the object present
+    last_seen: float = 0.0
+    score: float = 0.0  # best confidence in the last check
+
+
+def update_tracks(
+    tracks: dict[str, ObjectTrack],
+    detections: list[dict],
+    classes: list[str],
+    required: int,
+    clear_after_s: float,
+    now: float,
+) -> list[str]:
+    """Advance each class after one check; returns the classes that switched on or off.
+
+    An object switches on after ``required`` checks in a row with it present, and off once it
+    has not been seen for ``clear_after_s`` seconds, so a person turning around does not flicker.
+    """
+    changed = []
+    for key in classes:
+        track = tracks.setdefault(key, ObjectTrack())
+        found = [d for d in detections if d["key"] == key]
+        track.score = max((d["score"] for d in found), default=0.0)
+        if found:
+            track.streak += 1
+            track.last_seen = now
+            if track.on or track.streak >= required:
+                if not track.on:
+                    changed.append(key)
+                track.on, track.count = True, len(found)
+        else:
+            track.streak = 0
+            if track.on and now - track.last_seen >= clear_after_s:
+                track.on, track.count = False, 0
+                changed.append(key)
+    for key in [k for k in tracks if k not in classes]:
+        del tracks[key]
+    return changed
+
+
+def filter_detections(
+    found: list[detectors.Detection],
+    analysed: imaging.Box,
+    roi: dict | None,
+    objects: dict,
+    all_classes: bool = False,
+) -> list[dict]:
+    """Map detections from the analysed box to the whole frame and keep the ones that count.
+
+    An object counts when its bottom centre (where a person or car stands) lies inside the
+    region, it is big enough (share of the region's area) and its class is selected.
+    """
+    x1, y1, x2, y2 = analysed
+    aw, ah = x2 - x1, y2 - y1
+    rx1, ry1, rx2, ry2 = imaging.region_box(roi)
+    region_area = (rx2 - rx1) * (ry2 - ry1)
+    classes = set(objects["classes"])
+    result = []
+    for det in found:
+        if not all_classes and det.key not in classes:
+            continue
+        bx1, by1, bx2, by2 = det.box
+        box = (x1 + bx1 * aw, y1 + by1 * ah, x1 + bx2 * aw, y1 + by2 * ah)
+        if (box[2] - box[0]) * (box[3] - box[1]) < objects["min_size"] * region_area:
+            continue
+        if not imaging.in_region((box[0] + box[2]) / 2, box[3], roi):
+            continue
+        result.append({"key": det.key, "score": round(det.score, 4), "box": [round(v, 4) for v in box]})
+    return result
+
+
 def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float, str]:
     """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
     if live.last_run is None:
@@ -146,6 +244,9 @@ class LiveState:
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning
     last_trigger: dict | None = None  # {"source": ..., "detail": ..., "at": epoch seconds}
+    frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
+    tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
+    detections: list[dict] = field(default_factory=list)  # object sensors, last check
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"
@@ -172,6 +273,10 @@ class Runtime:
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
+        self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
+        self.detector_error = ""
+        self._detector_lock = asyncio.Lock()
+        self._published_classes: dict[int, set[str]] = {}  # object sensor -> classes in discovery
         self.heads: dict[int, classifier.Head] = {}
         self.live: dict[int, LiveState] = {}
         self.training: set[int] = set()
@@ -187,6 +292,9 @@ class Runtime:
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
+        # Keep the models this installation uses, even when a later release recommends others.
+        await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
+        await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
         backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
         provider = self.db.get_setting("execution_provider", "CPUExecutionProvider")
         try:
@@ -194,10 +302,11 @@ class Runtime:
         except Exception as err:  # noqa: BLE001
             log.exception("Could not load backbone %s", backbone_id)
             self.embedder_error = str(err)
-        for sensor_id in await asyncio.to_thread(self._sensor_ids):
+        for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             if self.heads_load(sensor_id):
                 log.info("Sensor %s: model from another version, retraining from stored images", sensor_id)
                 self.schedule_retrain(sensor_id, delay=0)
+        for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
         await self.refresh_trigger_entities()
         self.ha_events.start()
@@ -236,14 +345,74 @@ class Runtime:
         await self.load_embedder(backbone_id, provider)
         self.db.set_setting("backbone", backbone_id)
         self.db.set_setting("execution_provider", provider)
-        for sensor_id in await asyncio.to_thread(self._sensor_ids):
+        for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             self.schedule_retrain(sensor_id, delay=0)
+        if self.detector is not None and self.detector.provider != provider:
+            async with self._detector_lock:
+                await self.load_detector(self.detector.spec.id, provider)
+
+    def _pin_setting(self, key: str, default: str) -> None:
+        if self.db.get_setting(key) is None:
+            self.db.set_setting(key, default)
+
+    # --- detector (object sensors) --------------------------------------------------
+
+    async def load_detector(self, detector_id: str, provider: str) -> None:
+        spec = detectors.DETECTORS.get(detector_id) or detectors.DETECTORS[detectors.DEFAULT_DETECTOR]
+        path = self.model_path(spec)
+        if path is None:
+            path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
+        self.detector = await asyncio.to_thread(detectors.Detector, spec, path, provider)
+        self.detector_error = ""
+        log.info("Detector %s loaded (%s)", spec.id, self.detector.provider)
+
+    async def ensure_detector(self) -> detectors.Detector:
+        """The detector, loaded on first use so installations without object sensors never pay for it."""
+        async with self._detector_lock:
+            if self.detector is None:
+                detector_id = await asyncio.to_thread(self.db.get_setting, "detector", detectors.DEFAULT_DETECTOR)
+                provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
+                try:
+                    await self.load_detector(detector_id, provider)
+                except Exception as err:
+                    self.detector_error = redact(str(err))
+                    log.exception("Could not load detector %s", detector_id)
+                    raise
+            return self.detector
+
+    async def set_detector(self, detector_id: str) -> None:
+        provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
+        object_sensors = await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS)
+        if self.detector is not None or object_sensors:
+            async with self._detector_lock:
+                await self.load_detector(detector_id, provider)
+        await asyncio.to_thread(self.db.set_setting, "detector", detector_id)
+        for sensor_id in object_sensors:
+            self.wake(sensor_id, force=True)
+
+    async def detect_objects(
+        self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False
+    ) -> list[dict]:
+        """Objects in the region of ``image`` (boxes normalised to the whole frame).
+
+        The detector sees a margin around the region, so an object at the edge is seen whole and
+        its box (and bottom centre) is not cut off by the crop.
+        """
+        detector = await self.ensure_detector()
+        analysed = imaging.region_box(roi, DETECTION["context_margin"])
+        region = imaging.crop_box(image, analysed)
+        async with self._sem:
+            found = await asyncio.to_thread(detector.detect, region, threshold)
+        return filter_detections(found, analysed, roi, objects, all_classes)
 
     # --- sensors -------------------------------------------------------------
 
-    def _sensor_ids(self) -> list[int]:
+    def _sensor_ids(self, kind: str | None = None) -> list[int]:
         with self.db.session() as s:
-            return list(s.scalars(select(Sensor.id)))
+            query = select(Sensor.id)
+            if kind is not None:
+                query = query.where(Sensor.kind == kind)
+            return list(s.scalars(query))
 
     def load_sensor(self, sensor_id: int) -> SensorConfig | None:
         with self.db.session() as s:
@@ -282,11 +451,14 @@ class Runtime:
             task.cancel()
         self.live.pop(sensor_id, None)
         self.heads.pop(sensor_id, None)
+        self._published_classes.pop(sensor_id, None)
         (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
         await asyncio.to_thread(self.storage.delete_sensor, sensor_id)
         await self.publish_review_count()
         await self.refresh_trigger_entities()
+        if descriptor.kind == KIND_OBJECTS and not await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS):
+            self.detector = None  # the last object sensor is gone: free the memory
 
     def _on_loop(self, func, *args) -> bool:
         """Run ``func`` on the event loop. Returns True when called from another thread (deferred).
@@ -384,14 +556,14 @@ class Runtime:
         live = self.live_state(cfg.id)
         live.last_probe = time.time()
         try:
-            _, data = await self.grab(cfg)
+            frame_id, data = await self.grab(cfg)
             image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
         if live.signature is None:
             # No baseline (first run or the region changed): classify this frame, which sets one.
-            await self.run_once(cfg, data=data, image=image)
+            await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
             return
         signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
         score = imaging.change_score(live.signature, signature)
@@ -400,19 +572,25 @@ class Runtime:
             now = time.time()
             live.burst_until = now + cfg.triggers["burst_duration_s"]
             live.last_trigger = {"source": "change", "detail": f"{score:.1%} of the region changed", "at": now}
-            await self.run_once(cfg, data=data, image=image)
+            await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         data = await self.grabber.grab(cfg.source_type, cfg.source)
         return self.live_state(cfg.id).remember(data), data
 
-    async def run_once(self, cfg: SensorConfig, data: bytes | None = None, image: Image.Image | None = None) -> None:
+    async def run_once(
+        self,
+        cfg: SensorConfig,
+        data: bytes | None = None,
+        image: Image.Image | None = None,
+        frame_id: str | None = None,
+    ) -> None:
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
         try:
             if data is None:
-                _, data = await self.grab(cfg)
+                frame_id, data = await self.grab(cfg)
             if image is None:
                 image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
@@ -426,7 +604,11 @@ class Runtime:
         if live.signature is not None:
             live.change_score = imaging.change_score(live.signature, signature)
         live.signature = signature
+        live.frame_id = frame_id
         await self.mqtt.publish(t["availability"], "online", retain=True)
+        if cfg.is_objects:
+            await self._run_objects(cfg, image)
+            return
 
         probs = await self.classify_image(cfg, image)
         if probs:
@@ -478,6 +660,66 @@ class Runtime:
             if reason:
                 await self.publish_review_count()
 
+    async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
+        """One check of an object sensor: detect, update each class and publish."""
+        live = self.live_state(cfg.id)
+        try:
+            found = await self.detect_objects(image, cfg.roi, cfg.objects, cfg.threshold)
+        except Exception as err:  # noqa: BLE001 - detector missing or failed to load
+            live.error = f"Object detector unavailable: {redact(str(err))}"
+            return
+        now = time.time()
+        live.detections = found
+        best = max(found, key=lambda d: d["score"], default=None)
+        live.top, live.confidence = (best["key"], best["score"]) if best else (None, 0.0)
+        classes = cfg.objects["classes"]
+        changed = update_tracks(live.tracks, found, classes, cfg.debounce, cfg.objects["clear_after_s"], now)
+        live.changes.extend([now] * len(changed))
+
+        for key in classes:
+            track = live.tracks[key]
+            ot = object_topics(cfg.slug, key)
+            await self.mqtt.publish(ot["state"], "ON" if track.on else "OFF", retain=True)
+            await self.mqtt.publish(ot["count"], str(track.count), retain=True)
+            await self.mqtt.publish(
+                ot["attributes"],
+                {
+                    "confidence": round(track.score, 4),
+                    "boxes": [d["box"] for d in found if d["key"] == key],
+                    "last_seen": datetime.fromtimestamp(track.last_seen, UTC).isoformat() if track.last_seen else None,
+                    "last_trigger": live.last_trigger,
+                },
+                retain=True,
+            )
+        names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
+        annotated = await asyncio.to_thread(
+            lambda: imaging.crop_box(
+                imaging.draw_detections(image, found, names, OBJECT_BOX_COLOR), imaging.region_box(cfg.roi)
+            )
+        )
+        jpeg = await asyncio.to_thread(imaging.encode_jpeg, annotated, 80)
+        await self.mqtt.publish(topics(cfg.slug)["image"], jpeg, retain=True)
+        for key in changed:
+            track = live.tracks[key]
+            await asyncio.to_thread(self._record_detection, cfg.id, image, key, track.on, track.score, found)
+
+    def _record_detection(self, sensor_id, image, key, on, score, found) -> None:
+        frame = self.storage.save_history(sensor_id, image)
+        with self.db.session() as s:
+            s.add(
+                Prediction(
+                    sensor_id=sensor_id,
+                    state_key=key,
+                    published_key="on" if on else "off",
+                    confidence=score,
+                    probs={},
+                    frame=frame,
+                    is_change=True,
+                    reviewed=True,  # nothing to review: the detector is not trained here
+                    detections=found,
+                )
+            )
+
     def _record_prediction(self, sensor_id, image, top, published, confidence, probs, changed, reason) -> None:
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
@@ -506,10 +748,18 @@ class Runtime:
 
     async def publish_discovery(self, cfg: SensorConfig) -> None:
         t = topics(cfg.slug)
+        if cfg.is_objects:
+            current = set(cfg.objects["classes"])
+            for key in self._published_classes.get(cfg.id, set()) - current:
+                await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
+            self._published_classes[cfg.id] = current
         await self.mqtt.publish_discovery(cfg.descriptor)
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
         live = self.live.get(cfg.id)
-        if live and live.debouncer.published is not None:
+        if cfg.is_objects:
+            for key, track in (live.tracks if live else {}).items():
+                await self.mqtt.publish(object_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
+        elif live and live.debouncer.published is not None:
             # Re-send the last state so it is not lost when discovery is (re)published.
             await self.mqtt.publish(t["state"], live.debouncer.published, retain=True)
 
@@ -610,7 +860,7 @@ class Runtime:
         if self.embedder is None:
             return
         cfg, samples, labels = self._labelled_samples(sensor_id)
-        if cfg is None:
+        if cfg is None or cfg.is_objects:
             return
         vectors = self.vectors_for(cfg, samples)
         with self.db.session() as s:

@@ -11,12 +11,16 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import imaging
+from .. import detectors, imaging
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import Runtime
+from ..engine import ObjectTrack, Runtime
 from ..settings import (
     APP_SLUG,
+    KIND_OBJECTS,
     MAX_STATES,
+    OBJECT_DEFAULTS,
+    OBJECT_LIMITS,
+    OBJECT_MAX_CLASSES,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -24,6 +28,7 @@ from ..settings import (
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
+    merge_objects,
     merge_review,
     merge_triggers,
 )
@@ -56,10 +61,14 @@ def unique_slug(session: Session, name: str) -> str:
     return slug
 
 
-def get_sensor(session: Session, sensor_id: int) -> Sensor:
+def get_sensor(session: Session, sensor_id: int, kind: str | None = None) -> Sensor:
+    """The sensor, or 404. With ``kind``, a sensor of another kind is a 400 (e.g. training an object sensor)."""
     sensor = session.get(Sensor, sensor_id)
     if sensor is None:
         raise HTTPException(404, "Sensor not found")
+    if kind is not None and sensor.kind != kind:
+        what = "Object sensors" if sensor.kind == KIND_OBJECTS else "State sensors"
+        raise HTTPException(400, f"{what} do not support this")
     return sensor
 
 
@@ -115,6 +124,29 @@ class Triggers(BaseModel):
         for entity in cleaned:
             if not ENTITY_ID.match(entity):
                 raise ValueError(f"Not an entity id: {entity!r}")
+        return cleaned
+
+
+_olo = {k: v[0] for k, v in OBJECT_LIMITS.items()}
+_ohi = {k: v[1] for k, v in OBJECT_LIMITS.items()}
+
+
+class ObjectsIn(BaseModel):
+    """What an object sensor looks for. Defaults and limits: settings.OBJECT_*."""
+
+    classes: list[str] = Field(default_factory=lambda: list(OBJECT_DEFAULTS["classes"]), max_length=OBJECT_MAX_CLASSES)
+    min_size: float = Field(OBJECT_DEFAULTS["min_size"], ge=_olo["min_size"], le=_ohi["min_size"])
+    clear_after_s: float = Field(OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"])
+
+    @field_validator("classes")
+    @classmethod
+    def _known_classes(cls, value: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value))
+        if not cleaned:
+            raise ValueError("Pick at least one object")
+        unknown = [key for key in cleaned if key not in detectors.LABELS.by_key]
+        if unknown:
+            raise ValueError(f"Unknown object {unknown[0]!r}")
         return cleaned
 
 
@@ -182,12 +214,47 @@ def sample_counts(session: Session, sensor: Sensor) -> dict:
     return {"per_state": per_state, "labelled": labelled, "unlabelled": total - labelled}
 
 
+def entity_ids(sensor: Sensor) -> list[str]:
+    """The sensor's main Home Assistant entities (one per state sensor, two per object class)."""
+    uid = f"{APP_SLUG}_{sensor.slug}"
+    if sensor.kind != KIND_OBJECTS:
+        return [f"sensor.{uid}"]
+    return [
+        e
+        for key in merge_objects(sensor.objects)["classes"]
+        for e in (f"binary_sensor.{uid}_{key}", f"sensor.{uid}_{key}_count")
+    ]
+
+
+def objects_view(sensor: Sensor, live) -> dict | None:
+    if sensor.kind != KIND_OBJECTS:
+        return None
+    settings = merge_objects(sensor.objects)
+    tracks = live.tracks if live else {}
+    per_class = []
+    for key in settings["classes"]:
+        track = tracks.get(key) or ObjectTrack()
+        per_class.append(
+            {
+                "key": key,
+                "on": track.on,
+                "count": track.count,
+                "score": track.score,
+                "last_seen": track.last_seen or None,
+            }
+        )
+    return {**settings, "live": per_class, "detections": live.detections if live else []}
+
+
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     live = rt.live.get(sensor.id)
     info = session.get(ModelInfo, sensor.id)
     head = rt.heads.get(sensor.id)
     counts = sample_counts(session, sensor)
-    trained = head is not None and rt.embedder is not None and head.backbone == rt.embedder.spec.id
+    if sensor.kind == KIND_OBJECTS:
+        trained = True  # the detector needs no training
+    else:
+        trained = head is not None and rt.embedder is not None and head.backbone == rt.embedder.spec.id
     if not sensor.enabled:
         status = "disabled"
     elif live and live.available is False:
@@ -211,7 +278,9 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),
-        "entity_id": f"sensor.{APP_SLUG}_{sensor.slug}",
+        "entity_id": entity_ids(sensor)[0],
+        "entity_ids": entity_ids(sensor),
+        "objects": objects_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,
         "trained": trained,
@@ -227,6 +296,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "in_burst": bool(live and live.burst_until > time.time()),
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
+            "frame_id": live.frame_id if live else None,
         },
         "model": {
             "backbone": info.backbone,

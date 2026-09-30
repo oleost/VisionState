@@ -28,6 +28,43 @@ SENSOR_LIMITS = {
 }
 UNKNOWN_STATE = "unknown"
 
+# --- Sensor kinds ---------------------------------------------------------------------
+#
+# "single_state": learns the user's own states from labelled examples (one state at a time).
+# "objects": finds common objects (people, cars, animals …) with a pretrained detector, no training.
+# The kind is chosen when the sensor is created and never changes.
+
+KIND_STATES = "single_state"
+KIND_OBJECTS = "objects"
+SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS)
+
+# Object sensors reuse threshold ("minimum confidence") and debounce ("detections in a row
+# before on"), with their own defaults. Limits are the same as in SENSOR_LIMITS.
+OBJECT_SENSOR_DEFAULTS = {
+    "interval_s": 10.0,
+    "threshold": 0.60,  # weak false detections cluster around 0.5-0.55
+    "debounce": 1,
+}
+OBJECT_DEFAULTS = {
+    "classes": ["person"],
+    "min_size": 0.0,  # smallest box, as a share of the region's area (0 = any size)
+    "clear_after_s": 30.0,  # an object stays "detected" this long after it was last seen
+}
+OBJECT_LIMITS = {
+    "min_size": (0.0, 0.5),
+    "clear_after_s": (0.0, 3600.0),
+}
+OBJECT_MAX_CLASSES = 20  # two Home Assistant entities per class
+
+DETECTION = {
+    "nms_iou": 0.7,  # boxes of one class overlapping more than this are the same object
+    "max_detections": 100,
+    "preview_threshold": 0.5,  # used by the wizard preview before a threshold is chosen
+    # The detector also sees this share of the region's size on each side, so objects at the
+    # edge are seen whole (their bottom centre then decides whether they are inside).
+    "context_margin": 0.25,
+}
+
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
 # 1. The regular interval (SENSOR_DEFAULTS["interval_s"]) is the safety net.
@@ -147,6 +184,13 @@ def merge_review(global_rules: dict | None, sensor_overrides: dict | None) -> di
     """Effective review rules: built-in defaults < global rules < non-empty sensor overrides."""
     merged = {**REVIEW_DEFAULTS, **(global_rules or {})}
     merged.update({k: v for k, v in (sensor_overrides or {}).items() if v is not None and k in REVIEW_DEFAULTS})
+    return merged
+
+
+def merge_objects(stored: dict | None) -> dict:
+    """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
+    merged = {**OBJECT_DEFAULTS, **(stored or {})}
+    merged["classes"] = list(merged.get("classes") or [])
     return merged
 
 

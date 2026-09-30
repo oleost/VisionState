@@ -14,10 +14,20 @@ from sqlalchemy import select
 
 from .. import bundle
 from ..db import ModelInfo, Prediction, Sample, Sensor, State
-from ..settings import QUALITY, SENSOR_DEFAULTS, SENSOR_LIMITS, STATE_PALETTE
+from ..settings import (
+    KIND_OBJECTS,
+    KIND_STATES,
+    OBJECT_SENSOR_DEFAULTS,
+    QUALITY,
+    SENSOR_DEFAULTS,
+    SENSOR_KINDS,
+    SENSOR_LIMITS,
+    STATE_PALETTE,
+)
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
+    ObjectsIn,
     ReviewOverrides,
     Roi,
     StateIn,
@@ -40,16 +50,58 @@ hi = {k: v[1] for k, v in SENSOR_LIMITS.items()}
 
 class SensorIn(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    kind: str = KIND_STATES  # settings.SENSOR_KINDS; fixed after creation
     source_type: str
     source: str = Field(min_length=1, max_length=1024)
     roi: Roi | None = None
-    states: list[StateIn]
-    interval_s: float = Field(SENSOR_DEFAULTS["interval_s"], ge=lo["interval_s"], le=hi["interval_s"])
-    threshold: float = Field(SENSOR_DEFAULTS["threshold"], ge=lo["threshold"], le=hi["threshold"])
-    debounce: int = Field(SENSOR_DEFAULTS["debounce"], ge=lo["debounce"], le=hi["debounce"])
+    states: list[StateIn] = Field(default_factory=list)  # state sensors
+    objects: ObjectsIn | None = None  # object sensors
+    # Unset: the defaults of the sensor's kind (SENSOR_DEFAULTS / OBJECT_SENSOR_DEFAULTS).
+    interval_s: float | None = Field(None, ge=lo["interval_s"], le=hi["interval_s"])
+    threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
+    debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
+
+    def checked(self) -> SensorIn:
+        """Validates the kind-specific parts and fills in the kind's defaults."""
+        if self.kind not in SENSOR_KINDS:
+            raise HTTPException(400, f"Unknown sensor kind {self.kind!r}")
+        _check_source_type(self.source_type)
+        if self.kind == KIND_OBJECTS:
+            if self.states:
+                raise HTTPException(400, "Object sensors have no states")
+            self.objects = self.objects or ObjectsIn()
+            defaults = OBJECT_SENSOR_DEFAULTS
+        else:
+            validate_states(self.states)
+            if self.objects is not None:
+                raise HTTPException(400, "Only object sensors have objects")
+            defaults = SENSOR_DEFAULTS
+        for key in ("interval_s", "threshold", "debounce"):
+            if getattr(self, key) is None:
+                setattr(self, key, defaults[key])
+        return self
+
+    def new_sensor(self, slug: str) -> Sensor:
+        sensor = Sensor(
+            slug=slug,
+            name=self.name,
+            kind=self.kind,
+            source_type=self.source_type,
+            source=self.source,
+            roi=self.roi.normalised() if self.roi else None,
+            interval_s=self.interval_s,
+            threshold=self.threshold,
+            debounce=self.debounce,
+            enabled=self.enabled,
+            triggers=self.triggers.model_dump() if self.triggers else None,
+            review=self.review.stored() if self.review else None,
+            objects=self.objects.model_dump() if self.objects else None,
+        )
+        _apply_states(sensor, self.states)
+        return sensor
 
 
 class SensorPatch(BaseModel):
@@ -65,6 +117,7 @@ class SensorPatch(BaseModel):
     enabled: bool | None = None
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
+    objects: ObjectsIn | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -101,23 +154,9 @@ def list_sensors(request: Request) -> list[dict]:
 @router.post("", status_code=201)
 async def create_sensor(body: SensorIn, request: Request) -> dict:
     rt = runtime(request)
-    _check_source_type(body.source_type)
-    validate_states(body.states)
+    body.checked()
     with rt.db.session() as s:
-        sensor = Sensor(
-            slug=unique_slug(s, body.name),
-            name=body.name,
-            source_type=body.source_type,
-            source=body.source,
-            roi=body.roi.normalised() if body.roi else None,
-            interval_s=body.interval_s,
-            threshold=body.threshold,
-            debounce=body.debounce,
-            enabled=body.enabled,
-            triggers=body.triggers.model_dump() if body.triggers else None,
-            review=body.review.stored() if body.review else None,
-        )
-        _apply_states(sensor, body.states)
+        sensor = body.new_sensor(unique_slug(s, body.name))
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id
@@ -140,6 +179,10 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         validate_states(body.states)
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id)
+        if sensor.kind == KIND_OBJECTS and body.states is not None:
+            raise HTTPException(400, "Object sensors have no states")
+        if sensor.kind != KIND_OBJECTS and body.objects is not None:
+            raise HTTPException(400, "Only object sensors have objects")
         old_roi, old_keys = sensor.roi, [st.key for st in sensor.states]
         for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled"):
             value = getattr(body, field)
@@ -155,8 +198,11 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             sensor.roi = body.roi.normalised()
         if body.states is not None:
             _apply_states(sensor, body.states)
+        if body.objects is not None:
+            sensor.objects = body.objects.model_dump()
         s.flush()
-        retrain = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
+        changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
+        retrain = changed and sensor.kind == KIND_STATES
     await rt.sensor_updated(sensor_id, retrain=retrain)
     return get_one(sensor_id, request)
 
@@ -174,13 +220,23 @@ async def delete_sensor(sensor_id: int, request: Request) -> Response:
 
 
 @router.get("/{sensor_id}/frame")
-async def live_frame(sensor_id: int, request: Request, cached: bool = False) -> Response:
-    """A fresh frame from the sensor's camera. ``X-Frame-Id`` identifies it for labelling."""
+async def live_frame(sensor_id: int, request: Request, cached: bool = False, frame_id: str | None = None) -> Response:
+    """A fresh frame from the sensor's camera. ``X-Frame-Id`` identifies it for labelling.
+
+    ``frame_id`` returns that recent frame (e.g. the one the last check analysed) while it is
+    still cached; 404 once it is gone.
+    """
     rt = runtime(request)
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg is None:
         raise HTTPException(404, "Sensor not found")
     live = rt.live_state(sensor_id)
+    if frame_id is not None:
+        data = next((d for fid, d in live.frames if fid == frame_id), None)
+        if data is None:
+            raise HTTPException(404, "Frame no longer cached")
+        headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
+        return Response(data, media_type="image/jpeg", headers=headers)
     if cached and live.frames:
         frame_id, data = live.frames[-1]
     else:
@@ -199,7 +255,10 @@ async def classify_now(sensor_id: int, request: Request) -> dict:
 
 @router.post("/{sensor_id}/retrain")
 async def retrain(sensor_id: int, request: Request) -> dict:
-    runtime(request).schedule_retrain(sensor_id, delay=0)
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_STATES)
+    rt.schedule_retrain(sensor_id, delay=0)
     return {"ok": True}
 
 
@@ -274,7 +333,7 @@ def quality_tips(states: list[dict], counts: dict, confusion: dict | None, suspe
 def quality(sensor_id: int, request: Request) -> dict:
     rt = runtime(request)
     with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id)
+        sensor = get_sensor(s, sensor_id, KIND_STATES)
         view = sensor_view(rt, s, sensor)
         info = s.get(ModelInfo, sensor_id)
         counts = sample_counts(s, sensor)
@@ -322,6 +381,7 @@ def prediction_view(p: Prediction) -> dict:
         "review_reason": p.review_reason,
         "reviewed": p.reviewed,
         "has_frame": bool(p.frame),
+        "detections": p.detections,
     }
 
 

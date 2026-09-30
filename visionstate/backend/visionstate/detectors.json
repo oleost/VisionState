@@ -1,0 +1,445 @@
+{
+  "default": "dfine-s-coco",
+  "label_sets": {
+    "coco": {
+      "popular": [
+        "person",
+        "car",
+        "cat",
+        "dog",
+        "bicycle",
+        "truck",
+        "motorcycle",
+        "bird"
+      ],
+      "labels": [
+        {
+          "key": "person",
+          "name": "Person",
+          "group": "People"
+        },
+        {
+          "key": "bicycle",
+          "name": "Bicycle",
+          "group": "Vehicles"
+        },
+        {
+          "key": "car",
+          "name": "Car",
+          "group": "Vehicles"
+        },
+        {
+          "key": "motorcycle",
+          "name": "Motorcycle",
+          "group": "Vehicles"
+        },
+        {
+          "key": "airplane",
+          "name": "Airplane",
+          "group": "Vehicles"
+        },
+        {
+          "key": "bus",
+          "name": "Bus",
+          "group": "Vehicles"
+        },
+        {
+          "key": "train",
+          "name": "Train",
+          "group": "Vehicles"
+        },
+        {
+          "key": "truck",
+          "name": "Truck",
+          "group": "Vehicles"
+        },
+        {
+          "key": "boat",
+          "name": "Boat",
+          "group": "Vehicles"
+        },
+        {
+          "key": "traffic_light",
+          "name": "Traffic light",
+          "group": "Outdoor"
+        },
+        {
+          "key": "fire_hydrant",
+          "name": "Fire hydrant",
+          "group": "Outdoor"
+        },
+        {
+          "key": "stop_sign",
+          "name": "Stop sign",
+          "group": "Outdoor"
+        },
+        {
+          "key": "parking_meter",
+          "name": "Parking meter",
+          "group": "Outdoor"
+        },
+        {
+          "key": "bench",
+          "name": "Bench",
+          "group": "Outdoor"
+        },
+        {
+          "key": "bird",
+          "name": "Bird",
+          "group": "Animals"
+        },
+        {
+          "key": "cat",
+          "name": "Cat",
+          "group": "Animals"
+        },
+        {
+          "key": "dog",
+          "name": "Dog",
+          "group": "Animals"
+        },
+        {
+          "key": "horse",
+          "name": "Horse",
+          "group": "Animals"
+        },
+        {
+          "key": "sheep",
+          "name": "Sheep",
+          "group": "Animals"
+        },
+        {
+          "key": "cow",
+          "name": "Cow",
+          "group": "Animals"
+        },
+        {
+          "key": "elephant",
+          "name": "Elephant",
+          "group": "Animals"
+        },
+        {
+          "key": "bear",
+          "name": "Bear",
+          "group": "Animals"
+        },
+        {
+          "key": "zebra",
+          "name": "Zebra",
+          "group": "Animals"
+        },
+        {
+          "key": "giraffe",
+          "name": "Giraffe",
+          "group": "Animals"
+        },
+        {
+          "key": "backpack",
+          "name": "Backpack",
+          "group": "Accessories"
+        },
+        {
+          "key": "umbrella",
+          "name": "Umbrella",
+          "group": "Accessories"
+        },
+        {
+          "key": "handbag",
+          "name": "Handbag",
+          "group": "Accessories"
+        },
+        {
+          "key": "tie",
+          "name": "Tie",
+          "group": "Accessories"
+        },
+        {
+          "key": "suitcase",
+          "name": "Suitcase",
+          "group": "Accessories"
+        },
+        {
+          "key": "frisbee",
+          "name": "Frisbee",
+          "group": "Sports"
+        },
+        {
+          "key": "skis",
+          "name": "Skis",
+          "group": "Sports"
+        },
+        {
+          "key": "snowboard",
+          "name": "Snowboard",
+          "group": "Sports"
+        },
+        {
+          "key": "sports_ball",
+          "name": "Sports ball",
+          "group": "Sports"
+        },
+        {
+          "key": "kite",
+          "name": "Kite",
+          "group": "Sports"
+        },
+        {
+          "key": "baseball_bat",
+          "name": "Baseball bat",
+          "group": "Sports"
+        },
+        {
+          "key": "baseball_glove",
+          "name": "Baseball glove",
+          "group": "Sports"
+        },
+        {
+          "key": "skateboard",
+          "name": "Skateboard",
+          "group": "Sports"
+        },
+        {
+          "key": "surfboard",
+          "name": "Surfboard",
+          "group": "Sports"
+        },
+        {
+          "key": "tennis_racket",
+          "name": "Tennis racket",
+          "group": "Sports"
+        },
+        {
+          "key": "bottle",
+          "name": "Bottle",
+          "group": "Kitchen"
+        },
+        {
+          "key": "wine_glass",
+          "name": "Wine glass",
+          "group": "Kitchen"
+        },
+        {
+          "key": "cup",
+          "name": "Cup",
+          "group": "Kitchen"
+        },
+        {
+          "key": "fork",
+          "name": "Fork",
+          "group": "Kitchen"
+        },
+        {
+          "key": "knife",
+          "name": "Knife",
+          "group": "Kitchen"
+        },
+        {
+          "key": "spoon",
+          "name": "Spoon",
+          "group": "Kitchen"
+        },
+        {
+          "key": "bowl",
+          "name": "Bowl",
+          "group": "Kitchen"
+        },
+        {
+          "key": "banana",
+          "name": "Banana",
+          "group": "Food"
+        },
+        {
+          "key": "apple",
+          "name": "Apple",
+          "group": "Food"
+        },
+        {
+          "key": "sandwich",
+          "name": "Sandwich",
+          "group": "Food"
+        },
+        {
+          "key": "orange",
+          "name": "Orange",
+          "group": "Food"
+        },
+        {
+          "key": "broccoli",
+          "name": "Broccoli",
+          "group": "Food"
+        },
+        {
+          "key": "carrot",
+          "name": "Carrot",
+          "group": "Food"
+        },
+        {
+          "key": "hot_dog",
+          "name": "Hot dog",
+          "group": "Food"
+        },
+        {
+          "key": "pizza",
+          "name": "Pizza",
+          "group": "Food"
+        },
+        {
+          "key": "donut",
+          "name": "Donut",
+          "group": "Food"
+        },
+        {
+          "key": "cake",
+          "name": "Cake",
+          "group": "Food"
+        },
+        {
+          "key": "chair",
+          "name": "Chair",
+          "group": "Furniture"
+        },
+        {
+          "key": "couch",
+          "name": "Couch",
+          "group": "Furniture"
+        },
+        {
+          "key": "potted_plant",
+          "name": "Potted plant",
+          "group": "Furniture"
+        },
+        {
+          "key": "bed",
+          "name": "Bed",
+          "group": "Furniture"
+        },
+        {
+          "key": "dining_table",
+          "name": "Dining table",
+          "group": "Furniture"
+        },
+        {
+          "key": "toilet",
+          "name": "Toilet",
+          "group": "Furniture"
+        },
+        {
+          "key": "tv",
+          "name": "TV",
+          "group": "Electronics"
+        },
+        {
+          "key": "laptop",
+          "name": "Laptop",
+          "group": "Electronics"
+        },
+        {
+          "key": "mouse",
+          "name": "Mouse",
+          "group": "Electronics"
+        },
+        {
+          "key": "remote",
+          "name": "Remote",
+          "group": "Electronics"
+        },
+        {
+          "key": "keyboard",
+          "name": "Keyboard",
+          "group": "Electronics"
+        },
+        {
+          "key": "cell_phone",
+          "name": "Cell phone",
+          "group": "Electronics"
+        },
+        {
+          "key": "microwave",
+          "name": "Microwave",
+          "group": "Appliances"
+        },
+        {
+          "key": "oven",
+          "name": "Oven",
+          "group": "Appliances"
+        },
+        {
+          "key": "toaster",
+          "name": "Toaster",
+          "group": "Appliances"
+        },
+        {
+          "key": "sink",
+          "name": "Sink",
+          "group": "Appliances"
+        },
+        {
+          "key": "refrigerator",
+          "name": "Refrigerator",
+          "group": "Appliances"
+        },
+        {
+          "key": "book",
+          "name": "Book",
+          "group": "Household"
+        },
+        {
+          "key": "clock",
+          "name": "Clock",
+          "group": "Household"
+        },
+        {
+          "key": "vase",
+          "name": "Vase",
+          "group": "Household"
+        },
+        {
+          "key": "scissors",
+          "name": "Scissors",
+          "group": "Household"
+        },
+        {
+          "key": "teddy_bear",
+          "name": "Teddy bear",
+          "group": "Household"
+        },
+        {
+          "key": "hair_drier",
+          "name": "Hair drier",
+          "group": "Household"
+        },
+        {
+          "key": "toothbrush",
+          "name": "Toothbrush",
+          "group": "Household"
+        }
+      ]
+    }
+  },
+  "detectors": {
+    "dfine-s-coco": {
+      "name": "D-FINE S (balanced)",
+      "description": "Recommended. Finds small and partly hidden objects well; about 0.1 s per check on a modern PC.",
+      "url": "https://huggingface.co/onnx-community/dfine_s_coco-ONNX/resolve/a3cf03147a9b86c78475139115c8ac142577352d/onnx/model.onnx",
+      "sha256": "cd8a49a945feda6d28c6304ae8ae85c2759ba1d78a5a83a22c5ce8db82ef7238",
+      "size": 41535197,
+      "input_size": 640,
+      "label_set": "coco",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/ustc-community/dfine-small-coco",
+      "bundled": true
+    },
+    "dfine-n-coco": {
+      "name": "D-FINE N (fast)",
+      "description": "About twice as fast and lighter on memory, but misses more. Downloaded on first use (15 MB).",
+      "url": "https://huggingface.co/onnx-community/dfine-nano-coco-ONNX/resolve/89df95b0e8575ff9879f13351bafe69bbe8e6823/onnx/model.onnx",
+      "sha256": "f7febe9695cd6f71120abbeb0642d3d6b6c6bcc36f0ba1d79b66d302b5860814",
+      "size": 15434994,
+      "input_size": 640,
+      "label_set": "coco",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/ustc-community/dfine-nano-coco",
+      "bundled": false
+    }
+  }
+}
