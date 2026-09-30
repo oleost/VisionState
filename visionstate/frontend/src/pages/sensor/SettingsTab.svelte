@@ -10,6 +10,7 @@
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
+  import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
@@ -83,9 +84,14 @@
     <section class="card pad col">
       <div class="card-title">
         <h3>Region</h3>
-        <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
+        <span class="row" style="gap:8px">
+          {#if isPolygon(roi)}
+            <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
+          {/if}
+          <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
+        </span>
       </div>
-      <p class="small muted">Drag to draw a new box, or move and resize the existing one. Changing it retrains the model.</p>
+      <p class="small muted">Drag to draw a new box, move it, or shape it with corners. Changing it retrains the model.</p>
       <div class="frame"><LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000} /></div>
     </section>
   </div>

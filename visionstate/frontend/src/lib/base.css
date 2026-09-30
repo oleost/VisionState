@@ -116,9 +116,10 @@ img {
 }
 .card-title {
   display: flex;
+  flex-wrap: wrap; /* buttons move below the title on narrow screens */
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -277,6 +278,12 @@ select.input {
   align-items: center;
   justify-content: center;
 }
+/* Keyboard shortcuts and their hints mean nothing on a touch screen. */
+@media (pointer: coarse) {
+  .kbd-only {
+    display: none !important;
+  }
+}
 
 /* Notices */
 .notice {
@@ -329,7 +336,14 @@ select.input {
 }
 @media (max-width: 760px) {
   .grid-2,
-  .grid-3,
+  .grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grid-4 {
+    gap: var(--space-3); /* small tiles: keep two per row on phones */
+  }
+}
+@media (max-width: 360px) {
   .grid-4 {
     grid-template-columns: minmax(0, 1fr);
   }

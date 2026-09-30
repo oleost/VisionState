@@ -52,7 +52,7 @@
             {:else}
               <strong>AI saw {topInfo.name}</strong>
             {/if}
-            <span class="mono small muted">{pct(p.confidence)}</span>
+            {#if p.confidence}<span class="mono small muted">{pct(p.confidence)}</span>{/if}
             {#if p.review_reason}
               <span class="chip {REVIEW_REASONS[p.review_reason].tone}">{REVIEW_REASONS[p.review_reason].label}</span>
             {/if}
@@ -101,5 +101,18 @@
   }
   .ok {
     color: var(--c-accent);
+  }
+  @media (max-width: 600px) {
+    .item {
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      padding: var(--space-3);
+    }
+    img {
+      width: 96px;
+    }
+    .add {
+      flex-basis: 100%; /* the "Add as" buttons get their own row under the frame */
+    }
   }
 </style>

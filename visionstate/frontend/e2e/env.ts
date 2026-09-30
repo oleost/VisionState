@@ -1,0 +1,8 @@
+// Ports and paths shared by the Playwright config and the tests.
+export const APP_PORT = Number(process.env.VS_E2E_PORT ?? 8199);
+export const CAMERA_PORT = Number(process.env.VS_E2E_CAMERA_PORT ?? 8198);
+export const CAMERA_URL = `http://127.0.0.1:${CAMERA_PORT}`;
+/** Python interpreter with the backend requirements (e.g. ../backend/.venv/Scripts/python on Windows). */
+export const PYTHON = process.env.VS_PYTHON ?? 'python';
+
+export const SENSOR_NAME = 'Garage door';

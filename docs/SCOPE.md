@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.4.1b3 / stable 0.4.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.4.1b4 / stable 0.4.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -36,7 +36,7 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 | **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
 | **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
-| **ROI** | Region of interest — rectangle cropped from the frame before classification. |
+| **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
 | **Sample** | A stored full frame with a state label; the ROI is applied when embedding, so moving the ROI never loses data. |
 | **Backbone** | Pre-trained vision model that turns an image into an embedding vector. |
 | **Head** | Small per-sensor classifier trained on embeddings. |
@@ -196,7 +196,7 @@ sensor settings) lives in the UI.
 | MQTT / HA | aiomqtt, websockets, httpx |
 | Frontend | Svelte 5 + Vite + TypeScript, plain CSS with design tokens (`tokens.css`), hash router (Ingress-safe), bundled fonts |
 | Packaging | HA app repository, Docker (python:3.14-slim), GitHub Actions → GHCR |
-| Quality | pytest (unit + integration with a fake camera/HA/MQTT), ruff, svelte-check, image smoke test in CI, Dependabot (monthly, to `beta`) |
+| Quality | pytest (unit + integration with a fake camera/HA/MQTT), ruff, svelte-check, Playwright UI tests (desktop + phone with touch, against the real backend and `scripts/fake_camera.py`), image smoke test in CI, Dependabot (monthly, to `beta`) |
 | Docs | `README.md`, `visionstate/DOCS.md` (shown in HA), `CHANGELOG.md`, this file |
 
 ## 15. Repo layout
@@ -206,7 +206,7 @@ sensor settings) lives in the UI.
 /visionstate            HA app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
 /visionstate/backend    Python package + tests (inside the app dir: the Dockerfile builds from it)
 /visionstate/frontend   Svelte app
-/scripts                channel.py (stable/beta config switch)
+/scripts                channel.py (stable/beta config switch), fake_camera.py (test camera)
 /docs                   SCOPE.md, promo/ (README screenshots and logos)
 /.github                CI workflow, Dependabot
 ```
@@ -223,11 +223,12 @@ sensor settings) lives in the UI.
 | **Prebuilt images** ✅ | GHCR images, releases | 0.3.1 |
 | **Data quality** ✅ | Possibly mislabelled samples, review queue entity, wizard triggers step | 0.4.0 |
 | **Maintenance** ✅ (beta) | Dependency updates, version-safe head reload, image smoke test, beta channel, Python 3.14, clean exit on stop | 0.4.1b1–b3 |
+| **Region shapes & mobile** ✅ (beta) | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.4.1b4 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; UI tests; reading numbers (meters) as a new sensor kind; issue templates.
+Assistant; reading numbers (meters) as a new sensor kind; issue templates.
 
 ## 17. Identity
 

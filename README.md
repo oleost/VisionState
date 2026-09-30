@@ -87,7 +87,7 @@ help test them, add `https://github.com/oleost/VisionState#beta` as a repository
 ## Get your first sensor in five minutes
 
 1. **New sensor** → name it, pick a camera.
-2. Draw a box around the thing to watch.
+2. Draw a box around the thing to watch (drag its corners to shape it to the object).
 3. Name the states, e.g. *Open*, *Closed*, *Partial*.
 4. On the **Label** tab, press the matching state a few times for each situation — about
    **20 per state**, including some at night.
@@ -181,6 +181,16 @@ Frontend (proxies `/api` to the backend on port 8099):
 cd visionstate/frontend
 npm install
 npm run dev
+```
+
+UI tests (Playwright) start the backend and a fake camera by themselves and run every page on a
+desktop browser and on an emulated phone with touch:
+
+```bash
+cd visionstate/frontend
+npx playwright install chromium   # once
+npm run build
+VS_PYTHON=../backend/.venv/bin/python npm run e2e
 ```
 
 </details>

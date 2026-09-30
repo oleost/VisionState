@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import imaging
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import Runtime
 from ..settings import (
@@ -18,6 +19,7 @@ from ..settings import (
     MAX_STATES,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
+    ROI_MAX_POINTS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
@@ -71,10 +73,16 @@ def state_id_for(sensor: Sensor, key: str | None) -> int | None:
 
 
 class Roi(BaseModel):
+    """Rectangle (normalised 0-1), optionally a polygon given by ``points`` (bounding box = x/y/w/h)."""
+
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
     w: float = Field(gt=0, le=1)
     h: float = Field(gt=0, le=1)
+    points: list[tuple[float, float]] | None = Field(None, min_length=3, max_length=ROI_MAX_POINTS)
+
+    def normalised(self) -> dict | None:
+        return imaging.normalise_roi(self.model_dump(exclude_none=True))
 
 
 ENTITY_ID = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")

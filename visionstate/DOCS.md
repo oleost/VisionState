@@ -21,11 +21,14 @@ Home Assistant sensor. Everything runs on this machine; no cloud.
 2. Click **New sensor**:
    1. Give it a name and pick a camera.
    2. Draw a box around the thing to watch (for example the garage door). The AI only looks
-      inside the box, which makes it far more accurate.
+      inside the box, which makes it far more accurate. For an object that sits at an angle,
+      shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
+      double-click / double-tap (or press and hold) a corner to remove it. Everything outside
+      the shape is ignored. **Reset to rectangle** goes back to a plain box.
    3. Name the states, for example *Open*, *Closed*, *Partial*.
    4. Optionally choose when it should check the camera — for example when your motion
       sensor or garage opener changes (see *When it checks* below). You can skip this step.
-3. On the **Label** tab, click the matching state button (or press `1`–`9`) while the live
+3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
    you what is missing.

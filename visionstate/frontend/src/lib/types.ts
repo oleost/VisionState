@@ -5,6 +5,8 @@ export interface Roi {
   y: number;
   w: number;
   h: number;
+  /** Polygon corners [[x, y], ...]; absent for a plain rectangle (x/y/w/h is the bounding box). */
+  points?: [number, number][] | null;
 }
 
 export interface StateDef {
@@ -124,6 +126,7 @@ export interface AppConfig {
   trigger_limits: Record<'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold', [number, number]>;
   trigger_max_entities: number;
   review_defaults: ReviewRules;
+  roi_max_points: number;
   review_limits: Record<Exclude<keyof ReviewRules, 'enabled'>, [number, number]>;
 }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1b4
+
+- **Shape the region**: besides a rectangle, the region can now be any shape. Drag a **+** on an
+  edge to add a corner, drag corners to fit an object at an angle, and double-click / double-tap
+  or hold a corner to remove it. Everything outside the shape is ignored.
+- Better on phones: the wizard steps fit on one row, state buttons and history rows no longer
+  get squeezed, the Quality figures sit two per row, keyboard hints are hidden on touch screens,
+  and the dataset's selection bar only follows the scroll while something is selected.
+- The Review badge in the menu updates when the review list is opened.
+- Automatic UI tests on desktop and on a phone with touch run in CI for every change.
+
 ## 0.4.1b3
 
 - Fixed: stopping the app showed **Error** instead of **Stopped** in Home Assistant. The app

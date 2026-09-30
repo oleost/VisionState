@@ -109,7 +109,7 @@ async def create_sensor(body: SensorIn, request: Request) -> dict:
             name=body.name,
             source_type=body.source_type,
             source=body.source,
-            roi=body.roi.model_dump() if body.roi else None,
+            roi=body.roi.normalised() if body.roi else None,
             interval_s=body.interval_s,
             threshold=body.threshold,
             debounce=body.debounce,
@@ -152,7 +152,7 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         if body.clear_roi:
             sensor.roi = None
         elif body.roi is not None:
-            sensor.roi = body.roi.model_dump()
+            sensor.roi = body.roi.normalised()
         if body.states is not None:
             _apply_states(sensor, body.states)
         s.flush()

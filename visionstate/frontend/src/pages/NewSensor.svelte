@@ -7,6 +7,7 @@
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
+  import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Roi, Triggers } from '../lib/types';
 
@@ -97,13 +98,13 @@
           <li>
             <button class:current={i === step} disabled={i > step && !canNext} onclick={() => i < step && goto(i)}>
               <span class="num" class:done={i <= step}>{#if i < step}<Icon name="check" size={13} strokeWidth={2.4} />{:else}{i + 1}{/if}</span>
-              <span class="col" style="gap:2px"><strong>{s.title}</strong><span class="xsmall muted">{s.sub}</span></span>
+              <span class="col" style="gap:2px"><strong>{s.title}</strong><span class="xsmall muted sub">{s.sub}</span></span>
             </button>
           </li>
         {/each}
       </ol>
       <span class="spacer"></span>
-      <p class="xsmall faint">You can change everything later. Labelling starts right after you create the sensor.</p>
+      <p class="xsmall faint hint">You can change everything later. Labelling starts right after you create the sensor.</p>
     </aside>
 
     <section class="col content">
@@ -121,10 +122,13 @@
         <div class="row wrap">
           <div class="col" style="gap:6px">
             <h2>Draw the region to watch</h2>
-            <p class="muted">Drag a box around the object. The AI only looks inside it — that makes it much more accurate.</p>
+            <p class="muted">Drag a box around the object, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
           </div>
           <span class="spacer"></span>
           <button class="btn sm" onclick={loadPreview}><Icon name="refresh" size={14} /> New frame</button>
+          {#if isPolygon(roi)}
+            <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
+          {/if}
           <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
         </div>
         {#if previewError}
@@ -273,10 +277,43 @@
     .wizard {
       flex-direction: column;
     }
+    .wizard {
+      min-height: 0;
+    }
     aside {
       width: auto;
       border-right: none;
       border-bottom: 1px solid var(--c-border);
+      padding: var(--space-4);
+      gap: var(--space-3);
+    }
+    /* Steps become one compact row so the form starts on the first screen. */
+    ol {
+      flex-direction: row;
+      gap: 4px;
+    }
+    li {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    ol button {
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 4px;
+      text-align: center;
+      font-size: var(--fs-sm);
+    }
+    ol button .col {
+      align-items: center;
+    }
+    .sub,
+    .hint {
+      display: none;
+    }
+  }
+  @media (max-width: 600px) {
+    .content {
+      padding: var(--space-5) var(--space-4);
     }
   }
 </style>

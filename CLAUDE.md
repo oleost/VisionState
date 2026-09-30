@@ -20,6 +20,16 @@ from camera images using a local embedding model + lightweight per-sensor classi
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
   (tests need the model: `python -m visionstate.backbones models`).
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
+- **UI testing routine** (every UI change, before a beta release) — many users run Home Assistant
+  on phones/tablets:
+  - Automated: `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
+    (Playwright, `e2e/`; also runs in CI). It starts the backend + `scripts/fake_camera.py`,
+    seeds a trained sensor, and runs every page on **desktop** (1440×900, mouse) and **mobile**
+    (Pixel 7, real touch via CDP): no console errors, no sideways scrolling, no text running
+    out of buttons, plus the wizard, region editor gestures, labelling and review. Add a test
+    for every new page or gesture.
+  - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes.
+  - Never rely on Ctrl/Shift/hover-only interactions; hide keyboard hints with `.kbd-only`.
 - **Branches and channels — never commit to `main` directly.**
   - `beta` is the working branch: every change lands here first (directly or via PR to `beta`).
     Its `visionstate/config.yaml` is the beta channel ("VisionState (beta)", versions `X.Y.ZbN`,

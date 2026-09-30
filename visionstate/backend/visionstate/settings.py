@@ -55,6 +55,13 @@ TRIGGER_MAX_ENTITIES = 20
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
 
+# --- Region of interest ------------------------------------------------------------
+
+ROI_MAX_POINTS = 32  # corners of a polygon region
+# Colour for everything outside a polygon region and for letterbox padding: the ImageNet
+# mean, i.e. "nothing" for the AI model.
+NEUTRAL_FILL = (124, 116, 104)
+
 # Colours handed out to new states, in order. The UI reads colours from the API.
 STATE_PALETTE = [
     "#ffa24c",

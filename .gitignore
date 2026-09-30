@@ -28,3 +28,7 @@ Thumbs.db
 # Claude local
 .claude/settings.local.json
 models/
+
+# Playwright
+visionstate/frontend/test-results/
+visionstate/frontend/playwright-report/

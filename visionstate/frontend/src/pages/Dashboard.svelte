@@ -168,6 +168,11 @@
     padding: var(--space-6);
     color: var(--c-text);
   }
+  @media (max-width: 760px) {
+    .new {
+      min-height: 0; /* stacked under the sensors, no need to match their height */
+    }
+  }
   .plus {
     width: 48px;
     height: 48px;
