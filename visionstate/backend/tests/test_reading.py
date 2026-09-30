@@ -182,7 +182,12 @@ def test_reading_sensor_flow(settings):
         client.post(f"/api/v1/sensors/{sid}/classify")
         assert wait_for(lambda: view()["reading"]["value"] == "12346.1", timeout=30)
 
-        history = client.get(f"/api/v1/sensors/{sid}/history").json()
+        def history():
+            return client.get(f"/api/v1/sensors/{sid}/history").json()
+
+        # Rows are written right after a value is published, so wait for the latest one.
+        assert wait_for(lambda: any(h["published_key"] == "12346.1" for h in history()), timeout=10)
+        history = history()
         accepted = [h["published_key"] for h in history if h["published_key"]]
         rejected = [h["probs"]["reason"] for h in history if not h["published_key"]]
         assert accepted[:2] == ["12346.1", "12345.6"] and rejected == ["went down"]

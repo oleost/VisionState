@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0b1
+## 0.6.0b2
 
 - **Reading sensors**: read a number from a display — power meters, fuel prices, the minutes left
   on a washing machine. Choose *Reading* in step 3 of the new sensor wizard; it reads a fresh
