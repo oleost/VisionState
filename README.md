@@ -171,11 +171,15 @@ visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
   backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
   frontend/             Svelte 5 · Vite · TypeScript
 scripts/channel.py      Switches the app config between the stable and beta channel
+scripts/fake_camera.py  A fake camera (garage door, real photos, drawn displays) for local testing
 docs/SCOPE.md           Design as built, decisions and roadmap
+CLAUDE.md               Contributor guide: conventions, how to test and verify, release steps
 ```
 
 New features land on the `beta` branch first and reach `main` (stable) only after testing;
-please open pull requests against `beta`.
+please open pull requests against `beta`. [`CLAUDE.md`](CLAUDE.md) explains the conventions, how to
+test changes locally (fake camera, MQTT, UI tests on desktop and phone) and the pitfalls we ran
+into — it is written for people and AI coding assistants alike.
 
 <details>
 <summary>Run it locally</summary>
