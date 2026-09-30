@@ -18,6 +18,7 @@
   <img alt="Architectures" src="https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-5aa9ff">
   <img alt="Runs locally" src="https://img.shields.io/badge/runs-100%25%20local-c39bff">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/oleost/VisionState?color=ffa24c"></a>
+  <a href="https://buymeacoffee.com/o1ep"><img alt="Buy me a coffee" src="https://img.shields.io/badge/buy%20me%20a-coffee-ffdd00?logo=buymeacoffee&logoColor=black"></a>
 </p>
 
 <p align="center">
@@ -240,4 +241,7 @@ Issues and ideas are welcome in [GitHub Issues](https://github.com/oleost/Vision
 
 ## Licence
 
-[Apache-2.0](LICENSE). The DINOv2 model weights are released by Meta under Apache-2.0.
+[Apache-2.0](LICENSE). The bundled models are Apache-2.0 as well: DINOv2 (Meta), D-FINE and
+PaddleOCR PP-OCRv6.
+
+If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕
