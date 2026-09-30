@@ -92,14 +92,16 @@
     }
   }
 
-  // Re-test when the reading settings change, so the value shown matches the chosen mode/decimals.
+  // Re-test when the region or the reading settings change on this step (the preview image is
+  // editable), so what is shown always matches the current choices.
   let retestTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const snapshot = JSON.stringify(reading);
-    // readResult is read untracked: the test itself updates it and must not re-trigger this.
-    if (kind !== 'reading' || step !== 2 || !untrack(() => readResult)) return;
+    const snapshot = JSON.stringify([roi, reading]);
+    // Results are read untracked: the tests update them and must not re-trigger this.
+    const tested = untrack(() => (kind === 'reading' ? readResult : detectImage));
+    if (step !== 2 || kind === 'single_state' || !tested) return;
     clearTimeout(retestTimer);
-    retestTimer = setTimeout(() => snapshot && readTest(), 400);
+    retestTimer = setTimeout(() => snapshot && (kind === 'reading' ? readTest() : detect()), 500);
     return () => clearTimeout(retestTimer);
   });
 
@@ -268,7 +270,7 @@
                   Read <span class="mono">“{readResult.text}”</span> →
                   <strong class="mono">{readResult.value} {readingUnit(reading)}</strong> · {pct(readResult.score)} sure
                 {:else if readResult}
-                  <span class="muted">No number found. Draw the region tightly around the digits (step 2).</span>
+                  <span class="muted">No number found. Drag a tight box around the digits in the image below.</span>
                 {/if}
               </span>
               <span class="spacer"></span>
@@ -276,7 +278,10 @@
             </div>
             {#if readResult}
               <div class="read-images">
-                <RoiEditor src={readResult.image} {roi} />
+                <div class="col" style="gap:6px">
+                  <RoiEditor src={readResult.image} bind:roi editable />
+                  <span class="xsmall faint">Drag a tight box around the digits only — it is read again right away.</span>
+                </div>
                 <div class="col" style="gap:6px">
                   <span class="xsmall faint">What the reader sees</span>
                   <img class="seen" src={readResult.read_image} alt="The region as the number reader saw it" />
@@ -315,7 +320,7 @@
               <button class="btn sm" disabled={detecting} onclick={detect}><Icon name="refresh" size={14} /> Test again</button>
             </div>
             {#if detectImage}
-              <RoiEditor src={detectImage} {roi}>
+              <RoiEditor src={detectImage} bind:roi editable>
                 <DetectionBoxes {detections} {classes} />
               </RoiEditor>
             {/if}

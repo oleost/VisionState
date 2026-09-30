@@ -152,6 +152,12 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   // Switching the mode re-tests: "1:05" is 65 minutes left.
   await press(page.getByRole('radio', { name: /Time left/ }), info);
   await expect(page.getByText('65 min')).toBeVisible({ timeout: 30_000 });
+  // The region can be drawn right on the preview; it is read again.
+  const preview = page.locator('.read-images .roi');
+  const box = (await preview.boundingBox())!;
+  await drag(page, info, { x: box.x + box.width * 0.05, y: box.y + box.height * 0.1 }, { x: box.x + box.width * 0.95, y: box.y + box.height * 0.9 });
+  await expect(preview.locator('.handle.corner')).toHaveCount(4);
+  await expect(page.getByText('65 min')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByAltText('The region as the number reader saw it')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .kind, .mode, .card');

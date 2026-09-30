@@ -90,7 +90,8 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 A reading sensor reads a **number** from a display or counter — the kWh on a power meter, a fuel
 price, the minutes left on a washing machine. Nothing to label: draw the region **tightly around
 the digits** (no labels or units inside it), pick what the number is, and the wizard reads a
-fresh frame right away, showing both the value and the image the reader saw.
+fresh frame right away, showing both the value and the image the reader saw. You can also draw
+or adjust the region right on that test image; it is read again straight away.
 
 | Mode | For | In Home Assistant |
 |---|---|---|

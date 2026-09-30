@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0b3
+
+- New sensor wizard: the region can be drawn or adjusted right on the test image in step 3
+  (reading and object sensors); it is tested again straight away. Before, the preview could not
+  be edited and the region had to be changed back in step 2.
+
 ## 0.6.0b2
 
 - **Reading sensors**: read a number from a display — power meters, fuel prices, the minutes left
