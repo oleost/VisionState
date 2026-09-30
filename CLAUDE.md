@@ -49,7 +49,12 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     running out of buttons or cards, plus the wizard (all three kinds), region editor gestures,
     labelling, review, boxes and readings. Add a test
     for every new page or gesture.
-  - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes.
+  - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes,
+    for every page at both sizes.
+  - Handy while working (add `VS_PYTHON=…` as above): only the phone `npx playwright test
+    --project=mobile`; one test `npx playwright test -g "reading sensor"`; watch it in a browser
+    `--headed` or step through it with `--ui`; after a failure `npx playwright show-trace
+    test-results/<test>/trace.zip` shows every step with DOM snapshots.
   - Never rely on Ctrl/Shift/hover-only interactions; hide keyboard hints with `.kbd-only`.
 
 ## Testing and verifying locally
