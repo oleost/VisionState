@@ -77,6 +77,22 @@ without writing code or leaving Home Assistant:
   </tr>
 </table>
 
+## In Home Assistant
+
+Every sensor is a normal Home Assistant device, set up automatically through MQTT discovery —
+ready for dashboards, automations and the history graph.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="docs/promo/ha-states.png" alt="A garage door state sensor as a Home Assistant device" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/ha-objects.png" alt="An object sensor as a Home Assistant device" width="100%"></td>
+  </tr>
+  <tr>
+    <td valign="top"><b>State sensor</b> — the state (<code>closed</code>, <code>open</code>, …) with its confidence, the last frame, a button to check now and a switch to pause it.</td>
+    <td valign="top"><b>Object sensor</b> — an on/off sensor and a count for every object you picked, plus the last frame with the boxes drawn in.</td>
+  </tr>
+</table>
+
 ## Install
 
 **Requirements:** Home Assistant OS or Supervised, the **Mosquitto broker** app and the
