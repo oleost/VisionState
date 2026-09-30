@@ -13,6 +13,8 @@
   - Reader: PP-OCRv6 tiny (Apache-2.0) is included; PP-OCRv6 small can be chosen under Settings.
     Only loaded while at least one reading sensor exists.
   - Not yet for mechanical counters with rolling digits (most water meters).
+- Fixed: stopping the app waited for an AI check in progress. On a slow device an object
+  detection could outlast Home Assistant's stop timeout and show the app as **Error**.
 
 ## 0.5.0b1
 

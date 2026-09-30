@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from types import FrameType
@@ -27,6 +28,23 @@ class Server(uvicorn.Server):
             captured.remove(sig)
 
 
+STARTUP_FAILURE = 3  # same exit code as uvicorn.run
+
+
+async def serve(server: Server) -> None:
+    """Run the server, then end the process without waiting for AI worker threads.
+
+    AI inference runs in worker threads that can not be interrupted, and asyncio waits for them
+    (up to five minutes) when the event loop closes. On a slow device an object detection can
+    take longer than Home Assistant's stop timeout, which would then kill the app and show
+    *Error*. By the time ``serve`` returns the app has shut down cleanly (MQTT offline sent,
+    database closed), so a result still being computed can safely be dropped.
+    """
+    await server.serve()
+    logging.shutdown()
+    os._exit(0 if server.started else STARTUP_FAILURE)
+
+
 def main() -> None:
     settings = load_settings()
     logging.basicConfig(level=settings.log_level.upper(), format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -38,11 +56,10 @@ def main() -> None:
         access_log=False,
     )
     server = Server(config)
-    if sys.platform == "win32":
-        # Local development only: uvicorn picks a Proactor loop on Windows, which aiomqtt cannot use.
-        asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
-    else:
-        server.run()
+    # uvicorn's own loop choice, except on Windows (local development only): its Proactor loop
+    # does not work with aiomqtt.
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else config.get_loop_factory()
+    asyncio.run(serve(server), loop_factory=loop_factory)
 
 
 if __name__ == "__main__":
