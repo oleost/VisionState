@@ -25,6 +25,9 @@ class Label:
     key: str  # Home Assistant-safe key, e.g. "traffic_light"
     name: str  # display name, e.g. "Traffic light"
     group: str
+    # Material Design icon shown in Home Assistant; names checked against @mdi/svg 7.4.47,
+    # the icon set Home Assistant ships.
+    icon: str = "mdi:eye"
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,9 @@ def load_registry() -> tuple[str, dict[str, DetectorSpec], dict[str, LabelSet]]:
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     label_sets = {
         key: LabelSet(
-            labels=tuple(Label(item["key"], item["name"], item["group"]) for item in value["labels"]),
+            labels=tuple(
+                Label(item["key"], item["name"], item["group"], item.get("icon", "mdi:eye")) for item in value["labels"]
+            ),
             popular=tuple(value.get("popular", [])),
         )
         for key, value in raw["label_sets"].items()

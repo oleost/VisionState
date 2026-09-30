@@ -79,7 +79,11 @@ class SensorConfig:
     @property
     def descriptor(self) -> SensorDescriptor:
         names = detectors.LABELS.by_key
-        objects = [(k, names[k].name) for k in self.objects["classes"] if k in names] if self.is_objects else []
+        objects = (
+            [(k, names[k].name, names[k].icon) for k in self.objects["classes"] if k in names]
+            if self.is_objects
+            else []
+        )
         reading = self.reading if self.is_reading else None
         return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading)
 

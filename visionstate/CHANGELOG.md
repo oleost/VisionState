@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1b1
+
+- Object sensors show the object's own icon in Home Assistant — a car, a person, a dog … — for
+  all 80 objects, instead of the same house icon for every one. The icons come from the icon set
+  Home Assistant ships, so no extra setup is needed; existing sensors get them automatically.
+- The sensor overview no longer says "0 labelled images" when there are no state sensors.
+
 ## 0.6.0
 
 VisionState now has **three kinds of sensors**. Besides states you teach it, it can find

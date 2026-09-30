@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.6.1b1 / stable 0.6.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -187,7 +187,9 @@ One HA **device** per sensor:
 **Object sensors** replace the first two with two entities per selected class:
 `binary_sensor.visionstate_<slug>_<class>` (`device_class: occupancy`, attributes: confidence,
 boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
-boxes; the button is named "Detect now". Deselecting a class removes its entities.
+boxes; the button is named "Detect now". Deselecting a class removes its entities. Each class
+has its own Material Design icon (`icon` in `detectors.json`, checked against `@mdi/svg` 7.4.47,
+the version Home Assistant ships) instead of the occupancy class's house icon.
 
 **Reading sensors** publish the value on `sensor.visionstate_<slug>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →

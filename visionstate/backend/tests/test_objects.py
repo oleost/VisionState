@@ -43,6 +43,9 @@ def test_registry_labels_are_complete_and_safe():
     assert len(keys) == 80 and len(set(keys)) == 80
     assert all(re.fullmatch(r"[a-z][a-z0-9_]*", key) for key in keys)  # safe in entity ids
     assert set(detectors.LABELS.popular) <= set(keys)
+    # Every object has its own Material Design icon in Home Assistant (not occupancy's house).
+    assert all(re.fullmatch(r"mdi:[a-z0-9-]+", label.icon) for label in LABELS)
+    assert len({label.icon for label in LABELS}) >= 75
     default = detectors.DETECTORS[detectors.DEFAULT_DETECTOR]
     assert default.bundled and default.license == "Apache-2.0"
     for spec in detectors.DETECTORS.values():
@@ -147,7 +150,9 @@ def test_tracks_forget_deselected_classes():
 
 
 def test_discovery_for_object_sensor():
-    sensor = SensorDescriptor("drive", "Drive", [], KIND_OBJECTS, [("person", "Person"), ("car", "Car")])
+    sensor = SensorDescriptor(
+        "drive", "Drive", [], KIND_OBJECTS, [("person", "Person", "mdi:account"), ("car", "Car", "mdi:car")]
+    )
     messages = dict(discovery_messages("homeassistant", sensor))
     ids = {payload["default_entity_id"] for payload in messages.values()}
     assert {
@@ -161,6 +166,7 @@ def test_discovery_for_object_sensor():
     } == ids
     person = messages["homeassistant/binary_sensor/visionstate_drive/person/config"]
     assert person["device_class"] == "occupancy" and person["state_topic"] == "visionstate/drive/objects/person/state"
+    assert person["icon"] == "mdi:account"
     assert messages["homeassistant/button/visionstate_drive/classify/config"]["name"] == "Detect now"
 
 

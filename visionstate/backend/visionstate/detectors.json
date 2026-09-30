@@ -16,402 +16,482 @@
         {
           "key": "person",
           "name": "Person",
-          "group": "People"
+          "group": "People",
+          "icon": "mdi:account"
         },
         {
           "key": "bicycle",
           "name": "Bicycle",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:bicycle"
         },
         {
           "key": "car",
           "name": "Car",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:car"
         },
         {
           "key": "motorcycle",
           "name": "Motorcycle",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:motorbike"
         },
         {
           "key": "airplane",
           "name": "Airplane",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:airplane"
         },
         {
           "key": "bus",
           "name": "Bus",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:bus"
         },
         {
           "key": "train",
           "name": "Train",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:train"
         },
         {
           "key": "truck",
           "name": "Truck",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:truck"
         },
         {
           "key": "boat",
           "name": "Boat",
-          "group": "Vehicles"
+          "group": "Vehicles",
+          "icon": "mdi:sail-boat"
         },
         {
           "key": "traffic_light",
           "name": "Traffic light",
-          "group": "Outdoor"
+          "group": "Outdoor",
+          "icon": "mdi:traffic-light"
         },
         {
           "key": "fire_hydrant",
           "name": "Fire hydrant",
-          "group": "Outdoor"
+          "group": "Outdoor",
+          "icon": "mdi:fire-hydrant"
         },
         {
           "key": "stop_sign",
           "name": "Stop sign",
-          "group": "Outdoor"
+          "group": "Outdoor",
+          "icon": "mdi:octagon"
         },
         {
           "key": "parking_meter",
           "name": "Parking meter",
-          "group": "Outdoor"
+          "group": "Outdoor",
+          "icon": "mdi:parking"
         },
         {
           "key": "bench",
           "name": "Bench",
-          "group": "Outdoor"
+          "group": "Outdoor",
+          "icon": "mdi:bench"
         },
         {
           "key": "bird",
           "name": "Bird",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:bird"
         },
         {
           "key": "cat",
           "name": "Cat",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:cat"
         },
         {
           "key": "dog",
           "name": "Dog",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:dog"
         },
         {
           "key": "horse",
           "name": "Horse",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:horse"
         },
         {
           "key": "sheep",
           "name": "Sheep",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:sheep"
         },
         {
           "key": "cow",
           "name": "Cow",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:cow"
         },
         {
           "key": "elephant",
           "name": "Elephant",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:elephant"
         },
         {
           "key": "bear",
           "name": "Bear",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:paw"
         },
         {
           "key": "zebra",
           "name": "Zebra",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:horse-variant"
         },
         {
           "key": "giraffe",
           "name": "Giraffe",
-          "group": "Animals"
+          "group": "Animals",
+          "icon": "mdi:paw"
         },
         {
           "key": "backpack",
           "name": "Backpack",
-          "group": "Accessories"
+          "group": "Accessories",
+          "icon": "mdi:bag-personal"
         },
         {
           "key": "umbrella",
           "name": "Umbrella",
-          "group": "Accessories"
+          "group": "Accessories",
+          "icon": "mdi:umbrella"
         },
         {
           "key": "handbag",
           "name": "Handbag",
-          "group": "Accessories"
+          "group": "Accessories",
+          "icon": "mdi:purse"
         },
         {
           "key": "tie",
           "name": "Tie",
-          "group": "Accessories"
+          "group": "Accessories",
+          "icon": "mdi:tie"
         },
         {
           "key": "suitcase",
           "name": "Suitcase",
-          "group": "Accessories"
+          "group": "Accessories",
+          "icon": "mdi:bag-suitcase"
         },
         {
           "key": "frisbee",
           "name": "Frisbee",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:disc"
         },
         {
           "key": "skis",
           "name": "Skis",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:ski"
         },
         {
           "key": "snowboard",
           "name": "Snowboard",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:snowboard"
         },
         {
           "key": "sports_ball",
           "name": "Sports ball",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:soccer"
         },
         {
           "key": "kite",
           "name": "Kite",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:kite"
         },
         {
           "key": "baseball_bat",
           "name": "Baseball bat",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:baseball-bat"
         },
         {
           "key": "baseball_glove",
           "name": "Baseball glove",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:baseball"
         },
         {
           "key": "skateboard",
           "name": "Skateboard",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:skateboard"
         },
         {
           "key": "surfboard",
           "name": "Surfboard",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:surfing"
         },
         {
           "key": "tennis_racket",
           "name": "Tennis racket",
-          "group": "Sports"
+          "group": "Sports",
+          "icon": "mdi:tennis"
         },
         {
           "key": "bottle",
           "name": "Bottle",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:bottle-soda"
         },
         {
           "key": "wine_glass",
           "name": "Wine glass",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:glass-wine"
         },
         {
           "key": "cup",
           "name": "Cup",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:cup"
         },
         {
           "key": "fork",
           "name": "Fork",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:silverware-fork"
         },
         {
           "key": "knife",
           "name": "Knife",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:knife"
         },
         {
           "key": "spoon",
           "name": "Spoon",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:silverware-spoon"
         },
         {
           "key": "bowl",
           "name": "Bowl",
-          "group": "Kitchen"
+          "group": "Kitchen",
+          "icon": "mdi:bowl"
         },
         {
           "key": "banana",
           "name": "Banana",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:food"
         },
         {
           "key": "apple",
           "name": "Apple",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:food-apple"
         },
         {
           "key": "sandwich",
           "name": "Sandwich",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:bread-slice"
         },
         {
           "key": "orange",
           "name": "Orange",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:fruit-citrus"
         },
         {
           "key": "broccoli",
           "name": "Broccoli",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:leaf"
         },
         {
           "key": "carrot",
           "name": "Carrot",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:carrot"
         },
         {
           "key": "hot_dog",
           "name": "Hot dog",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:food-hot-dog"
         },
         {
           "key": "pizza",
           "name": "Pizza",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:pizza"
         },
         {
           "key": "donut",
           "name": "Donut",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:cupcake"
         },
         {
           "key": "cake",
           "name": "Cake",
-          "group": "Food"
+          "group": "Food",
+          "icon": "mdi:cake"
         },
         {
           "key": "chair",
           "name": "Chair",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:chair-rolling"
         },
         {
           "key": "couch",
           "name": "Couch",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:sofa"
         },
         {
           "key": "potted_plant",
           "name": "Potted plant",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:flower"
         },
         {
           "key": "bed",
           "name": "Bed",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:bed"
         },
         {
           "key": "dining_table",
           "name": "Dining table",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:table-furniture"
         },
         {
           "key": "toilet",
           "name": "Toilet",
-          "group": "Furniture"
+          "group": "Furniture",
+          "icon": "mdi:toilet"
         },
         {
           "key": "tv",
           "name": "TV",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:television"
         },
         {
           "key": "laptop",
           "name": "Laptop",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:laptop"
         },
         {
           "key": "mouse",
           "name": "Mouse",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:mouse"
         },
         {
           "key": "remote",
           "name": "Remote",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:remote"
         },
         {
           "key": "keyboard",
           "name": "Keyboard",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:keyboard"
         },
         {
           "key": "cell_phone",
           "name": "Cell phone",
-          "group": "Electronics"
+          "group": "Electronics",
+          "icon": "mdi:cellphone"
         },
         {
           "key": "microwave",
           "name": "Microwave",
-          "group": "Appliances"
+          "group": "Appliances",
+          "icon": "mdi:microwave"
         },
         {
           "key": "oven",
           "name": "Oven",
-          "group": "Appliances"
+          "group": "Appliances",
+          "icon": "mdi:stove"
         },
         {
           "key": "toaster",
           "name": "Toaster",
-          "group": "Appliances"
+          "group": "Appliances",
+          "icon": "mdi:toaster"
         },
         {
           "key": "sink",
           "name": "Sink",
-          "group": "Appliances"
+          "group": "Appliances",
+          "icon": "mdi:faucet"
         },
         {
           "key": "refrigerator",
           "name": "Refrigerator",
-          "group": "Appliances"
+          "group": "Appliances",
+          "icon": "mdi:fridge"
         },
         {
           "key": "book",
           "name": "Book",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:book"
         },
         {
           "key": "clock",
           "name": "Clock",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:clock"
         },
         {
           "key": "vase",
           "name": "Vase",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:flower-tulip"
         },
         {
           "key": "scissors",
           "name": "Scissors",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:content-cut"
         },
         {
           "key": "teddy_bear",
           "name": "Teddy bear",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:teddy-bear"
         },
         {
           "key": "hair_drier",
           "name": "Hair drier",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:hair-dryer"
         },
         {
           "key": "toothbrush",
           "name": "Toothbrush",
-          "group": "Household"
+          "group": "Household",
+          "icon": "mdi:toothbrush"
         }
       ]
     }
