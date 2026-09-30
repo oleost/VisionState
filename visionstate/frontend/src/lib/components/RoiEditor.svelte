@@ -191,7 +191,6 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none; /* no "save image" menu on long-press */
-    touch-action: none;
   }
   @media (pointer: coarse) {
     .roi {
@@ -200,6 +199,7 @@
   }
   .roi.editable {
     cursor: crosshair;
+    touch-action: none; /* drawing, not scrolling — only while editing; a shown frame must scroll */
   }
   img {
     display: block;

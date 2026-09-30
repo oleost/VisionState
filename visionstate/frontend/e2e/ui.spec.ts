@@ -45,6 +45,24 @@ test('every page renders without errors and fits the screen', async ({ page, req
   }
 });
 
+test('swiping on a camera frame scrolls the page', async ({ page, request }, info) => {
+  test.skip(!isTouch(info), 'touch only');
+  const id = await seededSensorId(request);
+  for (const route of ['', `sensors/${id}/label`, 'review']) {
+    await test.step(route || 'dashboard', async () => {
+      await page.goto(`#/${route}`);
+      const frame = page.locator('.roi').first();
+      await expect(frame.locator('img')).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const room = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+      if (room < 100) return; // page too short to scroll (e.g. a short review queue)
+      const at = await center(frame);
+      await drag(page, info, at, { x: at.x, y: at.y - 250 });
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(50);
+    });
+  }
+});
+
 test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');

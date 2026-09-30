@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1b6
+
+- Fixed: on phones, swiping on a camera image (sensor overview, Label tab, Review) did not
+  scroll the page. Only the region editor keeps the finger for drawing.
+
 ## 0.4.1b5
 
 - **Shape the region**: besides a rectangle, the region can now be any shape. Drag a **+** on an
