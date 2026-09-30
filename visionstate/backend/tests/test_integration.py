@@ -92,7 +92,12 @@ def test_full_flow(settings):
                 )
                 assert resp.status_code == 201
 
-        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok")
+        # "ok" comes with the first trained model; wait for the one trained on all 18 labels.
+        def trained_on_all():
+            view = client.get(f"/api/v1/sensors/{sid}").json()
+            return view["status"] == "ok" and not view["training"] and (view["model"] or {}).get("n_samples") == 18
+
+        assert wait_for(trained_on_all)
         quality = client.get(f"/api/v1/sensors/{sid}/quality").json()
         assert quality["counts"]["labelled"] == 18
         assert quality["accuracy"] is not None and quality["accuracy"] > 0.8
