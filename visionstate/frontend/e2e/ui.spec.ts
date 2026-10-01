@@ -258,6 +258,23 @@ test('labelling a frame shows a confirmation', async ({ page, request }, info) =
   errors.expectNone();
 });
 
+test('storage limits can be changed', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  await expect(page.getByText('History frames', { exact: true })).toBeVisible();
+  await expect(page.getByText('Training images', { exact: true })).toBeVisible();
+  const save = page.getByRole('button', { name: 'Save storage limits' });
+  await expect(save).toBeDisabled(); // nothing changed yet
+  const maxGb = page.getByText('… but at most').locator('xpath=..').locator('input');
+  await maxGb.fill('1.5');
+  await press(save, info);
+  await expect(page.getByText('Storage limits saved')).toBeVisible();
+  await maxGb.fill('2');
+  await press(save, info);
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
 test('review queue can be answered', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/review');

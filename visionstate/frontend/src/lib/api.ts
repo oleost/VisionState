@@ -15,6 +15,7 @@ import type {
   SensorInput,
   SettingsInfo,
   Status,
+  StorageInfo,
 } from './types';
 
 // Relative on purpose: the app lives below a dynamic Home Assistant Ingress path.
@@ -83,6 +84,9 @@ export const api = {
   settings: () => request<SettingsInfo>('settings'),
   saveSettings: (body: { backbone: string; execution_provider: string; detector?: string; reader?: string }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
+  storage: () => request<StorageInfo>('storage'),
+  saveStorage: (body: { history_days: number; history_max_gb: number }) =>
+    request<StorageInfo>('storage', send('PUT', body)),
   cameras: () => request<Camera[]>('cameras'),
   entities: () => request<HaEntity[]>('entities'),
   previewUrl: (sourceType: string, source: string) =>

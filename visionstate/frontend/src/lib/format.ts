@@ -20,6 +20,13 @@ export function dateTime(input: string): string {
 
 export const mb = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 
+/** "12 kB", "820 MB", "1.4 GB" (binary units, like the backend's size limit). */
+export function size(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${Math.max(0, Math.round(bytes / 1024))} kB`;
+}
+
 /** Mirrors the backend's slugify (api/common.py) so previews match what gets created. */
 export const slugify = (text: string, fallback = 'item') =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) || fallback;

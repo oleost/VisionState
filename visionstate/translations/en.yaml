@@ -4,7 +4,7 @@ configuration:
     description: How much VisionState writes to the app log.
   history_retention_days:
     name: History retention (days)
-    description: How long frames of state changes are kept. Frames waiting for review are kept twice as long.
+    description: Starting value only. Change how long history is kept, and its maximum size, in VisionState → Settings → Storage.
   discovery_prefix:
     name: MQTT discovery prefix
     description: Must match the discovery prefix of the Home Assistant MQTT integration (normally "homeassistant").

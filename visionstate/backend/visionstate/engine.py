@@ -27,6 +27,7 @@ from .settings import (
     KIND_STATES,
     READING,
     RUNTIME,
+    STORAGE_DEFAULTS,
     UNKNOWN_STATE,
     Settings,
     merge_objects,
@@ -291,6 +292,8 @@ class Runtime:
         self.ha_events = HaEventListener(settings, self._on_ha_state)
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         self.global_review: dict = {}  # global review rules (DB setting "review")
+        self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
+        self.history_trimmed = False  # the last clean-up removed frames to stay under the size limit
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
@@ -315,6 +318,7 @@ class Runtime:
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
+        self.storage_rules = await asyncio.to_thread(self.db.get_setting, "storage", {}) or {}
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
@@ -1136,14 +1140,38 @@ class Runtime:
     async def _cleanup_loop(self) -> None:
         while True:
             try:
-                await asyncio.to_thread(self._cleanup)
+                await asyncio.to_thread(self.cleanup_history)
                 await self.publish_review_count()
             except Exception:  # noqa: BLE001
                 log.exception("Cleanup failed")
             await asyncio.sleep(RUNTIME["cleanup_interval_s"])
 
-    def _cleanup(self) -> None:
-        days = self.settings.history_retention_days
+    # --- history limits --------------------------------------------------------------
+
+    def storage_limits(self) -> dict:
+        """Effective history limits: days from the setting, else the app option; size from the setting."""
+        return {
+            "history_days": int(self.storage_rules.get("history_days") or self.settings.history_retention_days),
+            "history_max_gb": float(self.storage_rules.get("history_max_gb", STORAGE_DEFAULTS["history_max_gb"])),
+        }
+
+    def set_storage_limits(self, rules: dict) -> None:
+        self.storage_rules = dict(rules)
+        self.db.set_setting("storage", self.storage_rules)
+
+    def _history_file_size(self, row: Prediction) -> int:
+        size = 0
+        for path in (
+            self.storage.history_path(row.sensor_id, row.frame) if row.frame else None,
+            self.storage.thumb_path("history", row.id),
+        ):
+            if path is not None and path.exists():
+                size += path.stat().st_size
+        return size
+
+    def cleanup_history(self) -> None:
+        limits = self.storage_limits()
+        days = limits["history_days"]
         cutoff = utcnow() - timedelta(days=days)
         review_cutoff = utcnow() - timedelta(days=days * 2)
         with self.db.session() as s:
@@ -1158,3 +1186,56 @@ class Runtime:
                 s.delete(row)
         if old:
             log.info("Removed %d old history frames", len(old))
+        trimmed = self._trim_history(limits["history_max_gb"])
+        self.history_trimmed = trimmed > 0
+        if trimmed:
+            log.info("Removed %d history frames to stay under %.1f GB", trimmed, limits["history_max_gb"])
+
+    def _trim_history(self, max_gb: float) -> int:
+        """Remove the oldest history frames until all of them fit in ``max_gb`` (0 = no limit).
+
+        Reviewed frames go first, frames still waiting for review only when that is not enough.
+        Returns how many rows were removed.
+        """
+        if max_gb <= 0:
+            return 0
+        budget = int(max_gb * 1024**3)
+        used = self.storage.history_bytes()
+        if used <= budget:
+            return 0
+        removed = 0
+        with self.db.session() as s:
+            for waiting in (False, True):
+                rows = s.scalars(
+                    select(Prediction).where(Prediction.reviewed.is_(not waiting)).order_by(Prediction.created_at)
+                ).all()
+                for row in rows:
+                    if used <= budget:
+                        return removed
+                    used -= self._history_file_size(row)
+                    self.storage.delete_history(row.sensor_id, row.id, row.frame)
+                    s.delete(row)
+                    removed += 1
+                s.flush()
+        return removed
+
+    def storage_usage(self) -> dict:
+        """Disk use for the Settings page: history, training images and free space."""
+        import shutil
+
+        with self.db.session() as s:
+            frames = s.scalar(select(func.count()).select_from(Prediction).where(Prediction.frame.is_not(None))) or 0
+            oldest = s.scalar(select(func.min(Prediction.created_at)).where(Prediction.frame.is_not(None)))
+            images = s.scalar(select(func.count()).select_from(Sample)) or 0
+        media = self.settings.media_dir
+        media.mkdir(parents=True, exist_ok=True)
+        return {
+            "history_bytes": self.storage.history_bytes(),
+            "history_frames": frames,
+            "oldest_history": oldest,
+            "training_bytes": self.storage.samples_bytes(),
+            "training_images": images,
+            "free_bytes": shutil.disk_usage(media).free,
+            "limited_by_size": self.history_trimmed,
+            **self.storage_limits(),
+        }

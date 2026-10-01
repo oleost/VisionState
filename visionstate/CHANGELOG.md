@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1b2
+
+- **Storage** under Settings: how much space history frames and training images use, and how
+  much is free.
+- History now has a **size limit** besides the number of days: by default 7 days but at most
+  2 GB, whichever is reached first. The oldest frames go first, frames waiting for review last;
+  training images are never removed. Both limits are set under Settings → Storage and apply
+  right away (the app option *History retention* is now only the starting value).
+- The history clean-up runs every 10 minutes instead of every hour.
+
 ## 0.6.1b1
 
 - Object sensors show the object's own icon in Home Assistant — a car, a person, a dog … — for

@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.1b1 / stable 0.6.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.6.1b2 / stable 0.6.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -254,7 +254,15 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
 | Training images | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
-| History frames | `/media/…/history/` | Retention (default 7 days; unreviewed flagged frames twice as long) |
+| History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+
+History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
+frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
+oldest first, frames waiting for review only when that is not enough. Both limits are a DB
+setting edited in Settings → Storage (`/api/v1/storage`, which also reports disk use);
+`history_days` starts from the app option `history_retention_days`. The clean-up runs every
+10 minutes and right after the limits change. Training images are never removed
+automatically.
 
 ## 12. Import / export
 
@@ -267,7 +275,7 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 
 ## 13. Configuration (app options)
 
-`log_level`, `history_retention_days`, `discovery_prefix`, and optional `mqtt_host`,
+`log_level`, `history_retention_days` (starting value only, see §11), `discovery_prefix`, and optional `mqtt_host`,
 `mqtt_port`, `mqtt_username`, `mqtt_password`. Everything else (AI model, review rules,
 sensor settings) lives in the UI.
 

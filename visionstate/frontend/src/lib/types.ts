@@ -215,6 +215,8 @@ export interface AppConfig {
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   reading_device_classes: string[];
+  storage_defaults: { history_max_gb: number };
+  storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
 }
 
 export interface Status {
@@ -310,6 +312,19 @@ export interface BackboneInfo {
   description: string;
   installed: boolean;
   size: number;
+}
+
+/** GET /storage: disk use and the history limits (whichever is reached first applies). */
+export interface StorageInfo {
+  history_bytes: number;
+  history_frames: number;
+  oldest_history: string | null;
+  training_bytes: number;
+  training_images: number;
+  free_bytes: number;
+  limited_by_size: boolean;
+  history_days: number;
+  history_max_gb: number;
 }
 
 export interface DetectorInfo extends BackboneInfo {

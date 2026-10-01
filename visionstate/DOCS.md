@@ -165,7 +165,13 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 
 - Settings, the database and trained models live in the app's data folder and are part of
   Home Assistant backups.
-- Training images are stored in `/media/visionstate` (the beta app uses `/media/visionstate_beta`).
+- Training images and history frames are stored in `/media/visionstate` (the beta app uses
+  `/media/visionstate_beta`).
+- **Settings → Storage** shows how much space history frames and training images use and how
+  much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
+  reached first; the oldest frames are removed first, frames waiting for review last (they are
+  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images are
+  never removed automatically.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
   reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor — also on another installation — and
@@ -200,7 +206,7 @@ A choice you made stays when a later version recommends another model.
 | Option | Description |
 |---|---|
 | `log_level` | Amount of logging. |
-| `history_retention_days` | How long history frames are kept. |
+| `history_retention_days` | Starting value for how long history is kept; change it (and the size limit) in **Settings → Storage**. |
 | `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
 

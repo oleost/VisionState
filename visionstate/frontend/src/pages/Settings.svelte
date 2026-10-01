@@ -3,6 +3,7 @@
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
+  import StorageCard from '../lib/components/StorageCard.svelte';
   import { mb } from '../lib/format';
   import { go, paths } from '../lib/router.svelte';
   import type { ReviewRules, SettingsInfo } from '../lib/types';
@@ -201,6 +202,8 @@
         </button>
       {/if}
     </section>
+
+    <StorageCard />
 
     <section class="card pad col">
       <h3>Import a sensor</h3>

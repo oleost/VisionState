@@ -202,13 +202,29 @@ QUALITY = {
     "max_suspects": 50,  # most "possibly mislabelled" samples listed on the Quality tab
 }
 
+# --- Storage of history frames -------------------------------------------------------
+#
+# History frames (state changes, flagged frames, object and reading events) are removed when they
+# are older than history_days OR when all history frames together exceed history_max_gb —
+# whichever comes first; the oldest go first, frames still waiting for review last. Training
+# images are never removed automatically. Both are set in the app (Settings → Storage);
+# history_days starts from the app option history_retention_days.
+
+STORAGE_DEFAULTS = {
+    "history_max_gb": 2.0,  # 0 = no size limit
+}
+STORAGE_LIMITS = {
+    "history_days": (1, 365),
+    "history_max_gb": (0.0, 1000.0),
+}
+
 # --- Runtime ------------------------------------------------------------------
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
-    "cleanup_interval_s": 3600,
+    "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream

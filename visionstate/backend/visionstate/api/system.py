@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from .. import backbones, bundle, detectors, imaging, readers
@@ -37,6 +37,8 @@ from ..settings import (
     SENSOR_KINDS,
     SENSOR_LIMITS,
     STATE_PALETTE,
+    STORAGE_DEFAULTS,
+    STORAGE_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
@@ -49,7 +51,17 @@ from ..settings import (
     merge_review,
 )
 from ..sources import SOURCE_TYPES, SourceError
-from .common import API_PREFIX, ReadingIn, ReviewRules, Roi, get_sensor, runtime, state_id_for, unique_slug
+from .common import (
+    API_PREFIX,
+    ReadingIn,
+    ReviewRules,
+    Roi,
+    get_sensor,
+    iso,
+    runtime,
+    state_id_for,
+    unique_slug,
+)
 from .samples import copy_limited
 from .sensors import prediction_view
 
@@ -88,6 +100,8 @@ def ui_config() -> dict:
         "reading_modes": READING_MODES,
         "reading_displays": READING_DISPLAYS,
         "reading_device_classes": READING_DEVICE_CLASSES,
+        "storage_defaults": STORAGE_DEFAULTS,
+        "storage_limits": STORAGE_LIMITS,
     }
 
 
@@ -185,7 +199,6 @@ def get_settings(request: Request) -> dict:
         ],
         "providers": backbones.available_providers(),
         "options": {
-            "history_retention_days": rt.settings.history_retention_days,
             "discovery_prefix": rt.settings.discovery_prefix,
             "mqtt_host": rt.settings.mqtt_host or "(from Home Assistant)",
         },
@@ -314,6 +327,32 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
         "score": round(text.score, 4),
         "value": readers.format_value(readers.parse(text.text, settings), settings),
     }
+
+
+# --- storage ----------------------------------------------------------------------
+
+
+class StorageIn(BaseModel):
+    """History limits; whichever is reached first applies. Limits: settings.STORAGE_LIMITS."""
+
+    history_days: int = Field(ge=STORAGE_LIMITS["history_days"][0], le=STORAGE_LIMITS["history_days"][1])
+    history_max_gb: float = Field(ge=STORAGE_LIMITS["history_max_gb"][0], le=STORAGE_LIMITS["history_max_gb"][1])
+
+
+@router.get("/storage")
+async def get_storage(request: Request) -> dict:
+    """Disk use of history frames and training images, free space and the history limits."""
+    usage = await asyncio.to_thread(runtime(request).storage_usage)
+    return {**usage, "oldest_history": iso(usage["oldest_history"])}
+
+
+@router.put("/storage")
+async def put_storage(body: StorageIn, request: Request) -> dict:
+    rt = runtime(request)
+    await asyncio.to_thread(rt.set_storage_limits, body.model_dump())
+    await asyncio.to_thread(rt.cleanup_history)  # apply the new limits right away
+    await rt.publish_review_count()
+    return await get_storage(request)
 
 
 # --- review queue -------------------------------------------------------------
