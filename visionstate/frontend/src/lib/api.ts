@@ -82,7 +82,7 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
-  saveSettings: (body: { backbone: string; execution_provider: string; detector?: string; reader?: string }) =>
+  saveSettings: (body: { backbone: string; detector?: string; reader?: string }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
   storage: () => request<StorageInfo>('storage'),
   saveStorage: (body: { history_days: number; history_max_gb: number }) =>

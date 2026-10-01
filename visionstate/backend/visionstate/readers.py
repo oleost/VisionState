@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
+from .backbones import cpu_session
 from .settings import READING
 
 REGISTRY_FILE = Path(__file__).with_name("readers.json")
@@ -135,17 +136,9 @@ class Text:
 class Reader:
     """Reads a line of digits with one ONNX text recognition model."""
 
-    def __init__(self, spec: ReaderSpec, model_path: Path, provider: str = "CPUExecutionProvider"):
-        import onnxruntime as ort
-
+    def __init__(self, spec: ReaderSpec, model_path: Path):
         self.spec = spec
-        providers = [provider] if provider in ort.get_available_providers() else []
-        if "CPUExecutionProvider" not in providers:
-            providers.append("CPUExecutionProvider")
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
-        self.provider = self.session.get_providers()[0]
+        self.session = cpu_session(model_path)
         self.input_name = self.session.get_inputs()[0].name
         allowed = [c for c in READING["chars"] if c in spec.chars]
         self._chars = ["", *allowed]  # index 0 = CTC blank

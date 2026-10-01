@@ -10,7 +10,6 @@
 
   let info = $state<SettingsInfo | null>(null);
   let backbone = $state('');
-  let provider = $state('');
   let detector = $state('');
   let reader = $state('');
   let saving = $state(false);
@@ -41,7 +40,6 @@
     .then((s) => {
       info = s;
       backbone = s.backbone;
-      provider = s.execution_provider;
       detector = s.detector;
       reader = s.reader;
     })
@@ -50,14 +48,14 @@
   const selected = $derived(info?.backbones.find((b) => b.id === backbone));
   const selectedDetector = $derived(info?.detectors.find((d) => d.id === detector));
   const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
-  const retrains = $derived(info !== null && (backbone !== info.backbone || provider !== info.execution_provider));
+  const retrains = $derived(info !== null && backbone !== info.backbone);
   const changed = $derived(info !== null && (retrains || detector !== info.detector || reader !== info.reader));
 
   async function save() {
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, execution_provider: provider, detector, reader });
+      info = await api.saveSettings({ backbone, detector, reader });
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
     } catch (err) {
@@ -103,8 +101,8 @@
             ok: !app.status.ha_events.entities || app.status.ha_events.connected,
           },
           {
-            label: 'AI model',
-            value: app.status.backbone_error || `${app.status.backbone_name} on ${app.status.provider}`,
+            label: 'State model',
+            value: app.status.backbone_error || app.status.backbone_name || '—',
             ok: !app.status.backbone_error,
           },
           {
@@ -175,13 +173,6 @@
               <a href={selectedReader.source} target="_blank" rel="noreferrer">source</a>.</span
             >
           {/if}
-        </label>
-        <label class="field">
-          Runs on
-          <select class="input" bind:value={provider}>
-            {#each info.providers as p (p)}<option value={p}>{p.replace('ExecutionProvider', '')}</option>{/each}
-          </select>
-          <span class="hint">Only accelerators available in this installation are listed.</span>
         </label>
         <div class="row">
           <button class="btn primary" disabled={!changed || saving} onclick={save}>

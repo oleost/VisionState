@@ -225,7 +225,6 @@ export interface Status {
   review_count: number;
   backbone: string | null;
   backbone_name: string | null;
-  provider: string | null;
   backbone_error: string;
   detector: string | null;
   detector_name: string | null;
@@ -334,12 +333,10 @@ export interface DetectorInfo extends BackboneInfo {
 
 export interface SettingsInfo {
   backbone: string;
-  execution_provider: string;
   backbones: BackboneInfo[];
   detector: string;
   detectors: DetectorInfo[];
   reader: string;
   readers: DetectorInfo[];
-  providers: string[];
   options: Record<string, string | number>;
 }

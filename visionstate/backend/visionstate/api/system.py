@@ -125,7 +125,6 @@ async def status(request: Request) -> dict:
         "review_count": review,
         "backbone": rt.embedder.spec.id if rt.embedder else None,
         "backbone_name": rt.embedder.spec.name if rt.embedder else None,
-        "provider": rt.embedder.provider if rt.embedder else None,
         "backbone_error": rt.embedder_error,
         "detector": rt.detector.spec.id if rt.detector else None,
         "detector_name": rt.detector.spec.name if rt.detector else None,
@@ -151,7 +150,6 @@ async def status(request: Request) -> dict:
 
 class SettingsIn(BaseModel):
     backbone: str
-    execution_provider: str = "CPUExecutionProvider"
     detector: str | None = None  # object sensors; None keeps the current one
     reader: str | None = None  # reading sensors; None keeps the current one
 
@@ -161,7 +159,6 @@ def get_settings(request: Request) -> dict:
     rt = runtime(request)
     return {
         "backbone": rt.embedder.spec.id if rt.embedder else backbones.DEFAULT_BACKBONE,
-        "execution_provider": rt.embedder.provider if rt.embedder else "CPUExecutionProvider",
         "backbones": [
             {
                 "id": spec.id,
@@ -198,7 +195,6 @@ def get_settings(request: Request) -> dict:
             }
             for spec in readers.READERS.values()
         ],
-        "providers": backbones.available_providers(),
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,
             "mqtt_host": rt.settings.mqtt_host or "(from Home Assistant)",
@@ -217,9 +213,9 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown reader")
     current = get_settings(request)
     # Only reload what changed: a new backbone retrains every state sensor.
-    if (body.backbone, body.execution_provider) != (current["backbone"], current["execution_provider"]):
+    if body.backbone != current["backbone"]:
         try:
-            await rt.set_backbone(body.backbone, body.execution_provider)
+            await rt.set_backbone(body.backbone)
         except Exception as err:  # noqa: BLE001
             raise HTTPException(500, f"Could not load backbone: {err}") from err
     if body.detector is not None and body.detector != current["detector"]:

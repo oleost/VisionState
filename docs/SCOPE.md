@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.1b3 / stable 0.6.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.6.1b4 / stable 0.6.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -83,7 +83,8 @@ so retraining only runs the backbone on new or changed samples.
 
 - MobileNet was dropped: the available ONNX exports only expose classification logits.
 - Switching backbone retrains every sensor from its stored samples.
-- Execution provider: any ONNX Runtime provider present in the image (CPU today). GPU/Coral
+- Runs on the CPU only (`backbones.cpu_session`; ONNX Runtime's other providers, such as its
+  Azure provider, are never offered or used). GPU/Coral
   were assessed and deliberately not pursued (little gain for this workload; Coral cannot run
   the transformer model and is often in use by other software).
 - Heads trained by another scikit-learn version, or for another backbone, are retrained
@@ -221,8 +222,8 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
-10. **Settings** — status, AI models (state backbone, object detector) and execution provider,
-    global review rules, import.
+10. **Settings** — status, AI models (state backbone, object detector, number reader),
+    global review rules, storage (disk use and history limits), import.
 
 Reading sensors have the same three tabs: **Live** (value, last read, the analysed frame and the
 image the reader saw), **History** (new values and rejected readings) and **Settings** (mode,

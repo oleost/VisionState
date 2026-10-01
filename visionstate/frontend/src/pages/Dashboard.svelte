@@ -67,7 +67,6 @@
       <h1>Sensors</h1>
       <p class="muted">
         {plural(sensors?.length ?? 0, "sensor")}{labelled ? ` · ${plural(labelled, "labelled image")}` : ''}
-        {#if app.status?.backbone_name}· {app.status.backbone_name}{/if}
       </p>
     </div>
     <span class="spacer"></span>

@@ -104,26 +104,25 @@ def locate(spec: BackboneSpec, search_dirs: list[Path]) -> Path | None:
     return None
 
 
-def available_providers() -> list[str]:
+def cpu_session(model_path: Path):
+    """An ONNX Runtime session on the CPU — the only target, deliberately (docs/SCOPE.md).
+
+    Only the CPU provider is passed, so nothing else ONNX Runtime ships with (such as its
+    Azure provider) is ever used.
+    """
     import onnxruntime as ort
 
-    return list(ort.get_available_providers())
+    options = ort.SessionOptions()
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
 
 
 class Embedder:
     """Turns images into L2-normalised feature vectors with one ONNX backbone."""
 
-    def __init__(self, spec: BackboneSpec, model_path: Path, provider: str = "CPUExecutionProvider"):
-        import onnxruntime as ort
-
+    def __init__(self, spec: BackboneSpec, model_path: Path):
         self.spec = spec
-        providers = [provider] if provider in ort.get_available_providers() else []
-        if "CPUExecutionProvider" not in providers:
-            providers.append("CPUExecutionProvider")
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
-        self.provider = self.session.get_providers()[0]
+        self.session = cpu_session(model_path)
         self.input_name = self.session.get_inputs()[0].name
         self._mean = np.array(spec.mean, dtype=np.float32).reshape(1, 1, 3)
         self._std = np.array(spec.std, dtype=np.float32).reshape(1, 1, 3)

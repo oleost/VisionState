@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1b4
+
+- Settings no longer offers "Runs on": VisionState runs on the CPU only, by design. The list
+  only ever had the CPU and ONNX Runtime's built-in "Azure" option (which did nothing here).
+- The model pill in the top bar and the model name under "Sensors" are gone — there are three
+  models now; Settings → Status lists them.
+
 ## 0.6.1b3
 
 - The app option *History retention (days)* is gone from the Configuration tab: how long history

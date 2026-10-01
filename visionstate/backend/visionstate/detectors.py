@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from .backbones import cpu_session
 from .settings import DETECTION
 
 REGISTRY_FILE = Path(__file__).with_name("detectors.json")
@@ -143,18 +144,10 @@ def postprocess(logits: np.ndarray, boxes: np.ndarray, labels: tuple[Label, ...]
 class Detector:
     """Finds objects in an image with one ONNX detector (D-FINE / RT-DETR style outputs)."""
 
-    def __init__(self, spec: DetectorSpec, model_path: Path, provider: str = "CPUExecutionProvider"):
-        import onnxruntime as ort
-
+    def __init__(self, spec: DetectorSpec, model_path: Path):
         self.spec = spec
         self.labels = LABEL_SETS[spec.label_set].labels
-        providers = [provider] if provider in ort.get_available_providers() else []
-        if "CPUExecutionProvider" not in providers:
-            providers.append("CPUExecutionProvider")
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
-        self.provider = self.session.get_providers()[0]
+        self.session = cpu_session(model_path)
         self.input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 

@@ -307,7 +307,6 @@ def test_detector_choice_is_stored_and_switchable(settings):
         assert rt.db.get_setting("detector") == detectors.DEFAULT_DETECTOR  # pinned at first start
         body = {
             "backbone": current["backbone"],
-            "execution_provider": current["execution_provider"],
             "detector": "nope",
         }
         assert client.put("/api/v1/settings", json=body).status_code == 400
