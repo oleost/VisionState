@@ -84,12 +84,14 @@ def test_size_limit_removes_oldest_reviewed_first_then_waiting(settings):
         # Still too much: now the oldest frame waiting for review goes.
         client.put("/api/v1/storage", json={"history_days": 30, "history_max_gb": per_frame * 1.5 / 1024**3})
         assert remaining(rt) == {waiting_new}
+        # The warning stays while the limit applies, also after a clean-up with nothing to remove.
+        rt.cleanup_history()
+        assert client.get("/api/v1/storage").json()["limited_by_size"] is True
 
         # 0 = no size limit.
         add_frames(rt, sid, [(0, True)] * 3)
-        assert (
-            client.put("/api/v1/storage", json={"history_days": 30, "history_max_gb": 0}).json()["history_frames"] == 4
-        )
+        unlimited = client.put("/api/v1/storage", json={"history_days": 30, "history_max_gb": 0}).json()
+        assert unlimited["history_frames"] == 4 and unlimited["limited_by_size"] is False
 
 
 @requires_model

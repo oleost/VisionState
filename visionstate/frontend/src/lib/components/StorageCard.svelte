@@ -61,14 +61,14 @@
       <span>Keep history for</span>
       <span class="row"
         ><input class="input sm num" type="number" min={limits.history_days[0]} max={limits.history_days[1]} step="1" bind:value={days} />
-        days</span
+        <span class="unit small muted">days</span></span
       >
     </label>
     <label class="line">
       <span>… but at most (0 = no limit)</span>
       <span class="row"
         ><input class="input sm num" type="number" min={limits.history_max_gb[0]} max={limits.history_max_gb[1]} step="0.5" bind:value={maxGb} />
-        GB</span
+        <span class="unit small muted">GB</span></span
       >
     </label>
     <p class="xsmall muted">
@@ -99,6 +99,9 @@
   }
   .label {
     width: 170px;
+  }
+  .unit {
+    width: 36px;
   }
   .line {
     display: flex;

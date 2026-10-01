@@ -293,7 +293,7 @@ class Runtime:
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
-        self.history_trimmed = False  # the last clean-up removed frames to stay under the size limit
+        self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
@@ -1157,6 +1157,7 @@ class Runtime:
 
     def set_storage_limits(self, rules: dict) -> None:
         self.storage_rules = dict(rules)
+        self.history_trimmed = False  # the next clean-up tells whether the new size limit still bites
         self.db.set_setting("storage", self.storage_rules)
 
     def _history_file_size(self, row: Prediction) -> int:
@@ -1187,8 +1188,8 @@ class Runtime:
         if old:
             log.info("Removed %d old history frames", len(old))
         trimmed = self._trim_history(limits["history_max_gb"])
-        self.history_trimmed = trimmed > 0
         if trimmed:
+            self.history_trimmed = True
             log.info("Removed %d history frames to stay under %.1f GB", trimmed, limits["history_max_gb"])
 
     def _trim_history(self, max_gb: float) -> int:

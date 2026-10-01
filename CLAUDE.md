@@ -51,6 +51,11 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     for every new page or gesture.
   - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes,
     for every page at both sizes.
+  - Then try the change by hand in a real browser (Claude: the Chrome tools) — passing tests are not
+    enough: start `scripts/fake_camera.py 8198` and the backend (`VISIONSTATE_PORT`, `_DATA`, `_MEDIA`,
+    `_FRONTEND=frontend/dist`, `_BUNDLED_MODELS` as in `playwright.config.ts`; a copy of the last e2e
+    run's `data` and `media` folders gives seeded sensors), use the changed screens at desktop width
+    and at ~390 px, and check the console. Reload after a rebuild (a hash-only navigation keeps the old page).
   - Handy while working (add `VS_PYTHON=…` as above): only the phone `npx playwright test
     --project=mobile`; one test `npx playwright test -g "reading sensor"`; watch it in a browser
     `--headed` or step through it with `--ui`; after a failure `npx playwright show-trace
