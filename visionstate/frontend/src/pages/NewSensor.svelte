@@ -54,7 +54,7 @@
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
   const slug = $derived(slugify(name, 'sensor'));
-  const stateKeys = $derived(states.map((s) => slugify(s.name, 'state')));
+  const stateKeys = $derived(states.filter((s) => s.name.trim()).map((s) => slugify(s.name, 'state')));
 
   const statesValid = $derived(
     states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
@@ -213,7 +213,7 @@
         <div class="row wrap">
           <div class="col" style="gap:6px">
             <h2>Draw the region to watch</h2>
-            <p class="muted">Drag a box around the object, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
+            <p class="muted">Drag a box around what to watch, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
           </div>
           <span class="spacer"></span>
           <button class="btn sm" onclick={loadPreview}><Icon name="refresh" size={14} /> New frame</button>
@@ -228,7 +228,8 @@
           <div class="frame">
             <RoiEditor src={previewUrl} bind:roi editable />
           </div>
-          <p class="small muted">Tip: leave a small margin around the object and include the parts that change between states.</p>
+          <p class="small muted">Tip: for a door or gate, leave a small margin and include the parts that change; for objects, cover the area where they
+            appear; for a number, draw tightly around the digits (objects and numbers can be fine-tuned in the next step).</p>
         {/if}
       {:else if step === 2}
         <div class="col" style="gap:6px">
@@ -257,7 +258,7 @@
         {#if kind === 'reading'}
           <div class="col" style="gap:var(--space-3)">
             <h3>What is the number?</h3>
-            <ReadingEditor bind:value={reading} />
+            <ReadingEditor bind:value={reading} seen={readResult?.text} />
           </div>
           <div class="card col test">
             <div class="row wrap bar">
@@ -340,7 +341,7 @@
         {:else}
           <div class="col" style="gap:var(--space-3)">
             <h3>Which states can it be in?</h3>
-            <p class="small muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
+            <p class="small muted">Each state becomes an option on the Home Assistant sensor. <span class="kbd-only">Keys 1–9 label them later.</span></p>
           </div>
           <div style="max-width:520px"><StatesEditor bind:states /></div>
           <div class="card pad col preview">
@@ -373,7 +374,7 @@
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
           <button class="btn primary" disabled={!detectValid || saving} onclick={create}>
-            {saving ? 'Creating…' : kind === 'objects' ? 'Create sensor' : 'Create sensor and start labelling'}
+            {saving ? 'Creating…' : kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
           </button>
         {/if}
       </footer>

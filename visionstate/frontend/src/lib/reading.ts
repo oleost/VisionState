@@ -22,4 +22,13 @@ export const REJECT_REASONS: Record<string, string> = {
   'changed too much': 'it changed more than allowed',
 };
 
+/**
+ * Digits after a decimal point or comma in what the reader saw ("1234.5" → 1), or null when there is
+ * none. The backend ignores dots (a stray one is a common misread), so the UI only suggests this.
+ */
+export function decimalsSeen(text: string | null | undefined): number | null {
+  const match = /\d[.,](\d+)\s*$/.exec(text ?? '');
+  return match ? match[1].length : null;
+}
+
 export const isReadingSensor = (sensor: Pick<Sensor, 'kind'>) => sensor.kind === 'reading';

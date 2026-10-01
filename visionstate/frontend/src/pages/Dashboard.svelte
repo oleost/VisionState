@@ -160,7 +160,9 @@
   }
   .thumb {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* a wide frame (a display) sits in the middle, not on top of an empty band */
     aspect-ratio: 16 / 9;
     overflow: hidden;
     background: var(--c-sunken);

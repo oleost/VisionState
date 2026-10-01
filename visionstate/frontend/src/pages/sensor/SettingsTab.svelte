@@ -100,7 +100,7 @@
     <section class="card pad col">
       <div class="card-title">
         <h3>Region</h3>
-        <span class="row" style="gap:8px">
+        <span class="row region-actions" style="gap:8px">
           {#if isPolygon(roi)}
             <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
           {/if}
@@ -123,7 +123,7 @@
     {#if readingSensor}
       <section class="card pad col">
         <h3>Reading</h3>
-        <ReadingEditor bind:value={reading} />
+        <ReadingEditor bind:value={reading} seen={sensor.reading?.last?.text} />
       </section>
     {:else if objectSensor}
       <section class="card pad col">
@@ -175,6 +175,12 @@
 </div>
 
 <style>
+  @media (max-width: 600px) {
+    /* Own row on phones, so "Reset to rectangle" coming and going does not move the frame being edited. */
+    .region-actions {
+      flex-basis: 100%;
+    }
+  }
   .layout {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);

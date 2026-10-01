@@ -60,6 +60,7 @@ from .common import (
     iso,
     runtime,
     state_id_for,
+    unique_name,
     unique_slug,
 )
 from .samples import copy_limited
@@ -502,6 +503,7 @@ def _import_sync(rt, path: Path) -> int:
         raise ValueError("too many samples in bundle")
     spec.enabled = True
     with rt.db.session() as s:
+        spec.name = unique_name(s, spec.name)
         sensor = spec.new_sensor(unique_slug(s, spec.name))
         s.add(sensor)
         s.flush()

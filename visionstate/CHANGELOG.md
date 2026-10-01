@@ -9,6 +9,18 @@
   training images are never removed. Both limits are set under Settings → Storage and apply
   right away (the app option *History retention* is now only the starting value).
 - The history clean-up runs every 10 minutes instead of every hour.
+- Reading sensors: when the display shows a decimal point (`1234.5`) that the settings do not
+  match, the wizard and Settings offer the right number of decimals — 0 would have made it 12345.
+- History of state sensors: tap a frame to see it whole; "Added as …" says which state.
+- Object boxes: labels no longer overlap when objects stand close together.
+- An imported sensor whose name is taken is called "… (2)".
+- Phones: "Add state" puts the cursor in the new field; Export/Pause and the region buttons no
+  longer jump when a chip or "Reset to rectangle" appears; at most two messages at a time; the
+  wizard's keyboard hint is hidden on touch screens; "check every … s for … s" keeps values with
+  their units.
+- Smaller fixes: the reading wizard's button says "Create sensor" (no labelling needed), a region
+  that is a rectangle again no longer offers "Reset to rectangle", wide displays sit in the middle
+  of their dashboard card, and the region step's text fits every kind of sensor.
 
 ## 0.6.1b1
 

@@ -2,15 +2,21 @@
   // What a reading sensor reads: mode, decimals, unit, Home Assistant device class and display.
   // Options and limits come from the backend config.
   import { app } from '../app.svelte';
+  import { decimalsSeen } from '../reading';
   import type { ReadingMode, ReadingSettings } from '../types';
   import { READING_DISPLAY_INFO, READING_MODE_INFO, UNIT_DEVICE_CLASS } from '../ui';
 
-  let { value = $bindable() }: { value: ReadingSettings } = $props();
+  // seen: the text the reader last saw (a test read), to suggest the number of decimals.
+  let { value = $bindable(), seen = null }: { value: ReadingSettings; seen?: string | null } = $props();
 
   const modes = $derived(app.config?.reading_modes ?? []);
   const displays = $derived(app.config?.reading_displays ?? []);
   const deviceClasses = $derived(app.config?.reading_device_classes ?? []);
   const decimals = $derived(app.config?.reading_limits.decimals ?? [0, 4]);
+  const suggested = $derived.by(() => {
+    const n = decimalsSeen(seen);
+    return n !== null && n !== value.decimals && n >= decimals[0] && n <= decimals[1] ? n : null;
+  });
   const example = $derived((1234567 / 10 ** value.decimals).toFixed(value.decimals));
 
   function setMode(mode: ReadingMode) {
@@ -44,6 +50,12 @@
         <input class="input" type="number" min={decimals[0]} max={decimals[1]} step="1" bind:value={value.decimals} />
         <span class="hint">The display shows e.g. <span class="mono">{example.replace('.', '')}</span> → <span class="mono">{example}</span></span>
       </label>
+      {#if suggested !== null}
+        <div class="notice warn small suggest">
+          <span>The display shows <span class="mono">“{seen}”</span> — {suggested} digit{suggested === 1 ? '' : 's'} after the point?</span>
+          <button type="button" class="btn sm" onclick={() => (value.decimals = suggested!)}>Use {suggested}</button>
+        </div>
+      {/if}
       <label class="field">
         Unit
         <input
@@ -106,6 +118,14 @@
   .mode.selected {
     border-color: var(--c-accent);
     box-shadow: 0 0 0 1px var(--c-accent);
+  }
+  .suggest {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
   .grid {
     display: grid;

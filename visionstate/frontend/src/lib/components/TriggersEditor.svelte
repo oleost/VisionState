@@ -91,7 +91,8 @@
         <span class="xsmall faint">Keep checking for a while to catch both the movement and the final state.</span>
       </span>
       <div class="row wrap small">
-        check every
+        <!-- Each value stays with its unit when the line wraps on a phone. -->
+        <span class="row group">check every
         <input
           class="input sm num"
           type="number"
@@ -100,7 +101,8 @@
           step="0.5"
           bind:value={triggers.burst_interval_s}
           aria-label="Seconds between checks after a trigger"
-        /> s for
+        /> s</span>
+        <span class="row group">for
         <input
           class="input sm num"
           type="number"
@@ -109,13 +111,16 @@
           step="5"
           bind:value={triggers.burst_duration_s}
           aria-label="How long to keep checking after a trigger"
-        /> s
+        /> s</span>
       </div>
     </div>
   </div>
 {/if}
 
 <style>
+  .group {
+    gap: var(--space-2);
+  }
   .triggers {
     gap: 0;
   }

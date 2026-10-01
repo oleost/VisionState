@@ -125,7 +125,7 @@ def test_full_flow(settings):
         imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
         assert imported.status_code == 201, imported.text
         copy = client.get(f"/api/v1/sensors/{imported.json()['id']}").json()
-        assert copy["slug"] == "garage_door_2"
+        assert copy["slug"] == "garage_door_2" and copy["name"] == "Garage door (2)"  # told apart from the original
         assert copy["counts"]["labelled"] == 21
 
         thumb = client.get(f"/api/v1/samples/{up['sample_ids'][0]}/image")

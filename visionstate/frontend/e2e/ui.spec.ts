@@ -89,6 +89,13 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   await press(page.getByRole('button', { name: 'Next' }), info);
 
   await expect(page.getByText('Which states can it be in?')).toBeVisible();
+  // "Add state" puts the cursor in the new field; an empty name is not shown as an option.
+  await press(page.getByRole('button', { name: 'Add state' }), info);
+  await expect(page.getByText('options: open, closed, unknown')).toBeVisible();
+  await page.keyboard.type('Partial');
+  await expect(page.getByLabel('Name of state 3')).toHaveValue('Partial');
+  await expect(page.getByText('options: open, closed, partial, unknown')).toBeVisible();
+  if (isTouch(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
   await expectNoHorizontalOverflow(page);
@@ -172,6 +179,47 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('reading wizard suggests the decimals the display shows', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Meter');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(DISPLAY_URL('1234.5'));
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.locator('.roi img')).toBeVisible();
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await press(page.getByRole('radio', { name: /Reading/ }), info);
+  // 0 decimals would make it 12345; the editor offers the one digit after the point.
+  await expect(page.getByText(/1 digit after the point\?/)).toBeVisible({ timeout: 60_000 });
+  await press(page.getByRole('button', { name: 'Use 1' }), info);
+  await expect(page.getByLabel('Digits after the decimal point')).toHaveValue('1');
+  await expect(page.getByText(/1 digit after the point\?/)).toHaveCount(0);
+  await expect(page.getByText(/→\s*1234\.5/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Create sensor', exact: true })).toHaveCount(0); // not on step 3
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.getByRole('button', { name: 'Create sensor', exact: true })).toBeVisible(); // no labelling
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
+test('a history frame opens in full', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request);
+  // Paused, so no new rows push the list down while it is tapped.
+  expect((await request.patch(`api/v1/sensors/${id}`, { data: { enabled: false } })).ok()).toBe(true);
+  await page.goto(`#/sensors/${id}/history`);
+  await expect(page.getByRole('link', { name: 'Settings → Storage' })).toBeVisible();
+  const thumb = page.getByRole('button', { name: 'Show the whole frame' }).first();
+  await press(thumb, info);
+  await expect(page.locator('img.full').first()).toBeVisible();
+  await expect.poll(() => page.locator('img.full').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await press(thumb, info);
+  await expect(page.locator('img.full')).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+  await request.patch(`api/v1/sensors/${id}`, { data: { enabled: true } });
 });
 
 test('reading sensor shows its value everywhere', async ({ page, request }) => {

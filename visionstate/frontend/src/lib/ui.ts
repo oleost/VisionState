@@ -11,6 +11,8 @@ export const POLL = {
 };
 
 export const TOAST_MS = 5_000;
+/** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */
+export const TOAST_MAX = 2;
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'muted' | 'info';
 

@@ -1,7 +1,7 @@
 // Global app state: server config, status and toasts.
 import { api } from './api';
 import type { AppConfig, Sensor, StateDef, Status } from './types';
-import { TOAST_MS } from './ui';
+import { TOAST_MAX, TOAST_MS } from './ui';
 
 export const app = $state<{ config: AppConfig | null; status: Status | null; error: string }>({
   config: null,
@@ -35,6 +35,7 @@ let nextToast = 1;
 export function toast(message: string, opts: Partial<Omit<Toast, 'id' | 'message'>> = {}): void {
   const item: Toast = { id: nextToast++, message, tone: opts.tone ?? 'ok', action: opts.action };
   toasts.push(item);
+  if (toasts.length > TOAST_MAX) toasts.splice(0, toasts.length - TOAST_MAX);
   setTimeout(() => dismiss(item.id), TOAST_MS);
 }
 
