@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.1b2 / stable 0.6.0, 2026-09-30) and the open
+> Describes VisionState **as built** (beta 0.6.1b3 / stable 0.6.0, 2026-09-30) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -260,7 +260,9 @@ History frames are full camera frames (JPEG 90). They are removed by age (`histo
 frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
 oldest first, frames waiting for review only when that is not enough. Both limits are a DB
 setting edited in Settings → Storage (`/api/v1/storage`, which also reports disk use);
-`history_days` starts from the app option `history_retention_days`. The clean-up runs every
+the former app option `history_retention_days` (removed in 0.6.1) is copied into `history_days`
+once at start-up — from `options.json` or, since Home Assistant drops an option that left the
+schema, from Supervisor (`/addons/self/info`). The clean-up runs every
 10 minutes and right after the limits change. Training images are never removed
 automatically.
 
@@ -275,7 +277,7 @@ automatically.
 
 ## 13. Configuration (app options)
 
-`log_level`, `history_retention_days` (starting value only, see §11), `discovery_prefix`, and optional `mqtt_host`,
+`log_level`, `discovery_prefix`, and optional `mqtt_host`,
 `mqtt_port`, `mqtt_username`, `mqtt_password`. Everything else (AI model, review rules,
 sensor settings) lives in the UI.
 

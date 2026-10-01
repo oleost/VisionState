@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1b3
+
+- The app option *History retention (days)* is gone from the Configuration tab: how long history
+  is kept (and its size limit) is set under Settings → Storage. A value you had set there is
+  moved over automatically at the first start.
+
 ## 0.6.1b2
 
 - **Storage** under Settings: how much space history frames and training images use, and how
@@ -7,7 +13,7 @@
 - History now has a **size limit** besides the number of days: by default 7 days but at most
   2 GB, whichever is reached first. The oldest frames go first, frames waiting for review last;
   training images are never removed. Both limits are set under Settings → Storage and apply
-  right away (the app option *History retention* is now only the starting value).
+  right away.
 - The history clean-up runs every 10 minutes instead of every hour.
 - Reading sensors: when the display shows a decimal point (`1234.5`) that the settings do not
   match, the wizard and Settings offer the right number of decimals — 0 would have made it 12345.

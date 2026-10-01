@@ -208,7 +208,6 @@ A choice you made stays when a later version recommends another model.
 | Option | Description |
 |---|---|
 | `log_level` | Amount of logging. |
-| `history_retention_days` | Starting value for how long history is kept; change it (and the size limit) in **Settings → Storage**. |
 | `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
 

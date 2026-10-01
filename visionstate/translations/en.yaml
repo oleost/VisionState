@@ -2,9 +2,6 @@ configuration:
   log_level:
     name: Log level
     description: How much VisionState writes to the app log.
-  history_retention_days:
-    name: History retention (days)
-    description: Starting value only. Change how long history is kept, and its maximum size, in VisionState → Settings → Storage.
   discovery_prefix:
     name: MQTT discovery prefix
     description: Must match the discovery prefix of the Home Assistant MQTT integration (normally "homeassistant").

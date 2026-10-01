@@ -1,7 +1,10 @@
 """History limits: removal by age and by total size (oldest first, review queue last), and the API."""
 
+import asyncio
+import dataclasses
 from datetime import timedelta
 
+import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -102,8 +105,7 @@ def test_age_limit_and_usage(settings):
             "/api/v1/sensors", json={"name": "Door", "source_type": "http", "source": "x", "states": STATES}
         ).json()["id"]
         usage = client.get("/api/v1/storage").json()
-        # Days start from the app option, the size limit from the default.
-        assert usage["history_days"] == settings.history_retention_days
+        assert usage["history_days"] == STORAGE_DEFAULTS["history_days"]
         assert usage["history_max_gb"] == STORAGE_DEFAULTS["history_max_gb"]
         assert usage["free_bytes"] > 0 and usage["history_frames"] == 0
 
@@ -121,3 +123,41 @@ def test_age_limit_and_usage(settings):
 
         assert client.put("/api/v1/storage", json={"history_days": 0, "history_max_gb": 2}).status_code == 422
         assert client.put("/api/v1/storage", json={"history_days": 7, "history_max_gb": -1}).status_code == 422
+
+
+@requires_model
+def test_removed_retention_option_is_moved_once(settings):
+    # A value left in options.json (or the environment) becomes the storage setting.
+    moved = dataclasses.replace(settings, legacy_history_days=30)
+    with TestClient(create_app(moved)) as client:
+        assert client.get("/api/v1/storage").json()["history_days"] == 30
+    # Later starts keep it, also without the option.
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/v1/storage").json()["history_days"] == 30
+
+
+@requires_model
+def test_removed_retention_option_is_read_from_supervisor(settings, monkeypatch):
+    # Home Assistant drops an option that left the schema from options.json; Supervisor still has it.
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers):
+            assert url.endswith("/addons/self/info") and headers["Authorization"] == "Bearer token"
+            return httpx.Response(200, json={"data": {"options": {"history_retention_days": 14}}})
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.storage_rules = {}
+        rt.settings = dataclasses.replace(settings, supervisor_token="token")
+        monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+        asyncio.run(rt._move_retention_option())
+        assert rt.storage_limits()["history_days"] == 14
+        assert rt.db.get_setting("storage", {})["history_days"] == 14

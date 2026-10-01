@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import numpy as np
 from PIL import Image
 from sqlalchemy import delete, func, select
@@ -28,6 +29,8 @@ from .settings import (
     READING,
     RUNTIME,
     STORAGE_DEFAULTS,
+    STORAGE_LIMITS,
+    SUPERVISOR_URL,
     UNKNOWN_STATE,
     Settings,
     merge_objects,
@@ -319,6 +322,8 @@ class Runtime:
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
         self.storage_rules = await asyncio.to_thread(self.db.get_setting, "storage", {}) or {}
+        if "history_days" not in self.storage_rules:
+            await self._move_retention_option()
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
@@ -1149,11 +1154,36 @@ class Runtime:
     # --- history limits --------------------------------------------------------------
 
     def storage_limits(self) -> dict:
-        """Effective history limits: days from the setting, else the app option; size from the setting."""
+        """Effective history limits (Settings → Storage), with the defaults for what is not set."""
         return {
-            "history_days": int(self.storage_rules.get("history_days") or self.settings.history_retention_days),
+            "history_days": int(self.storage_rules.get("history_days") or STORAGE_DEFAULTS["history_days"]),
             "history_max_gb": float(self.storage_rules.get("history_max_gb", STORAGE_DEFAULTS["history_max_gb"])),
         }
+
+    async def _move_retention_option(self) -> None:
+        """Copy the removed app option history_retention_days into the storage setting, once.
+
+        Home Assistant no longer passes an option that left the app's schema in options.json, but
+        Supervisor still has the value the user saved, so it is asked as well.
+        """
+        days = self.settings.legacy_history_days
+        if days is None and self.settings.is_supervised:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{SUPERVISOR_URL}/addons/self/info",
+                        headers={"Authorization": f"Bearer {self.settings.supervisor_token}"},
+                    )
+                if resp.status_code == 200:
+                    value = resp.json().get("data", {}).get("options", {}).get("history_retention_days")
+                    days = int(value) if value is not None else None
+            except (httpx.HTTPError, ValueError, TypeError) as err:
+                log.warning("Could not read the old history option from Supervisor: %s", err)
+                return  # try again at the next start
+        low, high = STORAGE_LIMITS["history_days"]
+        days = min(max(days, low), high) if days is not None else STORAGE_DEFAULTS["history_days"]
+        await asyncio.to_thread(self.set_storage_limits, {**self.storage_limits(), "history_days": days})
+        log.info("History is kept for %d days (Settings → Storage)", days)
 
     def set_storage_limits(self, rules: dict) -> None:
         self.storage_rules = dict(rules)

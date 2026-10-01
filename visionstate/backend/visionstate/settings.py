@@ -207,10 +207,11 @@ QUALITY = {
 # History frames (state changes, flagged frames, object and reading events) are removed when they
 # are older than history_days OR when all history frames together exceed history_max_gb —
 # whichever comes first; the oldest go first, frames still waiting for review last. Training
-# images are never removed automatically. Both are set in the app (Settings → Storage);
-# history_days starts from the app option history_retention_days.
+# images are never removed automatically. Both are set in the app (Settings → Storage). The
+# removed app option history_retention_days is copied into history_days once (see engine).
 
 STORAGE_DEFAULTS = {
+    "history_days": 7,
     "history_max_gb": 2.0,  # 0 = no size limit
 }
 STORAGE_LIMITS = {
@@ -282,7 +283,8 @@ class Settings:
     mqtt_username: str = ""
     mqtt_password: str = ""
     discovery_prefix: str = "homeassistant"
-    history_retention_days: int = 7
+    # The removed app option, only read to move it into Settings → Storage (None when not set).
+    legacy_history_days: int | None = None
     port: int = 8099
     supervisor_token: str = ""
     ha_url: str = ""
@@ -328,6 +330,13 @@ class Settings:
             path.mkdir(parents=True, exist_ok=True)
 
 
+def _int_or_none(value) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except TypeError, ValueError:
+        return None
+
+
 def load_settings() -> Settings:
     env = os.environ
     data_dir = Path(env.get("VISIONSTATE_DATA", "/data"))
@@ -353,7 +362,9 @@ def load_settings() -> Settings:
         mqtt_username=opt("mqtt_username", ""),
         mqtt_password=opt("mqtt_password", ""),
         discovery_prefix=opt("discovery_prefix", "homeassistant"),
-        history_retention_days=opt("history_retention_days", 7),
+        legacy_history_days=_int_or_none(
+            options.get("history_retention_days") or env.get("VISIONSTATE_HISTORY_RETENTION_DAYS")
+        ),
         port=int(env.get("VISIONSTATE_PORT", 8099)),
         supervisor_token=env.get("SUPERVISOR_TOKEN", ""),
         ha_url=env.get("HA_URL", ""),
