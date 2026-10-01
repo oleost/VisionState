@@ -3,8 +3,9 @@
 ## 0.6.1b3
 
 - The app option *History retention (days)* is gone from the Configuration tab: how long history
-  is kept (and its size limit) is set under Settings → Storage. A value you had set there is
-  moved over automatically at the first start.
+  is kept (and its size limit) is set under Settings → Storage. A value you had changed there is
+  not carried over — history is kept for the default 7 days until you set it again under
+  Settings → Storage.
 
 ## 0.6.1b2
 

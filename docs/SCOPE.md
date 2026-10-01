@@ -260,9 +260,8 @@ History frames are full camera frames (JPEG 90). They are removed by age (`histo
 frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
 oldest first, frames waiting for review only when that is not enough. Both limits are a DB
 setting edited in Settings → Storage (`/api/v1/storage`, which also reports disk use);
-the former app option `history_retention_days` (removed in 0.6.1) is copied into `history_days`
-once at start-up — from `options.json` or, since Home Assistant drops an option that left the
-schema, from Supervisor (`/addons/self/info`). The clean-up runs every
+the former app option `history_retention_days` was removed in 0.6.1 without carrying its value
+over (early days; the release notes say so). The clean-up runs every
 10 minutes and right after the limits change. Training images are never removed
 automatically.
 
