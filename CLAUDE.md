@@ -56,6 +56,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     `_FRONTEND=frontend/dist`, `_BUNDLED_MODELS` as in `playwright.config.ts`; a copy of the last e2e
     run's `data` and `media` folders gives seeded sensors), use the changed screens at desktop width
     and at ~390 px, and check the console. Reload after a rebuild (a hash-only navigation keeps the old page).
+    A Chrome window does not get narrower than 500 px (and a maximised one not at all): for a real
+    phone width, open any same-origin URL (e.g. `/api/v1/status`) and replace the page with
+    `<iframe src="/#/…" style="width:390px;height:844px">` — media queries then see 390 px.
   - Handy while working (add `VS_PYTHON=…` as above): only the phone `npx playwright test
     --project=mobile`; one test `npx playwright test -g "reading sensor"`; watch it in a browser
     `--headed` or step through it with `--ui`; after a failure `npx playwright show-trace
