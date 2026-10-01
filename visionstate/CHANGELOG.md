@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1b5
+
+- Sensors page on phones: Import and New sensor sit together on one row; the count of labelled
+  images under the title is gone (each sensor card shows its own).
+
 ## 0.6.1b4
 
 - Settings no longer offers "Runs on": VisionState runs on the CPU only, by design. The list

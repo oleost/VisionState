@@ -46,7 +46,6 @@
     }
   }
 
-  const labelled = $derived(sensors?.reduce((n, s) => n + s.counts.labelled, 0) ?? 0);
 
   function meta(s: Sensor) {
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
@@ -66,13 +65,15 @@
     <div class="col" style="gap:6px">
       <h1>Sensors</h1>
       <p class="muted">
-        {plural(sensors?.length ?? 0, "sensor")}{labelled ? ` · ${plural(labelled, "labelled image")}` : ''}
+        {plural(sensors?.length ?? 0, "sensor")}
       </p>
     </div>
     <span class="spacer"></span>
-    <input bind:this={importInput} type="file" accept=".zip" class="sr-only" onchange={importFile} id="import-file" />
-    <label class="btn" for="import-file"><Icon name="upload" /> Import</label>
-    <a class="btn primary" href={href(paths.newSensor())}><Icon name="plus" /> New sensor</a>
+    <div class="row head-actions">
+      <input bind:this={importInput} type="file" accept=".zip" class="sr-only" onchange={importFile} id="import-file" />
+      <label class="btn" for="import-file"><Icon name="upload" /> Import</label>
+      <a class="btn primary" href={href(paths.newSensor())}><Icon name="plus" /> New sensor</a>
+    </div>
   </header>
 
   {#if app.status?.backbone_error}
@@ -151,6 +152,15 @@
 <style>
   header {
     align-items: flex-end;
+  }
+  .head-actions {
+    gap: var(--space-2);
+  }
+  @media (max-width: 600px) {
+    /* Both buttons together on their own row under the title on phones. */
+    .head-actions {
+      flex-basis: 100%;
+    }
   }
   .sensor {
     overflow: hidden;
