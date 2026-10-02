@@ -90,6 +90,8 @@ jobs:
 
   image:
     needs: [backend, frontend, e2e]
+    # The check names "image (amd64)" and "image (aarch64)" are required by main's branch protection.
+    name: image (${{ matrix.arch }})
     # Each architecture builds and runs on its own hardware (no emulation: several times faster).
     runs-on: ${{ matrix.runner }}
     permissions:
