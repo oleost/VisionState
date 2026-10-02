@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.1b6 / stable 0.6.0, 2026-10-02) and the open
+> Describes VisionState **as built** (stable 0.6.1, 2026-10-02) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -337,7 +337,7 @@ sensor settings) lives in the UI.
 | **Region shapes & mobile** ✅ | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.6.0 (betas 0.4.1b5–b6) |
 | **Object sensors** ✅ | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.6.0 (beta 0.5.0b1) |
 | **Reading sensors** ✅ | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0 (betas 0.6.0b2–b4) |
-| **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | beta 0.6.1b6 |
+| **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);

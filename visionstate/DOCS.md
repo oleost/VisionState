@@ -131,11 +131,12 @@ First choose **what it looks like**:
 - The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
   `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- Works best on LCD and LED displays and printed signs. **Mechanical counters** are new: they
-  read well while the wheels stand still and less reliably in the moment a wheel turns. Small
-  pointer dials (the red hands on some water meters) are not read.
+- Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
+  have so far only been tried on one type of water meter: they read well while the wheels stand
+  still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
+  some water meters) are not read.
 - Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
-  lot: what the display is, whether it read correctly, and a screenshot of *What the reader
+  lot: what the display or meter is, whether it read correctly, and a screenshot of *What the reader
   sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
   issue.
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change

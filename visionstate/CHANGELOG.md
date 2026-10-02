@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.1b6
+## 0.6.1
+
+### New
 
 - **Mechanical counters** — the rolling digit wheels of water and gas meters — can now be read.
   In the new sensor wizard choose *Reading*, then *Mechanical counter*, draw the region from the
@@ -9,56 +11,51 @@
   and below are no longer read as digits. A reading with another number of digits than the
   counter has is rejected. Existing reading sensors are not changed; switch one over under
   Settings → Reading.
+  - **This is new and has hardly been tried on real meters yet** — so far on one type of water
+    meter. It reads well while the wheels stand still and less reliably in the moment a wheel
+    turns. Feedback is very welcome: what kind of meter it is, whether it read correctly, and a
+    screenshot of *What the reader sees* — in
+    [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an issue.
 - The reading settings start with *What does it look like?* (digital display or mechanical
   counter); the LED / LCD choice is shown for digital displays.
-
-## 0.6.1b5
-
-- Sensors page on phones: Import and New sensor sit together on one row; the count of labelled
-  images under the title is gone (each sensor card shows its own).
-
-## 0.6.1b4
-
-- Settings no longer offers "Runs on": VisionState runs on the CPU only, by design. The list
-  only ever had the CPU and ONNX Runtime's built-in "Azure" option (which did nothing here).
-- The model pill in the top bar and the model name under "Sensors" are gone — there are three
-  models now; Settings → Status lists them.
-
-## 0.6.1b3
-
-- The app option *History retention (days)* is gone from the Configuration tab: how long history
-  is kept (and its size limit) is set under Settings → Storage. A value you had changed there is
-  not carried over — history is kept for the default 7 days until you set it again under
-  Settings → Storage.
-
-## 0.6.1b2
-
 - **Storage** under Settings: how much space history frames and training images use, and how
   much is free.
 - History now has a **size limit** besides the number of days: by default 7 days but at most
   2 GB, whichever is reached first. The oldest frames go first, frames waiting for review last;
   training images are never removed. Both limits are set under Settings → Storage and apply
   right away.
-- The history clean-up runs every 10 minutes instead of every hour.
-- Reading sensors: when the display shows a decimal point (`1234.5`) that the settings do not
-  match, the wizard and Settings offer the right number of decimals — 0 would have made it 12345.
-- History of state sensors: tap a frame to see it whole; "Added as …" says which state.
-- Object boxes: labels no longer overlap when objects stand close together.
-- An imported sensor whose name is taken is called "… (2)".
-- Phones: "Add state" puts the cursor in the new field; Export/Pause and the region buttons no
-  longer jump when a chip or "Reset to rectangle" appears; at most two messages at a time; the
-  wizard's keyboard hint is hidden on touch screens; "check every … s for … s" keeps values with
-  their units.
-- Smaller fixes: the reading wizard's button says "Create sensor" (no labelling needed), a region
-  that is a rectangle again no longer offers "Reset to rectangle", wide displays sit in the middle
-  of their dashboard card, and the region step's text fits every kind of sensor.
-
-## 0.6.1b1
-
 - Object sensors show the object's own icon in Home Assistant — a car, a person, a dog … — for
   all 80 objects, instead of the same house icon for every one. The icons come from the icon set
   Home Assistant ships, so no extra setup is needed; existing sensors get them automatically.
-- The sensor overview no longer says "0 labelled images" when there are no state sensors.
+- Reading sensors: when the display shows a decimal point (`1234.5`) that the settings do not
+  match, the wizard and Settings offer the right number of decimals — 0 would have made it 12345.
+- History of state sensors: tap a frame to see it whole; "Added as …" says which state.
+
+### Changed
+
+- The app option *History retention (days)* is gone from the Configuration tab: how long history
+  is kept (and its size limit) is set under Settings → Storage. A value you had changed there is
+  not carried over — history is kept for the default 7 days until you set it again under
+  Settings → Storage.
+- Settings no longer offers "Runs on": VisionState runs on the CPU only, by design. The list
+  only ever had the CPU and ONNX Runtime's built-in "Azure" option (which did nothing here).
+- The model pill in the top bar and the model name under "Sensors" are gone — there are three
+  models now; Settings → Status lists them.
+- The history clean-up runs every 10 minutes instead of every hour.
+- An imported sensor whose name is taken is called "… (2)".
+
+### Fixed
+
+- Object boxes: labels no longer overlap when objects stand close together.
+- Phones: Import and New sensor sit together on one row on the Sensors page; "Add state" puts
+  the cursor in the new field; Export/Pause and the region buttons no longer jump when a chip or
+  "Reset to rectangle" appears; at most two messages at a time; the wizard's keyboard hint is
+  hidden on touch screens; "check every … s for … s" keeps values with their units.
+- The sensor overview no longer says "0 labelled images" when there are no state sensors; the
+  count of labelled images under the title is gone (each sensor card shows its own).
+- Smaller fixes: the reading wizard's button says "Create sensor" (no labelling needed), a region
+  that is a rectangle again no longer offers "Reset to rectangle", wide displays sit in the middle
+  of their dashboard card, and the region step's text fits every kind of sensor.
 
 ## 0.6.0
 
