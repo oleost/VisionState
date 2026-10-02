@@ -366,7 +366,10 @@ rejected detections; zones and line crossing for object sensors.
   media folder. The maintainer runs it permanently.
 - **main** branch: stable; changes only by promoting a tested beta through a PR
   (branch-protected, CI required).
-- CI builds, tests and smoke-tests the image on both architectures (start, MQTT, discovery, clean
-  `docker stop` with exit code 0) before publishing, refuses
+- CI builds, tests and smoke-tests the image on both architectures, each on its own hardware
+  (start, MQTT, discovery, clean `docker stop` with exit code 0) before publishing, refuses
   tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
+- A beta tag is the whole release: after both images are published CI creates the pre-release
+  from the changelog entry and fast-forwards `beta`, so the branch never carries a version
+  without images. Stable releases are promoted by hand.
 - Step-by-step procedures are in `CLAUDE.md`.

@@ -116,18 +116,25 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   - Home Assistant pulls prebuilt images (`image:` in config.yaml), so a version must never reach a
     branch before its images exist. CI refuses tags that do not match config.yaml and branches that
     carry the wrong channel.
-- **Run CI before tagging.** A tag whose CI fails has no images and its version number is lost
-  (the next try needs a new one). Push the commit to a temporary branch and open a draft PR
-  against `beta`; tag only when it is green, then close the PR and delete the branch. Tags that
-  never got images or a release can be deleted.
+- **A beta tag is the CI run.** Run the local checks first (backend, frontend, e2e, hands-on in
+  a browser), then push the tag: its CI tests, builds both images on native runners, and — for
+  beta tags — creates the pre-release and fast-forwards `beta`. If it fails, nothing was
+  published: delete the tag (`git push origin :refs/tags/vX.Y.ZbN`, `git tag -d …`), fix, and tag
+  the same version again. For a stable release, or when unsure, run CI first on a temporary
+  branch with a draft PR against `beta` and close it afterwards.
 - Documentation-only changes (README, DOCS.md, CLAUDE.md, images) may go to `main` through a PR
   without a beta; merge `main` back into `beta` afterwards.
-- **Beta release** (on `beta`):
-  1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`, commit.
-  2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**); wait until CI (tests + smoke test)
-     published `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.ZbN` (the registry answers 200 for
+- **Beta release** (on `beta`, about 10 minutes, unattended after the tag):
+  1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`
+     (it becomes the release notes), commit. Do **not** push `beta`.
+  2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**). CI then publishes
+     `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.ZbN`, creates the GitHub pre-release and moves
+     `beta` to the tagged commit; `gh run watch` follows it.
+  3. `git fetch origin && git status` — local `beta` should equal `origin/beta`. If the release
+     changed a file under `.github/workflows/`, CI may not push the branch: run `git push origin beta`
+     yourself once the images exist (the registry answers 200 for
      `https://ghcr.io/v2/oleost/visionstate-<arch>/manifests/X.Y.ZbN` with an anonymous pull token).
-  3. `git push origin beta`; `gh release create vX.Y.ZbN --prerelease`.
+     A tagline for the release title is optional: `gh release edit vX.Y.ZbN --title "X.Y.ZbN — …"`.
 - **Promote to stable** (only when the user says the beta is tested):
   1. `git switch -c promote/X.Y.Z beta`; `python scripts/channel.py stable X.Y.Z`; in the changelog,
      merge the `X.Y.ZbN` entries into one `## X.Y.Z` entry; commit.
