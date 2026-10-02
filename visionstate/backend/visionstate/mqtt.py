@@ -54,7 +54,7 @@ class SensorDescriptor:
     name: str
     state_keys: list[str]
     kind: str = KIND_STATES
-    objects: list[tuple[str, str]] = field(default_factory=list)  # (key, display name) per class
+    objects: list[tuple[str, str, str]] = field(default_factory=list)  # (key, display name, icon) per class
     reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
 
 
@@ -101,7 +101,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         ]
     elif objects:
         kind_specific = []
-        for key, name in sensor.objects:
+        for key, name, icon in sensor.objects:
             ot = object_topics(sensor.slug, key)
             kind_specific += [
                 config(
@@ -115,6 +115,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                         "payload_on": "ON",
                         "payload_off": "OFF",
                         "device_class": "occupancy",
+                        "icon": icon,  # the object itself instead of occupancy's house
                         **with_camera,
                     },
                 ),
@@ -403,7 +404,7 @@ class MqttBridge:
             await self.publish(topic, "", retain=True)
         for topic in topics(sensor.slug).values():
             await self.publish(topic, "", retain=True)
-        for key, _ in sensor.objects:
+        for key, *_ in sensor.objects:
             await self.remove_object_class(sensor.slug, key, discovery=False)
 
     async def remove_object_class(self, slug: str, key: str, discovery: bool = True) -> None:

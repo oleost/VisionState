@@ -1,6 +1,7 @@
 <script lang="ts">
   // Object sensors: when each object appeared and cleared, with the frame and its boxes.
   import { api } from '../../lib/api';
+  import { href, paths } from '../../lib/router.svelte';
   import { toastError } from '../../lib/app.svelte';
   import DetectionBoxes from '../../lib/components/DetectionBoxes.svelte';
   import Icon from '../../lib/components/Icon.svelte';
@@ -34,8 +35,8 @@
 </script>
 
 <p class="small muted">
-  When each object appeared and cleared, kept for the retention period set in the app options. Tap a row to see the
-  frame with what the AI found.
+  When each object appeared and cleared, kept as set under <a href={href(paths.settings())}>Settings → Storage</a>. Tap a row to see the frame with what the AI
+  found.
 </p>
 
 {#if items === null}

@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.0, 2026-09-30) and the open
+> Describes VisionState **as built** (stable 0.6.1, 2026-10-02) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -30,7 +30,7 @@ text recognizer. Neither needs training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading mechanical counters with rolling digits (most water meters) — see §16 open ideas.
+- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §16.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -83,7 +83,8 @@ so retraining only runs the backbone on new or changed samples.
 
 - MobileNet was dropped: the available ONNX exports only expose classification logits.
 - Switching backbone retrains every sensor from its stored samples.
-- Execution provider: any ONNX Runtime provider present in the image (CPU today). GPU/Coral
+- Runs on the CPU only (`backbones.cpu_session`; ONNX Runtime's other providers, such as its
+  Azure provider, are never offered or used). GPU/Coral
   were assessed and deliberately not pursued (little gain for this workload; Coral cannot run
   the transformer model and is often in use by other software).
 - Heads trained by another scikit-learn version, or for another backbone, are retrained
@@ -124,17 +125,31 @@ with the 80 COCO labels, their keys, groups and the popular ones):
    when the read is unsure (< `READING["segments_fallback_below"]`) also try the digits' own
    segments (two-stage Otsu on brightness for light-on-dark, on darkness for dark-on-light,
    removing faint unlit segments) and keep the more confident read. *led* / *lcd* force that.
+   Display *counter* (mechanical counter, rolling digit wheels): the crop is split into
+   `digits` equal cells, the middle `READING["counter_cell_share"]` of each cell is pasted into
+   one line (no dividers), and several row bands of that line are read; the most confident read
+   with exactly `digits` digits wins.
 2. Resize to height 48, BGR, scale to −1…1; greedy CTC decoding **limited to** `0-9 . , : -`
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
-   going down, or a change above `max_step`; otherwise publish after `debounce` equal reads.
+   going down, a mechanical counter read with another number of digits than it has wheels, or a
+   change above `max_step`; otherwise publish after `debounce` equal reads.
    The last published value is restored from the history after a restart.
 
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
-  displays correctly (7/7 with a tight region); it fails on rolling counter wheels and on small
-  blurry LCDs. DINOv2 per digit (4/23) and a CNN trained on synthetic digits (12/23) were
-  worse. The public meter-digit datasets/models found carry no licence, so they are not used.
+  displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
+  counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
+  trained on synthetic digits (12/23) were worse. The public meter-digit datasets/models found
+  carry no licence, so they are not used.
+- Evaluated for mechanical counters (2026-10, 742 frames of two water meters with a fixed
+  camera, 53 distinct counter states, kept outside the repository): read as one line the
+  counter was never right (half digits above/below and dividers read as extra digits). With
+  one cell per wheel and the row-band search the first six wheels were right in 32/35 and 17/18
+  states, and in every state where no wheel was turning (29/29, 17/17). Learning each digit
+  from the meter's own labelled frames (DINOv2 + head, or matching against labelled wheels) was
+  much worse and was dropped. Only one meter type was tested, and the settings were chosen on
+  the same frames.
 - **Model choice is global per kind** (Settings), so at most three models are loaded. The
   detector and the reader are loaded on first use and released when the last sensor of their kind is deleted. The
   chosen backbone and detector are stored in the database at first start, so a later release
@@ -187,7 +202,9 @@ One HA **device** per sensor:
 **Object sensors** replace the first two with two entities per selected class:
 `binary_sensor.visionstate_<slug>_<class>` (`device_class: occupancy`, attributes: confidence,
 boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
-boxes; the button is named "Detect now". Deselecting a class removes its entities.
+boxes; the button is named "Detect now". Deselecting a class removes its entities. Each class
+has its own Material Design icon (`icon` in `detectors.json`, checked against `@mdi/svg` 7.4.47,
+the version Home Assistant ships) instead of the occupancy class's house icon.
 
 **Reading sensors** publish the value on `sensor.visionstate_<slug>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
@@ -219,12 +236,14 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
-10. **Settings** — status, AI models (state backbone, object detector) and execution provider,
-    global review rules, import.
+10. **Settings** — status, AI models (state backbone, object detector, number reader),
+    global review rules, storage (disk use and history limits), import.
 
 Reading sensors have the same three tabs: **Live** (value, last read, the analysed frame and the
 image the reader saw), **History** (new values and rejected readings) and **Settings** (mode,
-decimals, unit, device class, display, limits).
+decimals, unit, device class, display, limits). The reading settings start with the type —
+*digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
+the region in the wizard and on the Settings tab).
 
 Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
 per-class status), **History** (appeared / cleared, expandable to the frame with boxes) and
@@ -235,7 +254,7 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 - SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v6).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
   `clear_after_s`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
-  display, `max_step`); reserved for `multi_label`. Object events are `prediction` rows (class,
+  display, `digits`, `max_step`); reserved for `multi_label`. Object events are `prediction` rows (class,
   `on`/`off`, `detections`); readings are `prediction` rows with `state_key` "reading" and the
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
@@ -252,7 +271,16 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
 | Training images | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
-| History frames | `/media/…/history/` | Retention (default 7 days; unreviewed flagged frames twice as long) |
+| History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+
+History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
+frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
+oldest first, frames waiting for review only when that is not enough. Both limits are a DB
+setting edited in Settings → Storage (`/api/v1/storage`, which also reports disk use);
+the former app option `history_retention_days` was removed in 0.6.1 without carrying its value
+over (early days; the release notes say so). The clean-up runs every
+10 minutes and right after the limits change. Training images are never removed
+automatically.
 
 ## 12. Import / export
 
@@ -265,7 +293,7 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 
 ## 13. Configuration (app options)
 
-`log_level`, `history_retention_days`, `discovery_prefix`, and optional `mqtt_host`,
+`log_level`, `discovery_prefix`, and optional `mqtt_host`,
 `mqtt_port`, `mqtt_username`, `mqtt_password`. Everything else (AI model, review rules,
 sensor settings) lives in the UI.
 
@@ -309,12 +337,15 @@ sensor settings) lives in the UI.
 | **Region shapes & mobile** ✅ | Polygon regions, mobile layout fixes, Playwright UI tests in CI | 0.6.0 (betas 0.4.1b5–b6) |
 | **Object sensors** ✅ | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.6.0 (beta 0.5.0b1) |
 | **Reading sensors** ✅ | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0 (betas 0.6.0b2–b4) |
+| **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; rolling-digit meters (learn each digit of one meter from corrections, or a licensed
-digit model); several readings per sensor (a sign with four prices); issue templates; per-sensor model
+Assistant; mechanical counters: adjustable cell borders for counters seen at an angle, using
+the wheel rule (a wheel only turns while the one to its right goes 9 → 0) to settle digits read
+mid-turn, pointer dials and gauges; several readings per sensor (a sign with four prices, a
+counter plus its dials); issue templates; per-sensor model
 choice with unloading of idle models; a "not a person" button that trains a DINOv2 filter on
 rejected detections; zones and line crossing for object sensors.
 
@@ -335,7 +366,10 @@ rejected detections; zones and line crossing for object sensors.
   media folder. The maintainer runs it permanently.
 - **main** branch: stable; changes only by promoting a tested beta through a PR
   (branch-protected, CI required).
-- CI builds, tests and smoke-tests the image on both architectures (start, MQTT, discovery, clean
-  `docker stop` with exit code 0) before publishing, refuses
+- CI builds, tests and smoke-tests the image on both architectures, each on its own hardware
+  (start, MQTT, discovery, clean `docker stop` with exit code 0) before publishing, refuses
   tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
+- A beta tag is the whole release: after both images are published CI creates the pre-release
+  from the changelog entry and fast-forwards `beta`, so the branch never carries a version
+  without images. Stable releases are promoted by hand.
 - Step-by-step procedures are in `CLAUDE.md`.

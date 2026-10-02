@@ -6,6 +6,7 @@ import type {
   HaEntity,
   Prediction,
   Quality,
+  ReadPreview,
   ReadingSettings,
   ReviewRules,
   Roi,
@@ -15,6 +16,7 @@ import type {
   SensorInput,
   SettingsInfo,
   Status,
+  StorageInfo,
 } from './types';
 
 // Relative on purpose: the app lives below a dynamic Home Assistant Ingress path.
@@ -81,8 +83,11 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
-  saveSettings: (body: { backbone: string; execution_provider: string; detector?: string; reader?: string }) =>
+  saveSettings: (body: { backbone: string; detector?: string; reader?: string }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
+  storage: () => request<StorageInfo>('storage'),
+  saveStorage: (body: { history_days: number; history_max_gb: number }) =>
+    request<StorageInfo>('storage', send('PUT', body)),
   cameras: () => request<Camera[]>('cameras'),
   entities: () => request<HaEntity[]>('entities'),
   previewUrl: (sourceType: string, source: string) =>
@@ -110,10 +115,7 @@ export const api = {
   },
   /** What the number reader makes of a fresh frame's region (new sensor wizard). */
   previewRead: (sourceType: string, source: string, roi: Roi | null, reading: ReadingSettings) =>
-    request<{ image: string; read_image: string; text: string; score: number; value: string | null }>(
-      'preview/read',
-      send('POST', { source_type: sourceType, source, roi, reading }),
-    ),
+    request<ReadPreview>('preview/read', send('POST', { source_type: sourceType, source, roi, reading })),
   /** The image the reader saw in the last check; `at` busts the browser cache per check. */
   readingImageUrl: (id: number, at: number) => `${BASE}sensors/${id}/reading/image?${qs({ t: at })}`,
   /** The exact frame a check analysed (while cached); stable URL, so the browser can cache it. */

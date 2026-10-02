@@ -7,6 +7,8 @@ GET /set?state=open|closed|partial   changes what the camera shows
 GET /set?night=1                 switches to a greyscale "IR" image
 GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/assets (for object sensors)
 GET /display.jpg?text=12.5&style=lcd|led   a drawn seven-segment display (for reading sensors)
+GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter with rolling digits
+                                 (value = the number on the wheels; .5 = last wheel half way)
 """
 
 import io
@@ -21,7 +23,7 @@ from PIL import Image, ImageDraw
 TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "tests"
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
-from displays import STYLES  # noqa: E402  (shared with the backend tests)
+from displays import STYLES, render_counter  # noqa: E402  (shared with the backend tests)
 from displays import render as render_display  # noqa: E402
 
 STATE = {"state": "closed", "night": False}
@@ -74,6 +76,20 @@ class Handler(BaseHTTPRequestHandler):
             style = query.get("style", ["lcd"])[0]
             buf = io.BytesIO()
             render_display(text, style if style in STYLES else "lcd").save(buf, format="JPEG", quality=90)
+            self._send(buf.getvalue(), "image/jpeg")
+        elif url.path == "/counter.jpg":
+            query = parse_qs(url.query)
+
+            def number(name: str, default: float, low: float, high: float) -> float:
+                try:
+                    return min(high, max(low, float(query.get(name, [default])[0])))
+                except ValueError:
+                    return default
+
+            digits = int(number("digits", 7, 1, 8))
+            image = render_counter(number("value", 0, 0, 10**digits), digits, int(number("decimals", 3, 0, digits)))
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
             self._send(buf.getvalue(), "image/jpeg")
         elif url.path.startswith("/photo/"):
             photo = PHOTOS / Path(url.path).name  # name only: no paths outside the folder

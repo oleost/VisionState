@@ -7,6 +7,7 @@
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import DigitCells from '../../lib/components/DigitCells.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
@@ -100,7 +101,7 @@
     <section class="card pad col">
       <div class="card-title">
         <h3>Region</h3>
-        <span class="row" style="gap:8px">
+        <span class="row region-actions" style="gap:8px">
           {#if isPolygon(roi)}
             <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
           {/if}
@@ -112,10 +113,16 @@
         {objectSensor
           ? 'An object counts when it stands inside it (the bottom of its box).'
           : readingSensor
-            ? 'Draw it tightly around the digits only — no labels or units.'
+            ? reading.display === 'counter'
+              ? 'Cover the wheels from the first to the last, so each field holds one wheel. A little room above and below is fine.'
+              : 'Draw it tightly around the digits only — no labels or units.'
             : 'Changing it retrains the model.'}
       </p>
-      <div class="frame"><LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000} /></div>
+      <div class="frame">
+        <LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000}>
+          {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
+        </LiveFrame>
+      </div>
     </section>
   </div>
 
@@ -123,7 +130,7 @@
     {#if readingSensor}
       <section class="card pad col">
         <h3>Reading</h3>
-        <ReadingEditor bind:value={reading} />
+        <ReadingEditor bind:value={reading} seen={sensor.reading?.last?.text} />
       </section>
     {:else if objectSensor}
       <section class="card pad col">
@@ -175,6 +182,12 @@
 </div>
 
 <style>
+  @media (max-width: 600px) {
+    /* Own row on phones, so "Reset to rectangle" coming and going does not move the frame being edited. */
+    .region-actions {
+      flex-basis: 100%;
+    }
+  }
   .layout {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);

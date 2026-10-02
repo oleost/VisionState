@@ -35,9 +35,6 @@
         <span class="dot" style:background={app.status.mqtt.connected ? 'var(--c-accent)' : 'var(--c-danger)'}></span>
         MQTT {app.status.mqtt.connected ? 'connected' : 'offline'}
       </span>
-      {#if app.status.backbone}
-        <span class="pill mono">{app.status.provider?.replace('ExecutionProvider', '')} · {app.status.backbone}</span>
-      {/if}
     </div>
   {/if}
 </nav>
@@ -108,12 +105,6 @@
     gap: var(--space-4);
     font-size: var(--fs-md);
     color: var(--c-muted);
-  }
-  .pill {
-    font-size: var(--fs-sm);
-    padding: 4px 8px;
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius-sm);
   }
   @media (max-width: 900px) {
     .status {

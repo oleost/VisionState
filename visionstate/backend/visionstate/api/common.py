@@ -68,6 +68,14 @@ def unique_slug(session: Session, name: str) -> str:
     return slug
 
 
+def unique_name(session: Session, name: str) -> str:
+    """``name``, or "name (2)", "name (3)"… when a sensor already has it (an imported copy)."""
+    candidate, n = name, 2
+    while session.scalar(select(Sensor.id).where(Sensor.name == candidate)) is not None:
+        candidate, n = f"{name} ({n})", n + 1
+    return candidate
+
+
 def get_sensor(session: Session, sensor_id: int, kind: str | None = None) -> Sensor:
     """The sensor, or 404. With ``kind``, a sensor of another kind is a 400 (e.g. training an object sensor)."""
     sensor = session.get(Sensor, sensor_id)
@@ -169,6 +177,7 @@ class ReadingIn(BaseModel):
     unit: str = Field(READING_DEFAULTS["unit"], max_length=16)
     device_class: str = READING_DEFAULTS["device_class"]
     display: str = READING_DEFAULTS["display"]
+    digits: int = Field(READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
 
     @field_validator("mode")

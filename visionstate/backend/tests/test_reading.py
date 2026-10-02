@@ -10,11 +10,11 @@ from PIL import Image
 from visionstate import readers
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
-from visionstate.readers import decode, format_value, implausible, parse
+from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
 from visionstate.settings import KIND_READING, merge_reading
 
 from .conftest import MODEL_DIR, requires_reader
-from .displays import render
+from .displays import counter_box, counter_positions, render, render_counter
 from .test_integration import wait_for
 
 
@@ -52,6 +52,30 @@ def test_implausible_readings():
     assert implausible(105, 100, counter) is None
     value = cfg(mode="value")
     assert implausible(1.2, 1.9, value) is None  # values may go down, no step limit set
+
+
+def test_counter_digit_count():
+    counter = cfg(display="counter", digits=7)
+    assert not wrong_digit_count("0089932", counter)
+    assert wrong_digit_count("089932", counter)  # a wheel was missed
+    assert wrong_digit_count("00899321", counter)  # a divider read as a digit
+    assert not wrong_digit_count("12", cfg(digits=7))  # other displays may show any number of digits
+
+
+def test_counter_line_keeps_the_middle_of_every_cell():
+    # Seven cells of 20 px: white wheels with a black divider between them.
+    image = Image.new("RGB", (140, 30), "black")
+    for i in range(7):
+        image.paste(Image.new("RGB", (14, 30), "white"), (i * 20 + 3, 0))
+    line = counter_line(image, 7)
+    assert line.size == (7 * 14, 30)
+    assert np.asarray(line).min() == 255  # no divider left
+
+
+def test_counter_positions_follow_the_wheel_rule():
+    assert counter_positions(89932, 7) == [0, 0, 8, 9, 9, 3, 2]
+    # While the last wheel goes 9 -> 0 the wheel to its left turns with it, and so on up the row.
+    assert counter_positions(89999.5, 7) == pytest.approx([0, 0, 8.5, 9.5, 9.5, 9.5, 9.5])
 
 
 def test_format_value():
@@ -112,6 +136,56 @@ def test_reader_reads_drawn_displays(text, style):
     reader = readers.Reader(spec, MODEL_DIR / spec.filename)
     result, _ = reader.read_display(render(text, style), "auto")
     assert result.text == text and result.score > 0.8
+
+
+def counter_region(image: Image.Image, digits: int, taller: float = 0.0) -> Image.Image:
+    """The counter window of a drawn meter, optionally a taller region around it."""
+    box = counter_box(digits)
+    top = box["y"] - box["h"] * taller / 2
+    return image.crop(
+        (
+            round(box["x"] * image.width),
+            round(top * image.height),
+            round((box["x"] + box["w"]) * image.width),
+            round((top + box["h"] * (1 + taller)) * image.height),
+        )
+    )
+
+
+@requires_reader
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (89932, "0089932"),
+        (7, "0000007"),
+        (1234567, "1234567"),
+        (89949.8, "0089950"),  # two wheels almost turned over
+        (90099.9, "0090100"),  # four wheels almost turned over
+    ],
+)
+@pytest.mark.parametrize("taller", [0.0, 0.25])
+def test_reader_reads_drawn_counters(value, expected, taller):
+    """Rolling digit wheels: dividers and the half digits above and below must not be read."""
+    spec = readers.READERS[readers.DEFAULT_READER]
+    reader = readers.Reader(spec, MODEL_DIR / spec.filename)
+    result, used = reader.read_display(counter_region(render_counter(value), 7, taller), "counter", 7)
+    assert result.text == expected and result.score > 0.8
+    assert used.width < counter_region(render_counter(value), 7).width  # the dividers are gone
+
+
+class CounterCamera:
+    """A camera looking at a mechanical counter whose value the test changes."""
+
+    def __init__(self, value: float):
+        self.value = value
+
+    async def grab(self, source_type, source):
+        buf = io.BytesIO()
+        render_counter(self.value).save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    async def close(self):
+        pass
 
 
 class DisplayCamera:
@@ -236,3 +310,48 @@ def test_restart_keeps_checking_against_the_last_value(settings):
             timeout=60,
         )
         assert client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "500"
+
+
+@requires_reader
+def test_counter_sensor_flow(settings):
+    camera = CounterCamera(89932)
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³"}
+    body = {
+        "name": "Water meter",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "http://fake",
+        "roi": counter_box(7),
+        "reading": reading,
+        "interval_s": 1,
+        "debounce": 1,
+    }
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        assert client.post("/api/v1/sensors", json={**body, "reading": {**reading, "digits": 0}}).status_code == 422
+        resp = client.post("/api/v1/sensors", json=body)
+        assert resp.status_code == 201, resp.text
+        sid = resp.json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()
+
+        assert wait_for(lambda: view()["reading"]["value"] == "89.932", timeout=60)
+        assert view()["reading"]["digits"] == 7
+
+        camera.value = 89941
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: view()["reading"]["value"] == "89.941", timeout=30)
+
+        # Told the counter has eight wheels, the seven digits read are rejected and the value stays.
+        patched = client.patch(f"/api/v1/sensors/{sid}", json={"reading": {**reading, "digits": 8}})
+        assert patched.status_code == 200, patched.text
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") == "wrong digit count", timeout=30)
+        assert view()["reading"]["value"] == "89.941"
+
+        preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
+        good = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
+        assert good["text"] == "0089941" and good["value"] == "89.941" and good["wrong_digit_count"] is False
+        bad = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "digits": 8}}).json()
+        assert bad["wrong_digit_count"] is True

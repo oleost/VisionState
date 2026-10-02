@@ -52,7 +52,10 @@ export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
 export type SensorKind = 'single_state' | 'objects' | 'reading';
 
 export type ReadingMode = 'counter' | 'value' | 'time_left';
-export type ReadingDisplay = 'auto' | 'led' | 'lcd';
+/** 'counter' is a mechanical counter with rolling digit wheels; the others are digital displays. */
+export type ReadingDisplay = 'auto' | 'led' | 'lcd' | 'counter';
+/** What is being read, as chosen first in the reading editor ('display' covers auto, led and lcd). */
+export type ReadingType = 'display' | 'counter';
 
 export interface ReadingSettings {
   mode: ReadingMode;
@@ -60,7 +63,20 @@ export interface ReadingSettings {
   unit: string;
   device_class: string;
   display: ReadingDisplay;
+  /** Mechanical counters only: the number of wheels inside the region. */
+  digits: number;
   max_step: number;
+}
+
+/** What the number reader makes of a fresh frame (new sensor wizard). */
+export interface ReadPreview {
+  image: string;
+  read_image: string;
+  text: string;
+  score: number;
+  value: string | null;
+  /** A mechanical counter read with another number of digits than it has wheels. */
+  wrong_digit_count: boolean;
 }
 
 /** The last read of a reading sensor; reason = why it was rejected (null = accepted). */
@@ -211,10 +227,14 @@ export interface AppConfig {
   object_popular: string[];
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'max_step', [number, number]>;
+  reading_limits: Record<'decimals' | 'digits' | 'max_step', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   reading_device_classes: string[];
+  /** Mechanical counters: the share of each digit field's width that is read. */
+  reading_counter_cell_share: number;
+  storage_defaults: { history_max_gb: number };
+  storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
 }
 
 export interface Status {
@@ -223,7 +243,6 @@ export interface Status {
   review_count: number;
   backbone: string | null;
   backbone_name: string | null;
-  provider: string | null;
   backbone_error: string;
   detector: string | null;
   detector_name: string | null;
@@ -312,6 +331,19 @@ export interface BackboneInfo {
   size: number;
 }
 
+/** GET /storage: disk use and the history limits (whichever is reached first applies). */
+export interface StorageInfo {
+  history_bytes: number;
+  history_frames: number;
+  oldest_history: string | null;
+  training_bytes: number;
+  training_images: number;
+  free_bytes: number;
+  limited_by_size: boolean;
+  history_days: number;
+  history_max_gb: number;
+}
+
 export interface DetectorInfo extends BackboneInfo {
   license: string;
   source: string;
@@ -319,12 +351,10 @@ export interface DetectorInfo extends BackboneInfo {
 
 export interface SettingsInfo {
   backbone: string;
-  execution_provider: string;
   backbones: BackboneInfo[];
   detector: string;
   detectors: DetectorInfo[];
   reader: string;
   readers: DetectorInfo[];
-  providers: string[];
   options: Record<string, string | number>;
 }

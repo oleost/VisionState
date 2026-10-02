@@ -2,9 +2,6 @@ configuration:
   log_level:
     name: Log level
     description: How much VisionState writes to the app log.
-  history_retention_days:
-    name: History retention (days)
-    description: How long frames of state changes are kept. Frames waiting for review are kept twice as long.
   discovery_prefix:
     name: MQTT discovery prefix
     description: Must match the discovery prefix of the Home Assistant MQTT integration (normally "homeassistant").

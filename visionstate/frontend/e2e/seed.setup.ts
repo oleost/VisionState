@@ -1,6 +1,16 @@
 // Creates a trained sensor (plus review items and one wrong label) that the UI tests look at.
 import { expect, test as setup } from '@playwright/test';
-import { CAMERA_URL, DISPLAY_URL, OBJECT_SENSOR_NAME, PHOTO_URL, READING_SENSOR_NAME, SENSOR_NAME } from './env';
+import {
+  CAMERA_URL,
+  COUNTER_BOX,
+  COUNTER_SENSOR_NAME,
+  COUNTER_URL,
+  DISPLAY_URL,
+  OBJECT_SENSOR_NAME,
+  PHOTO_URL,
+  READING_SENSOR_NAME,
+  SENSOR_NAME,
+} from './env';
 
 setup('seed a trained sensor', async ({ request }) => {
   const created = await request.post('api/v1/sensors', {
@@ -79,4 +89,24 @@ setup('seed a reading sensor', async ({ request }) => {
   await expect
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
     .toBe('12345.6');
+});
+
+setup('seed a mechanical counter sensor', async ({ request }) => {
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: COUNTER_SENSOR_NAME,
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(89939.5), // the last two wheels are half way to the next digit
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', device_class: 'water' },
+      interval_s: 5,
+      debounce: 1,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const sensor = await created.json();
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
+    .toBe('89.939');
 });

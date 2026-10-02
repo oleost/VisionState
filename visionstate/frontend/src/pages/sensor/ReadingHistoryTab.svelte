@@ -1,6 +1,7 @@
 <script lang="ts">
   // Reading sensors: every new value and the rejected readings, with the frame.
   import { api } from '../../lib/api';
+  import { href, paths } from '../../lib/router.svelte';
   import { toastError } from '../../lib/app.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
@@ -28,8 +29,8 @@
 </script>
 
 <p class="small muted">
-  Every new value and the readings that were rejected (at most one every few minutes), kept for the retention period set
-  in the app options. Tap a row to see the frame.
+  Every new value and the readings that were rejected (at most one every few minutes), kept as set under <a href={href(paths.settings())}>Settings → Storage</a>. Tap a
+  row to see the frame.
 </p>
 
 {#if items === null}

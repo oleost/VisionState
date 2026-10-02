@@ -24,7 +24,15 @@ export function fromPoints(points: Pt[]): Roi {
   const ys = points.map((p) => p[1]);
   const x = Math.min(...xs);
   const y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, points };
+  const w = Math.max(...xs) - x;
+  const h = Math.max(...ys) - y;
+  // Four corners that sit on the bounding box are a plain rectangle again (e.g. after removing an
+  // added corner), so it is stored and shown as one.
+  const EPS = 1e-6;
+  const onCorner = (p: Pt) =>
+    (Math.abs(p[0] - x) < EPS || Math.abs(p[0] - x - w) < EPS) && (Math.abs(p[1] - y) < EPS || Math.abs(p[1] - y - h) < EPS);
+  if (points.length === 4 && points.every(onCorner)) return { x, y, w, h };
+  return { x, y, w, h, points };
 }
 
 /** The bounding rectangle of a region, without polygon corners. */

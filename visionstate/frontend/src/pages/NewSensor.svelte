@@ -3,6 +3,7 @@
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
+  import DigitCells from '../lib/components/DigitCells.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ObjectPicker from '../lib/components/ObjectPicker.svelte';
   import ReadingEditor from '../lib/components/ReadingEditor.svelte';
@@ -12,11 +13,11 @@
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
   import { objectCount } from '../lib/objects';
-  import { readingUnit } from '../lib/reading';
+  import { digitsSeen, readingUnit } from '../lib/reading';
   import { pct } from '../lib/format';
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { Detection, ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
+  import type { Detection, ReadPreview, ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
   import { SENSOR_KIND_INFO } from '../lib/ui';
 
   const STEPS = [
@@ -41,7 +42,7 @@
   let detectError = $state('');
   let reading = $state<ReadingSettings>({ ...app.config!.reading_defaults });
   // Reading preview: the frame, what the reader saw, and what it read.
-  let readResult = $state<{ image: string; read_image: string; text: string; score: number; value: string | null } | null>(null);
+  let readResult = $state<ReadPreview | null>(null);
   let readError = $state('');
   let readingBusy = $state(false);
   let previewUrl = $state<string | null>(null);
@@ -54,7 +55,7 @@
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
   const slug = $derived(slugify(name, 'sensor'));
-  const stateKeys = $derived(states.map((s) => slugify(s.name, 'state')));
+  const stateKeys = $derived(states.filter((s) => s.name.trim()).map((s) => slugify(s.name, 'state')));
 
   const statesValid = $derived(
     states.length >= 2 && states.every((s) => s.name.trim()) && new Set(stateKeys).size === stateKeys.length,
@@ -213,7 +214,7 @@
         <div class="row wrap">
           <div class="col" style="gap:6px">
             <h2>Draw the region to watch</h2>
-            <p class="muted">Drag a box around the object, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
+            <p class="muted">Drag a box around what to watch, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
           </div>
           <span class="spacer"></span>
           <button class="btn sm" onclick={loadPreview}><Icon name="refresh" size={14} /> New frame</button>
@@ -228,7 +229,8 @@
           <div class="frame">
             <RoiEditor src={previewUrl} bind:roi editable />
           </div>
-          <p class="small muted">Tip: leave a small margin around the object and include the parts that change between states.</p>
+          <p class="small muted">Tip: for a door or gate, leave a small margin and include the parts that change; for objects, cover the area where they
+            appear; for a number, draw tightly around the digits (objects and numbers can be fine-tuned in the next step).</p>
         {/if}
       {:else if step === 2}
         <div class="col" style="gap:6px">
@@ -256,8 +258,8 @@
 
         {#if kind === 'reading'}
           <div class="col" style="gap:var(--space-3)">
-            <h3>What is the number?</h3>
-            <ReadingEditor bind:value={reading} />
+            <h3>What are you reading?</h3>
+            <ReadingEditor bind:value={reading} seen={readResult?.text} />
           </div>
           <div class="card col test">
             <div class="row wrap bar">
@@ -267,6 +269,11 @@
                   <span class="muted">Reading… the first time loads the reader, which takes a moment.</span>
                 {:else if readError}
                   <span class="danger-text">{readError}</span>
+                {:else if readResult?.wrong_digit_count}
+                  <span class="danger-text">
+                    Read <span class="mono">“{readResult.text || '—'}”</span> — {digitsSeen(readResult.text)} digits, not {reading.digits}.
+                  </span>
+                  <span class="muted">Make the box cover exactly the {reading.digits} wheels, or change the number of digits.</span>
                 {:else if readResult?.value}
                   Read <span class="mono">“{readResult.text}”</span> →
                   <strong class="mono">{readResult.value} {readingUnit(reading)}</strong> · {pct(readResult.score)} sure
@@ -281,11 +288,20 @@
             {#if readResult}
               <div class="read-images">
                 <div class="col" style="gap:6px">
-                  <RoiEditor src={readResult.image} bind:roi editable />
-                  <span class="xsmall faint">Drag a tight box around the digits only — it is read again right away.</span>
+                  <RoiEditor src={readResult.image} bind:roi editable>
+                    {#if reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
+                  </RoiEditor>
+                  <span class="xsmall faint">
+                    {#if reading.display === 'counter'}
+                      Drag a box from the first wheel to the last, so each field holds one wheel. A little room above and
+                      below is fine — it is read again right away.
+                    {:else}
+                      Drag a tight box around the digits only — it is read again right away.
+                    {/if}
+                  </span>
                 </div>
                 <div class="col" style="gap:6px">
-                  <span class="xsmall faint">What the reader sees</span>
+                  <span class="xsmall faint">What the reader sees{reading.display === 'counter' ? ' — the wheels without their dividers' : ''}</span>
                   <img class="seen" src={readResult.read_image} alt="The region as the number reader saw it" />
                 </div>
               </div>
@@ -340,7 +356,7 @@
         {:else}
           <div class="col" style="gap:var(--space-3)">
             <h3>Which states can it be in?</h3>
-            <p class="small muted">Each state becomes an option on the Home Assistant sensor. Keys 1–9 label them later.</p>
+            <p class="small muted">Each state becomes an option on the Home Assistant sensor. <span class="kbd-only">Keys 1–9 label them later.</span></p>
           </div>
           <div style="max-width:520px"><StatesEditor bind:states /></div>
           <div class="card pad col preview">
@@ -373,7 +389,7 @@
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
           <button class="btn primary" disabled={!detectValid || saving} onclick={create}>
-            {saving ? 'Creating…' : kind === 'objects' ? 'Create sensor' : 'Create sensor and start labelling'}
+            {saving ? 'Creating…' : kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
           </button>
         {/if}
       </footer>

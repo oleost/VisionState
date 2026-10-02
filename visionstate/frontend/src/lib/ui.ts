@@ -1,5 +1,5 @@
 // UI constants: polling intervals, labels and tones. Change behaviour of the UI here.
-import type { ReadingDisplay, ReadingMode, SensorKind, SensorStatus } from './types';
+import type { ReadingDisplay, ReadingMode, ReadingType, SensorKind, SensorStatus } from './types';
 
 /** Refresh intervals in milliseconds. */
 export const POLL = {
@@ -11,6 +11,8 @@ export const POLL = {
 };
 
 export const TOAST_MS = 5_000;
+/** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */
+export const TOAST_MAX = 2;
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'muted' | 'info';
 
@@ -108,6 +110,26 @@ export const READING_DISPLAY_INFO: Record<ReadingDisplay, string> = {
   auto: 'Auto (recommended)',
   led: 'Light digits on dark (LED)',
   lcd: 'Dark digits on light (LCD)',
+  counter: 'Mechanical counter',
+};
+
+/** What is being read, as offered first in the reading editor. */
+export const READING_TYPE_INFO: Record<ReadingType, { title: string; text: string; example: string }> = {
+  display: {
+    title: 'Digital display',
+    text: 'LCD or LED digits, or a printed number.',
+    example: 'e.g. a power meter display, a washer, a price sign',
+  },
+  counter: {
+    title: 'Mechanical counter',
+    text: 'Digit wheels that roll behind a window.',
+    example: 'e.g. a water or gas meter',
+  },
+};
+/** Modes that make sense per type (a mechanical counter shows no countdown). */
+export const READING_TYPE_MODES: Record<ReadingType, ReadingMode[]> = {
+  display: ['counter', 'value', 'time_left'],
+  counter: ['counter', 'value'],
 };
 
 /** Default Home Assistant device class for a unit (the user can change it). */

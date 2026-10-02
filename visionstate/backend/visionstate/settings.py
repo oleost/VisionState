@@ -69,8 +69,10 @@ READING_SENSOR_DEFAULTS = {
 READING_MODES = ("counter", "value", "time_left")
 # How the reader treats the region: "auto" reads it as it is and falls back to removing faint
 # unlit segments when unsure; "led" (light digits on dark) and "lcd" (dark digits on light)
-# always remove unlit segments, for displays where they show clearly.
-READING_DISPLAYS = ("auto", "led", "lcd")
+# always remove unlit segments, for displays where they show clearly; "counter" is a mechanical
+# counter with rolling digit wheels: the region is split into ``digits`` equal cells and only the
+# middle of each cell is read, so the dividers between the wheels are never read as digits.
+READING_DISPLAYS = ("auto", "led", "lcd", "counter")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
 READING_DEFAULTS = {
@@ -79,16 +81,26 @@ READING_DEFAULTS = {
     "unit": "",
     "device_class": "",
     "display": "auto",
+    "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
 }
 READING_LIMITS = {
     "decimals": (0, 4),
+    "digits": (1, 12),
     "max_step": (0.0, 1e9),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
     "rejected_cooldown_s": 300,  # at most one rejected reading per sensor is kept in the history per period
     "segments_fallback_below": 0.6,  # "auto" display: below this confidence also try without unlit segments
+    # "counter" display. Share of each cell's width that is read (the rest holds the dividers).
+    "counter_cell_share": 0.7,
+    # Half digits above and below the window read as extra or wrong digits, and wheels do not all
+    # sit at the same height, so several row bands of the region (top, bottom as shares of its
+    # height) are read and the most confident one with the right number of digits is kept.
+    "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
+    "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
+    "counter_band_min_height": 0.5,
 }
 
 DETECTION = {
@@ -202,13 +214,29 @@ QUALITY = {
     "max_suspects": 50,  # most "possibly mislabelled" samples listed on the Quality tab
 }
 
+# --- Storage of history frames -------------------------------------------------------
+#
+# History frames (state changes, flagged frames, object and reading events) are removed when they
+# are older than history_days OR when all history frames together exceed history_max_gb —
+# whichever comes first; the oldest go first, frames still waiting for review last. Training
+# images are never removed automatically. Both are set in the app (Settings → Storage).
+
+STORAGE_DEFAULTS = {
+    "history_days": 7,
+    "history_max_gb": 2.0,  # 0 = no size limit
+}
+STORAGE_LIMITS = {
+    "history_days": (1, 365),
+    "history_max_gb": (0.0, 1000.0),
+}
+
 # --- Runtime ------------------------------------------------------------------
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
-    "cleanup_interval_s": 3600,
+    "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
@@ -266,7 +294,6 @@ class Settings:
     mqtt_username: str = ""
     mqtt_password: str = ""
     discovery_prefix: str = "homeassistant"
-    history_retention_days: int = 7
     port: int = 8099
     supervisor_token: str = ""
     ha_url: str = ""
@@ -337,7 +364,6 @@ def load_settings() -> Settings:
         mqtt_username=opt("mqtt_username", ""),
         mqtt_password=opt("mqtt_password", ""),
         discovery_prefix=opt("discovery_prefix", "homeassistant"),
-        history_retention_days=opt("history_retention_days", 7),
         port=int(env.get("VISIONSTATE_PORT", 8099)),
         supervisor_token=env.get("SUPERVISOR_TOKEN", ""),
         ha_url=env.get("HA_URL", ""),

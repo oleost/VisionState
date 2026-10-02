@@ -92,7 +92,12 @@ def test_full_flow(settings):
                 )
                 assert resp.status_code == 201
 
-        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok")
+        # "ok" comes with the first trained model; wait for the one trained on all 18 labels.
+        def trained_on_all():
+            view = client.get(f"/api/v1/sensors/{sid}").json()
+            return view["status"] == "ok" and not view["training"] and (view["model"] or {}).get("n_samples") == 18
+
+        assert wait_for(trained_on_all)
         quality = client.get(f"/api/v1/sensors/{sid}/quality").json()
         assert quality["counts"]["labelled"] == 18
         assert quality["accuracy"] is not None and quality["accuracy"] > 0.8
@@ -120,7 +125,7 @@ def test_full_flow(settings):
         imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
         assert imported.status_code == 201, imported.text
         copy = client.get(f"/api/v1/sensors/{imported.json()['id']}").json()
-        assert copy["slug"] == "garage_door_2"
+        assert copy["slug"] == "garage_door_2" and copy["name"] == "Garage door (2)"  # told apart from the original
         assert copy["counts"]["labelled"] == 21
 
         thumb = client.get(f"/api/v1/samples/{up['sample_ids'][0]}/image")

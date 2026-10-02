@@ -58,6 +58,18 @@ class Storage:
             self.history_path(sensor_id, filename).unlink(missing_ok=True)
         self.thumb_path("history", prediction_id).unlink(missing_ok=True)
 
+    @staticmethod
+    def _folder_bytes(folder: Path) -> int:
+        return sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) if folder.exists() else 0
+
+    def history_bytes(self) -> int:
+        """History frames and their thumbnails on disk."""
+        return self._folder_bytes(self.settings.history_dir) + self._folder_bytes(self.settings.thumbs_dir / "history")
+
+    def samples_bytes(self) -> int:
+        """Training images and their thumbnails on disk."""
+        return self._folder_bytes(self.settings.samples_dir) + self._folder_bytes(self.settings.thumbs_dir / "sample")
+
     def delete_sensor(self, sensor_id: int) -> None:
         import shutil
 

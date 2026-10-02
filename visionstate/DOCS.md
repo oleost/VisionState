@@ -88,10 +88,22 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 ## Reading sensors
 
 A reading sensor reads a **number** from a display or counter — the kWh on a power meter, a fuel
-price, the minutes left on a washing machine. Nothing to label: draw the region **tightly around
-the digits** (no labels or units inside it), pick what the number is, and the wizard reads a
-fresh frame right away, showing both the value and the image the reader saw. You can also draw
-or adjust the region right on that test image; it is read again straight away.
+price, the minutes left on a washing machine, the wheels of a water or gas meter. Nothing to
+label: pick what it looks like and what the number is, and the wizard reads a fresh frame right
+away, showing both the value and the image the reader saw. You can also draw or adjust the
+region right on that test image; it is read again straight away.
+
+First choose **what it looks like**:
+
+- **Digital display** — LCD or LED digits, or a printed number. Draw the region **tightly around
+  the digits** (no labels or units inside it).
+- **Mechanical counter** — digit wheels that roll behind a window, as on most water and gas
+  meters. Draw the region from the first wheel to the last and set the **number of digits**
+  (every wheel inside the region, coloured ones too). The region is split into that many equal
+  fields, shown on the image: each field should hold one wheel. A little room above and below
+  is fine; a region that cuts the digits is not. Only the middle of each field is read, so the
+  dividers between the wheels are never mistaken for digits, and a reading with another number
+  of digits than the counter has is rejected.
 
 | Mode | For | In Home Assistant |
 |---|---|---|
@@ -100,20 +112,31 @@ or adjust the region right on that test image; it is read again straight away.
 | **Time left** | Countdowns like `1:25` on appliances | minutes (`1:25` = 85 min), device class *duration* |
 
 - **Digits after the decimal point** decide where the decimal point is. Dots and commas on the
-  display are ignored, because a stray dot is the most common misread.
-- **Display**: *Auto* works for most displays. Choose *LED* (light digits on dark) or *LCD*
-  (dark digits on light) if faint, unlit segments are read as digits — a 3 read as 8.
+  display are ignored, because a stray dot is the most common misread. When the test read shows
+  a decimal point (for example `1234.5`), VisionState offers to set the matching number.
+- **Display** (digital displays): *Auto* works for most displays. Choose *LED* (light digits on
+  dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
+  as 8.
+- **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
+  five black and three red wheels has 8 digits and 3 digits after the decimal point. While a
+  wheel is turning its digit can be misread; a counter that reads lower than before is
+  rejected, and a limit on how much the value may change (Settings → Sensor output) catches a
+  misread that is too high. If the last wheel never stands still, leave it out of the region
+  and count one digit and one decimal less.
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
-  than the minimum (default 70 %), finds no number, a counter reads lower than before, or the value
-  changes more than the limit you set. Rejected readings are listed in the **History** tab with
+  than the minimum (default 70 %), finds no number, a counter reads lower than before, a
+  mechanical counter is read with the wrong number of digits, or the value changes more than the
+  limit you set. Rejected readings are listed in the **History** tab with
   the reason. A new value is published after 2 equal readings in a row (adjustable).
 - The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
   `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- Works best on LCD and LED displays and printed signs. **Mechanical counters with rolling digits**
-  (most water meters) are not read reliably yet.
+- Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
+  have so far only been tried on one type of water meter: they read well while the wheels stand
+  still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
+  some water meters) are not read.
 - Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
-  lot: what the display is, whether it read correctly, and a screenshot of *What the reader
+  lot: what the display or meter is, whether it read correctly, and a screenshot of *What the reader
   sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
   issue.
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change
@@ -130,8 +153,8 @@ or adjust the region right on that test image; it is read again straight away.
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value.
-- **History tab**: every state change with its frame. If one was wrong, add it to the dataset
-  with the correct state.
+- **History tab**: every state change with its frame (tap it to see the whole frame). If one
+  was wrong, add it to the dataset with the correct state.
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image
   against a model trained on the *other* images. Images it strongly disagrees with are listed —
   usually a wrong click. Keep the label, change it or delete the image.
@@ -165,10 +188,17 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 
 - Settings, the database and trained models live in the app's data folder and are part of
   Home Assistant backups.
-- Training images are stored in `/media/visionstate` (the beta app uses `/media/visionstate_beta`).
+- Training images and history frames are stored in `/media/visionstate` (the beta app uses
+  `/media/visionstate_beta`).
+- **Settings → Storage** shows how much space history frames and training images use and how
+  much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
+  reached first; the oldest frames are removed first, frames waiting for review last (they are
+  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images are
+  never removed automatically.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
   reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
-- **Import** (dashboard or Settings) adds it as a new sensor — also on another installation — and
+- **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
+  taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
   Settings tab.
 
@@ -200,7 +230,6 @@ A choice you made stays when a later version recommends another model.
 | Option | Description |
 |---|---|
 | `log_level` | Amount of logging. |
-| `history_retention_days` | How long history frames are kept. |
 | `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
 

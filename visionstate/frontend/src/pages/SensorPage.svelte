@@ -85,11 +85,13 @@
           </div>
         </div>
         <span class="spacer"></span>
-        <a class="btn sm" href={api.exportUrl(sensor.id)} download><Icon name="download" size={14} /> Export</a>
-        <button class="btn sm" onclick={togglePause}>
-          <Icon name={sensor.enabled ? 'pause' : 'play'} size={14} />
-          {sensor.enabled ? 'Pause' : 'Resume'}
-        </button>
+        <div class="row actions">
+          <a class="btn sm" href={api.exportUrl(sensor.id)} download><Icon name="download" size={14} /> Export</a>
+          <button class="btn sm" onclick={togglePause}>
+            <Icon name={sensor.enabled ? 'pause' : 'play'} size={14} />
+            {sensor.enabled ? 'Pause' : 'Resume'}
+          </button>
+        </div>
       </div>
       <nav aria-label="Sensor sections">
         {#each tabs as t (t.id)}
@@ -146,6 +148,18 @@
   }
   h1 {
     font-size: 28px;
+  }
+  .actions {
+    gap: var(--space-2);
+  }
+  @media (max-width: 600px) {
+    /* Own row on phones, so the buttons stay put when a status chip (Paused, Training…) appears. */
+    .actions {
+      flex-basis: 100%;
+    }
+    .top .spacer {
+      display: none;
+    }
   }
   nav {
     display: flex;

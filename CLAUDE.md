@@ -43,14 +43,22 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   on phones/tablets:
   - Automated: `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
     (Playwright, `e2e/`; also runs in CI). It starts the backend + `scripts/fake_camera.py`,
-    seeds one sensor of each kind (a trained state sensor, an object sensor on a real photo and a
-    reading sensor on a drawn display), and runs every page on **desktop** (1440×900, mouse) and
+    seeds one sensor of each kind (a trained state sensor, an object sensor on a real photo and
+    reading sensors on a drawn display and a drawn mechanical counter), and runs every page on **desktop** (1440×900, mouse) and
     **mobile** (Pixel 7, real touch via CDP): no console errors, no sideways scrolling, no text
     running out of buttons or cards, plus the wizard (all three kinds), region editor gestures,
     labelling, review, boxes and readings. Add a test
     for every new page or gesture.
   - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes,
     for every page at both sizes.
+  - Then try the change by hand in a real browser (Claude: the Chrome tools) — passing tests are not
+    enough: start `scripts/fake_camera.py 8198` and the backend (`VISIONSTATE_PORT`, `_DATA`, `_MEDIA`,
+    `_FRONTEND=frontend/dist`, `_BUNDLED_MODELS` as in `playwright.config.ts`; a copy of the last e2e
+    run's `data` and `media` folders gives seeded sensors), use the changed screens at desktop width
+    and at ~390 px, and check the console. Reload after a rebuild (a hash-only navigation keeps the old page).
+    A Chrome window does not get narrower than 500 px (and a maximised one not at all): for a real
+    phone width, open any same-origin URL (e.g. `/api/v1/status`) and replace the page with
+    `<iframe src="/#/…" style="width:390px;height:844px">` — media queries then see 390 px.
   - Handy while working (add `VS_PYTHON=…` as above): only the phone `npx playwright test
     --project=mobile`; one test `npx playwright test -g "reading sensor"`; watch it in a browser
     `--headed` or step through it with `--ui`; after a failure `npx playwright show-trace
@@ -64,7 +72,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   use `http://127.0.0.1:8765/…` as an *HTTP snapshot URL*. The camera serves `/snapshot.jpg`
   (synthetic garage door; `/set?state=open|closed|partial`, `/set?night=1`), `/photo/<name>.jpg`
   (real CC0 photos from `backend/tests/assets`, for object sensors) and
-  `/display.jpg?text=12:05&style=lcd|led` (a drawn seven-segment display, for reading sensors).
+  `/display.jpg?text=12:05&style=lcd|led` (a drawn seven-segment display, for reading sensors)
+  and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical counter with rolling
+  digit wheels; `.5` = the last wheel half way to the next digit).
 - **Check the Home Assistant side** with any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: the discovery configs appear under `homeassistant/…` and
   values under `visionstate/<slug>/…`. The CI smoke test does the same against the built image.
@@ -84,6 +94,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   turned out to be broken and only a test with real photos showed it. Test images must be CC0 /
   public domain (list sources in `tests/assets/README.md`) or drawn by our own code
   (`tests/displays.py`).
+- **Local experiment data** lives in `/VisionStateLocal/` (ignored by git, outside the Docker build
+  context): images with other licences may be used there for trying things out, never in the
+  repository, the tests or a shipped model. Its `README.md` lists each source and licence.
 - **Windows development:** create the venv inside the project (`visionstate/backend/.venv`; long
   paths break pip elsewhere), and set `PYTHONUTF8=1` for scripts that read or write source files.
   The app itself handles the Windows event loop (`__main__.py`).
@@ -103,18 +116,25 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   - Home Assistant pulls prebuilt images (`image:` in config.yaml), so a version must never reach a
     branch before its images exist. CI refuses tags that do not match config.yaml and branches that
     carry the wrong channel.
-- **Run CI before tagging.** A tag whose CI fails has no images and its version number is lost
-  (the next try needs a new one). Push the commit to a temporary branch and open a draft PR
-  against `beta`; tag only when it is green, then close the PR and delete the branch. Tags that
-  never got images or a release can be deleted.
+- **A beta tag is the CI run.** Run the local checks first (backend, frontend, e2e, hands-on in
+  a browser), then push the tag: its CI tests, builds both images on native runners, and — for
+  beta tags — creates the pre-release and fast-forwards `beta`. If it fails, nothing was
+  published: delete the tag (`git push origin :refs/tags/vX.Y.ZbN`, `git tag -d …`), fix, and tag
+  the same version again. For a stable release, or when unsure, run CI first on a temporary
+  branch with a draft PR against `beta` and close it afterwards.
 - Documentation-only changes (README, DOCS.md, CLAUDE.md, images) may go to `main` through a PR
   without a beta; merge `main` back into `beta` afterwards.
-- **Beta release** (on `beta`):
-  1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`, commit.
-  2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**); wait until CI (tests + smoke test)
-     published `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.ZbN` (the registry answers 200 for
+- **Beta release** (on `beta`, about 10 minutes, unattended after the tag):
+  1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`
+     (it becomes the release notes), commit. Do **not** push `beta`.
+  2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**). CI then publishes
+     `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.ZbN`, creates the GitHub pre-release and moves
+     `beta` to the tagged commit; `gh run watch` follows it.
+  3. `git fetch origin && git status` — local `beta` should equal `origin/beta`. If the release
+     changed a file under `.github/workflows/`, CI may not push the branch: run `git push origin beta`
+     yourself once the images exist (the registry answers 200 for
      `https://ghcr.io/v2/oleost/visionstate-<arch>/manifests/X.Y.ZbN` with an anonymous pull token).
-  3. `git push origin beta`; `gh release create vX.Y.ZbN --prerelease`.
+     A tagline for the release title is optional: `gh release edit vX.Y.ZbN --title "X.Y.ZbN — …"`.
 - **Promote to stable** (only when the user says the beta is tested):
   1. `git switch -c promote/X.Y.Z beta`; `python scripts/channel.py stable X.Y.Z`; in the changelog,
      merge the `X.Y.ZbN` entries into one `## X.Y.Z` entry; commit.

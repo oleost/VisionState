@@ -27,6 +27,7 @@ from .settings import (
     KIND_STATES,
     READING,
     RUNTIME,
+    STORAGE_DEFAULTS,
     UNKNOWN_STATE,
     Settings,
     merge_objects,
@@ -79,7 +80,11 @@ class SensorConfig:
     @property
     def descriptor(self) -> SensorDescriptor:
         names = detectors.LABELS.by_key
-        objects = [(k, names[k].name) for k in self.objects["classes"] if k in names] if self.is_objects else []
+        objects = (
+            [(k, names[k].name, names[k].icon) for k in self.objects["classes"] if k in names]
+            if self.is_objects
+            else []
+        )
         reading = self.reading if self.is_reading else None
         return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading)
 
@@ -287,6 +292,8 @@ class Runtime:
         self.ha_events = HaEventListener(settings, self._on_ha_state)
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         self.global_review: dict = {}  # global review rules (DB setting "review")
+        self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
+        self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
@@ -311,14 +318,14 @@ class Runtime:
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
+        self.storage_rules = await asyncio.to_thread(self.db.get_setting, "storage", {}) or {}
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
         await asyncio.to_thread(self._pin_setting, "reader", readers.DEFAULT_READER)
         backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
-        provider = self.db.get_setting("execution_provider", "CPUExecutionProvider")
         try:
-            await self.load_embedder(backbone_id, provider)
+            await self.load_embedder(backbone_id)
         except Exception as err:  # noqa: BLE001
             log.exception("Could not load backbone %s", backbone_id)
             self.embedder_error = str(err)
@@ -352,27 +359,20 @@ class Runtime:
     def model_path(self, spec: backbones.BackboneSpec) -> Path | None:
         return backbones.locate(spec, [self.settings.bundled_models_dir, self.settings.models_dir])
 
-    async def load_embedder(self, backbone_id: str, provider: str) -> None:
+    async def load_embedder(self, backbone_id: str) -> None:
         spec = backbones.BACKBONES.get(backbone_id) or backbones.BACKBONES[backbones.DEFAULT_BACKBONE]
         path = self.model_path(spec)
         if path is None:
             path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-        self.embedder = await asyncio.to_thread(backbones.Embedder, spec, path, provider)
+        self.embedder = await asyncio.to_thread(backbones.Embedder, spec, path)
         self.embedder_error = ""
-        log.info("Backbone %s loaded (%s)", spec.id, self.embedder.provider)
+        log.info("Backbone %s loaded", spec.id)
 
-    async def set_backbone(self, backbone_id: str, provider: str) -> None:
-        await self.load_embedder(backbone_id, provider)
+    async def set_backbone(self, backbone_id: str) -> None:
+        await self.load_embedder(backbone_id)
         self.db.set_setting("backbone", backbone_id)
-        self.db.set_setting("execution_provider", provider)
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             self.schedule_retrain(sensor_id, delay=0)
-        if self.detector is not None and self.detector.provider != provider:
-            async with self._detector_lock:
-                await self.load_detector(self.detector.spec.id, provider)
-        if self.reader is not None and self.reader.provider != provider:
-            async with self._reader_lock:
-                await self.load_reader(self.reader.spec.id, provider)
 
     def _pin_setting(self, key: str, default: str) -> None:
         if self.db.get_setting(key) is None:
@@ -380,23 +380,22 @@ class Runtime:
 
     # --- detector (object sensors) --------------------------------------------------
 
-    async def load_detector(self, detector_id: str, provider: str) -> None:
+    async def load_detector(self, detector_id: str) -> None:
         spec = detectors.DETECTORS.get(detector_id) or detectors.DETECTORS[detectors.DEFAULT_DETECTOR]
         path = self.model_path(spec)
         if path is None:
             path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-        self.detector = await asyncio.to_thread(detectors.Detector, spec, path, provider)
+        self.detector = await asyncio.to_thread(detectors.Detector, spec, path)
         self.detector_error = ""
-        log.info("Detector %s loaded (%s)", spec.id, self.detector.provider)
+        log.info("Detector %s loaded", spec.id)
 
     async def ensure_detector(self) -> detectors.Detector:
         """The detector, loaded on first use so installations without object sensors never pay for it."""
         async with self._detector_lock:
             if self.detector is None:
                 detector_id = await asyncio.to_thread(self.db.get_setting, "detector", detectors.DEFAULT_DETECTOR)
-                provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
                 try:
-                    await self.load_detector(detector_id, provider)
+                    await self.load_detector(detector_id)
                 except Exception as err:
                     self.detector_error = redact(str(err))
                     log.exception("Could not load detector %s", detector_id)
@@ -404,34 +403,32 @@ class Runtime:
             return self.detector
 
     async def set_detector(self, detector_id: str) -> None:
-        provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
         object_sensors = await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS)
         if self.detector is not None or object_sensors:
             async with self._detector_lock:
-                await self.load_detector(detector_id, provider)
+                await self.load_detector(detector_id)
         await asyncio.to_thread(self.db.set_setting, "detector", detector_id)
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
 
     # --- reader (reading sensors) --------------------------------------------------------
 
-    async def load_reader(self, reader_id: str, provider: str) -> None:
+    async def load_reader(self, reader_id: str) -> None:
         spec = readers.READERS.get(reader_id) or readers.READERS[readers.DEFAULT_READER]
         path = self.model_path(spec)
         if path is None:
             path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-        self.reader = await asyncio.to_thread(readers.Reader, spec, path, provider)
+        self.reader = await asyncio.to_thread(readers.Reader, spec, path)
         self.reader_error = ""
-        log.info("Reader %s loaded (%s)", spec.id, self.reader.provider)
+        log.info("Reader %s loaded", spec.id)
 
     async def ensure_reader(self) -> readers.Reader:
         """The number reader, loaded on first use so installations without reading sensors never pay for it."""
         async with self._reader_lock:
             if self.reader is None:
                 reader_id = await asyncio.to_thread(self.db.get_setting, "reader", readers.DEFAULT_READER)
-                provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
                 try:
-                    await self.load_reader(reader_id, provider)
+                    await self.load_reader(reader_id)
                 except Exception as err:
                     self.reader_error = redact(str(err))
                     log.exception("Could not load reader %s", reader_id)
@@ -439,11 +436,10 @@ class Runtime:
             return self.reader
 
     async def set_reader(self, reader_id: str) -> None:
-        provider = await asyncio.to_thread(self.db.get_setting, "execution_provider", "CPUExecutionProvider")
         reading_sensors = await asyncio.to_thread(self._sensor_ids, KIND_READING)
         if self.reader is not None or reading_sensors:
             async with self._reader_lock:
-                await self.load_reader(reader_id, provider)
+                await self.load_reader(reader_id)
         await asyncio.to_thread(self.db.set_setting, "reader", reader_id)
         for sensor_id in reading_sensors:
             self.wake(sensor_id, force=True)
@@ -455,7 +451,7 @@ class Runtime:
         reader = await self.ensure_reader()
         region = imaging.crop_box(image, imaging.region_box(roi))
         async with self._sem:
-            return await asyncio.to_thread(reader.read_display, region, reading["display"])
+            return await asyncio.to_thread(reader.read_display, region, reading["display"], int(reading["digits"]))
 
     async def detect_objects(
         self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False
@@ -796,7 +792,8 @@ class Runtime:
         """One check of a reading sensor: read the number, check it and publish it.
 
         A value is published after ``debounce`` equal readings in a row. Unsure, empty and
-        implausible readings (a counter going down, a jump above ``max_step``) are rejected:
+        implausible readings (a counter going down, a jump above ``max_step``, a mechanical
+        counter read with another number of digits than it has wheels) are rejected:
         the last value stays and the rejected reading is kept in the history (rate limited).
         """
         live = self.live_state(cfg.id)
@@ -815,6 +812,8 @@ class Runtime:
         last = float(live.debouncer.published) if live.debouncer.published is not None else None
         if value is None:
             reason = "nothing read"
+        elif readers.wrong_digit_count(text.text, settings):
+            reason = "wrong digit count"
         elif text.score < cfg.threshold:
             reason = "unsure"
         else:
@@ -1132,14 +1131,39 @@ class Runtime:
     async def _cleanup_loop(self) -> None:
         while True:
             try:
-                await asyncio.to_thread(self._cleanup)
+                await asyncio.to_thread(self.cleanup_history)
                 await self.publish_review_count()
             except Exception:  # noqa: BLE001
                 log.exception("Cleanup failed")
             await asyncio.sleep(RUNTIME["cleanup_interval_s"])
 
-    def _cleanup(self) -> None:
-        days = self.settings.history_retention_days
+    # --- history limits --------------------------------------------------------------
+
+    def storage_limits(self) -> dict:
+        """Effective history limits (Settings → Storage), with the defaults for what is not set."""
+        return {
+            "history_days": int(self.storage_rules.get("history_days") or STORAGE_DEFAULTS["history_days"]),
+            "history_max_gb": float(self.storage_rules.get("history_max_gb", STORAGE_DEFAULTS["history_max_gb"])),
+        }
+
+    def set_storage_limits(self, rules: dict) -> None:
+        self.storage_rules = dict(rules)
+        self.history_trimmed = False  # the next clean-up tells whether the new size limit still bites
+        self.db.set_setting("storage", self.storage_rules)
+
+    def _history_file_size(self, row: Prediction) -> int:
+        size = 0
+        for path in (
+            self.storage.history_path(row.sensor_id, row.frame) if row.frame else None,
+            self.storage.thumb_path("history", row.id),
+        ):
+            if path is not None and path.exists():
+                size += path.stat().st_size
+        return size
+
+    def cleanup_history(self) -> None:
+        limits = self.storage_limits()
+        days = limits["history_days"]
         cutoff = utcnow() - timedelta(days=days)
         review_cutoff = utcnow() - timedelta(days=days * 2)
         with self.db.session() as s:
@@ -1154,3 +1178,56 @@ class Runtime:
                 s.delete(row)
         if old:
             log.info("Removed %d old history frames", len(old))
+        trimmed = self._trim_history(limits["history_max_gb"])
+        if trimmed:
+            self.history_trimmed = True
+            log.info("Removed %d history frames to stay under %.1f GB", trimmed, limits["history_max_gb"])
+
+    def _trim_history(self, max_gb: float) -> int:
+        """Remove the oldest history frames until all of them fit in ``max_gb`` (0 = no limit).
+
+        Reviewed frames go first, frames still waiting for review only when that is not enough.
+        Returns how many rows were removed.
+        """
+        if max_gb <= 0:
+            return 0
+        budget = int(max_gb * 1024**3)
+        used = self.storage.history_bytes()
+        if used <= budget:
+            return 0
+        removed = 0
+        with self.db.session() as s:
+            for waiting in (False, True):
+                rows = s.scalars(
+                    select(Prediction).where(Prediction.reviewed.is_(not waiting)).order_by(Prediction.created_at)
+                ).all()
+                for row in rows:
+                    if used <= budget:
+                        return removed
+                    used -= self._history_file_size(row)
+                    self.storage.delete_history(row.sensor_id, row.id, row.frame)
+                    s.delete(row)
+                    removed += 1
+                s.flush()
+        return removed
+
+    def storage_usage(self) -> dict:
+        """Disk use for the Settings page: history, training images and free space."""
+        import shutil
+
+        with self.db.session() as s:
+            frames = s.scalar(select(func.count()).select_from(Prediction).where(Prediction.frame.is_not(None))) or 0
+            oldest = s.scalar(select(func.min(Prediction.created_at)).where(Prediction.frame.is_not(None)))
+            images = s.scalar(select(func.count()).select_from(Sample)) or 0
+        media = self.settings.media_dir
+        media.mkdir(parents=True, exist_ok=True)
+        return {
+            "history_bytes": self.storage.history_bytes(),
+            "history_frames": frames,
+            "oldest_history": oldest,
+            "training_bytes": self.storage.samples_bytes(),
+            "training_images": images,
+            "free_bytes": shutil.disk_usage(media).free,
+            "limited_by_size": self.history_trimmed,
+            **self.storage_limits(),
+        }

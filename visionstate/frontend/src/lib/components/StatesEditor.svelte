@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { app } from '../app.svelte';
   import Icon from './Icon.svelte';
 
@@ -13,8 +14,13 @@
     return s.color ?? palette[index % Math.max(palette.length, 1)] ?? 'var(--c-unknown)';
   }
 
-  function add() {
-    if (states.length < max) states = [...states, { name: '' }];
+  let inputs: HTMLInputElement[] = $state([]);
+
+  async function add() {
+    if (states.length >= max) return;
+    states = [...states, { name: '' }];
+    await tick();
+    inputs[states.length - 1]?.focus(); // type the new name right away (also opens the phone keyboard)
   }
 
   function remove(index: number) {
@@ -29,7 +35,7 @@
       <label class="swatch" style:background={colorFor(i, s)} title="State colour">
         <input type="color" value={colorFor(i, s)} oninput={(e) => (s.color = e.currentTarget.value)} aria-label="Colour of state {i + 1}" />
       </label>
-      <input class="input" bind:value={s.name} placeholder="State name, e.g. Open" aria-label="Name of state {i + 1}" />
+      <input class="input" bind:this={inputs[i]} bind:value={s.name} placeholder="State name, e.g. Open" aria-label="Name of state {i + 1}" />
       <button type="button" class="btn icon" aria-label="Remove state" disabled={states.length <= 2} onclick={() => remove(i)}>
         <Icon name="x" size={14} />
       </button>

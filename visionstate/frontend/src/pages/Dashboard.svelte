@@ -46,13 +46,13 @@
     }
   }
 
-  const labelled = $derived(sensors?.reduce((n, s) => n + s.counts.labelled, 0) ?? 0);
 
   function meta(s: Sensor) {
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
     if (isReadingSensor(s) && s.reading) {
       const unit = readingUnit(s.reading);
-      return `Reads a ${READING_MODE_INFO[s.reading.mode].title.toLowerCase()}${unit ? ` in ${unit}` : ''}`;
+      const what = s.reading.display === 'counter' ? 'mechanical counter' : READING_MODE_INFO[s.reading.mode].title.toLowerCase();
+      return `Reads a ${what}${unit ? ` in ${unit}` : ''}`;
     }
     const n = s.counts.labelled;
     if (s.model?.accuracy != null) return `${n} samples · ${pct(s.model.accuracy)} accuracy`;
@@ -66,14 +66,15 @@
     <div class="col" style="gap:6px">
       <h1>Sensors</h1>
       <p class="muted">
-        {plural(sensors?.length ?? 0, "sensor")} · {plural(labelled, "labelled image")}
-        {#if app.status?.backbone_name}· {app.status.backbone_name}{/if}
+        {plural(sensors?.length ?? 0, "sensor")}
       </p>
     </div>
     <span class="spacer"></span>
-    <input bind:this={importInput} type="file" accept=".zip" class="sr-only" onchange={importFile} id="import-file" />
-    <label class="btn" for="import-file"><Icon name="upload" /> Import</label>
-    <a class="btn primary" href={href(paths.newSensor())}><Icon name="plus" /> New sensor</a>
+    <div class="row head-actions">
+      <input bind:this={importInput} type="file" accept=".zip" class="sr-only" onchange={importFile} id="import-file" />
+      <label class="btn" for="import-file"><Icon name="upload" /> Import</label>
+      <a class="btn primary" href={href(paths.newSensor())}><Icon name="plus" /> New sensor</a>
+    </div>
   </header>
 
   {#if app.status?.backbone_error}
@@ -153,6 +154,15 @@
   header {
     align-items: flex-end;
   }
+  .head-actions {
+    gap: var(--space-2);
+  }
+  @media (max-width: 600px) {
+    /* Both buttons together on their own row under the title on phones. */
+    .head-actions {
+      flex-basis: 100%;
+    }
+  }
   .sensor {
     overflow: hidden;
     display: flex;
@@ -160,7 +170,9 @@
   }
   .thumb {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* a wide frame (a display) sits in the middle, not on top of an empty band */
     aspect-ratio: 16 / 9;
     overflow: hidden;
     background: var(--c-sunken);

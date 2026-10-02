@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
+from .backbones import cpu_session
 from .settings import READING
 
 REGISTRY_FILE = Path(__file__).with_name("readers.json")
@@ -123,6 +124,22 @@ def plain(image: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(image.convert("L"), cutoff=1).convert("RGB")
 
 
+def counter_line(image: Image.Image, digits: int) -> Image.Image:
+    """The wheels of a mechanical counter side by side, without the dividers between them.
+
+    The region is split into ``digits`` equal cells and the middle of each cell is kept: a divider
+    (often with a dot or a gear showing) otherwise reads as a "1".
+    """
+    digits = max(1, digits)
+    cell = image.width / digits
+    keep = max(1, round(cell * READING["counter_cell_share"]))
+    line = Image.new("RGB", (keep * digits, image.height))
+    for i in range(digits):
+        left = round(cell * i + (cell - keep) / 2)
+        line.paste(image.crop((left, 0, left + keep, image.height)), (i * keep, 0))
+    return line
+
+
 # --- reading ------------------------------------------------------------------------------------
 
 
@@ -135,17 +152,9 @@ class Text:
 class Reader:
     """Reads a line of digits with one ONNX text recognition model."""
 
-    def __init__(self, spec: ReaderSpec, model_path: Path, provider: str = "CPUExecutionProvider"):
-        import onnxruntime as ort
-
+    def __init__(self, spec: ReaderSpec, model_path: Path):
         self.spec = spec
-        providers = [provider] if provider in ort.get_available_providers() else []
-        if "CPUExecutionProvider" not in providers:
-            providers.append("CPUExecutionProvider")
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
-        self.provider = self.session.get_providers()[0]
+        self.session = cpu_session(model_path)
         self.input_name = self.session.get_inputs()[0].name
         allowed = [c for c in READING["chars"] if c in spec.chars]
         self._chars = ["", *allowed]  # index 0 = CTC blank
@@ -165,15 +174,39 @@ class Reader:
             probs = self.session.run(None, {self.input_name: batch})[0][0]  # time steps × classes
         return decode(probs[:, self._classes], self._chars)
 
-    def read_display(self, image: Image.Image, display: str) -> tuple[Text, Image.Image]:
+    def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
+        """Read a mechanical counter with ``digits`` wheels; returns the read and the image used.
+
+        The wheels are pasted into one line without their dividers (``counter_line``). Several row
+        bands are read and the most confident read with ``digits`` digits wins; when none has
+        that many, the read of the whole height is returned so the caller can say what was seen.
+        """
+        line = plain(counter_line(image, digits))
+        best: tuple[Text, Image.Image] | None = None
+        whole: tuple[Text, Image.Image] | None = None
+        for top in READING["counter_band_tops"]:
+            for bottom in READING["counter_band_bottoms"]:
+                if bottom - top < READING["counter_band_min_height"]:
+                    continue
+                band = line.crop((0, round(top * line.height), line.width, max(1, round(bottom * line.height))))
+                text = self.read(band)
+                if whole is None:
+                    whole = (text, band)
+                if digit_count(text.text) == digits and (best is None or text.score > best[0].score):
+                    best = (text, band)
+        return best or whole
+
+    def read_display(self, image: Image.Image, display: str, digits: int = 0) -> tuple[Text, Image.Image]:
         """Read a region for a display type (settings.READING_DISPLAYS); returns the read and the image used.
 
         "auto" reads the image as it is (best for most displays and signs when the region is
         tight) and only when that is unsure also tries the digits' own segments, keeping the
         more confident read: removing faint unlit segments rescues some displays but can drop
         thin digits on others, so it is a fallback. "led" / "lcd" always remove unlit segments
-        (light digits on dark / dark digits on light).
+        (light digits on dark / dark digits on light). "counter" reads ``digits`` rolling wheels.
         """
+        if display == "counter":
+            return self.read_counter(image, digits)
         if display in ("led", "lcd"):
             cleaned = segments(image, light_digits=display == "led")
             return self.read(cleaned), cleaned
@@ -222,6 +255,15 @@ def parse(text: str, settings: dict) -> float | None:
     if not digits:
         return None
     return int(digits) / 10 ** int(settings["decimals"])
+
+
+def digit_count(text: str) -> int:
+    return len(re.sub(r"\D", "", text))
+
+
+def wrong_digit_count(text: str, settings: dict) -> bool:
+    """A mechanical counter always shows all its wheels: any other number of digits is a misread."""
+    return settings["display"] == "counter" and digit_count(text) != int(settings["digits"])
 
 
 def implausible(value: float, last: float | None, settings: dict) -> str | None:
