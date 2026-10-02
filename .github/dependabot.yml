@@ -10,6 +10,11 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    ignore:
+      # NumPy 2.4 and newer need an x86-64-v2 CPU; many virtual machines only offer the older
+      # baseline (issue #29). CI checks every image on such a CPU (scripts/cpu_probe.py).
+      - dependency-name: numpy
+        versions: [">=2.4"]
 
   - package-ecosystem: npm
     directory: /visionstate/frontend

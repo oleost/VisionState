@@ -147,6 +147,10 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 - Python version is **3.14** (Dockerfile image, CI `setup-python`, ruff `target-version`, local
   `.venv` created with `py -3.14`). Upgrade all of them together; Dependabot ignores Python image
   upgrades for that reason.
+- **Old CPUs and virtual machines must keep working** (x86-64-v1, e.g. Proxmox `kvm64`). NumPy is
+  pinned below 2.4 because newer wheels need x86-64-v2 (Dependabot ignores them). CI runs
+  `scripts/cpu_probe.py` in the amd64 image under an emulated `kvm64` CPU; when it fails after a
+  dependency update, that update needs a newer CPU — keep the old version.
 - **Docs checklist** — when behaviour, defaults, versions or the workflow change, update in the same
   change: `visionstate/DOCS.md` (user guide in HA), `README.md` (front page), `docs/SCOPE.md`
   (design as built, roadmap), `visionstate/CHANGELOG.md`, and this file.
