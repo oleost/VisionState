@@ -83,6 +83,20 @@ class HomeAssistant:
             raise SourceError(f"{entity_id}: HTTP {resp.status_code}")
         return resp.content
 
+    async def state(self, entity_id: str) -> str | None:
+        """The current state of an entity, or None when it does not exist."""
+        resp = await self._client.get(f"{self.base}/states/{entity_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json().get("state")
+
+    async def switch(self, entity_id: str, on: bool) -> None:
+        """Turn a light, switch or helper on or off."""
+        service = "turn_on" if on else "turn_off"
+        resp = await self._client.post(f"{self.base}/services/homeassistant/{service}", json={"entity_id": entity_id})
+        resp.raise_for_status()
+
     async def ping(self) -> bool:
         if not self.enabled:
             return False

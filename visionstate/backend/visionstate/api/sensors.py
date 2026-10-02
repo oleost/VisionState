@@ -252,8 +252,11 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
             raise HTTPException(404, "Frame no longer cached")
         headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
         return Response(data, media_type="image/jpeg", headers=headers)
+    shown = rt.frame_for_view(sensor_id)
     if cached and live.frames:
         frame_id, data = live.frames[-1]
+    elif shown is not None:
+        frame_id, data = shown  # a sensor with a light: the frame of its last check, taken with the light on
     else:
         try:
             frame_id, data = await rt.grab(cfg)

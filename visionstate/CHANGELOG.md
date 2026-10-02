@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3b1
+
+All under **Settings → When to check** (and the last step of the new sensor wizard), for every
+kind of sensor:
+
+- The **regular check can be switched off**: the sensor then only checks when triggered, once
+  after start-up, and with its *check now* button in Home Assistant.
+- A trigger entity can be limited to **one state**: *only when it becomes* `on`, `Flow finished` …
+  Other changes of that entity are ignored.
+- **Switch on a light for each check**: pick a light, switch or helper; it is turned on before
+  the frame is taken and off again afterwards — for cameras in dark places such as a meter
+  cabinet. A light that is already on is left alone.
+
 ## 0.6.2
 
 - **Fixed: the app did not start on older CPUs and in virtual machines with a generic CPU

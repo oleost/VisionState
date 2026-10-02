@@ -370,6 +370,56 @@ test('labelling a frame shows a confirmation', async ({ page, request }, info) =
   errors.expectNone();
 });
 
+test('when to check: no regular check, one state of an entity, and a light', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  // Start from the defaults, whatever an earlier (failed) run left behind.
+  const before = (await (await request.get('api/v1/config')).json()).trigger_defaults;
+  expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+  await page.goto(`#/sensors/${id}/settings`);
+  await expect(page.getByText('When to check')).toBeVisible();
+
+  // The regular check can be switched off; its interval then goes away.
+  const regular = page.getByRole('checkbox', { name: 'Regular check' });
+  await expect(regular).toBeChecked();
+  await press(regular, info);
+  await expect(page.getByLabel('Seconds between regular checks')).toHaveCount(0);
+  await expect(page.getByText('Off: only checks when triggered')).toBeVisible();
+
+  // A trigger entity can be limited to one of its states.
+  const add = page.getByLabel('Add trigger entity');
+  await add.fill('sensor.watermeter_status');
+  await add.press('Enter');
+  await page.getByLabel('Only when sensor.watermeter_status becomes').fill('Flow finished');
+
+  // A light: only lights and switches are accepted.
+  const light = page.getByLabel('Light to switch on');
+  await light.fill('camera.meter');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toHaveCount(0);
+  await light.fill('light.meter_flash');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toBeVisible();
+  await expect(page.getByLabel('Light to switch on')).toHaveCount(0); // one light at most
+
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .chip, .card, .chip-entity');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-triggers.png'), fullPage: true });
+
+  const saved = (await (await request.get(`api/v1/sensors/${id}`)).json()).triggers;
+  expect(saved.regular).toBe(false);
+  expect(saved.only_states).toEqual({ 'sensor.watermeter_status': 'Flow finished' });
+  expect(saved.light_entity).toBe('light.meter_flash');
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Regular check' })).not.toBeChecked();
+  await expect(page.getByLabel('Only when sensor.watermeter_status becomes')).toHaveValue('Flow finished');
+  await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible();
+  errors.expectNone();
+  expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+});
+
 test('storage limits can be changed', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');

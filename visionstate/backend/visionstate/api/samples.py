@@ -57,6 +57,10 @@ async def capture(sensor_id: int, body: CaptureIn, request: Request) -> dict:
         state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), body.state_key)
     data = rt.live_state(sensor_id).frame(body.frame_id) if body.frame_id else None
     if data is None:
+        shown = await asyncio.to_thread(rt.frame_for_view, sensor_id)
+        if shown is not None:
+            data = shown[1]
+    if data is None:
         cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
         _, data = await rt.grab(cfg)
     image = await asyncio.to_thread(imaging.decode, data)

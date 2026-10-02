@@ -1,12 +1,27 @@
 <script lang="ts">
-  // Search and pick Home Assistant entities (e.g. motion sensors) as chips.
+  // Search and pick Home Assistant entities (e.g. motion sensors) as chips. With `states`, each
+  // chosen entity gets a field for the one state that should count ("only when it becomes …").
   import { onMount } from 'svelte';
   import { api } from '../api';
   import type { HaEntity } from '../types';
   import { ENTITY_ID_PATTERN, ENTITY_SEARCH_LIMIT, TRIGGER_DOMAINS_FIRST } from '../ui';
   import Icon from './Icon.svelte';
 
-  let { value = $bindable([]), max = 20 }: { value: string[]; max?: number } = $props();
+  let {
+    value = $bindable([]),
+    max = 20,
+    states = $bindable(undefined),
+    domains = undefined,
+    label = 'Add trigger entity',
+    placeholder = 'Search entities, e.g. motion',
+  }: {
+    value: string[];
+    max?: number;
+    states?: Record<string, string>;
+    domains?: string[];
+    label?: string;
+    placeholder?: string;
+  } = $props();
 
   let all = $state<HaEntity[]>([]);
   let error = $state('');
@@ -32,6 +47,7 @@
     const q = query.trim().toLowerCase();
     return all
       .filter((e) => !value.includes(e.entity_id) && e.domain !== 'camera')
+      .filter((e) => !domains || domains.includes(e.domain))
       .filter((e) => !q || e.entity_id.includes(q) || e.name.toLowerCase().includes(q))
       .sort((a, b) => rank(a.domain) - rank(b.domain))
       .slice(0, ENTITY_SEARCH_LIMIT);
@@ -45,6 +61,14 @@
 
   function remove(id: string) {
     value = value.filter((v) => v !== id);
+    if (states && id in states) {
+      const { [id]: _gone, ...rest } = states;
+      states = rest;
+    }
+  }
+
+  function setState(id: string, state: string) {
+    if (states) states = { ...states, [id]: state };
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -52,7 +76,7 @@
       e.preventDefault();
       const typed = query.trim();
       if (matches[0]) add(matches[0].entity_id);
-      else if (ENTITY_ID_PATTERN.test(typed)) add(typed);
+      else if (ENTITY_ID_PATTERN.test(typed) && (!domains || domains.includes(typed.split('.')[0]))) add(typed);
     } else if (e.key === 'Escape') open = false;
   }
 </script>
@@ -62,12 +86,24 @@
     <div class="row wrap chips">
       {#each value as id (id)}
         {@const e = byId.get(id)}
-        <span class="chip-entity">
+        <span class="chip-entity" class:with-state={states !== undefined}>
           <span class="col" style="gap:0">
             <span class="small">{e?.name ?? id}</span>
             <span class="mono xsmall faint">{id}{e ? ` · ${e.state}` : ''}</span>
           </span>
           <button type="button" class="x" aria-label="Remove {id}" onclick={() => remove(id)}><Icon name="x" size={12} /></button>
+          {#if states !== undefined}
+            <label class="only xsmall">
+              <span class="faint">only when it becomes</span>
+              <input
+                class="input sm"
+                value={states[id] ?? ''}
+                oninput={(ev) => setState(id, ev.currentTarget.value)}
+                placeholder="any state"
+                aria-label="Only when {id} becomes"
+              />
+            </label>
+          {/if}
         </span>
       {/each}
     </div>
@@ -77,12 +113,12 @@
     <div class="search">
       <input
         class="input sm"
-        placeholder={error ? 'Type an entity id, e.g. binary_sensor.garage_motion' : 'Search entities, e.g. motion'}
+        placeholder={error ? `Type an entity id, e.g. ${domains?.[0] ?? 'binary_sensor'}.garage` : placeholder}
         bind:value={query}
         onfocus={() => (open = true)}
         onblur={() => setTimeout(() => (open = false), 150)}
         {onkeydown}
-        aria-label="Add trigger entity"
+        aria-label={label}
       />
       {#if open && matches.length}
         <ul class="list" role="listbox">
@@ -116,6 +152,26 @@
     border-radius: var(--radius-md);
     background: var(--c-surface-3);
     border: 1px solid var(--c-border-strong);
+  }
+  /* The state field sits on its own row inside the chip. */
+  .chip-entity.with-state {
+    display: inline-grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    max-width: 100%;
+  }
+  .only {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding-right: 6px;
+  }
+  .only span {
+    white-space: nowrap;
+  }
+  .only .input {
+    min-width: 0;
+    flex: 1 1 110px;
   }
   .x {
     background: none;

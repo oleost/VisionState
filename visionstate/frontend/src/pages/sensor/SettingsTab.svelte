@@ -148,7 +148,7 @@
 
     <section class="card pad col">
       <h3>When to check</h3>
-      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} />
+      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} lightError={sensor.live.light_error} />
     </section>
 
     <section class="card pad col">

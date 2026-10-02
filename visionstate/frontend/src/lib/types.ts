@@ -17,12 +17,19 @@ export interface StateDef {
 }
 
 export interface Triggers {
+  /** The regular interval check; off = only triggers (and once after start-up). */
+  regular: boolean;
   entities: string[];
+  /** entity id → the only new state that triggers; entities not listed trigger on any change. */
+  only_states: Record<string, string>;
   burst_interval_s: number;
   burst_duration_s: number;
   change_detection: boolean;
   change_interval_s: number;
   change_threshold: number;
+  /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
+  light_entity: string;
+  light_delay_s: number;
 }
 
 export interface ReviewRules {
@@ -138,6 +145,8 @@ export interface Live {
   in_burst: boolean;
   change_score: number | null;
   last_trigger: TriggerInfo | null;
+  /** Why the sensor's light could not be switched ('' = fine). */
+  light_error: string;
   /** The frame the last check analysed (GET .../frame?frame_id=), while it is still cached. */
   frame_id: string | null;
 }
@@ -213,7 +222,11 @@ export interface AppConfig {
   video: { frame_interval_s: number; dedupe_distance: number; max_frames: number };
   quality: { min_samples_per_state: number; min_night_samples: number; cv_folds: number };
   trigger_defaults: Triggers;
-  trigger_limits: Record<'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold', [number, number]>;
+  trigger_limits: Record<
+    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold' | 'light_delay_s',
+    [number, number]
+  >;
+  light_domains: string[];
   trigger_max_entities: number;
   review_defaults: ReviewRules;
   roi_max_points: number;

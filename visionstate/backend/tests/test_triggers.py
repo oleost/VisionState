@@ -1,7 +1,9 @@
 """Trigger logic: scheduling, change detection, HA event parsing and an end-to-end burst."""
 
 import asyncio
+import io
 import json
+import math
 import sqlite3
 import time
 
@@ -13,12 +15,13 @@ from PIL import Image
 from visionstate import imaging
 from visionstate.api.common import Triggers
 from visionstate.db import SCHEMA_VERSION, Database
-from visionstate.engine import LiveState, SensorConfig, next_check_at
+from visionstate.engine import LiveState, SensorConfig, entity_triggers, next_check_at
 from visionstate.ha_events import HaEventListener, parse_trigger_event, trigger_subscription
 from visionstate.main import create_app
 from visionstate.settings import TRIGGER_DEFAULTS, Settings, merge_triggers
 
-from .conftest import requires_model
+from .conftest import requires_model, requires_reader
+from .displays import render
 from .test_integration import FakeCamera, wait_for
 
 
@@ -230,3 +233,171 @@ def test_change_detection_triggers_classification(tmp_path, model_dir):
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok", 15)
         camera.state = "closed"
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["live"]["published"] == "closed", 20)
+
+
+# --- regular check off, entity states and the light --------------------------------------------------
+
+
+def test_schedule_without_regular_check():
+    live = LiveState(last_run=100)
+    assert next_check_at(config(regular=False), live, 101) == (math.inf, "full")  # nothing until a trigger
+    live.burst_until = 130  # a trigger still starts its burst
+    assert next_check_at(config(regular=False, burst_interval_s=2), live, 101) == (102, "full")
+    # Change detection keeps probing: it is a trigger of its own.
+    assert next_check_at(
+        config(regular=False, change_detection=True, change_interval_s=5), LiveState(last_run=100), 101
+    ) == (
+        105,
+        "probe",
+    )
+    # A check caused by a trigger postpones the regular one: it is counted from the last check.
+    assert next_check_at(config(), LiveState(last_run=500), 501) == (560, "full")
+
+
+def test_trigger_model_validates_states_and_light():
+    model = Triggers(
+        entities=["sensor.status", "binary_sensor.motion"],
+        only_states={"sensor.status": " Flow finished ", "binary_sensor.motion": " ", "sensor.gone": "x"},
+        light_entity=" light.flash ",
+    )
+    assert model.only_states == {"sensor.status": "Flow finished"}  # trimmed; empty and unknown entities dropped
+    assert model.light_entity == "light.flash"
+    with pytest.raises(ValueError):
+        Triggers(light_entity="camera.meter")  # not something to switch on
+    with pytest.raises(ValueError):
+        Triggers(light_entity="not an entity")
+    assert Triggers().regular is True and merge_triggers(None)["only_states"] == {}
+
+
+def test_entity_only_triggers_on_its_state():
+    triggers = merge_triggers(
+        {"entities": ["sensor.status", "cover.door"], "only_states": {"sensor.status": "Flow finished"}}
+    )
+    assert entity_triggers(triggers, "sensor.status", "flow finished")  # case does not matter
+    assert not entity_triggers(triggers, "sensor.status", "Take image")
+    assert entity_triggers(triggers, "cover.door", "open")  # no state set: any change
+
+
+class FakeHa:
+    """Home Assistant REST stand-in: remembers entity states and what was switched."""
+
+    enabled = True
+
+    def __init__(self, log: list[str]):
+        self.log = log
+        self.states = {"light.flash": "off"}
+        self.fail = False
+
+    async def state(self, entity_id):
+        return self.states.get(entity_id)
+
+    async def switch(self, entity_id, on):
+        if self.fail:
+            raise RuntimeError("no connection")
+        self.states[entity_id] = "on" if on else "off"
+        self.log.append("on" if on else "off")
+
+    async def ping(self):
+        return True
+
+    async def entities(self):
+        return []
+
+    async def cameras(self):
+        return []
+
+    async def close(self):
+        pass
+
+
+class LoggingCamera:
+    def __init__(self, log: list[str]):
+        self.log = log
+
+    async def grab(self, source_type, source):
+        self.log.append("grab")
+        buf = io.BytesIO()
+        render("00500").save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    async def close(self):
+        pass
+
+
+@requires_reader
+def test_only_triggered_checks_with_a_light(tmp_path, model_dir):
+    settings = Settings(
+        data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
+    )
+    log: list[str] = []
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber, rt.ha = LoggingCamera(log), FakeHa(log)
+        created = client.post(
+            "/api/v1/sensors",
+            json={
+                "name": "Meter",
+                "kind": "reading",
+                "source_type": "http",
+                "source": "x",
+                "interval_s": 1,
+                "debounce": 1,
+                "triggers": {
+                    "regular": False,
+                    "entities": ["sensor.status"],
+                    "only_states": {"sensor.status": "Flow finished"},
+                    "burst_duration_s": 0,
+                    "light_entity": "light.flash",
+                    "light_delay_s": 0.2,
+                },
+            },
+        )
+        assert created.status_code == 201, created.text
+        sid = created.json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()
+
+        def fire(old, new):
+            asyncio.run_coroutine_threadsafe(rt._on_ha_state("sensor.status", old, new), rt._loop).result(10)
+
+        # One check after start-up, with the light on for it.
+        assert wait_for(lambda: view()["reading"]["value"] == "500", timeout=60)
+        assert wait_for(lambda: log == ["on", "grab", "off"], timeout=10), log
+        assert view()["triggers"]["regular"] is False
+
+        # No regular check although the interval is one second, and the UI does not take frames either.
+        time.sleep(2.5)
+        assert client.get(f"/api/v1/sensors/{sid}/frame").status_code == 200
+        assert log == ["on", "grab", "off"], log
+
+        # Only the chosen state of the entity starts a check.
+        fire("Flow finished", "Take image")
+        time.sleep(1)
+        assert log.count("grab") == 1
+        fire("Digitalization", "Flow finished")
+        assert wait_for(lambda: log == ["on", "grab", "off"] * 2, timeout=10), log
+        assert view()["live"]["last_trigger"]["source"] == "entity"
+
+        # A light that is already on is somebody else's: used, but not switched.
+        rt.ha.states["light.flash"] = "on"
+        fire("x", "Flow finished")
+        assert wait_for(lambda: log.count("grab") == 3, timeout=10)
+        time.sleep(0.5)
+        assert log[-1] == "grab" and rt.ha.states["light.flash"] == "on"
+
+        # When the light can not be switched the check still runs, and the settings say why.
+        rt.ha.states["light.flash"], rt.ha.fail = "off", True
+        fire("x", "Flow finished")
+        assert wait_for(lambda: log.count("grab") == 4, timeout=10)
+        assert view()["live"]["light_error"] == "no connection"
+
+        # During the burst after a trigger the light stays on: one on, several frames, one off.
+        rt.ha.fail = False
+        triggers = {**view()["triggers"], "burst_duration_s": 2, "burst_interval_s": 0.5}
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"triggers": triggers}).status_code == 200
+        time.sleep(0.5)
+        log.clear()
+        fire("x", "Flow finished")
+        assert wait_for(lambda: "off" in log, timeout=15), log
+        assert log[0] == "on" and log[-1] == "off" and log.count("on") == 1 and log.count("grab") >= 3, log

@@ -18,6 +18,7 @@ from ..db import Prediction, Sensor
 from ..settings import (
     DETECTION,
     KIND_STATES,
+    LIGHT_DOMAINS,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
@@ -86,6 +87,7 @@ def ui_config() -> dict:
         "trigger_defaults": TRIGGER_DEFAULTS,
         "trigger_limits": TRIGGER_LIMITS,
         "trigger_max_entities": TRIGGER_MAX_ENTITIES,
+        "light_domains": LIGHT_DOMAINS,
         "roi_max_points": ROI_MAX_POINTS,
         "review_defaults": REVIEW_DEFAULTS,
         "review_limits": REVIEW_LIMITS,

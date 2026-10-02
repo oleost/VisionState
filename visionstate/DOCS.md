@@ -168,13 +168,22 @@ Set up per sensor under **Settings → When to check**:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Regular check | every 10 s | The safety net. With triggers set up it can be minutes. |
-| Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… |
+| Regular check | every 10 s | The safety net. It is counted from the last check, whatever caused it, so with frequent triggers it rarely runs. Switch it **off** to check only when triggered (plus once after start-up). |
+| Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… For each entity you can enter the one state that should count (*only when it becomes* `on`, `Flow finished` …). |
 | Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
-| After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. |
+| Switch on a light for each check | none | A light, switch or helper that is turned on before the frame is taken and off again afterwards — for a camera in a dark place, such as a meter cabinet. *Wait before taking the frame* (default 1 s) gives the light and the camera time. A light that is already on is left alone, and it stays on during the checks that follow a trigger. |
+| After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
 A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
 trigger entities, and change detection on for cameras without a motion sensor.
+
+A meter read by a battery or ESP camera: regular check off, the device's status entity as
+trigger with *only when it becomes* the state that means a new picture is ready, and the time
+after a trigger set to 0.
+
+With a light set, the live view in VisionState shows the frame of the last check instead of
+taking new ones (they would be dark, or make the light flash), and change detection compares
+frames without the light.
 
 You can still call `button.visionstate_<name>_classify` from your own automations.
 

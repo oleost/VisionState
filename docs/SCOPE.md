@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.2, 2026-10-02) and the open
+> Describes VisionState **as built** (beta 0.6.3b1 / stable 0.6.2, 2026-10-02) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -173,13 +173,22 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
 ## 7. When and how a sensor decides
 
 - **Triggers** (per sensor, `sensor.triggers`, defaults in `settings.TRIGGER_DEFAULTS`):
-  - Regular interval (default 10 s) — the safety net.
+  - Regular interval (default 10 s) — the safety net, counted from the last check whatever
+    caused it. `regular: false` switches it off: the sensor then checks only when triggered and
+    once after start-up.
   - State changes of chosen HA entities (WebSocket `subscribe_trigger`, attribute-only changes
-    and `unavailable`/`unknown` ignored).
+    and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state
+    (compared without regard to case).
   - Optional region change detection: a small greyscale copy of the ROI is compared every
     *N* seconds; the AI only runs when the difference exceeds a threshold.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
   - The MQTT `classify` button checks once.
+- **Light** (`triggers.light_entity`, `light_delay_s`): a light, switch or input_boolean is turned
+  on (`homeassistant.turn_on` over the HA REST API) before a full check takes its frame, and off
+  afterwards — after the burst, so it does not flash for every check of it. A light that is
+  already on is not touched. Change-detection probes do not switch it, and the UI shows the last
+  analysed frame instead of grabbing new ones. A failure is logged and shown in the settings;
+  the check runs anyway.
 - **Unknown state:** top probability below the threshold (default 70 %) → `unknown`.
 - **Debounce:** the state changes only after *N* consecutive agreeing results (default 2).
 - Camera unavailable → entities become `unavailable` (not a false state).

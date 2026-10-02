@@ -121,20 +121,34 @@ DETECTION = {
 #    runs the AI (and starts a burst) when enough pixels changed.
 
 TRIGGER_DEFAULTS = {
+    # The regular interval check. Off = the sensor only checks when triggered (an entity, a change
+    # in the image, the "check now" button) and once after start-up.
+    "regular": True,
     "entities": [],  # Home Assistant entity ids that trigger a check when their state changes
+    # entity id -> the only new state that triggers (e.g. "Flow finished"); other entities
+    # trigger on any state change. Compared without regard to case.
+    "only_states": {},
     "burst_interval_s": 2.0,  # seconds between checks during a burst
     "burst_duration_s": 30.0,  # how long a burst lasts after the last trigger
     "change_detection": False,
     "change_interval_s": 2.0,  # how often the region is compared
     "change_threshold": 0.04,  # mean pixel difference (0-1) in the region that counts as a change
+    # A light or switch that is turned on before a check takes its frame and off afterwards (a
+    # lamp or flash next to the camera). Left alone when it is already on.
+    "light_entity": "",
+    "light_delay_s": 1.0,  # wait between switching on and taking the frame
 }
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),
     "change_interval_s": (0.5, 60.0),
     "change_threshold": (0.005, 0.5),
+    "light_delay_s": (0.0, 30.0),
 }
 TRIGGER_MAX_ENTITIES = 20
+TRIGGER_STATE_MAX_LENGTH = 255  # Home Assistant's own limit for a state
+# Entity domains offered for the light (anything homeassistant.turn_on / turn_off works on).
+LIGHT_DOMAINS = ("light", "switch", "input_boolean")
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
@@ -266,6 +280,7 @@ def merge_triggers(stored: dict | None) -> dict:
     """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS."""
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
+    merged["only_states"] = dict(merged.get("only_states") or {})
     return merged
 
 

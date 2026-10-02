@@ -7,7 +7,7 @@ import time
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from ..settings import (
     APP_SLUG,
     KIND_OBJECTS,
     KIND_READING,
+    LIGHT_DOMAINS,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
@@ -33,6 +34,7 @@ from ..settings import (
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
+    TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
     merge_objects,
     merge_reading,
@@ -117,7 +119,9 @@ _thi = {k: v[1] for k, v in TRIGGER_LIMITS.items()}
 class Triggers(BaseModel):
     """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
 
+    regular: bool = TRIGGER_DEFAULTS["regular"]
     entities: list[str] = Field(default_factory=list, max_length=TRIGGER_MAX_ENTITIES)
+    only_states: dict[str, str] = Field(default_factory=dict)
     burst_interval_s: float = Field(
         TRIGGER_DEFAULTS["burst_interval_s"], ge=_tlo["burst_interval_s"], le=_thi["burst_interval_s"]
     )
@@ -131,6 +135,8 @@ class Triggers(BaseModel):
     change_threshold: float = Field(
         TRIGGER_DEFAULTS["change_threshold"], ge=_tlo["change_threshold"], le=_thi["change_threshold"]
     )
+    light_entity: str = TRIGGER_DEFAULTS["light_entity"]
+    light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
 
     @field_validator("entities")
     @classmethod
@@ -140,6 +146,29 @@ class Triggers(BaseModel):
             if not ENTITY_ID.match(entity):
                 raise ValueError(f"Not an entity id: {entity!r}")
         return cleaned
+
+    @field_validator("light_entity")
+    @classmethod
+    def _valid_light(cls, value: str) -> str:
+        value = value.strip()
+        if value and not ENTITY_ID.match(value):
+            raise ValueError(f"Not an entity id: {value!r}")
+        if value and value.split(".", 1)[0] not in LIGHT_DOMAINS:
+            raise ValueError(f"The light must be one of: {', '.join(LIGHT_DOMAINS)}")
+        return value
+
+    @model_validator(mode="after")
+    def _valid_only_states(self) -> Triggers:
+        # Only for chosen entities; an empty state means "any change" and is dropped.
+        cleaned = {}
+        for entity, state in self.only_states.items():
+            state = state.strip()
+            if entity in self.entities and state:
+                if len(state) > TRIGGER_STATE_MAX_LENGTH:
+                    raise ValueError(f"State too long for {entity}")
+                cleaned[entity] = state
+        self.only_states = cleaned
+        return self
 
 
 _olo = {k: v[0] for k, v in OBJECT_LIMITS.items()}
@@ -365,6 +394,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "in_burst": bool(live and live.burst_until > time.time()),
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
+            "light_error": live.light_error if live else "",
             "frame_id": live.frame_id if live else None,
         },
         "model": {

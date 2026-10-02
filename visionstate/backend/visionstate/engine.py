@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 from collections import deque
@@ -228,12 +229,24 @@ def filter_detections(
     return result
 
 
+def entity_triggers(triggers: dict, entity_id: str, new: str | None) -> bool:
+    """Whether this state change of a trigger entity starts a check (see TRIGGER_DEFAULTS["only_states"])."""
+    wanted = triggers["only_states"].get(entity_id)
+    return not wanted or (new or "").strip().lower() == wanted.strip().lower()
+
+
 def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float, str]:
     """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
     if live.last_run is None:
         return now, "full"
     in_burst = now < live.burst_until
-    full_at = live.last_run + (cfg.triggers["burst_interval_s"] if in_burst else cfg.interval_s)
+    if in_burst:
+        full_at = live.last_run + cfg.triggers["burst_interval_s"]
+    elif cfg.triggers["regular"]:
+        # Counted from the last check, whatever caused it: frequent triggers postpone it.
+        full_at = live.last_run + cfg.interval_s
+    else:
+        full_at = math.inf  # only triggers
     if cfg.triggers["change_detection"]:
         probe_at = max(live.last_run, live.last_probe) + cfg.triggers["change_interval_s"]
         if probe_at < full_at:
@@ -259,6 +272,9 @@ class LiveState:
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning
     last_trigger: dict | None = None  # {"source": ..., "detail": ..., "at": epoch seconds}
+    light_on: bool = False  # the sensor's light was switched on by us and must be switched off again
+    light_off_task: asyncio.Task | None = None
+    light_error: str = ""  # why the light could not be switched (shown in the sensor's settings)
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check
@@ -571,6 +587,8 @@ class Runtime:
                     log.error("Sensor %s failed: %s", cfg.slug, live.error)
                 due_at, _ = next_check_at(cfg, live, time.time())
             timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
+            if math.isinf(timeout):
+                timeout = None  # no regular check: sleep until something wakes the sensor
             try:
                 await asyncio.wait_for(event.wait(), timeout=timeout)
             except TimeoutError:
@@ -611,10 +629,73 @@ class Runtime:
         live.last_trigger = {"source": source, "detail": detail, "at": now}
         self.wake(sensor_id, force=True)
 
+    def _entity_changed(self, sensor_id: int, entity_id: str, old: str | None, new: str | None) -> None:
+        cfg = self.load_sensor(sensor_id)
+        if cfg is None or not entity_triggers(cfg.triggers, entity_id, new):
+            return
+        log.debug("Sensor %s triggered by %s: %s -> %s", sensor_id, entity_id, old, new)
+        self.start_burst(sensor_id, "entity", f"{entity_id}: {old} → {new}")
+
     async def _on_ha_state(self, entity_id: str, old: str | None, new: str | None) -> None:
         for sensor_id in self._entity_index.get(entity_id, set()):
-            log.debug("Sensor %s triggered by %s: %s -> %s", sensor_id, entity_id, old, new)
-            await asyncio.to_thread(self.start_burst, sensor_id, "entity", f"{entity_id}: {old} → {new}")
+            await asyncio.to_thread(self._entity_changed, sensor_id, entity_id, old, new)
+
+    # --- light ---------------------------------------------------------------------
+
+    async def _light_before(self, cfg: SensorConfig) -> None:
+        """Switch the sensor's light on before a frame is taken, unless it already is."""
+        entity = cfg.triggers["light_entity"]
+        live = self.live_state(cfg.id)
+        if not entity:
+            return
+        if live.light_off_task:
+            live.light_off_task.cancel()  # still on from the previous check of a burst
+            live.light_off_task = None
+        if live.light_on:
+            return
+        try:
+            if not self.ha.enabled:
+                raise RuntimeError("Home Assistant API is not configured")
+            state = await self.ha.state(entity)
+            if state is None:
+                raise RuntimeError(f"{entity} does not exist")
+            if state != "on":  # already on: somebody else's light, leave it alone afterwards too
+                await self.ha.switch(entity, True)
+                live.light_on = True
+                await asyncio.sleep(cfg.triggers["light_delay_s"])
+            live.light_error = ""
+        except Exception as err:  # noqa: BLE001 - the check goes on without the light
+            message = redact(str(err)) or type(err).__name__
+            if message != live.light_error:
+                log.warning("Sensor %s: could not switch on %s: %s", cfg.slug, entity, message)
+            live.light_error = message
+
+    def _light_after(self, cfg: SensorConfig) -> None:
+        """Switch the light off again — after the burst, so it does not flash for every check of it."""
+        live = self.live_state(cfg.id)
+        if not live.light_on or live.light_off_task:
+            return
+        entity = cfg.triggers["light_entity"]
+        wait = max(0.0, live.burst_until - time.time())
+
+        async def off() -> None:
+            await asyncio.sleep(wait)
+            live.light_on, live.light_off_task = False, None
+            try:
+                await self.ha.switch(entity, False)
+            except Exception as err:  # noqa: BLE001
+                live.light_error = redact(str(err)) or type(err).__name__
+                log.warning("Sensor %s: could not switch off %s: %s", cfg.slug, entity, live.light_error)
+
+        live.light_off_task = self._spawn(off())
+
+    def frame_for_view(self, sensor_id: int) -> tuple[str, bytes] | None:
+        """The last analysed frame of a sensor with a light: the UI must not take frames in the dark."""
+        cfg = self.load_sensor(sensor_id)
+        live = self.live_state(sensor_id)
+        if cfg is not None and cfg.triggers["light_entity"] and live.frames:
+            return live.frames[-1]
+        return None
 
     async def probe(self, cfg: SensorConfig) -> None:
         """Cheap check: compare the region with the last classified frame; classify only if it changed."""
@@ -655,7 +736,11 @@ class Runtime:
         live.last_run = time.time()
         try:
             if data is None:
-                frame_id, data = await self.grab(cfg)
+                await self._light_before(cfg)
+                try:
+                    frame_id, data = await self.grab(cfg)
+                finally:
+                    self._light_after(cfg)
             if image is None:
                 image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
