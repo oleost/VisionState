@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.1, 2026-10-02) and the open
+> Describes VisionState **as built** (stable 0.6.2, 2026-10-02) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1b7
+## 0.6.2
 
 - **Fixed: the app did not start on older CPUs and in virtual machines with a generic CPU
   type** (for example Proxmox's default `kvm64`) since 0.6.0 — the log ended with
