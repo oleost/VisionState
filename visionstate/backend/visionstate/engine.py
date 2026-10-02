@@ -451,7 +451,7 @@ class Runtime:
         reader = await self.ensure_reader()
         region = imaging.crop_box(image, imaging.region_box(roi))
         async with self._sem:
-            return await asyncio.to_thread(reader.read_display, region, reading["display"])
+            return await asyncio.to_thread(reader.read_display, region, reading["display"], int(reading["digits"]))
 
     async def detect_objects(
         self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False
@@ -792,7 +792,8 @@ class Runtime:
         """One check of a reading sensor: read the number, check it and publish it.
 
         A value is published after ``debounce`` equal readings in a row. Unsure, empty and
-        implausible readings (a counter going down, a jump above ``max_step``) are rejected:
+        implausible readings (a counter going down, a jump above ``max_step``, a mechanical
+        counter read with another number of digits than it has wheels) are rejected:
         the last value stays and the rejected reading is kept in the history (rate limited).
         """
         live = self.live_state(cfg.id)
@@ -811,6 +812,8 @@ class Runtime:
         last = float(live.debouncer.published) if live.debouncer.published is not None else None
         if value is None:
             reason = "nothing read"
+        elif readers.wrong_digit_count(text.text, settings):
+            reason = "wrong digit count"
         elif text.score < cfg.threshold:
             reason = "unsure"
         else:

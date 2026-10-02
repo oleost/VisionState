@@ -13,3 +13,9 @@ export const PHOTO_URL = (name: string) => `${CAMERA_URL}/photo/${name}.jpg`;
 export const READING_SENSOR_NAME = 'Power meter';
 export const DISPLAY_URL = (text: string, style: 'lcd' | 'led' = 'lcd') =>
   `${CAMERA_URL}/display.jpg?text=${encodeURIComponent(text)}&style=${style}`;
+/** A reading sensor looking at a drawn mechanical counter (rolling digit wheels). */
+export const COUNTER_SENSOR_NAME = 'Water meter';
+export const COUNTER_URL = (value: number, digits = 7, decimals = 3) =>
+  `${CAMERA_URL}/counter.jpg?value=${value}&digits=${digits}&decimals=${decimals}`;
+/** The window with the seven wheels in that frame (backend/tests/displays.py, counter_box(7)). */
+export const COUNTER_BOX = { x: 99 / 800, y: 118 / 360, w: 602 / 800, h: 130 / 360 };

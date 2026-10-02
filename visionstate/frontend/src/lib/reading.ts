@@ -1,5 +1,5 @@
 // Helpers for reading sensors: how a value and its unit are shown.
-import type { ReadingSettings, Sensor } from './types';
+import type { ReadingSettings, ReadingType, Sensor } from './types';
 
 /** The unit shown next to a value ("min" for time left). */
 export function readingUnit(settings: Pick<ReadingSettings, 'mode' | 'unit'>): string {
@@ -20,7 +20,15 @@ export const REJECT_REASONS: Record<string, string> = {
   unsure: 'the reader was unsure',
   'went down': 'a counter can not go down',
   'changed too much': 'it changed more than allowed',
+  'wrong digit count': 'not the number of digits the counter has',
 };
+
+/** The type chosen in the reading editor: a mechanical counter or a digital display. */
+export const readingType = (settings: Pick<ReadingSettings, 'display'>): ReadingType =>
+  settings.display === 'counter' ? 'counter' : 'display';
+
+/** Digits in what the reader saw ("0089.932" → 7). */
+export const digitsSeen = (text: string | null | undefined): number => (text ?? '').replace(/\D/g, '').length;
 
 /**
  * Digits after a decimal point or comma in what the reader saw ("1234.5" → 1), or null when there is

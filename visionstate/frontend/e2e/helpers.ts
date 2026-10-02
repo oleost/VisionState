@@ -1,6 +1,6 @@
 // Shared helpers for the UI tests: error collection, layout checks and real touch/mouse gestures.
 import { expect, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NAME } from './env';
+import { COUNTER_SENSOR_NAME, OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NAME } from './env';
 
 export type Point = { x: number; y: number };
 
@@ -103,3 +103,4 @@ export async function seededSensorId(request: APIRequestContext, name = SENSOR_N
 
 export const seededObjectSensorId = (request: APIRequestContext) => seededSensorId(request, OBJECT_SENSOR_NAME);
 export const seededReadingSensorId = (request: APIRequestContext) => seededSensorId(request, READING_SENSOR_NAME);
+export const seededCounterSensorId = (request: APIRequestContext) => seededSensorId(request, COUNTER_SENSOR_NAME);

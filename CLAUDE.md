@@ -43,8 +43,8 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   on phones/tablets:
   - Automated: `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
     (Playwright, `e2e/`; also runs in CI). It starts the backend + `scripts/fake_camera.py`,
-    seeds one sensor of each kind (a trained state sensor, an object sensor on a real photo and a
-    reading sensor on a drawn display), and runs every page on **desktop** (1440×900, mouse) and
+    seeds one sensor of each kind (a trained state sensor, an object sensor on a real photo and
+    reading sensors on a drawn display and a drawn mechanical counter), and runs every page on **desktop** (1440×900, mouse) and
     **mobile** (Pixel 7, real touch via CDP): no console errors, no sideways scrolling, no text
     running out of buttons or cards, plus the wizard (all three kinds), region editor gestures,
     labelling, review, boxes and readings. Add a test
@@ -72,7 +72,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   use `http://127.0.0.1:8765/…` as an *HTTP snapshot URL*. The camera serves `/snapshot.jpg`
   (synthetic garage door; `/set?state=open|closed|partial`, `/set?night=1`), `/photo/<name>.jpg`
   (real CC0 photos from `backend/tests/assets`, for object sensors) and
-  `/display.jpg?text=12:05&style=lcd|led` (a drawn seven-segment display, for reading sensors).
+  `/display.jpg?text=12:05&style=lcd|led` (a drawn seven-segment display, for reading sensors)
+  and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical counter with rolling
+  digit wheels; `.5` = the last wheel half way to the next digit).
 - **Check the Home Assistant side** with any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: the discovery configs appear under `homeassistant/…` and
   values under `visionstate/<slug>/…`. The CI smoke test does the same against the built image.
@@ -92,6 +94,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   turned out to be broken and only a test with real photos showed it. Test images must be CC0 /
   public domain (list sources in `tests/assets/README.md`) or drawn by our own code
   (`tests/displays.py`).
+- **Local experiment data** lives in `/VisionStateLocal/` (ignored by git, outside the Docker build
+  context): images with other licences may be used there for trying things out, never in the
+  repository, the tests or a shipped model. Its `README.md` lists each source and licence.
 - **Windows development:** create the venv inside the project (`visionstate/backend/.venv`; long
   paths break pip elsewhere), and set `PYTHONUTF8=1` for scripts that read or write source files.
   The app itself handles the Windows event loop (`__main__.py`).

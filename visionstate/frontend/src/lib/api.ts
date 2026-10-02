@@ -6,6 +6,7 @@ import type {
   HaEntity,
   Prediction,
   Quality,
+  ReadPreview,
   ReadingSettings,
   ReviewRules,
   Roi,
@@ -114,10 +115,7 @@ export const api = {
   },
   /** What the number reader makes of a fresh frame's region (new sensor wizard). */
   previewRead: (sourceType: string, source: string, roi: Roi | null, reading: ReadingSettings) =>
-    request<{ image: string; read_image: string; text: string; score: number; value: string | null }>(
-      'preview/read',
-      send('POST', { source_type: sourceType, source, roi, reading }),
-    ),
+    request<ReadPreview>('preview/read', send('POST', { source_type: sourceType, source, roi, reading })),
   /** The image the reader saw in the last check; `at` busts the browser cache per check. */
   readingImageUrl: (id: number, at: number) => `${BASE}sensors/${id}/reading/image?${qs({ t: at })}`,
   /** The exact frame a check analysed (while cached); stable URL, so the browser can cache it. */

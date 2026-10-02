@@ -177,6 +177,7 @@ class ReadingIn(BaseModel):
     unit: str = Field(READING_DEFAULTS["unit"], max_length=16)
     device_class: str = READING_DEFAULTS["device_class"]
     display: str = READING_DEFAULTS["display"]
+    digits: int = Field(READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
 
     @field_validator("mode")

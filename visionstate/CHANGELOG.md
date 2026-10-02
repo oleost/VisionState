@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.1b6
+
+- **Mechanical counters** — the rolling digit wheels of water and gas meters — can now be read.
+  In the new sensor wizard choose *Reading*, then *Mechanical counter*, draw the region from the
+  first wheel to the last and enter the number of digits. The region is split into one field
+  per wheel (shown on the image), so the dividers between the wheels and the half digits above
+  and below are no longer read as digits. A reading with another number of digits than the
+  counter has is rejected. Existing reading sensors are not changed; switch one over under
+  Settings → Reading.
+- The reading settings start with *What does it look like?* (digital display or mechanical
+  counter); the LED / LCD choice is shown for digital displays.
+
 ## 0.6.1b5
 
 - Sensors page on phones: Import and New sensor sit together on one row; the count of labelled

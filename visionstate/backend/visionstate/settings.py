@@ -69,8 +69,10 @@ READING_SENSOR_DEFAULTS = {
 READING_MODES = ("counter", "value", "time_left")
 # How the reader treats the region: "auto" reads it as it is and falls back to removing faint
 # unlit segments when unsure; "led" (light digits on dark) and "lcd" (dark digits on light)
-# always remove unlit segments, for displays where they show clearly.
-READING_DISPLAYS = ("auto", "led", "lcd")
+# always remove unlit segments, for displays where they show clearly; "counter" is a mechanical
+# counter with rolling digit wheels: the region is split into ``digits`` equal cells and only the
+# middle of each cell is read, so the dividers between the wheels are never read as digits.
+READING_DISPLAYS = ("auto", "led", "lcd", "counter")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
 READING_DEFAULTS = {
@@ -79,16 +81,26 @@ READING_DEFAULTS = {
     "unit": "",
     "device_class": "",
     "display": "auto",
+    "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
 }
 READING_LIMITS = {
     "decimals": (0, 4),
+    "digits": (1, 12),
     "max_step": (0.0, 1e9),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
     "rejected_cooldown_s": 300,  # at most one rejected reading per sensor is kept in the history per period
     "segments_fallback_below": 0.6,  # "auto" display: below this confidence also try without unlit segments
+    # "counter" display. Share of each cell's width that is read (the rest holds the dividers).
+    "counter_cell_share": 0.7,
+    # Half digits above and below the window read as extra or wrong digits, and wheels do not all
+    # sit at the same height, so several row bands of the region (top, bottom as shares of its
+    # height) are read and the most confident one with the right number of digits is kept.
+    "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
+    "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
+    "counter_band_min_height": 0.5,
 }
 
 DETECTION = {

@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, DISPLAY_URL, PHOTO_URL } from './env';
+import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL } from './env';
 import {
   center,
   doubleTap,
@@ -11,6 +11,7 @@ import {
   hold,
   isTouch,
   press,
+  seededCounterSensorId,
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
@@ -21,6 +22,7 @@ test('every page renders without errors and fits the screen', async ({ page, req
   const id = await seededSensorId(request);
   const objectId = await seededObjectSensorId(request);
   const readingId = await seededReadingSensorId(request);
+  const counterId = await seededCounterSensorId(request);
   const pages: [string, string, RegExp | string][] = [
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
@@ -36,6 +38,8 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
     ['reading-history', `sensors/${readingId}/history`, 'Every new value and the readings that were rejected'],
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
+    ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
+    ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
@@ -161,6 +165,7 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   await expect(page.getByText('65 min')).toBeVisible({ timeout: 30_000 });
   // The region can be drawn right on the preview; it is read again.
   const preview = page.locator('.read-images .roi');
+  await preview.scrollIntoViewIfNeeded(); // the mouse and the finger only reach what is on screen
   const box = (await preview.boundingBox())!;
   await drag(page, info, { x: box.x + box.width * 0.05, y: box.y + box.height * 0.1 }, { x: box.x + box.width * 0.95, y: box.y + box.height * 0.9 });
   await expect(preview.locator('.handle.corner')).toHaveCount(4);
@@ -176,6 +181,65 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.locator('.value-card .value')).toHaveText('65 min', { timeout: 60_000 });
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('new mechanical counter sensor through the wizard', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Gas meter');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(COUNTER_URL(45730));
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.locator('.roi img')).toBeVisible();
+  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame for now
+
+  await press(page.getByRole('radio', { name: /Reading/ }), info);
+  await press(page.getByRole('radio', { name: /Mechanical counter/ }), info);
+  await expect(page.getByRole('radio', { name: /Time left/ })).toHaveCount(0); // a counter shows no countdown
+  await page.getByLabel('Number of digits').fill('7');
+  // One field per wheel is drawn over the frame.
+  const preview = page.locator('.read-images .roi');
+  await expect(preview.getByTestId('digit-cells').locator('.cell')).toHaveCount(7, { timeout: 60_000 });
+  // Drag a box around the window with the wheels; it is read again.
+  await preview.scrollIntoViewIfNeeded(); // the mouse and the finger only reach what is on screen
+  const box = (await preview.boundingBox())!;
+  const at = (x: number, y: number) => ({ x: box.x + box.width * x, y: box.y + box.height * y });
+  await drag(
+    page,
+    info,
+    at(COUNTER_BOX.x, COUNTER_BOX.y),
+    at(COUNTER_BOX.x + COUNTER_BOX.w, COUNTER_BOX.y + COUNTER_BOX.h),
+  );
+  await expect(preview.locator('.handle.corner')).toHaveCount(4);
+  await expect(page.getByText(/Read “0045730”/)).toBeVisible({ timeout: 30_000 });
+  // The cells follow the region.
+  const cells = (await preview.getByTestId('digit-cells').boundingBox())!;
+  expect(Math.abs(cells.width - box.width * COUNTER_BOX.w)).toBeLessThan(box.width * 0.03);
+  await page.getByLabel('Digits after the decimal point').fill('3');
+  await page.getByLabel('Unit').fill('m³');
+  await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
+  // Told there are eight wheels, the seven digits read are not accepted.
+  await page.getByLabel('Number of digits').fill('8');
+  await expect(page.getByText(/digits, not 8/)).toBeVisible({ timeout: 30_000 });
+  await page.getByLabel('Number of digits').fill('7');
+  await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .kind, .mode, .card');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-counter.png'), fullPage: true });
+
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.locator('.value-card .value')).toHaveText('45.730 m³', { timeout: 60_000 });
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  // The settings page shows the same fields over the region.
+  await page.goto(`#/sensors/${sensorId}/settings`);
+  await expect(page.getByTestId('digit-cells').locator('.cell')).toHaveCount(7);
+  await expect(page.getByLabel('Number of digits')).toHaveValue('7');
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);

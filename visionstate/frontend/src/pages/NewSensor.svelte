@@ -3,6 +3,7 @@
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
+  import DigitCells from '../lib/components/DigitCells.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ObjectPicker from '../lib/components/ObjectPicker.svelte';
   import ReadingEditor from '../lib/components/ReadingEditor.svelte';
@@ -12,11 +13,11 @@
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { slugify } from '../lib/format';
   import { objectCount } from '../lib/objects';
-  import { readingUnit } from '../lib/reading';
+  import { digitsSeen, readingUnit } from '../lib/reading';
   import { pct } from '../lib/format';
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { Detection, ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
+  import type { Detection, ReadPreview, ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
   import { SENSOR_KIND_INFO } from '../lib/ui';
 
   const STEPS = [
@@ -41,7 +42,7 @@
   let detectError = $state('');
   let reading = $state<ReadingSettings>({ ...app.config!.reading_defaults });
   // Reading preview: the frame, what the reader saw, and what it read.
-  let readResult = $state<{ image: string; read_image: string; text: string; score: number; value: string | null } | null>(null);
+  let readResult = $state<ReadPreview | null>(null);
   let readError = $state('');
   let readingBusy = $state(false);
   let previewUrl = $state<string | null>(null);
@@ -257,7 +258,7 @@
 
         {#if kind === 'reading'}
           <div class="col" style="gap:var(--space-3)">
-            <h3>What is the number?</h3>
+            <h3>What are you reading?</h3>
             <ReadingEditor bind:value={reading} seen={readResult?.text} />
           </div>
           <div class="card col test">
@@ -268,6 +269,11 @@
                   <span class="muted">Reading… the first time loads the reader, which takes a moment.</span>
                 {:else if readError}
                   <span class="danger-text">{readError}</span>
+                {:else if readResult?.wrong_digit_count}
+                  <span class="danger-text">
+                    Read <span class="mono">“{readResult.text || '—'}”</span> — {digitsSeen(readResult.text)} digits, not {reading.digits}.
+                  </span>
+                  <span class="muted">Make the box cover exactly the {reading.digits} wheels, or change the number of digits.</span>
                 {:else if readResult?.value}
                   Read <span class="mono">“{readResult.text}”</span> →
                   <strong class="mono">{readResult.value} {readingUnit(reading)}</strong> · {pct(readResult.score)} sure
@@ -282,11 +288,20 @@
             {#if readResult}
               <div class="read-images">
                 <div class="col" style="gap:6px">
-                  <RoiEditor src={readResult.image} bind:roi editable />
-                  <span class="xsmall faint">Drag a tight box around the digits only — it is read again right away.</span>
+                  <RoiEditor src={readResult.image} bind:roi editable>
+                    {#if reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
+                  </RoiEditor>
+                  <span class="xsmall faint">
+                    {#if reading.display === 'counter'}
+                      Drag a box from the first wheel to the last, so each field holds one wheel. A little room above and
+                      below is fine — it is read again right away.
+                    {:else}
+                      Drag a tight box around the digits only — it is read again right away.
+                    {/if}
+                  </span>
                 </div>
                 <div class="col" style="gap:6px">
-                  <span class="xsmall faint">What the reader sees</span>
+                  <span class="xsmall faint">What the reader sees{reading.display === 'counter' ? ' — the wheels without their dividers' : ''}</span>
                   <img class="seen" src={readResult.read_image} alt="The region as the number reader saw it" />
                 </div>
               </div>

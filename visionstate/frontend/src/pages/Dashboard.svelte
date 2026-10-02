@@ -51,7 +51,8 @@
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
     if (isReadingSensor(s) && s.reading) {
       const unit = readingUnit(s.reading);
-      return `Reads a ${READING_MODE_INFO[s.reading.mode].title.toLowerCase()}${unit ? ` in ${unit}` : ''}`;
+      const what = s.reading.display === 'counter' ? 'mechanical counter' : READING_MODE_INFO[s.reading.mode].title.toLowerCase();
+      return `Reads a ${what}${unit ? ` in ${unit}` : ''}`;
     }
     const n = s.counts.labelled;
     if (s.model?.accuracy != null) return `${n} samples · ${pct(s.model.accuracy)} accuracy`;

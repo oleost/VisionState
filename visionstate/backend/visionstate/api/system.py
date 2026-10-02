@@ -24,6 +24,7 @@ from ..settings import (
     OBJECT_MAX_CLASSES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
+    READING,
     READING_DEFAULTS,
     READING_DEVICE_CLASSES,
     READING_DISPLAYS,
@@ -101,6 +102,7 @@ def ui_config() -> dict:
         "reading_modes": READING_MODES,
         "reading_displays": READING_DISPLAYS,
         "reading_device_classes": READING_DEVICE_CLASSES,
+        "reading_counter_cell_share": READING["counter_cell_share"],
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,
     }
@@ -323,6 +325,8 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
         "text": text.text,
         "score": round(text.score, 4),
         "value": readers.format_value(readers.parse(text.text, settings), settings),
+        # A mechanical counter read with another number of digits than it has wheels.
+        "wrong_digit_count": readers.wrong_digit_count(text.text, settings),
     }
 
 

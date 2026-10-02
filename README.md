@@ -42,7 +42,8 @@ without writing code or leaving Home Assistant:
   The model retrains in about a second after every click.
 - 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
   count and an on/off sensor for each. Pick them, done.
-- 🔢 **Read numbers** — power meters, prices, the minutes left on the washing machine. Counters
+- 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters, prices, the
+  minutes left on the washing machine. Counters
   only go up and land straight in the Energy dashboard; implausible readings are rejected.
 - 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
   the AI ignores everything else.
@@ -68,7 +69,7 @@ without writing code or leaving Home Assistant:
   </tr>
   <tr>
     <td valign="top"><b>Objects</b> — people, cars, animals and more, found without any training. Each one becomes an on/off sensor and a count in Home Assistant.</td>
-    <td valign="top"><b>Reading</b> — the number on a meter or display, checked before it is published: a counter never goes down.</td>
+    <td valign="top"><b>Reading</b> — the number on a display or on the rolling wheels of a water or gas meter, checked before it is published: a counter never goes down.</td>
   </tr>
   <tr>
     <td colspan="2" valign="top"><img src="docs/promo/wizard.png" alt="The new sensor wizard testing an object sensor on a fresh frame" width="100%"></td>
@@ -188,7 +189,7 @@ visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
   backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
   frontend/             Svelte 5 · Vite · TypeScript
 scripts/channel.py      Switches the app config between the stable and beta channel
-scripts/fake_camera.py  A fake camera (garage door, real photos, drawn displays) for local testing
+scripts/fake_camera.py  A fake camera (garage door, real photos, drawn displays and counters) for local testing
 docs/SCOPE.md           Design as built, decisions and roadmap
 CLAUDE.md               Contributor guide: conventions, how to test and verify, release steps
 ```

@@ -7,6 +7,7 @@
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import DigitCells from '../../lib/components/DigitCells.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
@@ -112,10 +113,16 @@
         {objectSensor
           ? 'An object counts when it stands inside it (the bottom of its box).'
           : readingSensor
-            ? 'Draw it tightly around the digits only — no labels or units.'
+            ? reading.display === 'counter'
+              ? 'Cover the wheels from the first to the last, so each field holds one wheel. A little room above and below is fine.'
+              : 'Draw it tightly around the digits only — no labels or units.'
             : 'Changing it retrains the model.'}
       </p>
-      <div class="frame"><LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000} /></div>
+      <div class="frame">
+        <LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000}>
+          {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
+        </LiveFrame>
+      </div>
     </section>
   </div>
 

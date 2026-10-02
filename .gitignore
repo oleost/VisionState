@@ -16,6 +16,7 @@ node_modules/
 
 # Local data / models
 /data/
+/VisionStateLocal/
 *.onnx
 .env
 
