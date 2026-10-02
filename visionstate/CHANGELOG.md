@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1b7
+
+- **Fixed: the app did not start on older CPUs and in virtual machines with a generic CPU
+  type** (for example Proxmox's default `kvm64`) since 0.6.0 — the log ended with
+  `NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support`.
+  VisionState is back on a NumPy version without that requirement, and every release is now
+  checked on such a CPU before it is published.
+
 ## 0.6.1
 
 ### New

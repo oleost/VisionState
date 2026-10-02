@@ -14,7 +14,8 @@ number** from a display, without any training. Everything runs on this machine; 
   VisionState finds the broker automatically.
 - **A camera** in Home Assistant (any `camera.*` entity: Frigate, ESP32-CAM, Reolink,
   generic camera…), or a direct HTTP snapshot / RTSP URL.
-- amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS).
+- amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
+  also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
 ## Getting started
 

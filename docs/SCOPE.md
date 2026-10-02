@@ -20,7 +20,8 @@ text recognizer. Neither needs training.
 
 **Goals**
 - Generic: works with any camera Home Assistant knows about, plus direct URLs.
-- Runs on Intel/AMD (amd64) and Raspberry Pi 4/5 and other aarch64 boards, CPU only.
+- Runs on Intel/AMD (amd64) and Raspberry Pi 4/5 and other aarch64 boards, CPU only — any
+  64-bit x86 CPU (x86-64-v1), so also virtual machines with a generic CPU type.
 - Very low effort to train: good results with ~10–30 images per state.
 - Simple, polished UI via HA Ingress.
 - Public, well-documented, configurable, multi-arch builds.
@@ -369,6 +370,11 @@ rejected detections; zones and line crossing for object sensors.
 - CI builds, tests and smoke-tests the image on both architectures, each on its own hardware
   (start, MQTT, discovery, clean `docker stop` with exit code 0) before publishing, refuses
   tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
+- The amd64 image is also run under an emulated x86-64-v1 CPU (`kvm64`, qemu-user) with
+  `scripts/cpu_probe.py`, which exercises every native library and the app. NumPy is pinned
+  below 2.4 for that reason (2.4+ needs x86-64-v2; found through issue #29). Checked 2026-10:
+  with NumPy 2.3.5 all other pins (SciPy 1.18, scikit-learn 1.9, ONNX Runtime 1.30, Pillow 12,
+  PyAV 18) work on `kvm64` and `qemu64`.
 - A beta tag is the whole release: after both images are published CI creates the pre-release
   from the changelog entry and fast-forwards `beta`, so the branch never carries a version
   without images. Stable releases are promoted by hand.
