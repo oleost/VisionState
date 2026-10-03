@@ -2,8 +2,10 @@
   import { api } from '../lib/api';
   import { refreshStatus, stateInfo, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
+  import { REJECT_REASONS, readingDetail, readingUnit } from '../lib/reading';
   import type { ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
@@ -28,6 +30,23 @@
   load();
 
   const current = $derived(items?.[index] ?? null);
+  const isReading = (item: ReviewItem) => item.sensor.kind === 'reading';
+  const unitOf = (item: ReviewItem) => (item.sensor.reading ? readingUnit(item.sensor.reading) : '');
+  /** Sidebar line: what was read, or the state the AI predicted. */
+  const summary = (item: ReviewItem) =>
+    isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
+
+  function readingAnswered(verdict: { read_ok: boolean | null; correct_value: string | null }) {
+    if (!current) return;
+    answers[current.id] =
+      verdict.read_ok === null && current.read_ok === null
+        ? 'Skipped'
+        : verdict.read_ok
+          ? '✓ Read correctly'
+          : `✓ Misread${verdict.correct_value ? ` — was ${verdict.correct_value}` : ''}`;
+    index += 1;
+    refreshStatus();
+  }
   const predicted = $derived(current ? stateInfo(current.sensor, current.state_key) : null);
   const others = $derived(current ? current.sensor.states.filter((s) => s.key !== current.state_key) : []);
 
@@ -52,7 +71,7 @@
   }
 
   function onkey(e: KeyboardEvent) {
-    if (!current || (e.target as HTMLElement).closest('input, select, textarea')) return;
+    if (!current || isReading(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
     if (e.key === 'Enter') answer('confirm');
     else if (e.key.toLowerCase() === 's') answer('skip');
     else {
@@ -69,7 +88,9 @@
     <aside class="col">
       <div class="col" style="gap:4px">
         <h1>Review</h1>
-        <p class="small muted">Frames the AI was unsure about. A few clicks here improve the model the most.</p>
+        <p class="small muted">
+          Frames the AI was unsure about, and readings that were rejected. A few clicks here improve the model the most.
+        </p>
       </div>
       {#if items?.length}
         <ol>
@@ -80,7 +101,7 @@
               <span class="col" style="gap:2px;min-width:0">
                 <strong class="small">{item.sensor.name}</strong>
                 <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
-                  {answers[item.id] ?? `${reason?.label ?? ''} · ${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`}
+                  {answers[item.id] ?? `${reason?.label ?? ''} · ${summary(item)}`}
                 </span>
               </span>
             </li>
@@ -93,6 +114,31 @@
     <section class="card pad main">
       {#if items === null}
         <p class="muted">Loading…</p>
+      {:else if current && isReading(current)}
+        {@const reason = current.review_reason ? REVIEW_REASONS[current.review_reason] : null}
+        {@const d = readingDetail(current)}
+        <div class="row wrap">
+          <span class="mono small muted">{index + 1} / {items.length}</span>
+          <strong>{current.sensor.name}</strong>
+          {#if reason}<span class="chip {reason.tone}" title={reason.help}>{reason.label}</span>{/if}
+          <span class="spacer"></span>
+          <span class="xsmall faint">{dateTime(current.created_at)}</span>
+        </div>
+        <div class="frame">
+          <RoiEditor src={api.historyImageUrl(current.id)} roi={current.sensor.roi} />
+        </div>
+        <div class="col center">
+          <p class="question">
+            Did it read <span class="mono">“{d.text || '—'}”</span>{d.value ? ` (${d.value}${unitOf(current) ? ` ${unitOf(current)}` : ''})` : ''} right?
+          </p>
+          <p class="small muted">
+            {#if d.reason}Rejected: {REJECT_REASONS[d.reason] ?? d.reason} — the last value was kept.
+            {:else}Accepted and published. A random check to find misreads that pass every test.{/if}
+          </p>
+          {#key current.id}
+            <ReadingVerdict item={current} unit={unitOf(current)} large onanswer={readingAnswered} />
+          {/key}
+        </div>
       {:else if current && predicted}
         {@const reason = current.review_reason ? REVIEW_REASONS[current.review_reason] : null}
         <div class="row wrap">

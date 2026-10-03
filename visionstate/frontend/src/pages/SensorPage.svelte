@@ -17,6 +17,7 @@
   import ObjectHistoryTab from './sensor/ObjectHistoryTab.svelte';
   import ReadingHistoryTab from './sensor/ReadingHistoryTab.svelte';
   import ReadingLiveTab from './sensor/ReadingLiveTab.svelte';
+  import ReadingQualityTab from './sensor/ReadingQualityTab.svelte';
   import QualityTab from './sensor/QualityTab.svelte';
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
@@ -115,6 +116,8 @@
       <UploadTab {sensor} onchange={load} />
     {:else if tab === 'dataset'}
       <DatasetTab {sensor} onchange={load} />
+    {:else if tab === 'quality' && isReadingSensor(sensor)}
+      <ReadingQualityTab {sensor} />
     {:else if tab === 'quality'}
       <QualityTab {sensor} />
     {:else if tab === 'history' && isReadingSensor(sensor)}

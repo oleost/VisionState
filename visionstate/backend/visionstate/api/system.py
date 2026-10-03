@@ -17,6 +17,7 @@ from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sensor
 from ..settings import (
     DETECTION,
+    KIND_READING,
     KIND_STATES,
     LIGHT_DOMAINS,
     MAX_STATES,
@@ -374,8 +375,11 @@ async def put_review_rules(body: ReviewRules, request: Request) -> dict:
 
 
 class ReviewIn(BaseModel):
-    action: str  # confirm | label | skip
+    # State sensors: confirm | label (state_key) | skip. Reading sensors: read_ok | misread
+    # (optionally the value that was right) | skip.
+    action: str
     state_key: str | None = None
+    value: str | None = Field(None, max_length=32)
 
 
 @router.get("/review")
@@ -395,8 +399,10 @@ def review_queue(request: Request, limit: int = 50) -> dict:
                     "sensor": {
                         "id": sensor.id,
                         "name": sensor.name,
+                        "kind": sensor.kind,
                         "roi": sensor.roi,
                         "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
+                        "reading": merge_reading(sensor.reading) if sensor.kind == KIND_READING else None,
                     },
                 }
             )
@@ -410,6 +416,28 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
         row = s.get(Prediction, prediction_id)
         if row is None:
             raise HTTPException(404, "Review item not found")
+        sensor = get_sensor(s, row.sensor_id)
+        if sensor.kind == KIND_READING:
+            if body.action not in ("read_ok", "misread", "skip"):
+                raise HTTPException(400, "Answer read_ok, misread or skip for a reading")
+            if body.action != "skip":
+                row.read_ok = body.action == "read_ok"
+                row.correct_value = None
+                if body.action == "misread" and body.value and body.value.strip():
+                    settings = merge_reading(sensor.reading)
+                    try:
+                        number = float(body.value.strip().replace(",", "."))
+                    except ValueError as err:
+                        raise HTTPException(400, f"Not a number: {body.value!r}") from err
+                    row.correct_value = readers.format_value(number, settings)
+            row.reviewed = True
+        elif body.action not in ("confirm", "label", "skip"):
+            raise HTTPException(400, "Answer confirm, label or skip")
+    if sensor.kind == KIND_READING:
+        await rt.publish_review_count()
+        return {"ok": True}
+    with rt.db.session() as s:
+        row = s.get(Prediction, prediction_id)
         sensor = get_sensor(s, row.sensor_id)
         key = row.state_key if body.action == "confirm" else body.state_key
         state_id = state_id_for(sensor, key) if body.action in ("confirm", "label") else None

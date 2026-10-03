@@ -156,7 +156,14 @@
       {#if objectSensor}
         <ObjectParams bind:threshold bind:debounce bind:clearAfter bind:minSize />
       {:else if readingSensor}
-        <ReadingParams bind:threshold bind:debounce bind:maxStep={reading.max_step} mode={reading.mode} unit={reading.unit} />
+        <ReadingParams
+          bind:threshold
+          bind:debounce
+          bind:maxStep={reading.max_step}
+          bind:spotRate={reading.spot_rate}
+          mode={reading.mode}
+          unit={reading.unit}
+        />
       {:else}
         <SensorParams bind:threshold bind:debounce />
       {/if}

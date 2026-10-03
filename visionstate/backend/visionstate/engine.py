@@ -17,7 +17,7 @@ from PIL import Image
 from sqlalchemy import delete, func, select
 
 from . import backbones, classifier, detectors, imaging, readers
-from .db import Database, Embedding, ModelInfo, Prediction, Sample, SampleLabel, Sensor, utcnow
+from .db import Database, Embedding, ModelInfo, Prediction, ReadingStat, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener
 from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, topics
 from .redact import redact
@@ -26,7 +26,6 @@ from .settings import (
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
-    READING,
     RUNTIME,
     STORAGE_DEFAULTS,
     UNKNOWN_STATE,
@@ -283,7 +282,6 @@ class LiveState:
     reading: dict | None = None
     reading_image: bytes | None = None
     reading_restored: bool = False  # last published value loaded from the history after a restart
-    last_rejected: float = 0.0
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"
@@ -879,7 +877,8 @@ class Runtime:
         A value is published after ``debounce`` equal readings in a row. Unsure, empty and
         implausible readings (a counter going down, a jump above ``max_step``, a mechanical
         counter read with another number of digits than it has wheels) are rejected:
-        the last value stays and the rejected reading is kept in the history (rate limited).
+        the last value stays and the rejected reading is kept in the history and sent to the
+        review queue, every one of them. Every reading is counted per day (Quality tab).
         """
         live = self.live_state(cfg.id)
         settings = cfg.reading
@@ -930,15 +929,32 @@ class Runtime:
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
         await self.mqtt.publish(t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
 
-        record = changed or (reason is not None and now - live.last_rejected >= READING["rejected_cooldown_s"])
-        if reason is not None and record:
-            live.last_rejected = now
-        if record:
+        await asyncio.to_thread(self._count_reading, cfg.id, reason)
+        spot = reason is None and not changed and random.random() < float(settings["spot_rate"])
+        if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
             details = {"text": text.text, "value": shown, "reason": reason}
-            await asyncio.to_thread(self._record_reading, cfg.id, image, published, text.score, details, changed)
+            review = "rejected" if reason is not None else "spot_check" if spot else None
+            await asyncio.to_thread(
+                self._record_reading, cfg.id, image, published, text.score, details, changed, review
+            )
+            if review:
+                await self.publish_review_count()
 
-    def _record_reading(self, sensor_id, image, published, score, details, changed) -> None:
+    def _count_reading(self, sensor_id: int, reason: str | None) -> None:
+        day = datetime.now().date().isoformat()  # local time: "today" as the user sees it
+        with self.db.session() as s:
+            row = s.get(ReadingStat, (sensor_id, day))
+            if row is None:
+                row = ReadingStat(sensor_id=sensor_id, day=day, reads=0, accepted=0, rejected={})
+                s.add(row)
+            row.reads += 1
+            if reason is None:
+                row.accepted += 1
+            else:
+                row.rejected = {**row.rejected, reason: row.rejected.get(reason, 0) + 1}
+
+    def _record_reading(self, sensor_id, image, published, score, details, changed, review=None) -> None:
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(
@@ -950,7 +966,8 @@ class Runtime:
                     probs=details,
                     frame=frame,
                     is_change=changed,
-                    reviewed=True,  # readings are not reviewed; rejected ones are listed in the history
+                    review_reason=review,
+                    reviewed=review is None,
                 )
             )
 
@@ -1256,6 +1273,7 @@ class Runtime:
                 select(Prediction).where(
                     Prediction.created_at < cutoff,
                     (Prediction.reviewed.is_(True)) | (Prediction.created_at < review_cutoff),
+                    Prediction.read_ok.is_(None),  # verified readings are kept, like training images
                 )
             ).all()
             for row in old:
@@ -1271,8 +1289,8 @@ class Runtime:
     def _trim_history(self, max_gb: float) -> int:
         """Remove the oldest history frames until all of them fit in ``max_gb`` (0 = no limit).
 
-        Reviewed frames go first, frames still waiting for review only when that is not enough.
-        Returns how many rows were removed.
+        Reviewed frames go first, frames still waiting for review only when that is not enough;
+        verified readings are never removed. Returns how many rows were removed.
         """
         if max_gb <= 0:
             return 0
@@ -1284,7 +1302,9 @@ class Runtime:
         with self.db.session() as s:
             for waiting in (False, True):
                 rows = s.scalars(
-                    select(Prediction).where(Prediction.reviewed.is_(not waiting)).order_by(Prediction.created_at)
+                    select(Prediction)
+                    .where(Prediction.reviewed.is_(not waiting), Prediction.read_ok.is_(None))
+                    .order_by(Prediction.created_at)
                 ).all()
                 for row in rows:
                     if used <= budget:

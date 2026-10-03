@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.3b2
+
+- **Quality tab for reading sensors**: how many readings were rejected today, in the last 7 and
+  30 days, why, and a chart per day — to see how reliable a meter is read.
+- **Every rejected reading is kept** with its frame (before: at most one every 5 minutes) and
+  waits in the **review queue**. Tell whether the reader read the meter right or misread it,
+  optionally with the right value — there or on the Quality tab. Verified readings are kept for
+  good, like training images.
+- **Spot checks** for reading sensors (Settings → Sensor output, off by default): a share of the
+  accepted readings goes to the review queue too, to find misreads that passed every check.
+
 ## 0.6.3b1
 
 All under **Settings → When to check** (and the last step of the new sensor wizard), for every

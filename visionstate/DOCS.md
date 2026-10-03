@@ -127,8 +127,16 @@ First choose **what it looks like**:
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
-  limit you set. Rejected readings are listed in the **History** tab with
-  the reason. A new value is published after 2 equal readings in a row (adjustable).
+  limit you set. Every rejected reading is listed in the **History** tab with the reason and
+  waits in the **Review** queue. A new value is published after 2 equal readings in a row
+  (adjustable).
+- **Quality** tab: how many readings were rejected today, in the last 7 and 30 days, why, and a
+  chart per day. Below it the rejected readings with their frame: tell whether the reader read
+  the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed) —
+  here or in the review queue. A misread that was rejected shows the checks work; a right
+  reading that was rejected points at a setting, for example a change limit that is too low.
+- **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
+  readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
   `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
@@ -203,8 +211,9 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 - **Settings → Storage** shows how much space history frames and training images use and how
   much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
   reached first; the oldest frames are removed first, frames waiting for review last (they are
-  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images are
-  never removed automatically.
+  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images, and
+  readings you verified on a reading sensor's Quality tab or in the review queue, are never
+  removed automatically.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
   reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is

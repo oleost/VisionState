@@ -36,8 +36,9 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
     ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
-    ['reading-history', `sensors/${readingId}/history`, 'Every new value and the readings that were rejected'],
+    ['reading-history', `sensors/${readingId}/history`, 'Every new value and every rejected reading'],
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
+    ['reading-quality', `sensors/${readingId}/quality`, 'Readings per day'],
     ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
     ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
@@ -418,6 +419,68 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible();
   errors.expectNone();
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+});
+
+test('rejected readings: review queue and quality tab', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const garage = await seededSensorId(request);
+  // The seeded state sensor flags a frame for review on every check; pause it so ours is the newest.
+  await request.patch(`api/v1/sensors/${garage}`, { data: { enabled: false } });
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Gas meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: DISPLAY_URL('00500'),
+      reading: { mode: 'counter', unit: 'm³' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.value, { timeout: 60_000 }).toBe('500');
+    // The display now shows less: a counter can not go down, so the reading is rejected.
+    await request.patch(`api/v1/sensors/${id}`, { data: { source: DISPLAY_URL('00400') } });
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.last?.reason, { timeout: 30_000 }).toBe('went down');
+
+    // In the review queue: say it misread, and what the meter showed.
+    await page.goto('#/review');
+    // A check of the paused sensor may still have been running: skip anything newer than ours.
+    const ours = page.getByText(/Did it read “00400”/);
+    await expect(page.getByText(/Did it read “00400”|Is this /).first()).toBeVisible();
+    for (let i = 0; i < 5 && !(await ours.isVisible()); i++) {
+      await press(page.getByRole('button', { name: 'Skip' }), info);
+    }
+    await expect(ours).toBeVisible();
+    await expect(page.getByText('Rejected: a counter can not go down')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-reading.png'), fullPage: true });
+    await press(page.getByRole('button', { name: 'Misread' }), info);
+    await page.getByLabel('The right value').fill('501');
+    await press(page.getByRole('button', { name: 'Save misread' }), info);
+    await expect(page.getByText(/Did it read “00400”/)).toHaveCount(0);
+
+    // The quality tab sums it up and keeps the answer, which can be changed.
+    await page.goto(`#/sensors/${id}/quality`);
+    await expect(page.getByText(/1 of \d+ readings rejected/).first()).toBeVisible();
+    await expect(page.locator('.reasons').getByText('a counter can not go down')).toBeVisible();
+    await expect(page.getByText('Misread — was 501 m³')).toBeVisible();
+    await expect(page.getByText('misread was caught by the checks.')).toBeVisible();
+    await expect(page.locator('.chart .day')).toHaveCount(30);
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-rejected.png'), fullPage: true });
+    await press(page.getByRole('button', { name: 'Change' }), info);
+    await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
+    await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+    await request.patch(`api/v1/sensors/${garage}`, { data: { enabled: true } });
+  }
 });
 
 test('storage limits can be changed', async ({ page }, info) => {

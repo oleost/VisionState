@@ -265,10 +265,38 @@ def test_reading_sensor_flow(settings):
         accepted = [h["published_key"] for h in history if h["published_key"]]
         rejected = [h["probs"]["reason"] for h in history if not h["published_key"]]
         assert accepted[:2] == ["12346.1", "12345.6"] and rejected == ["went down"]
-        assert client.get("/api/v1/review").json()["total"] == 0  # readings never enter the review queue
+
+        # Every rejected reading waits in the review queue; the answer says whether the reader misread.
+        queue = client.get("/api/v1/review").json()
+        assert queue["total"] == 1
+        item = queue["items"][0]
+        assert item["review_reason"] == "rejected" and item["sensor"]["kind"] == "reading"
+        assert item["sensor"]["reading"]["unit"] == "kWh"
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "confirm"}).status_code == 400
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "misread", "value": "x"}).status_code == 400
+        answer = client.post(f"/api/v1/review/{item['id']}", json={"action": "misread", "value": "12300,04"})
+        assert answer.status_code == 200, answer.text
+        assert client.get("/api/v1/review").json()["total"] == 0
+
+        # The quality tab: counts per period and per day, the reasons, and what was verified.
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        today = quality["periods"][0]
+        assert today["days"] == 1 and today["rejected"] == 1 and today["by_reason"] == {"went down": 1}
+        assert today["reads"] == today["accepted"] + 1 and today["reads"] >= 3
+        assert len(quality["daily"]) == 30 and quality["daily"][-1]["rejected"] == 1
+        assert quality["verified"]["misread_rejected"] == 1 and quality["verified"]["waiting"] == 0
+        verified = next(i for i in quality["items"] if i["id"] == item["id"])
+        assert verified["read_ok"] is False and verified["correct_value"] == "12300.0"
+        assert client.get(f"/api/v1/sensors/{sid}/quality").status_code == 400  # the state sensors' tab
+
+        # A verified reading is kept like a training image, whatever the history limits say.
+        rt.set_storage_limits({"history_days": 1, "history_max_gb": 0.000001})
+        rt.cleanup_history()
+        kept = [h["id"] for h in client.get(f"/api/v1/sensors/{sid}/history").json()]
+        assert kept == [item["id"]]
+        rt.set_storage_limits({})
 
         # Training endpoints do not apply.
-        assert client.get(f"/api/v1/sensors/{sid}/quality").status_code == 400
         assert client.post(f"/api/v1/sensors/{sid}/capture", json={"state_key": "x"}).status_code == 400
 
         # Wizard preview: the frame, the image the reader used, the text and the value.
@@ -355,3 +383,29 @@ def test_counter_sensor_flow(settings):
         assert good["text"] == "0089941" and good["value"] == "89.941" and good["wrong_digit_count"] is False
         bad = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "digits": 8}}).json()
         assert bad["wrong_digit_count"] is True
+
+
+@requires_reader
+def test_spot_checks_of_accepted_readings(settings):
+    camera = DisplayCamera("00500")
+    body = {
+        "name": "Gas",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "x",
+        "interval_s": 3600,
+        "debounce": 1,
+        "reading": {"spot_rate": 1.0},
+    }
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "500", timeout=60)
+        assert client.get("/api/v1/review").json()["total"] == 0  # a new value is not a spot check
+        client.post(f"/api/v1/sensors/{sid}/classify")  # the same value again: checked at random (here always)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] == 1, timeout=30)
+        item = client.get("/api/v1/review").json()["items"][0]
+        assert item["review_reason"] == "spot_check" and item["published_key"] == "500"
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"}).status_code == 200
+        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
+        assert verified["right_accepted"] == 1 and verified["misread_accepted"] == 0

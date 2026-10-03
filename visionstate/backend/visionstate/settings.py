@@ -82,16 +82,22 @@ READING_DEFAULTS = {
     "device_class": "",
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
-    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
+    "max_step": 0.0,
+    # Share of accepted readings that is also sent to the review queue, to find misreads that
+    # passed every check. Rejected readings always go there.
+    "spot_rate": 0.0,  # largest plausible change between two readings (0 = no limit)
 }
 READING_LIMITS = {
     "decimals": (0, 4),
     "digits": (1, 12),
     "max_step": (0.0, 1e9),
+    "spot_rate": (0.0, 1.0),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
-    "rejected_cooldown_s": 300,  # at most one rejected reading per sensor is kept in the history per period
+    # Quality tab: the periods it sums up (days, today included) and how many readings it lists.
+    "quality_periods_days": (1, 7, 30),
+    "quality_list_limit": 100,
     "segments_fallback_below": 0.6,  # "auto" display: below this confidence also try without unlit segments
     # "counter" display. Share of each cell's width that is read (the rest holds the dividers).
     "counter_cell_share": 0.7,

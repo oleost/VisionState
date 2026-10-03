@@ -36,6 +36,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   low_confidence: { label: 'Low confidence', tone: 'warn', help: 'The AI was unsure about this frame.' },
   flip: { label: 'Flip-flopping', tone: 'info', help: 'The state changed several times in a short period.' },
   spot_check: { label: 'Spot check', tone: 'muted', help: 'A random confident frame, to catch silent mistakes.' },
+  rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
 };
 
 /**
@@ -73,7 +74,7 @@ export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
   single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
   objects: ['live', 'history', 'settings'],
-  reading: ['live', 'history', 'settings'],
+  reading: ['live', 'history', 'quality', 'settings'],
 };
 
 /** The two kinds as offered in the new sensor wizard. */

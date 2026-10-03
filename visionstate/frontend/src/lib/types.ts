@@ -73,6 +73,32 @@ export interface ReadingSettings {
   /** Mechanical counters only: the number of wheels inside the region. */
   digits: number;
   max_step: number;
+  /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
+  spot_rate: number;
+}
+
+/** One period on a reading sensor's Quality tab (today, 7 days, 30 days). */
+export interface ReadingPeriod {
+  days: number;
+  reads: number;
+  accepted: number;
+  rejected: number;
+  by_reason: Record<string, number>;
+}
+
+export interface ReadingQuality {
+  periods: ReadingPeriod[];
+  /** One entry per day, oldest first, today last. */
+  daily: { day: string; reads: number; accepted: number; rejected: number }[];
+  /** What the user said about stored readings. */
+  verified: {
+    misread_rejected: number;
+    right_rejected: number;
+    misread_accepted: number;
+    right_accepted: number;
+    waiting: number;
+  };
+  items: Prediction[];
 }
 
 /** What the number reader makes of a fresh frame (new sensor wizard). */
@@ -240,7 +266,7 @@ export interface AppConfig {
   object_popular: string[];
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'digits' | 'max_step', [number, number]>;
+  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   reading_device_classes: string[];
@@ -301,15 +327,26 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | null;
   reviewed: boolean;
   has_frame: boolean;
   /** Object sensors: state_key = the class, published_key = 'on' | 'off'. */
   detections: Detection[] | null;
+  /** Reading sensors: did the reader read the right number (null = not verified)? */
+  read_ok: boolean | null;
+  /** Reading sensors: the right value, when the user gave it for a misread. */
+  correct_value: string | null;
 }
 
 export interface ReviewItem extends Prediction {
-  sensor: { id: number; name: string; roi: Roi | null; states: StateDef[] };
+  sensor: {
+    id: number;
+    name: string;
+    kind: SensorKind;
+    roi: Roi | null;
+    states: StateDef[];
+    reading: ReadingSettings | null;
+  };
 }
 
 export interface Tip {

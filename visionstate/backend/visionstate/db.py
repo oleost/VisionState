@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -33,6 +33,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     4: [("model_info", "suspects", "JSON"), ("sample", "verified", "BOOLEAN NOT NULL DEFAULT 0")],
     5: [("sensor", "objects", "JSON"), ("prediction", "detections", "JSON")],
     6: [("sensor", "reading", "JSON")],
+    7: [("prediction", "read_ok", "BOOLEAN"), ("prediction", "correct_value", "VARCHAR(64)")],
 }
 
 
@@ -128,8 +129,11 @@ class Prediction(Base):
 
     Object sensors store one row per object class that appeared (published_key "on") or
     cleared ("off"), with state_key = the class and the frame's detections.
-    Reading sensors store accepted new values (state_key "reading", published_key = the value)
-    and rejected readings (published_key None); probs holds {"text", "value", "reason"}.
+    Reading sensors store accepted new values (state_key "reading", published_key = the value),
+    every rejected reading (published_key None, review_reason "rejected") and spot checks of
+    accepted ones; probs holds {"text", "value", "reason"}. ``read_ok`` is the user's verdict on
+    what the reader read (``correct_value`` when it misread); verified readings are never removed
+    automatically, as they may later teach the reader.
     """
 
     __tablename__ = "prediction"
@@ -146,6 +150,20 @@ class Prediction(Base):
     review_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     detections: Mapped[list | None] = mapped_column(JSON, nullable=True)  # object sensors, see detectors.Detection
+    read_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # reading sensors, see above
+    correct_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ReadingStat(Base):
+    """How many readings a reading sensor made per day, and why the rejected ones were rejected."""
+
+    __tablename__ = "reading_stat"
+
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # local date, YYYY-MM-DD
+    reads: Mapped[int] = mapped_column(Integer, default=0)
+    accepted: Mapped[int] = mapped_column(Integer, default=0)
+    rejected: Mapped[dict] = mapped_column(JSON, default=dict)  # reason -> count
 
 
 class ModelInfo(Base):

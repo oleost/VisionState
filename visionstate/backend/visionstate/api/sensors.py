@@ -5,21 +5,23 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .. import bundle
-from ..db import ModelInfo, Prediction, Sample, Sensor, State
+from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
 from ..settings import (
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
+    READING,
     READING_SENSOR_DEFAULTS,
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
@@ -409,7 +411,81 @@ def prediction_view(p: Prediction) -> dict:
         "reviewed": p.reviewed,
         "has_frame": bool(p.frame),
         "detections": p.detections,
+        "read_ok": p.read_ok,
+        "correct_value": p.correct_value,
     }
+
+
+@router.get("/{sensor_id}/reading-quality")
+def reading_quality(sensor_id: int, request: Request) -> dict:
+    """How often a reading sensor's readings were rejected, why, and what the user verified."""
+    rt = runtime(request)
+    today = datetime.now().date()
+    longest = max(READING["quality_periods_days"])
+    first_day = (today - timedelta(days=longest - 1)).isoformat()
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_READING)
+        stats = s.scalars(
+            select(ReadingStat).where(ReadingStat.sensor_id == sensor_id, ReadingStat.day >= first_day)
+        ).all()
+        by_day = {row.day: row for row in stats}
+        daily = []
+        for offset in range(longest - 1, -1, -1):
+            day = (today - timedelta(days=offset)).isoformat()
+            row = by_day.get(day)
+            daily.append(
+                {
+                    "day": day,
+                    "reads": row.reads if row else 0,
+                    "accepted": row.accepted if row else 0,
+                    "rejected": sum(row.rejected.values()) if row else 0,
+                }
+            )
+        periods = []
+        for days in READING["quality_periods_days"]:
+            since = (today - timedelta(days=days - 1)).isoformat()
+            rows = [row for row in stats if row.day >= since]
+            reasons: dict[str, int] = {}
+            for row in rows:
+                for reason, n in row.rejected.items():
+                    reasons[reason] = reasons.get(reason, 0) + n
+            periods.append(
+                {
+                    "days": days,
+                    "reads": sum(row.reads for row in rows),
+                    "accepted": sum(row.accepted for row in rows),
+                    "rejected": sum(reasons.values()),
+                    "by_reason": reasons,
+                }
+            )
+        mine = Prediction.sensor_id == sensor_id
+        rejected = Prediction.published_key.is_(None)
+
+        def count(*where) -> int:
+            return s.scalar(select(func.count()).select_from(Prediction).where(mine, *where)) or 0
+
+        verified = {
+            # rejected, and the reader had indeed misread: the checks did their job
+            "misread_rejected": count(rejected, Prediction.read_ok.is_(False)),
+            # rejected although the reader read it right (e.g. a real jump above the change limit)
+            "right_rejected": count(rejected, Prediction.read_ok.is_(True)),
+            # accepted although the reader misread: a mistake that passed every check
+            "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
+            "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
+            "waiting": count(Prediction.reviewed.is_(False)),
+        }
+        items = s.scalars(
+            select(Prediction)
+            .where(mine, rejected | Prediction.review_reason.is_not(None) | Prediction.read_ok.is_not(None))
+            .order_by(Prediction.created_at.desc())
+            .limit(READING["quality_list_limit"])
+        ).all()
+        return {
+            "periods": periods,
+            "daily": daily,
+            "verified": verified,
+            "items": [prediction_view(p) for p in items],
+        }
 
 
 @router.get("/{sensor_id}/history")

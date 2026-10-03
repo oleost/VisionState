@@ -7,6 +7,7 @@ import type {
   Prediction,
   Quality,
   ReadPreview,
+  ReadingQuality,
   ReadingSettings,
   ReviewRules,
   Roi,
@@ -173,6 +174,10 @@ export const api = {
   review: () => request<{ total: number; items: ReviewItem[] }>('review'),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>
     request(`review/${predictionId}`, send('POST', { action, state_key: stateKey })),
+  /** A reading: did the reader read the right number? `value` = the right one, when it misread. */
+  verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
+    request(`review/${predictionId}`, send('POST', { action, value: value || null })),
+  readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
 
   importBundle(file: File) {
     const form = new FormData();

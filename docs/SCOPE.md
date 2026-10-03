@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.3b1 / stable 0.6.2, 2026-10-02) and the open
+> Describes VisionState **as built** (beta 0.6.3b2 / stable 0.6.2, 2026-10-03) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -249,8 +249,10 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
     global review rules, storage (disk use and history limits), import.
 
-Reading sensors have the same three tabs: **Live** (value, last read, the analysed frame and the
-image the reader saw), **History** (new values and rejected readings) and **Settings** (mode,
+Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
+image the reader saw), **Quality** (rejected share today / 7 / 30 days, by reason, per day, and
+the rejected and checked readings with *read correctly* / *misread*), **History** (new values
+and rejected readings) and **Settings** (mode,
 decimals, unit, device class, display, limits). The reading settings start with the type —
 *digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
 the region in the wizard and on the Settings tab).
@@ -261,10 +263,15 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v6).
+- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v7).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
   `clear_after_s`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
-  display, `digits`, `max_step`); reserved for `multi_label`. Object events are `prediction` rows (class,
+  display, `digits`, `max_step`, `spot_rate`); reserved for `multi_label`. Every reading is
+  counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
+  every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
+  (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
+  readings are excluded from the history clean-up — they are the data a later reader
+  improvement would learn from (schema v7). Object events are `prediction` rows (class,
   `on`/`off`, `detections`); readings are `prediction` rows with `state_key` "reading" and the
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
