@@ -26,6 +26,7 @@ from ..settings import (
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
+    SENSOR_PUBLISH_DEFAULT,
     STATE_PALETTE,
 )
 from ..sources import SOURCE_TYPES, SourceError
@@ -67,6 +68,7 @@ class SensorIn(BaseModel):
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
+    publish: bool = SENSOR_PUBLISH_DEFAULT  # send values to Home Assistant
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
 
@@ -107,6 +109,7 @@ class SensorIn(BaseModel):
             threshold=self.threshold,
             debounce=self.debounce,
             enabled=self.enabled,
+            publish=self.publish,
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
             objects=self.objects.model_dump() if self.objects else None,
@@ -127,6 +130,7 @@ class SensorPatch(BaseModel):
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool | None = None
+    publish: bool | None = None
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
     objects: ObjectsIn | None = None
@@ -199,7 +203,7 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         if sensor.kind != KIND_READING and body.reading is not None:
             raise HTTPException(400, "Only reading sensors have reading settings")
         old_roi, old_keys = sensor.roi, [st.key for st in sensor.states]
-        for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled"):
+        for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
             value = getattr(body, field)
             if value is not None:
                 setattr(sensor, field, value)

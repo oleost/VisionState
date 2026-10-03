@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL } from './env';
+import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
 import {
   center,
   doubleTap,
@@ -142,6 +142,8 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   if (hasTouchScreen(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
+  // A new sensor is sent to Home Assistant unless switched off here.
+  await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
   await expectNoHorizontalOverflow(page);
   await press(page.getByRole('button', { name: 'Create sensor and start labelling' }), info);
 
@@ -458,6 +460,32 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible();
   errors.expectNone();
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+});
+
+test('a sensor can be kept from Home Assistant while it is tuned', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  try {
+    await page.goto(`#/sensors/${id}/settings`);
+    const send = page.getByRole('checkbox', { name: 'Send to Home Assistant' });
+    await expect(send).toBeChecked();
+    await press(send, info);
+    await expect(page.getByText('stay unavailable')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    expect((await (await request.get(`api/v1/sensors/${id}`)).json()).publish).toBe(false);
+    // Marked on the sensor page and on the dashboard, so it is not forgotten.
+    await expect(page.locator('header .chip', { hasText: 'Not sent to Home Assistant' })).toBeVisible();
+    await page.goto('#/');
+    const card = page.locator('.card', { hasText: READING_SENSOR_NAME }).first();
+    await expect(card.getByText('Not sent to Home Assistant')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'dashboard-not-sent.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await request.patch(`api/v1/sensors/${id}`, { data: { publish: true } });
+  }
 });
 
 test('rejected readings: review queue and quality tab', async ({ page, request }, info) => {

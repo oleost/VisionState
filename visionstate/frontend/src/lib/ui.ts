@@ -12,6 +12,9 @@ export const POLL = {
 
 export const TOAST_MS = 5_000;
 
+/** Shown on a sensor whose values are not sent to Home Assistant (see PublishSwitch). */
+export const NOT_SENT = { label: 'Not sent to Home Assistant', help: 'Its entities in Home Assistant are unavailable until you turn on “Send to Home Assistant” in its settings.' };
+
 /** Browser storage key of the light switch in views with live frames (a per-viewer convenience). */
 export const LIGHT_HOLD_STORAGE_KEY = 'visionstate.lightWhileViewing';
 /** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */

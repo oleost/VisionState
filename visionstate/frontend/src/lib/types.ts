@@ -204,6 +204,8 @@ export interface Sensor {
   threshold: number;
   debounce: number;
   enabled: boolean;
+  /** Values go to Home Assistant; off: its entities stay unavailable (a sensor being tuned). */
+  publish: boolean;
   triggers: Triggers;
   review: ReviewOverrides;
   review_effective: ReviewRules;
@@ -233,6 +235,7 @@ export interface SensorInput {
   threshold?: number;
   debounce?: number;
   enabled?: boolean;
+  publish?: boolean;
   triggers?: Triggers;
   review?: Partial<ReviewOverrides>;
 }
@@ -253,6 +256,8 @@ export interface AppConfig {
     [number, number]
   >;
   light_domains: string[];
+  /** Whether a new sensor sends its values to Home Assistant. */
+  publish_default: boolean;
   /** A view with live frames renews its hold on a sensor's light this often; a lease runs out after lease_s. */
   light_view: { renew_s: number; lease_s: number };
   trigger_max_entities: number;

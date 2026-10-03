@@ -66,6 +66,7 @@ class SensorConfig:
     objects: dict = field(default_factory=lambda: merge_objects(None))  # object sensors only
     reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
+    publish: bool = True  # see db.Sensor.publish
 
     @property
     def state_keys(self) -> list[str]:
@@ -110,6 +111,7 @@ class SensorConfig:
             objects=merge_objects(row.objects),
             reading=merge_reading(row.reading),
             entity_prefix=bool(row.entity_prefix),
+            publish=bool(row.publish),
         )
 
 
@@ -774,7 +776,7 @@ class Runtime:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
             live.available, live.error = False, redact(str(err))
-            await self.mqtt.publish(t["availability"], "offline", retain=True)
+            await self._send(cfg, t["availability"], "offline", retain=True)
             return
         live.available, live.error = True, ""
         signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
@@ -782,7 +784,7 @@ class Runtime:
             live.change_score = imaging.change_score(live.signature, signature)
         live.signature = signature
         live.frame_id = frame_id
-        await self.mqtt.publish(t["availability"], "online", retain=True)
+        await self._send(cfg, t["availability"], "online", retain=True)
         if cfg.is_objects:
             await self._run_objects(cfg, image)
             return
@@ -803,9 +805,10 @@ class Runtime:
             live.changes.append(now)
 
         crop = imaging.crop(image, cfg.roi)
-        await self.mqtt.publish(t["state"], live.debouncer.published or UNKNOWN_STATE, retain=True)
-        await self.mqtt.publish(t["confidence"], f"{confidence * 100:.1f}", retain=True)
-        await self.mqtt.publish(
+        await self._send(cfg, t["state"], live.debouncer.published or UNKNOWN_STATE, retain=True)
+        await self._send(cfg, t["confidence"], f"{confidence * 100:.1f}", retain=True)
+        await self._send(
+            cfg,
             t["attributes"],
             {
                 "probabilities": {k: round(v, 4) for k, v in probs.items()},
@@ -816,7 +819,7 @@ class Runtime:
             },
             retain=True,
         )
-        await self.mqtt.publish(t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
 
         reason = None
         if probs:
@@ -859,9 +862,10 @@ class Runtime:
         for key in classes:
             track = live.tracks[key]
             ot = object_topics(cfg.slug, key)
-            await self.mqtt.publish(ot["state"], "ON" if track.on else "OFF", retain=True)
-            await self.mqtt.publish(ot["count"], str(track.count), retain=True)
-            await self.mqtt.publish(
+            await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
+            await self._send(cfg, ot["count"], str(track.count), retain=True)
+            await self._send(
+                cfg,
                 ot["attributes"],
                 {
                     "confidence": round(track.score, 4),
@@ -878,7 +882,7 @@ class Runtime:
             )
         )
         jpeg = await asyncio.to_thread(imaging.encode_jpeg, annotated, 80)
-        await self.mqtt.publish(topics(cfg.slug)["image"], jpeg, retain=True)
+        await self._send(cfg, topics(cfg.slug)["image"], jpeg, retain=True)
         for key in changed:
             track = live.tracks[key]
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, track.on, track.score, found)
@@ -943,9 +947,10 @@ class Runtime:
             if changed:
                 live.changes.append(now)
         if live.debouncer.published is not None:
-            await self.mqtt.publish(t["state"], live.debouncer.published, retain=True)
-        await self.mqtt.publish(t["confidence"], f"{text.score * 100:.1f}", retain=True)
-        await self.mqtt.publish(
+            await self._send(cfg, t["state"], live.debouncer.published, retain=True)
+        await self._send(cfg, t["confidence"], f"{text.score * 100:.1f}", retain=True)
+        await self._send(
+            cfg,
             t["attributes"],
             {
                 "read_text": text.text,
@@ -956,7 +961,7 @@ class Runtime:
             retain=True,
         )
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
-        await self.mqtt.publish(t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
 
         await asyncio.to_thread(self._count_reading, cfg.id, reason)
         spot = reason is None and not changed and random.random() < float(settings["spot_rate"])
@@ -1036,6 +1041,11 @@ class Runtime:
             vector = await asyncio.to_thread(self.embedder.embed, [crop])
         return head.predict(vector, cfg.state_keys)[0]
 
+    async def _send(self, cfg: SensorConfig, topic: str, payload, retain: bool = False) -> None:
+        """Publish one of a sensor's values — unless it is not to be sent to Home Assistant."""
+        if cfg.publish:
+            await self.mqtt.publish(topic, payload, retain=retain)
+
     async def publish_discovery(self, cfg: SensorConfig) -> None:
         t = topics(cfg.slug)
         if cfg.is_objects:
@@ -1047,12 +1057,18 @@ class Runtime:
         self._registry_wanted.set()
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
         live = self.live.get(cfg.id)
+        # Not sent to Home Assistant: its entities are unavailable (no values, no statistics). Sent
+        # again: available right away when the camera was, not only after the next check.
+        if not cfg.publish:
+            await self.mqtt.publish(t["availability"], "offline", retain=True)
+        elif live and live.available:
+            await self.mqtt.publish(t["availability"], "online", retain=True)
         if cfg.is_objects:
             for key, track in (live.tracks if live else {}).items():
-                await self.mqtt.publish(object_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
+                await self._send(cfg, object_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
         elif live and live.debouncer.published is not None:
             # Re-send the last state so it is not lost when discovery is (re)published.
-            await self.mqtt.publish(t["state"], live.debouncer.published, retain=True)
+            await self._send(cfg, t["state"], live.debouncer.published, retain=True)
 
     def _review_counts(self) -> tuple[int, dict[str, int]]:
         with self.db.session() as s:

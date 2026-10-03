@@ -19,7 +19,9 @@ def test_migration_keeps_the_prefix_of_existing_sensors(tmp_path):
     path = tmp_path / "old.db"
     Database(path).init()
     con = sqlite3.connect(path)
-    con.execute("ALTER TABLE sensor DROP COLUMN entity_prefix")  # as a database of 0.6.3b5 and older
+    # As a database of 0.6.3b5 and older (neither column yet).
+    con.execute("ALTER TABLE sensor DROP COLUMN entity_prefix")
+    con.execute("ALTER TABLE sensor DROP COLUMN publish")
     con.execute(
         "INSERT INTO sensor (slug, name, kind, source_type, source, interval_s, threshold, debounce, enabled, created_at) "
         "VALUES ('garage', 'Garage', 'single_state', 'http', 'http://cam', 30, 0.7, 2, 1, '2026-10-01 12:00:00')"

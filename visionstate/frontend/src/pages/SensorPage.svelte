@@ -9,7 +9,7 @@
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import { NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
   import HistoryTab from './sensor/HistoryTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
@@ -83,6 +83,7 @@
                 class="chip {SENSOR_STATUS[sensor.status].tone}">{SENSOR_STATUS[sensor.status].label}</span
               >{/if}
             <span class="mono xsmall muted">{isObjectSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span>
+            {#if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
           </div>
         </div>
         <span class="spacer"></span>

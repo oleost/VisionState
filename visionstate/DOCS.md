@@ -59,6 +59,14 @@ frames waiting for review (with a per-sensor breakdown as attribute).
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
 
+**Tuning a sensor before Home Assistant uses it:** switch off **Send to Home Assistant** (in the
+last step of the wizard, or under **Settings → General**). The sensor then runs as usual — its
+history, Quality tab and review queue fill up — but its entities in Home Assistant stay
+*unavailable*: no values, so no statistics either. Useful when the sensor takes over the entity ID
+of an older one and wrong readings must not end up in its statistics. The pause switch and the
+check-now button keep working. Turn it on once the sensor reads reliably; the value is sent right
+away. Sensors not sent are marked on the dashboard.
+
 ## Object sensors
 
 An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 70 more —

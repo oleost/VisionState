@@ -235,7 +235,13 @@ for review, per-sensor breakdown as attribute).
 
 Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
 `last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
-removes its entities.
+removes its entities. **Send to Home Assistant** (`sensor.publish`, default
+`settings.SENSOR_PUBLISH_DEFAULT`, DB migration 9 keeps existing sensors on): when off, discovery
+stays (the entities and the IDs the user gave them are kept), but no value is published (the
+engine routes every sensor value through `_send`) and the sensor's availability topic is
+`offline`, so its entities are unavailable and record no statistics. The `enabled` switch's state
+is still published. Turning it on publishes `online` and the last value at once. Kept by
+export/import.
 
 **Entity IDs** follow Home Assistant's convention: VisionState sends no `default_entity_id`, so
 Home Assistant names each entity after the device (the sensor's name) and the entity name

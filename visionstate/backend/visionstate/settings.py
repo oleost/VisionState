@@ -154,6 +154,11 @@ TRIGGER_LIMITS = {
 TRIGGER_MAX_ENTITIES = 20
 TRIGGER_STATE_MAX_LENGTH = 255  # Home Assistant's own limit for a state
 # Entity domains offered for the light (anything homeassistant.turn_on / turn_off works on).
+# A new sensor sends its values to Home Assistant. Off: it runs and records everything in
+# VisionState, but its entities stay unavailable in Home Assistant (no values, no statistics) —
+# for tuning a sensor before Home Assistant uses it.
+SENSOR_PUBLISH_DEFAULT = True
+
 LIGHT_DOMAINS = ("light", "switch", "input_boolean")
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}

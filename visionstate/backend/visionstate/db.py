@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -36,6 +36,8 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     7: [("prediction", "read_ok", "BOOLEAN"), ("prediction", "correct_value", "VARCHAR(64)")],
     # Sensors made before 0.6.3b6 keep their "visionstate_" entity IDs (see Sensor.entity_prefix).
     8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
+    # Existing sensors keep sending to Home Assistant.
+    9: [("sensor", "publish", "BOOLEAN NOT NULL DEFAULT 1")],
 }
 
 
@@ -75,6 +77,8 @@ class Sensor(Base):
     # (also when exported and imported), so entities that come back get the same ID. Newer sensors
     # let Home Assistant name them after the device and entity, like other integrations.
     entity_prefix: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Send values to Home Assistant (settings.SENSOR_PUBLISH_DEFAULT). Off: the entities stay unavailable.
+    publish: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(

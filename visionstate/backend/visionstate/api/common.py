@@ -376,6 +376,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "threshold": sensor.threshold,
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
+        "publish": sensor.publish,
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),

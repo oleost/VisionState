@@ -9,6 +9,7 @@
   import ReadingEditor from '../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import LightEditor from '../lib/components/LightEditor.svelte';
+  import PublishSwitch from '../lib/components/PublishSwitch.svelte';
   import LightHold from '../lib/components/LightHold.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
@@ -53,6 +54,7 @@
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
   let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
   let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
+  let publish = $state(app.config?.publish_default ?? true);
   // The camera's light (picked in step 1) is on while the region and the test show live frames.
   let lightReady = $state(false);
   $effect(() => {
@@ -178,6 +180,7 @@
         ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
+        publish,
       });
       toast(learned ? `${sensor.name} created — now label some frames` : `${sensor.name} created`);
       go(paths.sensor(sensor.id, learned ? 'label' : 'live'));
@@ -393,6 +396,7 @@
           </p>
         </div>
         <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
+        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
       {/if}
 
       <span class="spacer"></span>

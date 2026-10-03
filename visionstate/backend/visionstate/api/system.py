@@ -40,6 +40,7 @@ from ..settings import (
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
+    SENSOR_PUBLISH_DEFAULT,
     STATE_PALETTE,
     STORAGE_DEFAULTS,
     STORAGE_LIMITS,
@@ -91,6 +92,7 @@ def ui_config() -> dict:
         "trigger_limits": TRIGGER_LIMITS,
         "trigger_max_entities": TRIGGER_MAX_ENTITIES,
         "light_domains": LIGHT_DOMAINS,
+        "publish_default": SENSOR_PUBLISH_DEFAULT,
         "light_view": {"renew_s": RUNTIME["light_view_renew_s"], "lease_s": RUNTIME["light_view_lease_s"]},
         "roi_max_points": ROI_MAX_POINTS,
         "review_defaults": REVIEW_DEFAULTS,
@@ -587,6 +589,7 @@ def _import_sync(rt, path: Path) -> int:
                     "debounce",
                     "triggers",
                     "review",
+                    "publish",
                 )
                 if data.get(key) is not None
             }
