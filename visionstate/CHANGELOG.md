@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3b7
+
+- **iPhone and iPad** (the Home Assistant app, Safari): drop-down menus such as the AI model
+  choice under Settings were light with light text; they are dark and readable now.
+- The app now says which Home Assistant it needs (**2025.10 or newer**), so an older Home Assistant
+  is not offered an update that cannot work there.
+- Behind the scenes: every release is now also tested as an update from the last stable release
+  (and back), on an emulated Raspberry Pi 3/4 CPU, and in Safari's engine.
+
 ## 0.6.3b6
 
 - **Entity IDs like other integrations**: new sensors are named by Home Assistant after the sensor

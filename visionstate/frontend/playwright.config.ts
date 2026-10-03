@@ -56,5 +56,13 @@ export default defineConfig({
       use: { ...devices['Pixel 7'] }, // 412×915, touch, mobile user agent
       dependencies: ['setup'],
     },
+    {
+      // WebKit, like the Home Assistant app on iPhone and iPad. Touch gestures go through Chrome's
+      // DevTools (mobile project), so here they use the mouse; layout and behaviour are WebKit's.
+      name: 'iphone',
+      testMatch: /\.spec\.ts/,
+      use: { ...devices['iPhone 14'] }, // 390×664, WebKit, mobile Safari user agent
+      dependencies: ['setup'],
+    },
   ],
 });

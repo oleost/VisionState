@@ -9,6 +9,7 @@ import {
   expectNoClipping,
   expectNoHorizontalOverflow,
   hold,
+  hasTouchScreen,
   isTouch,
   press,
   seededCounterSensorId,
@@ -44,6 +45,9 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
+  // Native parts of controls are drawn dark (Safari shows light select menus with light text otherwise).
+  await page.goto('#/');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
   for (const [name, route, ready] of pages) {
     await test.step(name, async () => {
       const errors = watchErrors(page);
@@ -100,7 +104,7 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   await page.keyboard.type('Partial');
   await expect(page.getByLabel('Name of state 3')).toHaveValue('Partial');
   await expect(page.getByText('options: open, closed, partial, unknown')).toBeVisible();
-  if (isTouch(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
+  if (hasTouchScreen(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
   await expectNoHorizontalOverflow(page);
@@ -364,7 +368,7 @@ test('labelling a frame shows a confirmation', async ({ page, request }, info) =
   await page.goto(`#/sensors/${id}/label`);
   await expect(page.locator('.live img')).toBeVisible();
   // Keyboard shortcuts are hidden on touch screens and shown with a mouse.
-  if (isTouch(info)) await expect(page.locator('.kbd-only').first()).toBeHidden();
+  if (hasTouchScreen(info)) await expect(page.locator('.kbd-only').first()).toBeHidden();
   else await expect(page.locator('.kbd-only').first()).toBeVisible();
   await press(page.locator('.state-btn', { hasText: 'Partial' }), info);
   await expect(page.getByText('Saved as Partial')).toBeVisible();

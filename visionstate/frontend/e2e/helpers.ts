@@ -4,15 +4,24 @@ import { COUNTER_SENSOR_NAME, OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NA
 
 export type Point = { x: number; y: number };
 
+/** Gestures with a real finger (Chrome DevTools touch events): the Android phone only. */
 export const isTouch = (info: TestInfo) => info.project.name === 'mobile';
+/** A touch screen as the page sees it (`pointer: coarse`): the Android phone and the iPhone. */
+export const hasTouchScreen = (info: TestInfo) => ['mobile', 'iphone'].includes(info.project.name);
 
 /** Collects console errors and uncaught exceptions; call `expectNone()` at the end of a test. */
 export function watchErrors(page: Page) {
   const errors: string[] = [];
+  // WebKit reports a request cancelled by a reload or navigation (e.g. a frame being polled) as
+  // "… due to access control checks." The app makes no cross-origin requests, so this is never a
+  // real access problem.
+  const cancelled = (text: string) => text.endsWith('due to access control checks.');
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(`console: ${msg.text()} (${msg.location().url})`);
+    if (msg.type() === 'error' && !cancelled(msg.text())) errors.push(`console: ${msg.text()} (${msg.location().url})`);
   });
-  page.on('pageerror', (err) => errors.push(`page: ${err.message}`));
+  page.on('pageerror', (err) => {
+    if (!cancelled(err.message)) errors.push(`page: ${err.message}`);
+  });
   return { errors, expectNone: () => expect(errors, errors.join('\n')).toEqual([]) };
 }
 

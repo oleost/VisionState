@@ -17,6 +17,8 @@ jobs:
         working-directory: visionstate/backend
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the stable tags, for the options check
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -32,6 +34,15 @@ jobs:
       - run: ruff check visionstate tests
       - run: ruff format --check visionstate tests
       - run: pytest -q
+      - name: App options stay compatible with the last stable release
+        run: python ../../scripts/check_options.py
+      - name: Known vulnerabilities in the Python packages
+        # Blocks stable releases (main, pull requests to main, stable tags); only a warning on betas,
+        # so a new advisory does not hold up a beta fix.
+        continue-on-error: ${{ !(github.ref == 'refs/heads/main' || github.base_ref == 'main' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'b'))) }}
+        run: |
+          pip install -q pip-audit
+          pip-audit -r requirements.txt
 
   frontend:
     runs-on: ubuntu-latest
@@ -48,9 +59,13 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      - name: Known vulnerabilities in the shipped packages
+        continue-on-error: ${{ !(github.ref == 'refs/heads/main' || github.base_ref == 'main' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'b'))) }}  # as for the Python packages
+        run: npm audit --omit=dev --audit-level=high
 
   e2e:
-    # UI tests in a real browser, on desktop (mouse) and a phone (touch). See visionstate/frontend/e2e.
+    # UI tests in real browsers: desktop (mouse), an Android phone (touch) and an iPhone (WebKit, like
+    # the Home Assistant app on iOS). See visionstate/frontend/e2e.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -76,7 +91,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
           npm run e2e
       - name: Upload report and screenshots
         if: ${{ !cancelled() }}
@@ -108,6 +123,8 @@ jobs:
             platform: linux/arm64
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the stable tags, for the upgrade test
       - name: Read version and check the release channel
         id: meta
         run: |
@@ -144,11 +161,12 @@ jobs:
       - name: Smoke test (start the image with a real MQTT broker)
         env:
           PLATFORM: ${{ matrix.platform }}
+          MEMORY_LIMIT: 2g  # all three models must fit (Home Assistant Green has 4 GB for everything)
         run: |
           set -euo pipefail
           docker run -d --name mqtt -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
           # --init: Home Assistant runs apps with an init process (tini) as PID 1.
-          docker run -d --init --name app --platform "$PLATFORM" --network host \
+          docker run -d --init --name app --platform "$PLATFORM" --network host --memory "$MEMORY_LIMIT" \
             -e VISIONSTATE_DATA=/tmp/data -e VISIONSTATE_MEDIA=/tmp/media -e VISIONSTATE_MQTT_HOST=127.0.0.1 \
             visionstate-test:ci
           ok=""
@@ -182,23 +200,35 @@ jobs:
           docker exec mqtt mosquitto_sub -t 'homeassistant/sensor/visionstate_meter/state/config' -C 1 -W 60 | jq -e '.state_class == "total_increasing"' >/dev/null
           docker exec mqtt mosquitto_sub -t 'visionstate/meter/state' -C 1 -W 300 | grep -q '123456.7'
           if docker logs app 2>&1 | grep -q Traceback; then docker logs app; exit 1; fi
+          # With all three models loaded: the most memory the app used.
+          peak=$(docker exec app cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo 0)
+          echo "::notice::memory peak with all models loaded ($PLATFORM): $((peak / 1024 / 1024)) MB (limit $MEMORY_LIMIT)"
           # Home Assistant stops apps with SIGTERM; a non-zero exit code shows up as "Error".
           docker stop -t 30 app
           code=$(docker inspect -f '{{.State.ExitCode}}' app)
           if [ "$code" != "0" ]; then echo "::error::exit code $code after docker stop"; docker logs app | tail -20; exit 1; fi
           echo "smoke test passed"
-      - name: Old CPU check (the image works without x86-64-v2)
-        # Virtual machines often present a generic CPU (kvm64 / qemu64: SSE3 at most). The probe
-        # runs every native library and the app itself under such a CPU; a library built for a
-        # newer one refuses to import or dies with "Illegal instruction".
-        if: matrix.arch == 'amd64'
-        timeout-minutes: 10
+      - name: Old CPU check (the image works on the oldest CPUs we support)
+        # amd64: virtual machines often present a generic CPU (kvm64 / qemu64: SSE3 at most, no
+        # x86-64-v2). aarch64: the runners are ARMv9 servers, but a Raspberry Pi 3/4 and Home
+        # Assistant Yellow (CM4) are ARMv8.0 (Cortex-A53/A72). The probe runs every native library
+        # and the app itself under such a CPU; a library built for a newer one refuses to import or
+        # dies with "Illegal instruction".
+        timeout-minutes: 15
+        env:
+          QEMU: ${{ matrix.arch == 'amd64' && 'qemu-x86_64-static' || 'qemu-aarch64-static' }}
+          CPU: ${{ matrix.arch == 'amd64' && 'kvm64' || 'cortex-a53' }}
         run: |
           set -euo pipefail
           sudo apt-get update -q && sudo apt-get install -y -q qemu-user-static
-          docker run --rm -v /usr/bin/qemu-x86_64-static:/qemu:ro -v "$PWD/scripts:/probe:ro" \
+          docker run --rm -v "/usr/bin/$QEMU:/qemu:ro" -v "$PWD/scripts:/probe:ro" \
             -v "$PWD/visionstate/backend/tests/assets:/assets:ro" visionstate-test:ci \
-            /qemu -cpu kvm64 /usr/local/bin/python /probe/cpu_probe.py /assets
+            /qemu -cpu "$CPU" /usr/local/bin/python /probe/cpu_probe.py /assets
+      - name: Upgrade test (from the last stable release, and back)
+        # See scripts/upgrade_test.sh: sensors and their Home Assistant IDs survive an update, and the
+        # last stable release still starts on the migrated data (rollback).
+        timeout-minutes: 20
+        run: bash scripts/upgrade_test.sh visionstate-test:ci ${{ matrix.arch }} ${{ matrix.platform }}
       - name: Publish image (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7

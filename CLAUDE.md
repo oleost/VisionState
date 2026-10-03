@@ -42,15 +42,16 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 - **UI testing routine** (every UI change, before a beta release) — many users run Home Assistant
   on phones/tablets:
   - Automated: `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
-    (Playwright, `e2e/`; also runs in CI). It starts the backend + `scripts/fake_camera.py`,
+    (Playwright, `e2e/`; also runs in CI; once: `npx playwright install chromium webkit`). It starts the backend + `scripts/fake_camera.py`,
     seeds one sensor of each kind (a trained state sensor, an object sensor on a real photo and
-    reading sensors on a drawn display and a drawn mechanical counter), and runs every page on **desktop** (1440×900, mouse) and
-    **mobile** (Pixel 7, real touch via CDP): no console errors, no sideways scrolling, no text
+    reading sensors on a drawn display and a drawn mechanical counter), and runs every page on **desktop** (1440×900, mouse),
+    **mobile** (Pixel 7, real touch via CDP) and **iphone** (iPhone 14, WebKit like the Home Assistant
+    app on iOS; gestures with the mouse): no console errors, no sideways scrolling, no text
     running out of buttons or cards, plus the wizard (all three kinds), region editor gestures,
     labelling, review, boxes and readings. Add a test
     for every new page or gesture.
-  - Look at the full-page screenshots in `test-results/pages/{desktop,mobile}/` after UI changes,
-    for every page at both sizes.
+  - Look at the full-page screenshots in `test-results/pages/{desktop,mobile,iphone}/` after UI changes,
+    for every page in all three projects.
   - Then try the change by hand in a real browser (Claude: the Chrome tools) — passing tests are not
     enough: start `scripts/fake_camera.py 8198` and the backend (`VISIONSTATE_PORT`, `_DATA`, `_MEDIA`,
     `_FRONTEND=frontend/dist`, `_BUNDLED_MODELS` as in `playwright.config.ts`; a copy of the last e2e
@@ -135,7 +136,28 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      yourself once the images exist (the registry answers 200 for
      `https://ghcr.io/v2/oleost/visionstate-<arch>/manifests/X.Y.ZbN` with an anonymous pull token).
      A tagline for the release title is optional: `gh release edit vX.Y.ZbN --title "X.Y.ZbN — …"`.
-- **Promote to stable** (only when the user says the beta is tested):
+- **Release candidate check** — go through all of it before every promotion, and tell the user what
+  was checked and what was found:
+  1. **CI on the beta being promoted is green**, including the checks that only block stable
+     releases: the upgrade test from the last stable release and back (`scripts/upgrade_test.sh`,
+     both architectures), the old CPU check (amd64 `kvm64`, aarch64 `cortex-a53`), the memory peak
+     with all three models (see the notice in the smoke test; limit in `MEMORY_LIMIT`), the app
+     options check (`scripts/check_options.py`), `pip-audit` / `npm audit` (a warning on betas,
+     an error on stable), and e2e on desktop, Android and iPhone (WebKit).
+  2. **On the test Home Assistant** (a Home Assistant OS VM with the beta app installed):
+     - update the beta app to the candidate; the standing test sensors (one of each kind) keep
+       working, their entities in Home Assistant keep their IDs, the log has no warnings or errors;
+     - restart Home Assistant, reboot the host and restart the MQTT broker: the app and its
+       entities come back by themselves;
+     - make a backup of the app and restore it: the sensors are back;
+     - **soak for 1 hour** with the sensors checking: memory of the app (Supervisor app stats)
+       and its data on disk level off instead of growing, the log stays quiet;
+     - open the app in Home Assistant at desktop width and on a phone (Ingress).
+  3. **What changed since the last stable release**: new or upgraded dependencies have a licence
+     that fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
+     visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest
+     Home Assistant that works; DOCS.md, README.md and SCOPE.md describe what is being released.
+- **Promote to stable** (only when the user says the beta is tested, after the release candidate check):
   1. `git switch -c promote/X.Y.Z beta`; `python scripts/channel.py stable X.Y.Z`; in the changelog,
      merge the `X.Y.ZbN` entries into one `## X.Y.Z` entry; commit.
   2. `git merge origin/main`; if `visionstate/config.yaml` conflicts, re-run
@@ -147,12 +169,15 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 - Python version is **3.14** (Dockerfile image, CI `setup-python`, ruff `target-version`, local
   `.venv` created with `py -3.14`). Upgrade all of them together; Dependabot ignores Python image
   upgrades for that reason.
-- **Old CPUs and virtual machines must keep working** (x86-64-v1, e.g. Proxmox `kvm64`). NumPy is
-  pinned below 2.4 because newer wheels need x86-64-v2 (Dependabot ignores them). CI runs
-  `scripts/cpu_probe.py` in the amd64 image under an emulated `kvm64` CPU; when it fails after a
-  dependency update, that update needs a newer CPU — keep the old version.
+- **Old CPUs and virtual machines must keep working** (x86-64-v1, e.g. Proxmox `kvm64`; ARMv8.0,
+  e.g. Raspberry Pi 3/4 and Home Assistant Yellow with CM4 — Green is ARMv8.2). NumPy is pinned
+  below 2.4 because newer wheels need x86-64-v2 (Dependabot ignores them). CI runs
+  `scripts/cpu_probe.py` in each image under an emulated old CPU (amd64 `kvm64`, aarch64
+  `cortex-a53`); when it fails after a dependency update, that update needs a newer CPU — keep the
+  old version.
 - **Docs checklist** — when behaviour, defaults, versions or the workflow change, update in the same
   change: `visionstate/DOCS.md` (user guide in HA), `README.md` (front page), `docs/SCOPE.md`
   (design as built, roadmap), `visionstate/CHANGELOG.md`, and this file.
-- Dependency updates: Dependabot opens one grouped PR per ecosystem monthly. CI runs the tests and a
-  smoke test that starts the built image (both architectures) against a real MQTT broker.
+- Dependency updates: Dependabot opens one grouped PR per ecosystem monthly. CI runs the tests, a
+  smoke test that starts the built image (both architectures) against a real MQTT broker, and the
+  upgrade test from the last stable release.
