@@ -161,7 +161,9 @@ jobs:
       - name: Smoke test (start the image with a real MQTT broker)
         env:
           PLATFORM: ${{ matrix.platform }}
-          MEMORY_LIMIT: 2g  # all three models must fit (Home Assistant Green has 4 GB for everything)
+          # All three models must fit with room to spare: about 470 MB (amd64) and 420 MB (arm64) in
+          # 0.6.3; a Home Assistant Green has 4 GB for everything. A big jump fails the smoke test.
+          MEMORY_LIMIT: 1g
         run: |
           set -euo pipefail
           docker run -d --name mqtt -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
