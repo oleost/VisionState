@@ -133,7 +133,7 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await press(page.getByRole('button', { name: /Show all \d+ objects/ }), info);
   await page.getByPlaceholder(/Search \d+ objects/).fill('bicy');
   await expect(page.getByRole('button', { name: 'Bicycle' })).toHaveCount(1);
-  await expect(page.getByText('binary_sensor.visionstate_driveway_test_car')).toBeVisible();
+  await expect(page.getByText('binary_sensor.driveway_test_car')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-objects.png'), fullPage: true });
   await expectNoClipping(page, '.btn, .chip-btn, .kind, .card');

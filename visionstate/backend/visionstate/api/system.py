@@ -565,6 +565,9 @@ def _import_sync(rt, path: Path) -> int:
     with rt.db.session() as s:
         spec.name = unique_name(s, spec.name)
         sensor = spec.new_sensor(unique_slug(s, spec.name))
+        # Keep the entity ID style, so moving a sensor (e.g. between the stable and the beta app)
+        # does not change its entity IDs. Bundles without the field are older: those had the prefix.
+        sensor.entity_prefix = bool(data.get("entity_prefix", True))
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id

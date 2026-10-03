@@ -18,7 +18,7 @@ from sqlalchemy import delete, func, select
 
 from . import backbones, classifier, detectors, imaging, readers
 from .db import Database, Embedding, ModelInfo, Prediction, ReadingStat, Sample, SampleLabel, Sensor, utcnow
-from .ha_events import HaEventListener
+from .ha_events import HaEventListener, fetch_entity_ids
 from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, topics
 from .redact import redact
 from .settings import (
@@ -64,6 +64,7 @@ class SensorConfig:
     kind: str = KIND_STATES
     objects: dict = field(default_factory=lambda: merge_objects(None))  # object sensors only
     reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
+    entity_prefix: bool = False  # see db.Sensor.entity_prefix
 
     @property
     def state_keys(self) -> list[str]:
@@ -86,7 +87,7 @@ class SensorConfig:
             else []
         )
         reading = self.reading if self.is_reading else None
-        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading)
+        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading, self.entity_prefix)
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
@@ -107,6 +108,7 @@ class SensorConfig:
             kind=row.kind or KIND_STATES,
             objects=merge_objects(row.objects),
             reading=merge_reading(row.reading),
+            entity_prefix=bool(row.entity_prefix),
         )
 
 
@@ -305,6 +307,9 @@ class Runtime:
         self.mqtt = MqttBridge(settings, self._on_command, self._on_mqtt_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
+        # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
+        self.ha_entity_ids: dict[str, str] = {}
+        self._registry_wanted = asyncio.Event()  # discovery was published: read the registry again
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
         self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
@@ -353,6 +358,8 @@ class Runtime:
         self.ha_events.start()
         self.mqtt.start()
         self._spawn(self._cleanup_loop())
+        if self.ha_events.enabled:
+            self._spawn(self._entity_registry_loop())
 
     async def stop(self) -> None:
         for task in [*self._tasks.values(), *self._background]:
@@ -361,6 +368,27 @@ class Runtime:
         await self.ha_events.stop()
         await self.grabber.close()
         await self.ha.close()
+
+    async def _entity_registry_loop(self) -> None:
+        """Keeps ha_entity_ids up to date: now and then, and shortly after discovery was published."""
+        last_error = ""
+        while True:
+            try:
+                self.ha_entity_ids = await fetch_entity_ids(self.ha_events.url, self.ha_events.token)
+                last_error = ""
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001 - keep the last known IDs and try again later
+                error = str(err) or type(err).__name__
+                if error != last_error:
+                    log.warning("Could not read the entity IDs from Home Assistant: %s", error)
+                last_error = error
+            self._registry_wanted.clear()
+            try:
+                await asyncio.wait_for(self._registry_wanted.wait(), timeout=RUNTIME["entity_registry_refresh_s"])
+            except TimeoutError:
+                continue
+            await asyncio.sleep(RUNTIME["entity_registry_delay_s"])  # let Home Assistant create the entities
 
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -1015,6 +1043,7 @@ class Runtime:
                 await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
             self._published_classes[cfg.id] = current
         await self.mqtt.publish_discovery(cfg.descriptor)
+        self._registry_wanted.set()
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
         live = self.live.get(cfg.id)
         if cfg.is_objects:

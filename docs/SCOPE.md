@@ -206,20 +206,20 @@ One HA **device** per sensor:
 
 | Entity | Type | Purpose |
 |---|---|---|
-| `sensor.visionstate_<slug>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
+| `sensor.<name>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
 | `…_confidence` | `sensor` (%) | Top probability |
-| `image.…_frame` | `image` | The ROI that was classified |
-| `button.…_classify` | `button` | Check now (automations) |
+| `image.…_last_frame` | `image` | The ROI that was classified |
+| `button.…_classify_now` | `button` | Check now (automations) |
 | `switch.…_enabled` | `switch` | Pause / resume |
 
 **Object sensors** replace the first two with two entities per selected class:
-`binary_sensor.visionstate_<slug>_<class>` (`device_class: occupancy`, attributes: confidence,
+`binary_sensor.<name>_<class>` (`device_class: occupancy`, attributes: confidence,
 boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
 boxes; the button is named "Detect now". Deselecting a class removes its entities. Each class
 has its own Material Design icon (`icon` in `detectors.json`, checked against `@mdi/svg` 7.4.47,
 the version Home Assistant ships) instead of the occupancy class's house icon.
 
-**Reading sensors** publish the value on `sensor.visionstate_<slug>` with `unit_of_measurement`,
+**Reading sensors** publish the value on `sensor.<name>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
 `measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
 Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
@@ -228,9 +228,19 @@ Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` 
 for review, per-sensor breakdown as attribute).
 
 Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
-`last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Entity ids are
-set with `default_entity_id` (requires Home Assistant 2025.10 or newer). Removing a sensor
+`last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities.
+
+**Entity IDs** follow Home Assistant's convention: VisionState sends no `default_entity_id`, so
+Home Assistant names each entity after the device (the sensor's name) and the entity name
+(`has_entity_name`), e.g. `sensor.garage_door`, `image.garage_door_last_frame`. The `unique_id`s
+(`visionstate_<slug>_<entity>`) never change. Sensors made before 0.6.3b6 have
+`sensor.entity_prefix` set (DB migration 8) and keep sending the `default_entity_id`s they always
+had (`sensor.visionstate_<slug>`, … — exactly the same discovery payload as before), also through
+export/import (bundles without the field count as older). The UI shows the IDs from Home
+Assistant's entity registry (`config/entity_registry/list` over the WebSocket API, read every
+5 minutes and shortly after discovery), so IDs the user changed or that got `_2` are right;
+outside Home Assistant it shows the expected IDs.
 
 ## 9. User interface (Ingress)
 

@@ -37,15 +37,21 @@ number** from a display, without any training. Everything runs on this machine; 
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
    you what is missing.
 
-The sensor appears in Home Assistant as a device with these entities:
+The sensor appears in Home Assistant as a device named after the sensor, with these entities
+(Home Assistant names them after the device, like other integrations):
 
 | Entity | What it is |
 |---|---|
-| `sensor.visionstate_<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
-| `sensor.visionstate_<name>_confidence` | How sure the AI is, in % |
-| `image.visionstate_<name>_frame` | The image region that was classified |
-| `button.visionstate_<name>_classify` | Classify right now (use it in automations) |
-| `switch.visionstate_<name>_enabled` | Pause / resume the sensor |
+| `sensor.<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
+| `sensor.<name>_confidence` | How sure the AI is, in % |
+| `image.<name>_last_frame` | The image region that was classified |
+| `button.<name>_classify_now` | Classify right now (use it in automations) |
+| `switch.<name>_enabled` | Pause / resume the sensor |
+
+If an ID is already taken, Home Assistant adds `_2`. You can change any of them in Home
+Assistant (the entity's settings → *Entity ID*); VisionState shows the IDs Home Assistant uses.
+Sensors made before 0.6.3b6 keep the IDs they have (`sensor.visionstate_<name>`, …), also
+when exported and imported — nothing changes for them.
 
 In addition, the **VisionState** device has `sensor.visionstate_review_queue`: the number of
 frames waiting for review (with a per-sensor breakdown as attribute).
@@ -66,10 +72,10 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 
   | Entity | What it is |
   |---|---|
-  | `binary_sensor.visionstate_<name>_<object>` | `on` while the object is there (occupancy) |
-  | `sensor.visionstate_<name>_<object>_count` | How many there are |
+  | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
+  | `sensor.<name>_<object>_count` | How many there are |
 
-  plus `image.…_frame` (the region with boxes drawn), `button.…_classify` (detect now) and
+  plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence
   and the boxes. Removing an object from the list removes its entities.
 - **Settings tab → Sensor output**:
@@ -139,8 +145,8 @@ First choose **what it looks like**:
   on the Review page) takes them out of the queue. Answers already given and the counts stay.
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
-- The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
-  `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
+- The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
+  `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
 - Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
   have so far only been tried on one type of water meter: they read well while the wheels stand
@@ -196,7 +202,8 @@ With a light set, the live view in VisionState shows the frame of the last check
 taking new ones (they would be dark, or make the light flash), and change detection compares
 frames without the light.
 
-You can still call `button.visionstate_<name>_classify` from your own automations.
+You can still press the sensor's *Classify now* button (`button.<name>_classify_now`) from your own
+automations.
 
 ## How it decides
 

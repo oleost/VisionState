@@ -1,4 +1,4 @@
-"""Listens to Home Assistant state changes of selected entities (WebSocket API)."""
+"""Home Assistant WebSocket API: state changes of selected entities, and our entities' IDs."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 
-from .settings import RUNTIME, SUPERVISOR_URL, TRIGGER_IGNORED_STATES, Settings
+from .settings import APP_SLUG, RUNTIME, SUPERVISOR_URL, TRIGGER_IGNORED_STATES, Settings
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +45,36 @@ def parse_trigger_event(message: dict) -> tuple[str, str | None, str | None] | N
     if new in TRIGGER_IGNORED_STATES or old == new:
         return None
     return entity_id, old, new
+
+
+def our_entity_ids(registry: list[dict]) -> dict[str, str]:
+    """unique ID -> entity ID of our MQTT entities, from Home Assistant's entity registry list."""
+    return {
+        e["unique_id"]: e["entity_id"]
+        for e in registry
+        if e.get("platform") == "mqtt" and str(e.get("unique_id") or "").startswith(f"{APP_SLUG}_")
+    }
+
+
+async def fetch_entity_ids(url: str, token: str) -> dict[str, str]:
+    """The entity IDs Home Assistant gave our entities: they may end in _2, or the user changed them."""
+    from websockets.asyncio.client import connect
+
+    async with connect(url, max_size=None) as ws:
+        first = json.loads(await ws.recv())
+        if first.get("type") == "auth_required":
+            await ws.send(json.dumps({"type": "auth", "access_token": token}))
+            auth = json.loads(await ws.recv())
+            if auth.get("type") != "auth_ok":
+                raise RuntimeError(f"authentication failed: {auth.get('message', auth.get('type'))}")
+        await ws.send(json.dumps({"id": 1, "type": "config/entity_registry/list"}))
+        while True:
+            message = json.loads(await ws.recv())
+            if message.get("id") == 1 and message.get("type") == "result":
+                break
+    if not message.get("success"):
+        raise RuntimeError(f"entity registry: {message.get('error', {}).get('message')}")
+    return our_entity_ids(message.get("result") or [])
 
 
 class HaEventListener:

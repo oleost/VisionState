@@ -124,15 +124,15 @@ help test them, add `https://github.com/oleost/VisionState#beta` as a repository
    **20 per state**, including some at night.
 5. Under **Settings → When to check**, add your motion sensor or garage opener as a trigger.
 
-That's it — `sensor.visionstate_garage_door` is now in Home Assistant:
+That's it — `sensor.garage_door` is now in Home Assistant:
 
 | Entity | What it is |
 |---|---|
-| `sensor.visionstate_<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
-| `sensor.visionstate_<name>_confidence` | How sure the AI is, in % |
-| `image.visionstate_<name>_frame` | The region that was classified |
-| `button.visionstate_<name>_classify` | Check right now (handy in automations) |
-| `switch.visionstate_<name>_enabled` | Pause / resume |
+| `sensor.<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
+| `sensor.<name>_confidence` | How sure the AI is, in % |
+| `image.<name>_last_frame` | The region that was classified |
+| `button.<name>_classify_now` | Check right now (handy in automations) |
+| `switch.<name>_enabled` | Pause / resume |
 | `sensor.visionstate_review_queue` | Frames waiting for review (all sensors) |
 
 ```yaml
@@ -140,7 +140,7 @@ That's it — `sensor.visionstate_garage_door` is now in Home Assistant:
 alias: Garage door left open
 triggers:
   - trigger: state
-    entity_id: sensor.visionstate_garage_door
+    entity_id: sensor.garage_door
     to: open
     for: "00:10:00"
 actions:

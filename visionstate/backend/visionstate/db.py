@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -34,6 +34,8 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     5: [("sensor", "objects", "JSON"), ("prediction", "detections", "JSON")],
     6: [("sensor", "reading", "JSON")],
     7: [("prediction", "read_ok", "BOOLEAN"), ("prediction", "correct_value", "VARCHAR(64)")],
+    # Sensors made before 0.6.3b6 keep their "visionstate_" entity IDs (see Sensor.entity_prefix).
+    8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
 }
 
 
@@ -69,6 +71,10 @@ class Sensor(Base):
     objects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Reading sensors: mode, decimals, unit …; see settings.READING_DEFAULTS.
     reading: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Older sensors suggest "visionstate_<slug>…" entity IDs to Home Assistant, and keep doing so
+    # (also when exported and imported), so entities that come back get the same ID. Newer sensors
+    # let Home Assistant name them after the device and entity, like other integrations.
+    entity_prefix: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(

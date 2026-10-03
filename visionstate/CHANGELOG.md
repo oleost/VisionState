@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3b6
+
+- **Entity IDs like other integrations**: new sensors are named by Home Assistant after the sensor
+  (the device) and the entity, without the `visionstate_` prefix — a sensor named *Water meter*
+  becomes `sensor.water_meter`, `sensor.water_meter_confidence`, `image.water_meter_last_frame` …
+- **Existing sensors keep their entity IDs** (`sensor.visionstate_…`); nothing changes for them,
+  also when they are exported and imported.
+- The app shows the entity IDs Home Assistant actually uses — also when you changed one in Home
+  Assistant or it got a `_2`.
+
 ## 0.6.3b5
 
 - Review page: the number waiting per sensor now counts down with each answer, and a sensor

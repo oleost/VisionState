@@ -44,6 +44,7 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                 "review": sensor.review,
                 "objects": sensor.objects,
                 "reading": sensor.reading,
+                "entity_prefix": sensor.entity_prefix,
                 "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
             },
             "samples": [],

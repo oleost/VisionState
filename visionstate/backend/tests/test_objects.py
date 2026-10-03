@@ -11,7 +11,7 @@ from visionstate import detectors, imaging
 from visionstate.detectors import Detection, postprocess
 from visionstate.engine import ObjectTrack, filter_detections, update_tracks
 from visionstate.main import create_app
-from visionstate.mqtt import SensorDescriptor, discovery_messages
+from visionstate.mqtt import SensorDescriptor, discovery_messages, main_entities
 from visionstate.settings import KIND_OBJECTS, OBJECT_MAX_CLASSES, merge_objects
 
 from .conftest import ASSETS, MODEL_DIR, requires_detector
@@ -150,11 +150,24 @@ def test_tracks_forget_deselected_classes():
 
 
 def test_discovery_for_object_sensor():
-    sensor = SensorDescriptor(
-        "drive", "Drive", [], KIND_OBJECTS, [("person", "Person", "mdi:account"), ("car", "Car", "mdi:car")]
-    )
+    classes = [("person", "Person", "mdi:account"), ("car", "Car", "mdi:car")]
+    # A new sensor lets Home Assistant name its entities after the device and the entity.
+    sensor = SensorDescriptor("drive", "Drive", [], KIND_OBJECTS, classes)
+    assert all("default_entity_id" not in p for _, p in discovery_messages("homeassistant", sensor))
+    assert main_entities(sensor) == [
+        ("visionstate_drive_person", "binary_sensor.drive_person"),
+        ("visionstate_drive_person_count", "sensor.drive_person_count"),
+        ("visionstate_drive_car", "binary_sensor.drive_car"),
+        ("visionstate_drive_car_count", "sensor.drive_car_count"),
+    ]
+    # An older sensor keeps suggesting the "visionstate_" IDs it always had.
+    sensor = SensorDescriptor("drive", "Drive", [], KIND_OBJECTS, classes, entity_prefix=True)
     messages = dict(discovery_messages("homeassistant", sensor))
     ids = {payload["default_entity_id"] for payload in messages.values()}
+    assert [e for _, e in main_entities(sensor)][:2] == [
+        "binary_sensor.visionstate_drive_person",
+        "sensor.visionstate_drive_person_count",
+    ]
     assert {
         "binary_sensor.visionstate_drive_person",
         "sensor.visionstate_drive_person_count",
@@ -242,7 +255,7 @@ def test_object_sensor_flow(settings):
         sensor = resp.json()
         sid = sensor["id"]
         assert sensor["kind"] == "objects" and sensor["threshold"] == 0.6 and sensor["debounce"] == 1
-        assert sensor["entity_ids"][:2] == ["binary_sensor.visionstate_beach_dog", "sensor.visionstate_beach_dog_count"]
+        assert sensor["entity_ids"][:2] == ["binary_sensor.beach_dog", "sensor.beach_dog_count"]
 
         def live():
             return {o["key"]: o for o in client.get(f"/api/v1/sensors/{sid}").json()["objects"]["live"]}

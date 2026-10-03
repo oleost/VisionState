@@ -11,7 +11,7 @@
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
-  import { slugify } from '../lib/format';
+  import { haSlug, slugify } from '../lib/format';
   import { objectCount } from '../lib/objects';
   import { digitsSeen, readingUnit } from '../lib/reading';
   import { pct } from '../lib/format';
@@ -54,7 +54,8 @@
 
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
-  const slug = $derived(slugify(name, 'sensor'));
+  // The entity ID Home Assistant gives the new sensor (it names it after the device).
+  const entity = $derived(haSlug(name));
   const stateKeys = $derived(states.filter((s) => s.name.trim()).map((s) => slugify(s.name, 'state')));
 
   const statesValid = $derived(
@@ -309,7 +310,7 @@
           </div>
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
-            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono">sensor.{entity}</span>
             <span class="mono xsmall muted">
               {reading.mode === 'counter' ? 'state_class: total_increasing' : 'state_class: measurement'}{readingUnit(reading)
                 ? ` · unit: ${readingUnit(reading)}`
@@ -347,8 +348,8 @@
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
             {#each classes as key (key)}
-              <span class="mono small">binary_sensor.visionstate_{slug}_{key}</span>
-              <span class="mono xsmall muted">sensor.visionstate_{slug}_{key}_count</span>
+              <span class="mono small">binary_sensor.{haSlug(`${name} ${key}`)}</span>
+              <span class="mono xsmall muted">sensor.{haSlug(`${name} ${key} count`)}</span>
             {:else}
               <span class="xsmall muted">Pick at least one object.</span>
             {/each}
@@ -361,7 +362,7 @@
           <div style="max-width:520px"><StatesEditor bind:states /></div>
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
-            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono">sensor.{entity}</span>
             <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
             <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
           </div>

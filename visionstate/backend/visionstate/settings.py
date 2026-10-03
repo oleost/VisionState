@@ -260,6 +260,10 @@ RUNTIME = {
     "http_timeout_s": 15.0,
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
+    # The entity IDs Home Assistant gave our entities (its entity registry): read again this often,
+    # and this long after discovery was published (so Home Assistant has created the entities).
+    "entity_registry_refresh_s": 300.0,
+    "entity_registry_delay_s": 5.0,
 }
 
 

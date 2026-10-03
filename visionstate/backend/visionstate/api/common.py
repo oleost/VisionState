@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 
 from .. import detectors, imaging
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import ObjectTrack, Runtime
+from ..engine import ObjectTrack, Runtime, SensorConfig
+from ..mqtt import main_entities
 from ..settings import (
-    APP_SLUG,
     KIND_OBJECTS,
     KIND_READING,
     LIGHT_DOMAINS,
@@ -301,16 +301,13 @@ def sample_counts(session: Session, sensor: Sensor) -> dict:
     return {"per_state": per_state, "labelled": labelled, "unlabelled": total - labelled}
 
 
-def entity_ids(sensor: Sensor) -> list[str]:
-    """The sensor's main Home Assistant entities (one per state sensor, two per object class)."""
-    uid = f"{APP_SLUG}_{sensor.slug}"
-    if sensor.kind != KIND_OBJECTS:
-        return [f"sensor.{uid}"]
-    return [
-        e
-        for key in merge_objects(sensor.objects)["classes"]
-        for e in (f"binary_sensor.{uid}_{key}", f"sensor.{uid}_{key}_count")
-    ]
+def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
+    """The sensor's main Home Assistant entities (one, or two per object class).
+
+    As Home Assistant has them when known (its entity registry), else as it would name them.
+    """
+    known = rt.ha_entity_ids
+    return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
 def objects_view(sensor: Sensor, live) -> dict | None:
@@ -361,6 +358,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         status = "untrained"
     else:
         status = "ok"
+    ids = entity_ids(rt, sensor)
     return {
         "id": sensor.id,
         "slug": sensor.slug,
@@ -376,8 +374,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),
-        "entity_id": entity_ids(sensor)[0],
-        "entity_ids": entity_ids(sensor),
+        "entity_id": ids[0] if ids else None,
+        "entity_ids": ids,
         "objects": objects_view(sensor, live),
         "reading": reading_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
