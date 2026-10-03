@@ -39,8 +39,14 @@
   const summary = (item: ReviewItem) =>
     isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
 
+  /** One item of this sensor left the queue (answered or skipped): keep the counts in step. */
+  function countDown(sensorId: number) {
+    waiting = waiting.map((w) => (w.id === sensorId ? { ...w, count: w.count - 1 } : w)).filter((w) => w.count > 0);
+  }
+
   function readingAnswered(verdict: { read_ok: boolean | null; correct_value: string | null }) {
     if (!current) return;
+    countDown(current.sensor.id);
     answers[current.id] =
       verdict.read_ok === null && current.read_ok === null
         ? 'Skipped'
@@ -72,6 +78,7 @@
     busy = true;
     try {
       await api.answerReview(current.id, action, key);
+      countDown(current.sensor.id);
       answers[current.id] =
         action === 'confirm'
           ? `✓ Confirmed ${predicted?.name}`

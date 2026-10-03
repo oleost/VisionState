@@ -541,7 +541,13 @@ test('review queue can be answered', async ({ page }, info) => {
   await page.goto('#/review');
   const position = page.locator('.main .mono').first();
   await expect(position).toHaveText(/^1 \/ \d+/);
+  // The count per sensor follows each answer, and the sensor goes when nothing of it is left.
+  const name = (await page.locator('.main strong').first().textContent())!;
+  const row = page.locator('.wait-row').filter({ hasText: name });
+  const before = Number((await row.locator('.xsmall').textContent())!.match(/\d+/)![0]);
   await press(page.getByRole('button', { name: 'Skip' }), info);
+  if (before > 1) await expect(row).toContainText(`${before - 1} waiting`);
+  else await expect(row).toHaveCount(0);
   await expect(page.getByText(/^(2 \/ \d+|All caught up)$/).first()).toBeVisible();
   errors.expectNone();
 });
