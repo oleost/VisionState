@@ -136,7 +136,8 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      yourself once the images exist (the registry answers 200 for
      `https://ghcr.io/v2/oleost/visionstate-<arch>/manifests/X.Y.ZbN` with an anonymous pull token).
      A tagline for the release title is optional: `gh release edit vX.Y.ZbN --title "X.Y.ZbN — …"`.
-- **Release candidate check** — go through all of it before every promotion, and tell the user what
+- **Before promoting a beta to stable** (there is no separate release candidate: the beta being
+  promoted is checked as it is) — go through all of it, and tell the user what
   was checked and what was found:
   1. **CI on the beta being promoted is green**, including the checks that only block stable
      releases: the upgrade test from the last stable release and back (`scripts/upgrade_test.sh`,
@@ -145,7 +146,7 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      options check (`scripts/check_options.py`), `pip-audit` / `npm audit` (a warning on betas,
      an error on stable), and e2e on desktop, Android and iPhone (WebKit).
   2. **On the test Home Assistant** (a Home Assistant OS VM with the beta app installed):
-     - update the beta app to the candidate; the standing test sensors (one of each kind) keep
+     - update the beta app to the beta being promoted; the standing test sensors (one of each kind) keep
        working, their entities in Home Assistant keep their IDs, the log has no warnings or errors;
      - restart Home Assistant, reboot the host and restart the MQTT broker: the app and its
        entities come back by themselves;
@@ -157,7 +158,7 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      that fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
      visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest
      Home Assistant that works; DOCS.md, README.md and SCOPE.md describe what is being released.
-- **Promote to stable** (only when the user says the beta is tested, after the release candidate check):
+- **Promote to stable** (only when the user says the beta is tested, after the checks above):
   1. `git switch -c promote/X.Y.Z beta`; `python scripts/channel.py stable X.Y.Z`; in the changelog,
      merge the `X.Y.ZbN` entries into one `## X.Y.Z` entry; commit.
   2. `git merge origin/main`; if `visionstate/config.yaml` conflicts, re-run
