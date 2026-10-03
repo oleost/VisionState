@@ -253,6 +253,8 @@ export interface AppConfig {
     [number, number]
   >;
   light_domains: string[];
+  /** A view with live frames renews its hold on a sensor's light this often; a lease runs out after lease_s. */
+  light_view: { renew_s: number; lease_s: number };
   trigger_max_entities: number;
   review_defaults: ReviewRules;
   roi_max_points: number;
@@ -407,4 +409,11 @@ export interface SettingsInfo {
   reader: string;
   readers: DetectorInfo[];
   options: Record<string, string | number>;
+}
+
+/** POST /lights/hold: is the light on, and how long until frames are taken in it (null: not on). */
+export interface LightHold {
+  on: boolean;
+  wait_s: number | null;
+  error: string;
 }

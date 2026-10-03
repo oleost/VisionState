@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3b8
+
+- **The light is picked with the camera** — in the first step of the wizard and under
+  **Settings → General** — instead of under *When to check*.
+- **The light is on while you look**: in the wizard (region and test), when you draw the region
+  in the settings and on the Label tab, so you can see what you frame and the labelled images are
+  taken in the same light as the checks. A note above the frame shows it, with a switch to keep
+  the light off for that view. It goes off when you leave (at the latest 30 s after a tab is closed
+  or a phone is put away); a light that was already on is left alone.
+
 ## 0.6.3b7
 
 - **iPhone and iPad** (the Home Assistant app, Safari): drop-down menus such as the AI model

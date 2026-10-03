@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
@@ -36,6 +36,7 @@ from ..settings import (
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
+    RUNTIME,
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
@@ -65,6 +66,7 @@ from .common import (
     state_id_for,
     unique_name,
     unique_slug,
+    valid_light,
 )
 from .samples import copy_limited
 from .sensors import prediction_view
@@ -89,6 +91,7 @@ def ui_config() -> dict:
         "trigger_limits": TRIGGER_LIMITS,
         "trigger_max_entities": TRIGGER_MAX_ENTITIES,
         "light_domains": LIGHT_DOMAINS,
+        "light_view": {"renew_s": RUNTIME["light_view_renew_s"], "lease_s": RUNTIME["light_view_lease_s"]},
         "roi_max_points": ROI_MAX_POINTS,
         "review_defaults": REVIEW_DEFAULTS,
         "review_limits": REVIEW_LIMITS,
@@ -250,6 +253,41 @@ async def entities(request: Request) -> list[dict]:
         return await runtime(request).ha.entities()
     except Exception as err:  # noqa: BLE001
         raise HTTPException(502, f"Could not list entities: {err}") from err
+
+
+class LightHoldIn(BaseModel):
+    """A view with live frames holds a sensor's light on while it is open (see lights.py)."""
+
+    entity_id: str
+    holder: str = Field(min_length=8, max_length=64)  # one per open view, made up by the UI
+    delay_s: float = Field(
+        TRIGGER_DEFAULTS["light_delay_s"], ge=TRIGGER_LIMITS["light_delay_s"][0], le=TRIGGER_LIMITS["light_delay_s"][1]
+    )
+    on: bool = True  # False: the view is closed or its switch was turned off
+
+    @field_validator("entity_id")
+    @classmethod
+    def _a_light(cls, value: str) -> str:
+        value = valid_light(value)
+        if not value:
+            raise ValueError("No light given")
+        return value
+
+
+@router.post("/lights/hold")
+async def hold_light(body: LightHoldIn, request: Request) -> dict:
+    """Hold the light on for one more lease (renew it every light_view.renew_s), or let go of it.
+
+    ``wait_s``: seconds until frames are taken in the light; null when it is not on.
+    """
+    lights = runtime(request).lights
+    holder = f"view:{body.holder}"
+    if not body.on:
+        await lights.release(body.entity_id, holder)
+        return {"on": False, "wait_s": None, "error": ""}
+    light = await lights.hold(body.entity_id, holder, RUNTIME["light_view_lease_s"])
+    wait = lights.wait_s(body.entity_id, body.delay_s)
+    return {"on": not light.error, "wait_s": None if light.error else wait, "error": light.error}
 
 
 @router.get("/preview")

@@ -116,6 +116,16 @@ _tlo = {k: v[0] for k, v in TRIGGER_LIMITS.items()}
 _thi = {k: v[1] for k, v in TRIGGER_LIMITS.items()}
 
 
+def valid_light(value: str) -> str:
+    """A light, switch or helper to switch on for a sensor ("" = none)."""
+    value = value.strip()
+    if value and not ENTITY_ID.match(value):
+        raise ValueError(f"Not an entity id: {value!r}")
+    if value and value.split(".", 1)[0] not in LIGHT_DOMAINS:
+        raise ValueError(f"The light must be one of: {', '.join(LIGHT_DOMAINS)}")
+    return value
+
+
 class Triggers(BaseModel):
     """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
 
@@ -150,12 +160,7 @@ class Triggers(BaseModel):
     @field_validator("light_entity")
     @classmethod
     def _valid_light(cls, value: str) -> str:
-        value = value.strip()
-        if value and not ENTITY_ID.match(value):
-            raise ValueError(f"Not an entity id: {value!r}")
-        if value and value.split(".", 1)[0] not in LIGHT_DOMAINS:
-            raise ValueError(f"The light must be one of: {', '.join(LIGHT_DOMAINS)}")
-        return value
+        return valid_light(value)
 
     @model_validator(mode="after")
     def _valid_only_states(self) -> Triggers:

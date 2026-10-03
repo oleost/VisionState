@@ -264,6 +264,11 @@ RUNTIME = {
     # and this long after discovery was published (so Home Assistant has created the entities).
     "entity_registry_refresh_s": 300.0,
     "entity_registry_delay_s": 5.0,
+    # A view with live frames (region editor, labelling, the wizard) holds a sensor's light on with
+    # a lease it renews this often; a lease not renewed in time is let go (closed tab, phone put away).
+    "light_view_renew_s": 10.0,
+    "light_view_lease_s": 30.0,
+    "light_sweep_s": 5.0,  # how often expired leases are looked for
 }
 
 

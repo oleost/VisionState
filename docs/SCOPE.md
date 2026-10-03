@@ -183,12 +183,18 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
     *N* seconds; the AI only runs when the difference exceeds a threshold.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
   - The MQTT `classify` button checks once.
-- **Light** (`triggers.light_entity`, `light_delay_s`): a light, switch or input_boolean is turned
-  on (`homeassistant.turn_on` over the HA REST API) before a full check takes its frame, and off
-  afterwards — after the burst, so it does not flash for every check of it. A light that is
-  already on is not touched. Change-detection probes do not switch it, and the UI shows the last
-  analysed frame instead of grabbing new ones. A failure is logged and shown in the settings;
-  the check runs anyway.
+- **Light** (`triggers.light_entity`, `light_delay_s`; picked with the camera in the UI): a light,
+  switch or input_boolean, switched over the HA REST API (`homeassistant.turn_on/off`). `lights.py`
+  shares each light between its *holders*: a full check holds it from before its frame until the
+  end of the burst (so it does not flash for every check), and a view with live frames (wizard
+  region/test, the region editor, the Label tab) holds it with a lease (`POST /lights/hold`,
+  renewed every `RUNTIME["light_view_renew_s"]`, let go after `light_view_lease_s` without renewal,
+  swept every `light_sweep_s`). It is switched on by the first holder and off by the last — only if
+  VisionState switched it on; a light that is already on is not touched. Frames are taken once it
+  had `light_delay_s` to get bright; until then (and without a holder) the UI shows the last
+  analysed frame instead of grabbing dark ones. The view shows the state and a per-viewer switch
+  (browser storage). Change-detection probes do not switch it. A failure is logged and shown in the
+  settings; the check runs anyway.
 - **Unknown state:** top probability below the threshold (default 70 %) → `unknown`.
 - **Debounce:** the state changes only after *N* consecutive agreeing results (default 2).
 - Camera unavailable → entities become `unavailable` (not a false state).

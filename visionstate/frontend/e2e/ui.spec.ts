@@ -82,6 +82,41 @@ test('swiping on a camera frame scrolls the page', async ({ page, request }, inf
   }
 });
 
+test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Light test');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(`${CAMERA_URL}/snapshot.jpg`);
+  // The light is chosen right with the camera.
+  const light = page.getByLabel('Light to switch on');
+  await light.fill('light.meter_flash');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Next' }), info);
+
+  // While the region shows live frames the light is held on; without Home Assistant (as here) it says why not.
+  const hold = page.getByTestId('light-hold');
+  await expect(hold).toContainText('light.meter_flash');
+  await expect(hold).toContainText('Home Assistant API is not configured');
+  await expect(page.locator('.roi img')).toBeVisible(); // the frame still comes
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .chip, [data-testid="light-hold"]');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-light.png'), fullPage: true });
+  // Its switch keeps the light off for this view (and is remembered); on again for the next tests.
+  const toggle = page.getByLabel('Light on while this view is open');
+  await press(toggle, info);
+  await expect(hold).toContainText('stays off while you look');
+  await press(toggle, info);
+  await expect(hold).toContainText('Home Assistant API is not configured');
+  // Still held on the next step (one hold for region and test: the light does not blink in between).
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.getByText('What should this sensor detect?')).toBeVisible();
+  await expect(hold).toBeVisible();
+  errors.expectNone();
+});
+
 test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');

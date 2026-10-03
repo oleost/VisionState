@@ -4,6 +4,7 @@ import type {
   Camera,
   Detection,
   HaEntity,
+  LightHold,
   Prediction,
   Quality,
   ReadPreview,
@@ -91,6 +92,9 @@ export const api = {
     request<StorageInfo>('storage', send('PUT', body)),
   cameras: () => request<Camera[]>('cameras'),
   entities: () => request<HaEntity[]>('entities'),
+  /** Hold a sensor's light on while a view with live frames is open (renew it), or let go (`on: false`). */
+  holdLight: (entityId: string, holder: string, delayS: number, on = true) =>
+    request<LightHold>('lights/hold', send('POST', { entity_id: entityId, holder, delay_s: delayS, on })),
   previewUrl: (sourceType: string, source: string) =>
     `${BASE}preview?${qs({ source_type: sourceType, source, t: Date.now() })}`,
   /** A fresh frame (as a data URL) plus every object found in the region. */

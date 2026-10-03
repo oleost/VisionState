@@ -8,6 +8,8 @@
   import ObjectPicker from '../lib/components/ObjectPicker.svelte';
   import ReadingEditor from '../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
+  import LightEditor from '../lib/components/LightEditor.svelte';
+  import LightHold from '../lib/components/LightHold.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
@@ -51,6 +53,17 @@
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
   let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
   let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
+  // The camera's light (picked in step 1) is on while the region and the test show live frames.
+  let lightReady = $state(false);
+  $effect(() => {
+    if (!lightReady) return;
+    // Bright now: take the frame again, in the light.
+    untrack(() => {
+      if (step === 1) loadPreview();
+      else if (step === 2 && kind === 'objects') detect();
+      else if (step === 2 && kind === 'reading') readTest();
+    });
+  });
 
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
@@ -201,6 +214,9 @@
     </aside>
 
     <section class="col content">
+      {#if (step === 1 || step === 2) && triggers.light_entity}
+        <LightHold entity={triggers.light_entity} delay={triggers.light_delay_s} bind:ready={lightReady} />
+      {/if}
       {#if step === 0}
         <div class="col" style="gap:6px">
           <h2>Name it and pick a camera</h2>
@@ -211,6 +227,7 @@
           <input class="input" bind:value={name} placeholder="Garage door" />
         </label>
         <SourcePicker bind:sourceType bind:source />
+        <div style="max-width:640px"><LightEditor bind:triggers /></div>
       {:else if step === 1}
         <div class="row wrap">
           <div class="col" style="gap:6px">

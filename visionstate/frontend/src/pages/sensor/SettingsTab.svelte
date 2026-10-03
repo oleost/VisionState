@@ -4,6 +4,7 @@
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import LightEditor from '../../lib/components/LightEditor.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
@@ -96,6 +97,7 @@
       <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>
       <SourcePicker bind:sourceType bind:source />
+      <LightEditor bind:triggers lightError={sensor.live.light_error} />
     </section>
 
     <section class="card pad col">
@@ -119,7 +121,14 @@
             : 'Changing it retrains the model.'}
       </p>
       <div class="frame">
-        <LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000}>
+        <LiveFrame
+          sensorId={sensor.id}
+          bind:roi
+          editable
+          showLive={false}
+          interval={10_000}
+          light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
+        >
           {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
         </LiveFrame>
       </div>
@@ -148,7 +157,7 @@
 
     <section class="card pad col">
       <h3>When to check</h3>
-      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} lightError={sensor.live.light_error} />
+      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} />
     </section>
 
     <section class="card pad col">

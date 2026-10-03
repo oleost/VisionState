@@ -11,6 +11,9 @@ export const POLL = {
 };
 
 export const TOAST_MS = 5_000;
+
+/** Browser storage key of the light switch in views with live frames (a per-viewer convenience). */
+export const LIGHT_HOLD_STORAGE_KEY = 'visionstate.lightWhileViewing';
 /** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */
 export const TOAST_MAX = 2;
 

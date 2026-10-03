@@ -1,11 +1,14 @@
 <script lang="ts">
   // Periodically fetches a frame for a sensor. Reports the frame id so labels hit the frame on screen.
+  // With `light` (the sensor's light), it holds the light on while open and fetches a fresh frame
+  // as soon as it is bright; until then the backend shows the frame of the last check.
   import type { Snippet } from 'svelte';
   import { onDestroy } from 'svelte';
   import { api } from '../api';
   import { ago } from '../format';
   import type { Roi } from '../types';
   import { POLL } from '../ui';
+  import LightHold from './LightHold.svelte';
   import RoiEditor from './RoiEditor.svelte';
 
   let {
@@ -17,6 +20,7 @@
     frozen = false,
     showLive = true,
     frameId = $bindable(null),
+    light = null,
     children,
   }: {
     sensorId: number;
@@ -27,6 +31,7 @@
     frozen?: boolean;
     showLive?: boolean;
     frameId?: string | null;
+    light?: { entity: string; delay: number } | null;
     children?: Snippet;
   } = $props();
 
@@ -36,6 +41,7 @@
   let now = $state(Date.now());
   let timer: ReturnType<typeof setTimeout> | undefined;
   let alive = true;
+  let lightReady = $state(false);
 
   async function tick() {
     if (!alive) return;
@@ -59,6 +65,7 @@
 
   $effect(() => {
     void sensorId;
+    void lightReady; // the light is bright now: take a fresh frame right away
     clearTimeout(timer);
     tick();
   });
@@ -79,6 +86,9 @@
 
 <svelte:document onvisibilitychange={onVisible} />
 
+{#if light?.entity}
+  <div class="light-slot"><LightHold entity={light.entity} delay={light.delay} bind:ready={lightReady} /></div>
+{/if}
 <div class="live">
   <RoiEditor src={url} bind:roi {editable}>
     {#if showLive && updated}
@@ -96,6 +106,9 @@
 </div>
 
 <style>
+  .light-slot {
+    margin-bottom: var(--space-2);
+  }
   .live {
     position: relative;
   }
