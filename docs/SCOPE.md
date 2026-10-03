@@ -195,7 +195,10 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
 - **Review queue** (global rules in the DB, per-sensor overrides in `sensor.review`, defaults in
   `settings.REVIEW_DEFAULTS`): frames below 85 % (never below the sensor threshold), frames
   where the state flip-flops (3 changes in 10 min) and optional random spot checks (default 0 %);
-  at most one per sensor per 5 minutes.
+  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown).
+  **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
+  waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
+  up; given answers and the reading counts stay.
 
 ## 8. Home Assistant integration (MQTT Discovery)
 

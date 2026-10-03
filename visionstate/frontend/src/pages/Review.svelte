@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api';
-  import { refreshStatus, stateInfo, toastError } from '../lib/app.svelte';
+  import { refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import ConfirmButton from '../lib/components/ConfirmButton.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
@@ -11,6 +12,7 @@
 
   let items = $state<ReviewItem[] | null>(null);
   let total = $state(0);
+  let waiting = $state<{ id: number; name: string; count: number }[]>([]);
   let index = $state(0);
   let answers = $state<Record<number, string>>({});
   let busy = $state(false);
@@ -20,6 +22,7 @@
       const result = await api.review();
       items = result.items;
       total = result.total;
+      waiting = result.sensors;
       index = 0;
       refreshStatus(); // keep the nav badge in step with the list
       answers = {};
@@ -47,6 +50,20 @@
     index += 1;
     refreshStatus();
   }
+  async function dismissAll(sensor: { id: number; name: string }) {
+    if (busy) return;
+    busy = true;
+    try {
+      const { dismissed } = await api.dismissReview(sensor.id);
+      toast(`Dismissed ${dismissed} item${dismissed === 1 ? '' : 's'} of ${sensor.name}`);
+      await load();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      busy = false;
+    }
+  }
+
   const predicted = $derived(current ? stateInfo(current.sensor, current.state_key) : null);
   const others = $derived(current ? current.sensor.states.filter((s) => s.key !== current.state_key) : []);
 
@@ -92,6 +109,24 @@
           Frames the AI was unsure about, and readings that were rejected. A few clicks here improve the model the most.
         </p>
       </div>
+      {#if waiting.length}
+        <div class="card pad col waiting">
+          <span class="small muted">Waiting per sensor</span>
+          {#each waiting as w (w.id)}
+            <div class="row wait-row">
+              <span class="col" style="gap:0;min-width:0">
+                <strong class="small name">{w.name}</strong>
+                <span class="xsmall faint">{w.count} waiting</span>
+              </span>
+              <span class="spacer"></span>
+              <ConfirmButton class="btn sm" disabled={busy} confirmLabel="Press again" onconfirm={() => dismissAll(w)}>
+                Dismiss all
+              </ConfirmButton>
+            </div>
+          {/each}
+          <span class="xsmall faint">Dismiss all takes them out of the queue. Answers already given and the counts in Quality are kept.</span>
+        </div>
+      {/if}
       {#if items?.length}
         <ol>
           {#each items as item, i (item.id)}
@@ -194,6 +229,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+  .waiting {
+    gap: var(--space-2);
+  }
+  .wait-row {
+    gap: var(--space-3);
+  }
+  .name {
+    overflow-wrap: anywhere;
   }
   li {
     display: flex;

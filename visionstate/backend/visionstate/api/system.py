@@ -11,7 +11,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse
 from PIL import Image
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sensor
@@ -389,6 +389,14 @@ def review_queue(request: Request, limit: int = 50) -> dict:
         query = select(Prediction).where(Prediction.reviewed.is_(False))
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         rows = s.scalars(query.order_by(Prediction.created_at.desc()).limit(limit)).all()
+        # Waiting items per sensor, most first (the list itself only holds the newest `limit`).
+        waiting = s.execute(
+            select(Sensor.id, Sensor.name, func.count(Prediction.id))
+            .join(Prediction, Prediction.sensor_id == Sensor.id)
+            .where(Prediction.reviewed.is_(False))
+            .group_by(Sensor.id, Sensor.name)
+            .order_by(func.count(Prediction.id).desc(), Sensor.name)
+        ).all()
         sensors = {x.id: x for x in s.scalars(select(Sensor).where(Sensor.id.in_({r.sensor_id for r in rows})))}
         items = []
         for row in rows:
@@ -406,7 +414,29 @@ def review_queue(request: Request, limit: int = 50) -> dict:
                     },
                 }
             )
-        return {"total": total, "items": items}
+        return {
+            "total": total,
+            "items": items,
+            "sensors": [{"id": sid, "name": name, "count": n} for sid, name, n in waiting],
+        }
+
+
+@router.post("/review/sensors/{sensor_id}/dismiss")
+async def review_dismiss_all(sensor_id: int, request: Request) -> dict:
+    """Take every waiting item of one sensor out of the queue, as if each was skipped.
+
+    Nothing is learned from them; answers already given and the reading counts stay.
+    """
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id)
+        dismissed = s.execute(
+            update(Prediction)
+            .where(Prediction.sensor_id == sensor_id, Prediction.reviewed.is_(False))
+            .values(reviewed=True)
+        ).rowcount
+    await rt.publish_review_count()
+    return {"dismissed": dismissed}
 
 
 @router.post("/review/{prediction_id}")

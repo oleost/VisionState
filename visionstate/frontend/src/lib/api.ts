@@ -171,7 +171,10 @@ export const api = {
 
   reviewRules: () => request<ReviewRules>('review-rules'),
   saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
-  review: () => request<{ total: number; items: ReviewItem[] }>('review'),
+  review: () =>
+    request<{ total: number; items: ReviewItem[]; sensors: { id: number; name: string; count: number }[] }>('review'),
+  /** Take every waiting item of one sensor out of the queue (as if each was skipped). */
+  dismissReview: (sensorId: number) => request<{ dismissed: number }>(`review/sensors/${sensorId}/dismiss`, send('POST')),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>
     request(`review/${predictionId}`, send('POST', { action, state_key: stateKey })),
   /** A reading: did the reader read the right number? `value` = the right one, when it misread. */

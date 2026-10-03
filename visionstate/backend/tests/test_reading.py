@@ -289,6 +289,23 @@ def test_reading_sensor_flow(settings):
         assert verified["read_ok"] is False and verified["correct_value"] == "12300.0"
         assert client.get(f"/api/v1/sensors/{sid}/quality").status_code == 400  # the state sensors' tab
 
+        # "Dismiss all" empties one sensor's part of the queue; the counts and earlier answers stay.
+        camera.text = "0012300.0"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 1, timeout=30)
+        camera.text = "0012346.1"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") is None, timeout=30)
+        queue = client.get("/api/v1/review").json()
+        assert queue["sensors"] == [{"id": sid, "name": "Power meter", "count": queue["total"]}]
+        assert client.post("/api/v1/review/sensors/9999/dismiss").status_code == 404
+        dismissed = client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"]
+        assert dismissed == queue["total"]
+        assert client.get("/api/v1/review").json() == {"total": 0, "items": [], "sensors": []}
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["periods"][0]["rejected"] == 1 + dismissed
+        assert quality["verified"]["misread_rejected"] == 1 and quality["verified"]["waiting"] == 0
+
         # A verified reading is kept like a training image, whatever the history limits say.
         rt.set_storage_limits({"history_days": 1, "history_max_gb": 0.000001})
         rt.cleanup_history()

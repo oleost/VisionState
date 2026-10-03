@@ -135,6 +135,8 @@ First choose **what it looks like**:
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed) —
   here or in the review queue. A misread that was rejected shows the checks work; a right
   reading that was rejected points at a setting, for example a change limit that is too low.
+  While you set a sensor up, rejected readings can pile up: **Dismiss all** (here, or per sensor
+  on the Review page) takes them out of the queue. Answers already given and the counts stay.
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
@@ -161,7 +163,8 @@ First choose **what it looks like**:
   and forth (optionally also random spot checks). Answering these is the fastest way to improve.
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
-  80 %, or turn review off for it. Empty sensor fields use the global value.
+  80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
+  shows how many items wait per sensor; **Dismiss all** next to a sensor skips all of them at once.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
   was wrong, add it to the dataset with the correct state.
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image

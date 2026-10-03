@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3b4
+
+- **Dismiss all** in the review queue: the Review page shows how many items wait per sensor, and
+  one button skips all of a sensor's items at once — for the many rejected readings that can pile
+  up while a sensor is being set up. Also on a reading sensor's Quality tab. Answers already
+  given and the counts in Quality are kept.
+
 ## 0.6.3b3
 
 - Quality tab of reading sensors: the cards show the share of **accepted** readings (100 % = none

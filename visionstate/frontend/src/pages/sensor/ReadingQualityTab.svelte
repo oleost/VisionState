@@ -1,7 +1,8 @@
 <script lang="ts">
   // Reading sensors: how often readings are rejected and why, per day, and what the user verified.
   import { api } from '../../lib/api';
-  import { toastError } from '../../lib/app.svelte';
+  import { refreshStatus, toast, toastError } from '../../lib/app.svelte';
+  import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import ReadingVerdict from '../../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
@@ -54,6 +55,21 @@
   const shownDay = $derived(quality ? quality.daily[hover ?? quality.daily.length - 1] : null);
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
+
+  let dismissing = $state(false);
+  async function dismissAll() {
+    dismissing = true;
+    try {
+      const { dismissed } = await api.dismissReview(sensor.id);
+      toast(`Dismissed ${dismissed} item${dismissed === 1 ? '' : 's'} from the review queue`);
+      refreshStatus();
+      await load();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      dismissing = false;
+    }
+  }
 
   const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
   const dayName = (day: string) =>
@@ -176,6 +192,14 @@
         Settings → Sensor output.
       </p>
     </div>
+    {#if v?.waiting}
+      <div class="row wrap dismiss">
+        <span class="small muted">{v.waiting} waiting in the review queue.</span>
+        <ConfirmButton class="btn sm" disabled={dismissing} confirmLabel="Press again" onconfirm={dismissAll}>
+          Dismiss all
+        </ConfirmButton>
+      </div>
+    {/if}
     {#if newer.length}
       <button class="btn sm newer" onclick={() => load()}>
         <Icon name="refresh" size={14} /> Show {newer.length} new reading{newer.length === 1 ? '' : 's'}
@@ -335,6 +359,9 @@
   }
   .newer {
     align-self: flex-start;
+  }
+  .dismiss {
+    gap: var(--space-3);
   }
   .head {
     gap: var(--space-3);

@@ -449,9 +449,14 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await page.goto('#/review');
     // A check of the paused sensor may still have been running: skip anything newer than ours.
     const ours = page.getByText(/Did it read “00400”/);
-    await expect(page.getByText(/Did it read “00400”|Is this /).first()).toBeVisible();
-    for (let i = 0; i < 5 && !(await ours.isVisible()); i++) {
+    const position = page.locator('.main .mono').first();
+    for (let i = 0; i < 5; i++) {
+      await expect(page.getByText(/Did it read “00400”|Is this /).first()).toBeVisible();
+      if (await ours.isVisible()) break;
+      // Wait for the next item before looking again, or a second Skip lands on ours.
+      const before = (await position.textContent()) ?? '';
       await press(page.getByRole('button', { name: 'Skip' }), info);
+      await expect(position).not.toHaveText(before);
     }
     await expect(ours).toBeVisible();
     await expect(page.getByText('Rejected: a counter can not go down')).toBeVisible();
@@ -476,6 +481,36 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await press(page.getByRole('button', { name: 'Change' }), info);
     await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
     await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
+
+    // Dismiss all takes a sensor's waiting items out of the queue; answers already given stay.
+    const waiting = async () =>
+      ((await (await request.get('api/v1/review')).json()).sensors as { id: number; count: number }[]).find((s) => s.id === id)?.count ?? 0;
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(waiting, { timeout: 30_000 }).toBe(1);
+    await page.reload();
+    const bar = page.locator('.dismiss');
+    await expect(bar).toContainText('1 waiting in the review queue.');
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await press(bar.getByRole('button', { name: 'Dismiss all' }), info);
+    await press(bar.getByRole('button', { name: 'Press again' }), info);
+    await expect(page.getByText('Dismissed 1 item from the review queue')).toBeVisible();
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByText(/correct reading was rejected/)).toBeVisible();
+
+    // ... and the same per sensor on the review page.
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(waiting, { timeout: 30_000 }).toBe(1);
+    await page.goto('#/review');
+    const row = page.locator('.wait-row').filter({ hasText: 'Gas meter' });
+    await expect(row).toContainText('1 waiting');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dismiss.png'), fullPage: true });
+    await press(row.getByRole('button', { name: 'Dismiss all' }), info);
+    await press(row.getByRole('button', { name: 'Press again' }), info);
+    await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeVisible();
+    await expect(row).toHaveCount(0);
+    expect(await waiting()).toBe(0);
     errors.expectNone();
   } finally {
     await page.goto('about:blank');
