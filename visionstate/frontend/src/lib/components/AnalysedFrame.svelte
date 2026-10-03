@@ -1,7 +1,7 @@
 <script lang="ts">
   // The exact frame an object sensor's last check analysed, with its detections drawn on it,
-  // so boxes always match the picture. Falls back to the latest cached frame (without boxes)
-  // when that frame is no longer kept by the backend.
+  // so boxes always match the picture. When that frame is no longer kept, the backend sends the
+  // latest one (X-Frame-Id tells which), shown without boxes unless they belong to it.
   import { onDestroy } from 'svelte';
   import { api } from '../api';
   import type { Sensor } from '../types';
@@ -13,6 +13,7 @@
   let src = $state<string | null>(null);
   let shownFrame = $state<string | null>(null); // frame id of the picture on screen (null = fallback)
   let objectUrl: string | null = null;
+  let requested = ''; // the frame asked for last (not reactive: the answer may be another frame)
 
   async function fallback() {
     try {
@@ -31,18 +32,25 @@
       if (!src) fallback();
       return;
     }
-    if (frameId === shownFrame) return;
-    const url = api.analysedFrameUrl(sensor.id, frameId);
-    const img = new Image();
-    img.onload = () => {
-      src = url;
-      shownFrame = frameId;
-    };
-    img.onerror = () => {
-      if (!src) fallback();
-    };
-    img.src = url;
+    if (frameId === requested) return;
+    requested = frameId;
+    load(frameId);
   });
+
+  async function load(frameId: string) {
+    try {
+      const resp = await fetch(api.analysedFrameUrl(sensor.id, frameId));
+      if (!resp.ok) throw new Error(String(resp.status));
+      const blob = await resp.blob();
+      if (frameId !== requested) return; // a newer check's frame is on its way
+      const url = URL.createObjectURL(blob);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = src = url;
+      shownFrame = resp.headers.get('X-Frame-Id');
+    } catch {
+      if (!src) fallback();
+    }
+  }
 
   onDestroy(() => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);

@@ -254,10 +254,15 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
     live = rt.live_state(sensor_id)
     if frame_id is not None:
         data = next((d for fid, d in live.frames if fid == frame_id), None)
-        if data is None:
+        if data is not None:
+            headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
+            return Response(data, media_type="image/jpeg", headers=headers)
+        # Gone from the cache already (frequent checks): the latest frame instead. X-Frame-Id says
+        # which one it is, so the UI only draws a check's boxes on the frame they belong to.
+        if not live.frames:
             raise HTTPException(404, "Frame no longer cached")
-        headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
-        return Response(data, media_type="image/jpeg", headers=headers)
+        latest_id, data = live.frames[-1]
+        return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": latest_id, "Cache-Control": "no-store"})
     shown = rt.frame_for_view(sensor_id)
     if cached and live.frames:
         frame_id, data = live.frames[-1]

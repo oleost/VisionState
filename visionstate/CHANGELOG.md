@@ -7,6 +7,8 @@
   Home Assistant stay *unavailable* — no values, no statistics. For tuning a sensor before Home
   Assistant uses it, e.g. one that takes over the entity ID (and statistics) of an older sensor.
   Marked on the dashboard; existing sensors keep sending.
+- Object sensors that check very often no longer show a broken frame for a moment: when the
+  analysed frame is already gone, the latest one is shown (without boxes that belong to another).
 
 ## 0.6.3b8
 
