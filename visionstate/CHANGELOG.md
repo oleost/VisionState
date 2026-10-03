@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3b5
+
+- Review page: the number waiting per sensor now counts down with each answer, and a sensor
+  with nothing left no longer shows **Dismiss all**.
+
 ## 0.6.3b4
 
 - **Dismiss all** in the review queue: the Review page shows how many items wait per sensor, and
