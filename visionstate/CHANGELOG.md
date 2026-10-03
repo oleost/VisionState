@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3b3
+
+- Quality tab of reading sensors: the cards show the share of **accepted** readings (100 % = none
+  rejected) instead of the rejected share, which read like a bad score.
+
 ## 0.6.3b2
 
 - **Quality tab for reading sensors**: how many readings were rejected today, in the last 7 and

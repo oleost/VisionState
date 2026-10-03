@@ -130,8 +130,8 @@ First choose **what it looks like**:
   limit you set. Every rejected reading is listed in the **History** tab with the reason and
   waits in the **Review** queue. A new value is published after 2 equal readings in a row
   (adjustable).
-- **Quality** tab: how many readings were rejected today, in the last 7 and 30 days, why, and a
-  chart per day. Below it the rejected readings with their frame: tell whether the reader read
+- **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
+  the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed) —
   here or in the review queue. A misread that was rejected shows the checks work; a right
   reading that was rejected points at a setting, for example a change limit that is too low.

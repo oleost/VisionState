@@ -250,7 +250,7 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     global review rules, storage (disk use and history limits), import.
 
 Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
-image the reader saw), **Quality** (rejected share today / 7 / 30 days, by reason, per day, and
+image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
 the rejected and checked readings with *read correctly* / *misread*), **History** (new values
 and rejected readings) and **Settings** (mode,
 decimals, unit, device class, display, limits). The reading settings start with the type —

@@ -464,7 +464,8 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
 
     // The quality tab sums it up and keeps the answer, which can be changed.
     await page.goto(`#/sensors/${id}/quality`);
-    await expect(page.getByText(/1 of \d+ readings rejected/).first()).toBeVisible();
+    await expect(page.getByText('1 of 2 readings accepted').first()).toBeVisible();
+    await expect(page.getByText('50.0 %').first()).toBeVisible();
     await expect(page.locator('.reasons').getByText('a counter can not go down')).toBeVisible();
     await expect(page.getByText('Misread — was 501 m³')).toBeVisible();
     await expect(page.getByText('misread was caught by the checks.')).toBeVisible();

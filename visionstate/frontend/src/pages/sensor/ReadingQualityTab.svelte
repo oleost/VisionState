@@ -67,9 +67,10 @@
     {#each quality.periods as p (p.days)}
       <div class="card pad col tile">
         <span class="small muted">{PERIOD_LABEL[p.days] ?? `${p.days} days`}</span>
-        <span class="value">{rate(p.rejected, p.reads)}</span>
+        <!-- Accepted, not "correct": a misread can pass every check (see Misreads found). -->
+        <span class="value">{rate(p.accepted, p.reads)}</span>
         <span class="xsmall faint">
-          {p.reads ? `${p.rejected} of ${p.reads} readings rejected` : 'no readings'}
+          {p.reads ? `${p.accepted} of ${p.reads} readings accepted` : 'no readings'}
         </span>
       </div>
     {/each}
