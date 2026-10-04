@@ -75,6 +75,8 @@ export interface ReadingSettings {
   max_step: number;
   /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
   spot_rate: number;
+  /** Counters: the rate entity in Home Assistant is the change over about this many minutes. */
+  rate_window_min: number;
 }
 
 /** One period on a reading sensor's Quality tab (today, 7 days, 30 days). */
@@ -330,12 +332,14 @@ export interface AppConfig {
   teach: { none_label: string; max_labels: number };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate', [number, number]>;
+  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
+  /** At most this many checked readings go into "Export checked readings". */
+  reading_export_limit: number;
   storage_defaults: { history_max_gb: number };
   storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
 }

@@ -255,6 +255,14 @@ the version Home Assistant ships) instead of the occupancy class's house icon.
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
 `measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
 Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
+Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
+them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+`settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
+memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
+about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
+readings far apart give the average since the previous one; unit and device class from the
+counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/h and L → L/min volume
+flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate entity.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
 for review, per-sensor breakdown as attribute).
@@ -365,6 +373,13 @@ automatically.
   ROI, triggers, review overrides, all samples with labels (object sensors: taught boxes with
   their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
+- **Checked readings** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor), to
+  share so reading can be improved: the readings verified by hand (at most
+  `READING["export_limit"]`, newest first), each only the region plus `export_margin`, with
+  `readings.json` (read text, value, rejection reason, confidence, answer, right value, day only),
+  the reading settings without anything that tells where the sensor is (no source, name or
+  region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.
+  The reader itself does not learn from the answers.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,
   exporting trained heads (retraining is faster than shipping them).

@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from .. import bundle
+from .. import bundle, readers
 from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
 from ..settings import (
     KIND_OBJECTS,
@@ -496,6 +496,25 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "verified": verified,
             "items": [prediction_view(p) for p in items],
         }
+
+
+@router.get("/{sensor_id}/reading-export")
+async def reading_export(sensor_id: int, request: Request, background: BackgroundTasks) -> FileResponse:
+    """A ZIP of the readings checked by hand: only the region of each, what was read, the answer."""
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_READING)
+    reader = await asyncio.to_thread(rt.db.get_setting, "reader", readers.DEFAULT_READER)
+    fd, name = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    tmp = Path(name)
+    try:
+        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader)
+    except LookupError as err:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(404, str(err)) from err
+    background.add_task(tmp.unlink, missing_ok=True)
+    return FileResponse(tmp, media_type="application/zip", filename=filename)
 
 
 @router.get("/{sensor_id}/history")

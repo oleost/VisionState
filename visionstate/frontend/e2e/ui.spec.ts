@@ -605,6 +605,27 @@ test('a sensor can be kept from Home Assistant while it is tuned', async ({ page
   }
 });
 
+test('a counter has a rate window for its rate entity', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  await page.goto(`#/sensors/${id}/settings`);
+  const field = page.getByLabel('Rate over the last minutes');
+  await expect(field).toHaveValue('15');
+  await field.fill('30');
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  try {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    expect(sensor.reading.rate_window_min).toBe(30);
+    await expectNoHorizontalOverflow(page);
+    errors.expectNone();
+  } finally {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    const { value: _v, last: _l, has_image: _h, ...reading } = sensor.reading;
+    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, rate_window_min: 15 } } });
+  }
+});
+
 test('rejected readings: review queue and quality tab', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const garage = await seededSensorId(request);
@@ -665,6 +686,16 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await press(page.getByRole('button', { name: 'Change' }), info);
     await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
     await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
+
+    // The checked readings can be exported to share: a ZIP with the region of each, and a licence.
+    await expect(page.getByText('The reader does not learn from your answers')).toBeVisible();
+    const exportLink = page.getByRole('link', { name: 'Export checked readings' });
+    await expect(exportLink).toBeVisible();
+    const zip = await request.get(`api/v1/sensors/${id}/reading-export`);
+    expect(zip.ok()).toBeTruthy();
+    expect(zip.headers()['content-disposition']).toContain('visionstate-readings-gas_meter.zip');
+    expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+    await expectNoClipping(page, '.btn, .chip, .card');
 
     // Dismiss all takes a sensor's waiting items out of the queue; answers already given stay.
     const waiting = async () =>

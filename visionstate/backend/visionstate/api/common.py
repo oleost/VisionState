@@ -217,6 +217,9 @@ class ReadingIn(BaseModel):
     digits: int = Field(READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     spot_rate: float = Field(READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
+    rate_window_min: float = Field(
+        READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
+    )
 
     @field_validator("mode")
     @classmethod

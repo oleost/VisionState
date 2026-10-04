@@ -187,6 +187,8 @@ export const api = {
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
   readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
+  /** ZIP of the readings checked by hand (only the region of each), to share. */
+  readingExportUrl: (id: number) => `${BASE}sensors/${id}/reading-export`,
 
   /** Object sensors: what was taught, and teaching one box (or forgetting it). */
   taught: (id: number) => request<Taught>(`sensors/${id}/taught`),

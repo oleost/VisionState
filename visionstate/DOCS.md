@@ -190,11 +190,28 @@ First choose **what it looks like**:
   reading that was rejected points at a setting, for example a change limit that is too low.
   While you set a sensor up, rejected readings can pile up: **Dismiss all** (here, or per sensor
   on the Review page) takes them out of the queue. Answers already given and the counts stay.
+  The reader does **not** learn from these answers: they show how reliable the reading is and
+  which setting to change.
+- **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
+  readings you checked — only the region of each, not the whole picture — with what was read and
+  what was right. Look through it, then share it in
+  [GitHub Discussions](https://github.com/oleost/VisionState/discussions) and say what the display
+  or meter is: that shows what goes wrong where. Shared, the images are public domain (CC0; the
+  README and LICENSE inside the ZIP say so).
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
   `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
+- More entities, **off by default** — turn them on in Home Assistant (the device page, or the
+  entity's settings → *Enabled*):
+
+  | Entity | What it is |
+  |---|---|
+  | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
+  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`) |
+  | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
+  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
 - Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
   have so far only been tried on one type of water meter: they read well while the wheels stand
   still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
@@ -213,7 +230,8 @@ First choose **what it looks like**:
   for each frame — check them and click **Accept all suggestions**, or select frames and
   press a state key.
 - **Review** (top menu): frames the AI was unsure about and frames where the state flipped back
-  and forth (optionally also random spot checks). Answering these is the fastest way to improve.
+  and forth (optionally also random spot checks). Answering these is the fastest way to improve a
+  state sensor (its answers become training images).
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page

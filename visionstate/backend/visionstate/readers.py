@@ -278,6 +278,40 @@ def implausible(value: float, last: float | None, settings: dict) -> str | None:
     return None
 
 
+def problem_key(reason: str | None) -> str:
+    """The "problem" entity's state: "ok", or why the reading was rejected as a key ("went_down")."""
+    return "ok" if reason is None else reason.replace(" ", "_")
+
+
+def accepted_share(reads, now: float, window_s: float) -> float | None:
+    """Share of accepted readings (in %) among ``reads`` ((time, accepted) pairs) of the last window.
+
+    Drops the older pairs from ``reads`` (a deque).
+    """
+    while reads and reads[0][0] < now - window_s:
+        reads.popleft()
+    if not reads:
+        return None
+    return round(100 * sum(1 for _, ok in reads if ok) / len(reads), 1)
+
+
+def counter_rate(samples, now: float, window_s: float, min_span_s: float) -> float | None:
+    """How fast a counter goes up, per hour, over about the last window.
+
+    ``samples`` (a deque of (time, accepted value)) is trimmed to the samples inside the window
+    plus the last one before it, which anchors the start: with readings far apart (a sensor that
+    only checks when triggered) that gives the average since the previous reading.
+    """
+    while len(samples) > 1 and samples[1][0] <= now - window_s:
+        samples.popleft()
+    if len(samples) < 2:
+        return None
+    (t0, v0), (t1, v1) = samples[0], samples[-1]
+    if t1 - t0 < min_span_s:
+        return None
+    return max(0.0, (v1 - v0) * 3600 / (t1 - t0))
+
+
 def format_value(value: float | None, settings: dict) -> str | None:
     """Value as published: fixed decimals for numbers, whole minutes for time left."""
     if value is None:

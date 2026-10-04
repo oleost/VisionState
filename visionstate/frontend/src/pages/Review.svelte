@@ -113,7 +113,8 @@
       <div class="col" style="gap:4px">
         <h1>Review</h1>
         <p class="small muted">
-          Frames the AI was unsure about, and readings that were rejected. A few clicks here improve the model the most.
+          Frames the AI was unsure about, and readings that were rejected. Answers for state sensors train them — a few
+          clicks here help the most. Answers for readings show how reliable they are; the reader does not learn from them.
         </p>
       </div>
       {#if waiting.length}

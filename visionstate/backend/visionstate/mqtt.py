@@ -17,6 +17,8 @@ from .settings import (
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
+    READING_PROBLEMS,
+    READING_RATE_UNITS,
     SUPERVISOR_URL,
     UNKNOWN_STATE,
     VERSION,
@@ -41,6 +43,11 @@ def topics(slug: str) -> dict[str, str]:
         "classify": f"{base}/classify/set",
         "enabled_set": f"{base}/enabled/set",
         "enabled": f"{base}/enabled",
+        # reading sensors: diagnostic entities (off by default in Home Assistant)
+        "raw": f"{base}/raw",
+        "problem": f"{base}/problem",
+        "accepted": f"{base}/accepted",
+        "rate": f"{base}/rate",
     }
 
 
@@ -111,6 +118,61 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                     "icon": "mdi:percent-circle-outline",
                     **with_camera,
                 },
+            ),
+            # Off by default (enabled_by_default): for those who want them, e.g. leak detection.
+            config(
+                "sensor",
+                "raw",
+                {
+                    "name": "Raw reading",
+                    **suggest(f"sensor.{uid}_raw"),
+                    "state_topic": t["raw"],
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:text-recognition",
+                    **with_camera,
+                },
+            ),
+            config(
+                "sensor",
+                "problem",
+                {
+                    "name": "Problem",
+                    **suggest(f"sensor.{uid}_problem"),
+                    "state_topic": t["problem"],
+                    "device_class": "enum",
+                    "options": list(READING_PROBLEMS),
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:alert-circle-outline",
+                    **with_camera,
+                },
+            ),
+            config(
+                "sensor",
+                "accepted",
+                {
+                    "name": "Accepted (24 h)",
+                    **suggest(f"sensor.{uid}_accepted"),
+                    "state_topic": t["accepted"],
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:check-circle-outline",
+                    **with_camera,
+                },
+            ),
+            *(
+                [
+                    config(
+                        "sensor",
+                        "rate",
+                        {**suggest(f"sensor.{uid}_rate"), **rate_entity(sensor.reading or {}, t), **with_camera},
+                    )
+                ]
+                if (sensor.reading or {}).get("mode") == "counter"
+                else []
             ),
         ]
     elif objects:
@@ -244,6 +306,29 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
     }
     if mode != "time_left":
         payload["suggested_display_precision"] = int(reading.get("decimals", 0))
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+def rate_unit(reading: dict) -> tuple[str | None, str | None, float]:
+    """(unit, device class, factor from "per hour") of a counter's rate, from the counter's unit."""
+    unit = (reading.get("unit") or "").strip()
+    if unit in READING_RATE_UNITS:
+        return READING_RATE_UNITS[unit]
+    return (f"{unit}/h" if unit else None), None, 1.0
+
+
+def rate_entity(reading: dict, t: dict[str, str]) -> dict:
+    """Discovery fields of a counter's rate: how fast it goes up (off by default in Home Assistant)."""
+    unit, device_class, _ = rate_unit(reading)
+    payload = {
+        "name": "Rate",
+        "state_topic": t["rate"],
+        "unit_of_measurement": unit,
+        "device_class": device_class,
+        "state_class": "measurement",
+        "enabled_by_default": False,
+        "icon": "mdi:speedometer",
+    }
     return {k: v for k, v in payload.items() if v is not None}
 
 
@@ -449,6 +534,12 @@ class MqttBridge:
             await self.publish(topic, "", retain=True)
         for key, *_ in sensor.objects:
             await self.remove_object_class(sensor.slug, key, discovery=False)
+
+    async def remove_rate(self, slug: str) -> None:
+        """Forget the rate entity of a reading sensor that is no longer a counter."""
+        uid = f"{APP_SLUG}_{slug}"
+        await self.publish(f"{self.settings.discovery_prefix}/sensor/{uid}/rate/config", "", retain=True)
+        await self.publish(topics(slug)["rate"], "", retain=True)
 
     async def remove_object_class(self, slug: str, key: str, discovery: bool = True) -> None:
         """Forget one class of an object sensor (deselected): its entities and retained values."""

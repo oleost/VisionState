@@ -116,6 +116,7 @@ def ui_config() -> dict:
         "reading_displays": READING_DISPLAYS,
         "reading_device_classes": READING_DEVICE_CLASSES,
         "reading_counter_cell_share": READING["counter_cell_share"],
+        "reading_export_limit": READING["export_limit"],
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,
     }

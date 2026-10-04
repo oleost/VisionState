@@ -90,12 +90,27 @@ READING_DEFAULTS = {
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
     "spot_rate": 0.0,  # largest plausible change between two readings (0 = no limit)
+    # Counters: the rate entity (off by default in Home Assistant) is the change over about this
+    # many minutes — long enough not to jump with every step of the counter, short enough to see a leak.
+    "rate_window_min": 15.0,
 }
 READING_LIMITS = {
     "decimals": (0, 4),
     "digits": (1, 12),
     "max_step": (0.0, 1e9),
     "spot_rate": (0.0, 1.0),
+    "rate_window_min": (1.0, 1440.0),
+}
+# Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
+# why the last reading was rejected, as a lower-case key.
+READING_PROBLEMS = ("ok", "nothing_read", "unsure", "wrong_digit_count", "went_down", "changed_too_much")
+# Unit of a counter -> (unit of its rate, Home Assistant device class, factor from "per hour").
+# Other units get "<unit>/h" without a device class.
+READING_RATE_UNITS = {
+    "kWh": ("kW", "power", 1.0),
+    "Wh": ("W", "power", 1.0),
+    "m³": ("m³/h", "volume_flow_rate", 1.0),
+    "L": ("L/min", "volume_flow_rate", 1 / 60),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
@@ -111,6 +126,12 @@ READING = {
     "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
     "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
     "counter_band_min_height": 0.5,
+    "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
+    "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
+    # "Export verified readings" (to share, e.g. on GitHub): at most this many, newest first, each
+    # only the region plus this share of its size around it — not the whole picture.
+    "export_limit": 300,
+    "export_margin": 0.15,
 }
 
 DETECTION = {

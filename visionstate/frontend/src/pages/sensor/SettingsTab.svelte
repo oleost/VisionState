@@ -212,6 +212,7 @@
           bind:debounce
           bind:maxStep={reading.max_step}
           bind:spotRate={reading.spot_rate}
+          bind:rateWindow={reading.rate_window_min}
           mode={reading.mode}
           unit={reading.unit}
         />

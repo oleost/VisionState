@@ -1,7 +1,7 @@
 <script lang="ts">
   // Reading sensors: how often readings are rejected and why, per day, and what the user verified.
   import { api } from '../../lib/api';
-  import { refreshStatus, toast, toastError } from '../../lib/app.svelte';
+  import { app, refreshStatus, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import ReadingVerdict from '../../lib/components/ReadingVerdict.svelte';
@@ -55,6 +55,7 @@
   const shownDay = $derived(quality ? quality.daily[hover ?? quality.daily.length - 1] : null);
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
+  const exportLimit = $derived(app.config?.reading_export_limit ?? verifiedTotal);
 
   let dismissing = $state(false);
   async function dismissAll() {
@@ -188,10 +189,26 @@
       <h3>Rejected and checked readings</h3>
       <p class="small muted">
         Tell whether the reader read the meter right: a misread that was rejected shows the checks work; a right
-        reading that was rejected points at a setting. Spot checks of accepted readings can be switched on under
-        Settings → Sensor output.
+        reading that was rejected points at a setting. The reader does not learn from your answers — they show how
+        reliable the reading is. Spot checks of accepted readings can be switched on under Settings → Sensor output.
       </p>
     </div>
+    {#if verifiedTotal}
+      <div class="card pad row wrap share">
+        <span class="col" style="gap:2px;flex:1 1 280px;min-width:0">
+          <strong class="small">Help improve reading</strong>
+          <span class="xsmall muted">
+            A ZIP with {Math.min(verifiedTotal, exportLimit) === 1
+              ? 'the reading you checked'
+              : `the ${Math.min(verifiedTotal, exportLimit)} readings you checked`}: only the region, not the whole picture,
+            with what was read and what was right. Share it in
+            <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>
+            — shared, the images are public domain (CC0, see the README inside).
+          </span>
+        </span>
+        <a class="btn sm" href={api.readingExportUrl(sensor.id)} download><Icon name="download" size={14} /> Export checked readings</a>
+      </div>
+    {/if}
     {#if v?.waiting}
       <div class="row wrap dismiss">
         <span class="small muted">{v.waiting} waiting in the review queue.</span>
@@ -362,6 +379,10 @@
   }
   .dismiss {
     gap: var(--space-3);
+  }
+  .share {
+    gap: var(--space-3);
+    align-items: center;
   }
   .head {
     gap: var(--space-3);

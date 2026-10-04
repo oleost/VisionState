@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.3b12
+
+- **More from a reading sensor in Home Assistant**, off by default — turn on what you need:
+  *Raw reading* (what was read, also when rejected), *Problem* (`ok` or why the last reading was
+  rejected), *Accepted (24 h)* (%), and for counters a **Rate**: how fast it goes up over the last
+  15 minutes (adjustable) — kW for kWh, m³/h for m³, L/min for L. Useful to spot a water leak.
+- **Help improve reading:** *Export checked readings* on the Quality tab downloads the readings you
+  checked — only the region of each, not the whole picture — with what was read and what was right,
+  ready to share in GitHub Discussions (shared as public domain, CC0).
+- Clearer that answering a reading (*Read correctly* / *Misread*) does not train the reader: it shows
+  how reliable the reading is. Answers for state sensors still train them.
+
 ## 0.6.3b11
 
 - The **Live** tab of an object sensor no longer jumps when a new check comes in: the list of

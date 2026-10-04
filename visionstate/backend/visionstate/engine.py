@@ -20,13 +20,14 @@ from . import backbones, classifier, detectors, imaging, readers, teach
 from .db import Database, Embedding, ModelInfo, Prediction, ReadingStat, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener, fetch_entity_ids
 from .lights import Lights
-from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, topics
+from .mqtt import REVIEW_TOPICS, MqttBridge, SensorDescriptor, object_topics, rate_unit, topics
 from .redact import redact
 from .settings import (
     DETECTION,
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
+    READING,
     RUNTIME,
     STORAGE_DEFAULTS,
     TEACH,
@@ -311,6 +312,10 @@ class LiveState:
     reading: dict | None = None
     reading_image: bytes | None = None
     reading_restored: bool = False  # last published value loaded from the history after a restart
+    # Reading sensors, for the diagnostic entities: (time, accepted) of the last day's readings,
+    # and (time, value) of accepted readings of a counter for its rate (see readers.counter_rate).
+    reads: deque = field(default_factory=deque)
+    rate_samples: deque = field(default_factory=deque)
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"
@@ -1158,6 +1163,7 @@ class Runtime:
         )
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
         await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
 
         await asyncio.to_thread(self._count_reading, cfg.id, reason)
         spot = reason is None and not changed and random.random() < float(settings["spot_rate"])
@@ -1170,6 +1176,29 @@ class Runtime:
             )
             if review:
                 await self.publish_review_count()
+
+    async def _send_reading_diagnostics(
+        self, cfg: SensorConfig, text: str, shown: str | None, reason: str | None, now: float
+    ) -> None:
+        """The diagnostic entities of a reading sensor: raw reading, problem, accepted share, rate."""
+        live = self.live_state(cfg.id)
+        settings = cfg.reading
+        t = topics(cfg.slug)
+        await self._send(cfg, t["raw"], shown or text or "-", retain=True)
+        await self._send(cfg, t["problem"], readers.problem_key(reason), retain=True)
+        live.reads.append((now, reason is None))
+        share = readers.accepted_share(live.reads, now, READING["accepted_window_s"])
+        if share is not None:
+            await self._send(cfg, t["accepted"], f"{share:g}", retain=True)
+        if settings["mode"] != "counter":
+            return
+        if reason is None and live.debouncer.published is not None:
+            live.rate_samples.append((now, float(live.debouncer.published)))
+        window = float(settings["rate_window_min"]) * 60
+        per_hour = readers.counter_rate(live.rate_samples, now, window, READING["rate_min_span_s"])
+        if per_hour is not None:
+            _, _, factor = rate_unit(settings)
+            await self._send(cfg, t["rate"], f"{per_hour * factor:.4g}", retain=True)
 
     def _count_reading(self, sensor_id: int, reason: str | None) -> None:
         day = datetime.now().date().isoformat()  # local time: "today" as the user sees it
@@ -1249,6 +1278,8 @@ class Runtime:
             for key in self._published_classes.get(cfg.id, set()) - current:
                 await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
             self._published_classes[cfg.id] = current
+        if cfg.is_reading and cfg.reading["mode"] != "counter":
+            await self.mqtt.remove_rate(cfg.slug)  # only counters have a rate
         await self.mqtt.publish_discovery(cfg.descriptor)
         self._registry_wanted.set()
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
