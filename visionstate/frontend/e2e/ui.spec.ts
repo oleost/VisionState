@@ -58,7 +58,15 @@ test('every page renders without errors and fits the screen', async ({ page, req
       await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
       await expectNoHorizontalOverflow(page);
       await expectNoClipping(page, '.btn, .state-btn, .chip, .pill, .card');
-      await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, `${name}.png`), fullPage: true });
+      // A history page that filled up during the run can be taller than a screenshot may be
+      // (32767 px, reached on a phone): keep the top of it; the checks above cover the whole page.
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      const width = page.viewportSize()?.width ?? 0;
+      await page.screenshot({
+        path: path.join('test-results', 'pages', info.project.name, `${name}.png`),
+        fullPage: true,
+        ...(height > 30_000 ? { clip: { x: 0, y: 0, width, height: 30_000 } } : {}),
+      });
       errors.expectNone();
     });
   }
