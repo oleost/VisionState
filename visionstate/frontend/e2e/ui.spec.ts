@@ -358,6 +358,83 @@ test('object sensor shows boxes and history', async ({ page, request }, info) =>
   errors.expectNone();
 });
 
+test('teaching an object sensor: correct a box, draw a missed one, forget it all', async ({ page, request }, info) => {
+  test.setTimeout(180_000); // waits for the detector's checks several times
+  const errors = watchErrors(page);
+  // Its own sensor (per project), so the seeded one stays untaught for the other tests.
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: `Teach ${info.project.name}`,
+      kind: 'objects',
+      source_type: 'http',
+      source: PHOTO_URL('beach'),
+      objects: { classes: ['dog', 'person'] },
+      interval_s: 3,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+  try {
+    await page.goto(`#/sensors/${id}/live`);
+    await expect(page.getByText('Wrong? Tap a box to correct it:')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0); // nothing taught yet
+
+    // Tap the person in the list under the frame: not a person (asked once whether to teach).
+    await press(page.locator('button.found', { hasText: 'Person' }), info);
+    const sheet = page.getByRole('dialog', { name: 'Teach this box' });
+    await expect(sheet.getByText(/Person .*sure/)).toBeVisible();
+    await press(sheet.getByRole('button', { name: 'Not a person' }), info);
+    await expect(sheet.getByText('Teach this sensor?')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-sheet.png'), fullPage: true });
+    await press(sheet.getByRole('button', { name: 'Teach' }), info);
+    await expect(page.getByText(/no longer count as person/)).toBeVisible();
+    // The next check shows the person dashed and filtered, and the Quality tab appears.
+    await expect(page.locator('button.found.filtered', { hasText: 'Person' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.roi .box.filtered')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Quality' })).toBeVisible();
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-live.png'), fullPage: true });
+
+    // Draw a box around something the AI missed, then pick what it is.
+    await press(page.getByRole('button', { name: 'Missed something?' }), info);
+    const draw = page.locator('.roi .draw');
+    // Into the middle of the screen, so the drag does not start under the sticky top bar.
+    await draw.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const area = await draw.boundingBox();
+    if (!area) throw new Error('no drawing area');
+    await drag(page, info, { x: area.x + area.width * 0.3, y: area.y + area.height * 0.35 }, { x: area.x + area.width * 0.5, y: area.y + area.height * 0.6 });
+    await expect(page.locator('.roi .drawn')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Next' }), info);
+    await expect(sheet.getByText('What did the AI miss?')).toBeVisible();
+    await press(sheet.getByRole('button', { name: 'Dog' }), info);
+    await expect(page.getByText('Saved as Dog.')).toBeVisible();
+
+    // The Quality tab lists both, and the filtered frame.
+    await page.goto(`#/sensors/${id}/quality`);
+    await expect(page.getByRole('heading', { name: /Not a person/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Dog/ })).toBeVisible();
+    await expect(page.getByText('Person filtered away').first()).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-quality.png'), fullPage: true });
+
+    // Settings: turn it off or forget it all; then the Quality tab goes away again.
+    await page.goto(`#/sensors/${id}/settings`);
+    await expect(page.getByText('Use what you taught')).toBeVisible();
+    // The region's camera frame loads above: wait for it, or the page moves under the tap.
+    await expect(page.locator('.roi img')).toBeVisible();
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+    await press(page.getByRole('button', { name: 'Forget all' }), info);
+    await press(page.getByRole('button', { name: 'Tap again to forget everything taught' }), info);
+    await expect(page.getByText('Everything taught is forgotten')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0);
+    errors.expectNone();
+  } finally {
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
 test('region editor: move, add and remove corners', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededSensorId(request);

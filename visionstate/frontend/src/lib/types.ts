@@ -128,21 +128,42 @@ export interface SensorReading extends ReadingSettings {
   has_image: boolean;
 }
 
-/** One object found in a frame; box = [x1, y1, x2, y2] normalised to the whole frame. */
+/**
+ * One object found in a frame; box = [x1, y1, x2, y2] normalised to the whole frame. After the
+ * sensor was taught (see backend teach.py): `filtered` boxes do not count, `label` is an own label,
+ * `was` the detector's class when it was taught as another one, `rescued` a box the detector was
+ * unsure about, and `match` the taught box it resembles.
+ */
 export interface Detection {
   key: string;
   score: number;
   box: [number, number, number, number];
+  filtered?: boolean;
+  label?: string;
+  was?: string;
+  rescued?: boolean;
+  match?: { id: number; label: string; similarity: number };
+}
+
+/** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
+export interface OwnLabel {
+  key: string;
+  name: string;
+  parent: string;
 }
 
 export interface ObjectSettings {
   classes: string[];
   min_size: number;
   clear_after_s: number;
+  /** Compare boxes with what was taught; off = the detector alone. */
+  use_taught: boolean;
 }
 
 export interface ObjectLive {
   key: string;
+  /** Own labels: the object they are a kind of. */
+  parent: string | null;
   on: boolean;
   count: number;
   score: number;
@@ -150,8 +171,42 @@ export interface ObjectLive {
 }
 
 export interface SensorObjects extends ObjectSettings {
+  custom: OwnLabel[];
   live: ObjectLive[];
   detections: Detection[];
+  /** Boxes taught so far, and the objects whose boxes are compared with them. */
+  taught: number;
+  taught_keys: string[];
+}
+
+/** One taught box; label "none" = not what the detector said, detected null = a box it missed. */
+export interface TaughtBox {
+  id: number;
+  label: string;
+  detected: string | null;
+  score: number | null;
+  origin: string;
+  created_at: string;
+}
+
+export interface Taught {
+  use_taught: boolean;
+  labels: (OwnLabel & { active: boolean })[];
+  examples: TaughtBox[];
+  /** History frames where an object was filtered away, newest first. */
+  filtered: Prediction[];
+}
+
+/** What to teach about one box (POST /sensors/{id}/taught). */
+export interface TeachInput {
+  frame_id?: string | null;
+  history_id?: number | null;
+  box: [number, number, number, number];
+  detected: string | null;
+  score?: number | null;
+  label?: string;
+  new_label?: string;
+  parent?: string;
 }
 
 export interface ObjectLabel {
@@ -271,6 +326,8 @@ export interface AppConfig {
   object_max_classes: number;
   object_labels: ObjectLabel[];
   object_popular: string[];
+  /** Teaching object sensors: the label of a box that is not what the detector said. */
+  teach: { none_label: string; max_labels: number };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate', [number, number]>;
@@ -337,7 +394,7 @@ export interface Prediction {
   review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | null;
   reviewed: boolean;
   has_frame: boolean;
-  /** Object sensors: state_key = the class, published_key = 'on' | 'off'. */
+  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered'. */
   detections: Detection[] | null;
   /** Reading sensors: did the reader read the right number (null = not verified)? */
   read_ok: boolean | null;

@@ -100,6 +100,37 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 - Object sensors use the same triggers as state sensors. **Detect changes in the image** is
   a good fit: the detector only runs when something in the region changes.
 
+### Teaching an object sensor
+
+The detector works without training, but it can be corrected where it gets your camera wrong.
+Tap a box on the **Live** tab or on a history frame (or its entry under the frame):
+
+| Choice | What happens from then on |
+|---|---|
+| **Correct** | Kept as it is; it also keeps similar boxes from being taken for something else |
+| **Not a …** | Boxes that look like this one no longer count — the statue that is "a person", the shadow that is "a dog" |
+| **Something else… → another object** | Counted as that object instead |
+| **Something else… → New label…** | Your own label, a kind of that object — **Our car**, **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too |
+| **Missed something?** | Draw a box around what the AI missed and say what it is. Boxes the AI was unsure about are looked at again and counted when they look like it |
+
+The first time, VisionState asks whether to start: from then on it checks each box of the objects
+you taught against what you taught. A box only takes over a taught answer when it clearly looks
+like one of the boxes you taught; otherwise the AI's own answer stands, so teaching never turns
+something on by a vague resemblance. This uses the same model as state sensors (DINOv2), which is
+always loaded; it costs a little extra time per box, only for the objects you taught.
+
+- Boxes that are filtered away stay visible: **dashed and grey** in the frame, and in the history
+  (*Person filtered away*) the first time it happens. The binary sensor's attributes count them
+  (`filtered`).
+- The **Quality** tab appears once you taught something: every taught box by answer (tap × to
+  forget one), your own labels (**Remove label** removes its entities too) and the frames filtered
+  away lately — check now and then that nothing real is filtered away.
+- **Settings → What you taught**: **Use what you taught** off lets the AI alone decide again (what
+  you taught is kept); **Forget all** removes every taught box and own label.
+- A box drawn where the AI sees nothing at all (not even unsure) cannot be found by itself; you
+  get a note when that is the case.
+- Export and import take what you taught along.
+
 ## Reading sensors
 
 A reading sensor reads a **number** from a display or counter — the kWh on a power meter, a fuel

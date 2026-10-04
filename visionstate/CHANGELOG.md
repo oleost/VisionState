@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.3b10
+
+- **Teach an object sensor your camera.** Tap a box on the Live tab or on a history frame:
+  **Correct**, **Not a person** (the garden statue, a shadow taken for a dog), **another object**,
+  or a **new label of your own** such as *Our car* or *Rex* — with its own on/off sensor and count
+  in Home Assistant. **Missed something?** lets you draw a box around what the AI missed. From then
+  on, a box that clearly looks like one you taught gets your answer; otherwise the AI's own answer
+  stands. Nothing changes until you teach something.
+- Boxes filtered away stay visible (dashed in the frame, in the history and on the new **Quality**
+  tab, which appears once you taught something). **Settings → What you taught** turns it off or
+  forgets it all. Export and import take it along.
+- Going back to an older version (e.g. restoring a backup) after making an own label: the older
+  version does not know the label, so its entities stay in Home Assistant with their last value.
+  Remove own labels first, or delete those entities in Home Assistant.
+
 ## 0.6.3b9
 
 - **Send to Home Assistant** can be switched off per sensor (last step of the wizard, or

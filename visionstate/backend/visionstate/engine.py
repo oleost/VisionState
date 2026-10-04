@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import delete, func, select
 
-from . import backbones, classifier, detectors, imaging, readers
+from . import backbones, classifier, detectors, imaging, readers, teach
 from .db import Database, Embedding, ModelInfo, Prediction, ReadingStat, Sample, SampleLabel, Sensor, utcnow
 from .ha_events import HaEventListener, fetch_entity_ids
 from .lights import Lights
@@ -29,8 +29,10 @@ from .settings import (
     KIND_STATES,
     RUNTIME,
     STORAGE_DEFAULTS,
+    TEACH,
     UNKNOWN_STATE,
     Settings,
+    active_custom,
     merge_objects,
     merge_reading,
     merge_review,
@@ -81,10 +83,26 @@ class SensorConfig:
         return self.kind == KIND_READING
 
     @property
+    def custom_labels(self) -> list[dict]:
+        """Own labels in use (object sensors): {key, name, parent}."""
+        return active_custom(self.objects) if self.is_objects else []
+
+    @property
+    def parents(self) -> dict[str, str]:
+        """Own label -> the class it is a kind of."""
+        return {label["key"]: label["parent"] for label in self.custom_labels}
+
+    @property
+    def object_keys(self) -> list[str]:
+        """What an object sensor reports: its classes, then its own labels."""
+        return [*self.objects["classes"], *(label["key"] for label in self.custom_labels)]
+
+    @property
     def descriptor(self) -> SensorDescriptor:
         names = detectors.LABELS.by_key
         objects = (
             [(k, names[k].name, names[k].icon) for k in self.objects["classes"] if k in names]
+            + [(c["key"], c["name"], names[c["parent"]].icon) for c in self.custom_labels if c["parent"] in names]
             if self.is_objects
             else []
         )
@@ -179,11 +197,12 @@ def update_tracks(
 
     An object switches on after ``required`` checks in a row with it present, and off once it
     has not been seen for ``clear_after_s`` seconds, so a person turning around does not flicker.
+    ``classes`` may hold own labels too; filtered boxes count for nothing (see teach.counts_for).
     """
     changed = []
     for key in classes:
         track = tracks.setdefault(key, ObjectTrack())
-        found = [d for d in detections if d["key"] == key]
+        found = [d for d in detections if teach.counts_for(d, key)]
         track.score = max((d["score"] for d in found), default=0.0)
         if found:
             track.streak += 1
@@ -281,6 +300,12 @@ class LiveState:
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check
+    # Object sensors: the frames the last checks analysed, so a box can be taught a while after
+    # it was shown (``frames`` turns over quickly); classes filtered away in the last check and
+    # when each was last stored in the history.
+    analysed: deque = field(default_factory=lambda: deque(maxlen=TEACH["frames_kept"]))
+    filtered_keys: set[str] = field(default_factory=set)
+    filtered_logged: dict[str, float] = field(default_factory=dict)
     # Reading sensors: the last read {"text", "score", "value", "reason", "at"} and the image
     # the reader saw (JPEG), shown in the UI so a bad region or display setting is easy to spot.
     reading: dict | None = None
@@ -297,6 +322,13 @@ class LiveState:
             if frame_id is None or fid == frame_id:
                 return data
         return None
+
+    def analysed_frame(self, frame_id: str) -> bytes | None:
+        """A frame a recent check analysed (or any frame still cached)."""
+        for fid, data in reversed(self.analysed):
+            if fid == frame_id:
+                return data
+        return self.frame(frame_id)
 
 
 class Runtime:
@@ -326,6 +358,8 @@ class Runtime:
         self.reader_error = ""
         self._reader_lock = asyncio.Lock()
         self.heads: dict[int, classifier.Head] = {}
+        self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
+        self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes
         self.live: dict[int, LiveState] = {}
         self.training: set[int] = set()
         self._tasks: dict[int, asyncio.Task] = {}
@@ -514,6 +548,138 @@ class Runtime:
             found = await asyncio.to_thread(detector.detect, region, threshold)
         return filter_detections(found, analysed, roi, objects, all_classes)
 
+    # --- teaching object sensors (see teach.py) ------------------------------------
+
+    async def taught_index(self, cfg: SensorConfig) -> teach.TaughtIndex | None:
+        """What the sensor was taught, ready to compare with; None when there is nothing to compare."""
+        if not cfg.objects["use_taught"] or self.embedder is None:
+            return None
+        index = self.taught.get(cfg.id)
+        generation = self._taught_generation.get(cfg.id, 0)
+        # Rebuilt when the backbone, the own labels in use or the taught boxes changed. A check
+        # may have loaded its settings before an own label was added, so the stale index it
+        # builds is replaced on a later check instead of being kept.
+        if (
+            index is None
+            or index.backbone != self.embedder.spec.id
+            or index.parents != cfg.parents
+            or index.generation != generation
+        ):
+            index = await asyncio.to_thread(self._build_taught, cfg, generation)
+            self.taught[cfg.id] = index
+        return index if index.ids else None
+
+    def _build_taught(self, cfg: SensorConfig, generation: int = 0) -> teach.TaughtIndex:
+        parents = cfg.parents
+        with self.db.session() as s:
+            examples = [
+                x
+                for x in s.scalars(
+                    select(Sample)
+                    .where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None))
+                    .order_by(Sample.id)
+                )
+                if teach.usable(x.object_label, parents)
+            ]
+        vectors = self._taught_vectors(cfg, examples)
+        return teach.build(
+            self.embedder.spec.id,
+            [x.id for x in examples],
+            [x.object_label for x in examples],
+            [x.detected for x in examples],
+            vectors,
+            parents,
+            generation,
+        )
+
+    def _taught_vectors(self, cfg: SensorConfig, examples: list[Sample]) -> np.ndarray:
+        """Embeddings of taught boxes, one image at a time (see teach.embed), cached in the DB."""
+        embedder = self.embedder
+        if embedder is None or not examples:
+            return np.zeros((0, 0), dtype=np.float32)
+        backbone_id = embedder.spec.id
+        with self.db.session() as s:
+            rows = s.scalars(
+                select(Embedding).where(
+                    Embedding.sample_id.in_([x.id for x in examples]),
+                    Embedding.backbone == backbone_id,
+                    Embedding.roi_key == teach.EMBEDDING_KEY,
+                )
+            ).all()
+            cached = {r.sample_id: np.frombuffer(r.vector, dtype=np.float32) for r in rows}
+        for x in examples:
+            if x.id in cached:
+                continue
+            image = Image.open(self.storage.sample_path(cfg.id, x.filename)).convert("RGB")
+            vector = teach.embed(embedder, [image])[0]
+            with self.db.session() as s:
+                s.merge(
+                    Embedding(
+                        sample_id=x.id, backbone=backbone_id, roi_key=teach.EMBEDDING_KEY, vector=vector.tobytes()
+                    )
+                )
+            cached[x.id] = vector
+        return np.stack([cached[x.id] for x in examples])
+
+    async def apply_taught(
+        self, cfg: SensorConfig, image: Image.Image, index: teach.TaughtIndex, found: list[dict], candidates: list[dict]
+    ) -> list[dict]:
+        checked, rescue = teach.plan(found, candidates, index)
+        crops = [teach.crop(image, found[i]["box"]) for i in checked] + [teach.crop(image, d["box"]) for d in rescue]
+        embedder = self.embedder
+        if not crops or embedder is None:
+            return found
+        async with self._sem:
+            vectors = await asyncio.to_thread(teach.embed, embedder, crops)
+        n = len(checked)
+        return teach.apply(found, checked, vectors[:n], rescue, vectors[n:], index, cfg.objects["classes"], cfg.parents)
+
+    def taught_changed(self, sensor_id: int) -> None:
+        """Taught boxes were added or removed: compare with the new set from the next check on."""
+        self._taught_generation[sensor_id] = self._taught_generation.get(sensor_id, 0) + 1
+        self.taught.pop(sensor_id, None)
+        self.wake(sensor_id, force=True)
+
+    def add_object_example(
+        self,
+        sensor_id: int,
+        image: Image.Image,
+        box: list[float],
+        label: str,
+        detected: str | None,
+        score: float | None,
+        origin: str,
+        cropped: bool = False,
+    ) -> int:
+        """Store a taught box (its crop) as a training image of an object sensor.
+
+        ``image`` is the whole frame, or with ``cropped`` already the crop (an imported sensor).
+        """
+        crop = image if cropped else teach.crop(image, box)
+        filename = self.storage.save_sample(sensor_id, crop)
+        with self.db.session() as s:
+            sample = Sample(
+                sensor_id=sensor_id,
+                filename=filename,
+                origin=origin,
+                use_roi=False,
+                is_night=imaging.is_night(crop),
+                width=crop.width,
+                height=crop.height,
+                object_label=label,
+                detected=detected,
+                box=[round(float(v), 4) for v in box],
+                score=round(float(score), 4) if score is not None else None,
+            )
+            s.add(sample)
+            s.flush()
+            return sample.id
+
+    async def seen_faintly(self, cfg: SensorConfig, image: Image.Image, box: list[float]) -> bool:
+        """Whether the detector sees anything at all where the user drew a box it missed."""
+        found = await self.detect_objects(image, cfg.roi, cfg.objects, TEACH["seen_floor"], all_classes=True)
+        return teach.seen_faintly(found, box)
+
     # --- sensors -------------------------------------------------------------
 
     def _sensor_ids(self, kind: str | None = None) -> list[int]:
@@ -550,6 +716,7 @@ class Runtime:
         await self.publish_discovery(cfg)
         if retrain:
             self.schedule_retrain(sensor_id, delay=0)
+        self.taught.pop(sensor_id, None)  # own labels or classes may have changed
         self.live_state(sensor_id).signature = None  # the region may have moved
         await self.refresh_trigger_entities()
         self.wake(sensor_id)
@@ -560,6 +727,7 @@ class Runtime:
             task.cancel()
         self.live.pop(sensor_id, None)
         self.heads.pop(sensor_id, None)
+        self.taught.pop(sensor_id, None)
         self._published_classes.pop(sensor_id, None)
         (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
@@ -786,6 +954,7 @@ class Runtime:
         live.frame_id = frame_id
         await self._send(cfg, t["availability"], "online", retain=True)
         if cfg.is_objects:
+            live.analysed.append((frame_id, data))
             await self._run_objects(cfg, image)
             return
         if cfg.is_reading:
@@ -844,57 +1013,84 @@ class Runtime:
                 await self.publish_review_count()
 
     async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
-        """One check of an object sensor: detect, update each class and publish."""
+        """One check of an object sensor: detect, compare with what was taught, update and publish."""
         live = self.live_state(cfg.id)
+        classes = cfg.objects["classes"]
+        index = await self.taught_index(cfg)
+        rescue = bool(index and index.rescue)
+        # Once a box the detector missed was taught, its unsure boxes are looked at too.
+        floor = min(cfg.threshold, TEACH["rescue_floor"]) if rescue else cfg.threshold
         try:
-            found = await self.detect_objects(image, cfg.roi, cfg.objects, cfg.threshold)
+            found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
         except Exception as err:  # noqa: BLE001 - detector missing or failed to load
             live.error = f"Object detector unavailable: {redact(str(err))}"
             return
+        candidates: list[dict] = []
+        if rescue:
+            candidates = [d for d in found if d["score"] < cfg.threshold]
+            found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
+        if index is not None:
+            found = await self.apply_taught(cfg, image, index, found, candidates)
+        counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.detections = found
-        best = max(found, key=lambda d: d["score"], default=None)
-        live.top, live.confidence = (best["key"], best["score"]) if best else (None, 0.0)
-        classes = cfg.objects["classes"]
-        changed = update_tracks(live.tracks, found, classes, cfg.debounce, cfg.objects["clear_after_s"], now)
+        best = max(counted, key=lambda d: d["score"], default=None)
+        live.top, live.confidence = (best.get("label") or best["key"], best["score"]) if best else (None, 0.0)
+        keys = cfg.object_keys
+        changed = update_tracks(live.tracks, found, keys, cfg.debounce, cfg.objects["clear_after_s"], now)
         live.changes.extend([now] * len(changed))
 
-        for key in classes:
+        for key in keys:
             track = live.tracks[key]
             ot = object_topics(cfg.slug, key)
+            attributes = {
+                "confidence": round(track.score, 4),
+                "boxes": [d["box"] for d in found if teach.counts_for(d, key)],
+                "last_seen": datetime.fromtimestamp(track.last_seen, UTC).isoformat() if track.last_seen else None,
+                "last_trigger": live.last_trigger,
+            }
+            if index is not None:
+                attributes["filtered"] = sum(1 for d in found if d.get("filtered") and d["key"] == key)
             await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
             await self._send(cfg, ot["count"], str(track.count), retain=True)
-            await self._send(
-                cfg,
-                ot["attributes"],
-                {
-                    "confidence": round(track.score, 4),
-                    "boxes": [d["box"] for d in found if d["key"] == key],
-                    "last_seen": datetime.fromtimestamp(track.last_seen, UTC).isoformat() if track.last_seen else None,
-                    "last_trigger": live.last_trigger,
-                },
-                retain=True,
-            )
+            await self._send(cfg, ot["attributes"], attributes, retain=True)
         names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
+        names.update({c["key"]: c["name"] for c in cfg.custom_labels})
+        drawn = [{**d, "key": d.get("label") or d["key"]} for d in counted]
         annotated = await asyncio.to_thread(
             lambda: imaging.crop_box(
-                imaging.draw_detections(image, found, names, OBJECT_BOX_COLOR), imaging.region_box(cfg.roi)
+                imaging.draw_detections(image, drawn, names, OBJECT_BOX_COLOR), imaging.region_box(cfg.roi)
             )
         )
         jpeg = await asyncio.to_thread(imaging.encode_jpeg, annotated, 80)
         await self._send(cfg, topics(cfg.slug)["image"], jpeg, retain=True)
         for key in changed:
             track = live.tracks[key]
-            await asyncio.to_thread(self._record_detection, cfg.id, image, key, track.on, track.score, found)
+            published = "on" if track.on else "off"
+            await asyncio.to_thread(self._record_detection, cfg.id, image, key, published, track.score, found)
+        await self._record_filtered(cfg, image, found, now)
 
-    def _record_detection(self, sensor_id, image, key, on, score, found) -> None:
+    async def _record_filtered(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
+        """Keep a frame in the history when a class starts being filtered away (not every check)."""
+        live = self.live_state(cfg.id)
+        filtered = {d["key"] for d in found if d.get("filtered")}
+        for key in sorted(filtered - live.filtered_keys):
+            if now - live.filtered_logged.get(key, 0.0) < TEACH["filtered_record_cooldown_s"]:
+                continue
+            live.filtered_logged[key] = now
+            score = max(d["score"] for d in found if d.get("filtered") and d["key"] == key)
+            await asyncio.to_thread(self._record_detection, cfg.id, image, key, "filtered", score, found)
+        live.filtered_keys = filtered
+
+    def _record_detection(self, sensor_id, image, key, published, score, found) -> None:
+        """A history row of an object sensor: a class or own label went "on" or "off", or was "filtered"."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(
                 Prediction(
                     sensor_id=sensor_id,
                     state_key=key,
-                    published_key="on" if on else "off",
+                    published_key=published,
                     confidence=score,
                     probs={},
                     frame=frame,
@@ -1049,7 +1245,7 @@ class Runtime:
     async def publish_discovery(self, cfg: SensorConfig) -> None:
         t = topics(cfg.slug)
         if cfg.is_objects:
-            current = set(cfg.objects["classes"])
+            current = set(cfg.object_keys)
             for key in self._published_classes.get(cfg.id, set()) - current:
                 await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
             self._published_classes[cfg.id] = current

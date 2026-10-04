@@ -17,10 +17,12 @@ from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sensor
 from ..settings import (
     DETECTION,
+    KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
     LIGHT_DOMAINS,
     MAX_STATES,
+    NONE_LABEL,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
@@ -44,6 +46,7 @@ from ..settings import (
     STATE_PALETTE,
     STORAGE_DEFAULTS,
     STORAGE_LIMITS,
+    TEACH,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
@@ -56,6 +59,7 @@ from ..settings import (
     merge_review,
 )
 from ..sources import SOURCE_TYPES, SourceError
+from . import teach
 from .common import (
     API_PREFIX,
     ReadingIn,
@@ -104,6 +108,7 @@ def ui_config() -> dict:
         "object_max_classes": OBJECT_MAX_CLASSES,
         "object_labels": [{"key": x.key, "name": x.name, "group": x.group} for x in detectors.LABELS.labels],
         "object_popular": list(detectors.LABELS.popular),
+        "teach": {"none_label": NONE_LABEL, "max_labels": TEACH["max_labels"]},
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
         "reading_defaults": READING_DEFAULTS,
         "reading_limits": READING_LIMITS,
@@ -599,9 +604,11 @@ def _import_sync(rt, path: Path) -> int:
         raise ValueError(f"invalid sensor in bundle: {err.errors()[0].get('msg')}") from err
     except HTTPException as err:
         raise ValueError(f"invalid sensor in bundle: {err.detail}") from err
-    samples = manifest.get("samples", []) if spec.kind == KIND_STATES else []
+    samples = manifest.get("samples", []) if spec.kind in (KIND_STATES, KIND_OBJECTS) else []
     if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
         raise ValueError("too many samples in bundle")
+    # Object sensors: own labels and taught boxes come along (the rest of "objects" is validated above).
+    custom = teach.import_custom((data.get("objects") or {}).get("custom")) if spec.kind == KIND_OBJECTS else []
     spec.enabled = True
     with rt.db.session() as s:
         spec.name = unique_name(s, spec.name)
@@ -609,11 +616,30 @@ def _import_sync(rt, path: Path) -> int:
         # Keep the entity ID style, so moving a sensor (e.g. between the stable and the beta app)
         # does not change its entity IDs. Bundles without the field are older: those had the prefix.
         sensor.entity_prefix = bool(data.get("entity_prefix", True))
+        if custom:
+            sensor.objects = {**sensor.objects, "custom": custom}
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id
         state_ids = {st.key: st.id for st in sensor.states}
+    own = {label["key"] for label in custom}
     for item in samples:
+        if spec.kind == KIND_OBJECTS:
+            if not teach.importable_label(item.get("object_label"), own):
+                continue
+            image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
+            detected = item.get("detected")
+            rt.add_object_example(
+                sensor_id,
+                image,
+                item.get("box") or [0.0, 0.0, 1.0, 1.0],
+                item["object_label"],
+                detected if detected in detectors.LABELS.by_key else None,
+                item.get("score"),
+                "import",
+                cropped=True,
+            )
+            continue
         image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
         labels = [state_ids[k] for k in item.get("labels", []) if k in state_ids]
         rt.add_sample(sensor_id, image, "import", labels[0] if labels else None, item.get("use_roi", True))

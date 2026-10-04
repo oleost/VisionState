@@ -76,10 +76,13 @@ export const SENSOR_TABS = [
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 
-/** Tabs per sensor kind, in order; the first one is where the sensor opens. */
+/**
+ * Tabs per sensor kind, in order; the first one is where the sensor opens. An object sensor shows
+ * its Quality tab (what it was taught) only once something was taught (SensorPage).
+ */
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
   single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
-  objects: ['live', 'history', 'settings'],
+  objects: ['live', 'history', 'quality', 'settings'],
   reading: ['live', 'history', 'quality', 'settings'],
 };
 

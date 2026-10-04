@@ -50,6 +50,10 @@ OBJECT_DEFAULTS = {
     "classes": ["person"],
     "min_size": 0.0,  # smallest box, as a share of the region's area (0 = any size)
     "clear_after_s": 30.0,  # an object stays "detected" this long after it was last seen
+    "use_taught": True,  # compare boxes with what the user taught (see TEACH); off = the detector alone
+    # The user's own labels, each a kind of one of the classes: [{"key", "name", "parent"}], e.g.
+    # "Our car" under "car". Each gets the same two entities as a class. Made by teaching a box.
+    "custom": [],
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
@@ -117,6 +121,33 @@ DETECTION = {
     # edge are seen whole (their bottom centre then decides whether they are inside).
     "context_margin": 0.25,
 }
+
+# Teaching an object sensor. The user marks a box as wrong ("none"), as another of the sensor's
+# objects, as one of their own labels ("Our car"), or draws a box around something the detector
+# missed. Later boxes of those classes are compared with the taught ones (DINOv2 embeddings of
+# the box, cosine similarity) and take the label of the closest taught box when they are clearly
+# that one; otherwise the detector's answer stands. Measured on real photos: the same object in
+# other light or framing scores 0.87-0.97, other objects of the same kind mostly below 0.7.
+TEACH = {
+    "match_similarity": 0.88,
+    "margin": 0.03,  # the closest label must beat the next one by this much, else the detector decides
+    "rescue_similarity": 0.9,  # a box the detector was unsure about counts only when this close to a taught one
+    "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
+    "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work
+    "max_rescue": 4,  # unsure boxes compared per check
+    "rescue_overlap_iou": 0.5,  # an unsure box overlapping a counted one this much is that same object
+    "crop_margin": 0.1,  # share of a box's size added on each side of what is compared
+    "min_box": 0.01,  # smallest taught box side, as a share of the frame
+    # A drawn box counts as "seen faintly" when one of the detector's boxes this weak overlaps it.
+    "seen_floor": 0.05,
+    "seen_iou": 0.3,
+    "filtered_record_cooldown_s": 600,  # a class filtered away again soon is not stored in the history again
+    "frames_kept": 6,  # analysed frames kept per object sensor, so a box can still be taught a while later
+    "max_examples": 500,  # taught boxes per sensor
+    "max_labels": 10,  # own labels per sensor (two entities each)
+    "list_limit": 50,  # filtered-away boxes listed on the Quality tab
+}
+NONE_LABEL = "none"  # taught label of a box that is not what the detector said
 
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
@@ -288,7 +319,13 @@ def merge_objects(stored: dict | None) -> dict:
     """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
     merged = {**OBJECT_DEFAULTS, **(stored or {})}
     merged["classes"] = list(merged.get("classes") or [])
+    merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     return merged
+
+
+def active_custom(objects: dict) -> list[dict]:
+    """The sensor's own labels that are in use: those whose class is still selected."""
+    return [label for label in objects["custom"] if label["parent"] in objects["classes"]]
 
 
 def merge_reading(stored: dict | None) -> dict:

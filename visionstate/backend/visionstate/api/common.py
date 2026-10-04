@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import detectors, imaging
+from .. import detectors, imaging, teach
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import ObjectTrack, Runtime, SensorConfig
 from ..mqtt import main_entities
@@ -36,6 +36,7 @@ from ..settings import (
     TRIGGER_MAX_ENTITIES,
     TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
+    active_custom,
     merge_objects,
     merge_reading,
     merge_review,
@@ -186,6 +187,8 @@ class ObjectsIn(BaseModel):
     classes: list[str] = Field(default_factory=lambda: list(OBJECT_DEFAULTS["classes"]), max_length=OBJECT_MAX_CLASSES)
     min_size: float = Field(OBJECT_DEFAULTS["min_size"], ge=_olo["min_size"], le=_ohi["min_size"])
     clear_after_s: float = Field(OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"])
+    use_taught: bool = OBJECT_DEFAULTS["use_taught"]
+    # Own labels ("custom") are made by teaching a box (api/teach.py), never set here.
 
     @field_validator("classes")
     @classmethod
@@ -301,7 +304,14 @@ def sample_counts(session: Session, sensor: Sensor) -> dict:
     for state_id, night, count in rows:
         if state_id in key_by_id:
             per_state[key_by_id[state_id]]["night" if night else "day"] += count
-    total = session.scalar(select(func.count()).select_from(Sample).where(Sample.sensor_id == sensor.id)) or 0
+    total = (
+        session.scalar(
+            select(func.count())
+            .select_from(Sample)
+            .where(Sample.sensor_id == sensor.id, Sample.object_label.is_(None))  # not boxes taught to an object sensor
+        )
+        or 0
+    )
     labelled = sum(v["day"] + v["night"] for v in per_state.values())
     return {"per_state": per_state, "labelled": labelled, "unlabelled": total - labelled}
 
@@ -315,24 +325,38 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
-def objects_view(sensor: Sensor, live) -> dict | None:
+def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
     if sensor.kind != KIND_OBJECTS:
         return None
     settings = merge_objects(sensor.objects)
+    parents = {label["key"]: label["parent"] for label in active_custom(settings)}
     tracks = live.tracks if live else {}
     per_class = []
-    for key in settings["classes"]:
+    for key in [*settings["classes"], *parents]:
         track = tracks.get(key) or ObjectTrack()
         per_class.append(
             {
                 "key": key,
+                "parent": parents.get(key),  # own labels: the class they are a kind of
                 "on": track.on,
                 "count": track.count,
                 "score": track.score,
                 "last_seen": track.last_seen or None,
             }
         )
-    return {**settings, "live": per_class, "detections": live.detections if live else []}
+    taught = session.execute(
+        select(Sample.object_label, Sample.detected).where(
+            Sample.sensor_id == sensor.id, Sample.object_label.is_not(None)
+        )
+    ).all()
+    usable = [(label, detected) for label, detected in taught if teach.usable(label, parents)]
+    return {
+        **settings,
+        "live": per_class,
+        "detections": live.detections if live else [],
+        "taught": len(taught),  # boxes taught (Quality tab, first-time question)
+        "taught_keys": sorted(teach.compared_keys(usable, parents)),  # classes compared with them
+    }
 
 
 def reading_view(sensor: Sensor, live) -> dict | None:
@@ -382,7 +406,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "review_effective": merge_review(rt.global_review, sensor.review),
         "entity_id": ids[0] if ids else None,
         "entity_ids": ids,
-        "objects": objects_view(sensor, live),
+        "objects": objects_view(session, sensor, live),
         "reading": reading_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,

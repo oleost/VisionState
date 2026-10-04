@@ -20,7 +20,7 @@
   import { isObjectSensor } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
-  import { go, paths } from '../../lib/router.svelte';
+  import { go, href, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
@@ -43,6 +43,9 @@
   let classes = $state<string[]>(initial.objects?.classes ?? []);
   let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
   let minSize = $state(initial.objects?.min_size ?? 0);
+  let useTaught = $state(initial.objects?.use_taught ?? true);
+  const taughtCount = $derived(sensor.objects?.taught ?? 0);
+  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.length > 0));
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -59,7 +62,7 @@
         source,
         ...(roi ? { roi } : { clear_roi: true }),
         ...(objectSensor
-          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize } }
+          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught } }
           : readingSensor
             ? { reading }
             : { states, review }),
@@ -75,6 +78,16 @@
       toastError(err);
     } finally {
       saving = false;
+    }
+  }
+
+  async function forgetTaught() {
+    try {
+      await api.forgetAll(sensor.id);
+      toast('Everything taught is forgotten');
+      onchange();
+    } catch (err) {
+      toastError(err);
     }
   }
 
@@ -151,6 +164,31 @@
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <ObjectPicker bind:selected={classes} />
       </section>
+      {#if taughtSomething}
+        <section class="card pad col">
+          <h3>What you taught</h3>
+          <label class="check taught">
+            <input type="checkbox" bind:checked={useTaught} aria-label="Use what you taught" />
+            <span class="col" style="gap:2px">
+              <strong class="small">Use what you taught</strong>
+              <span class="xsmall faint">
+                {#if useTaught}
+                  Boxes are compared with the {taughtCount} {taughtCount === 1 ? 'box' : 'boxes'} you taught
+                  (<a href={href(paths.sensor(sensor.id, 'quality'))}>see them</a>).
+                {:else}
+                  Off: the AI alone decides. What you taught is kept for when you turn it on again; own labels stay off.
+                {/if}
+              </span>
+            </span>
+          </label>
+          <div class="row">
+            <ConfirmButton class="btn sm danger" onconfirm={forgetTaught} confirmLabel="Tap again to forget everything taught">
+              <Icon name="trash" size={14} /> Forget all
+            </ConfirmButton>
+            <span class="xsmall faint">Every taught box and own label, with its entities.</span>
+          </div>
+        </section>
+      {/if}
     {:else}
       <section class="card pad col">
         <h3>States</h3>
@@ -202,6 +240,12 @@
 </div>
 
 <style>
+  .taught {
+    align-items: flex-start;
+  }
+  .taught input {
+    margin-top: 3px;
+  }
   @media (max-width: 600px) {
     /* Own row on phones, so "Reset to rectangle" coming and going does not move the frame being edited. */
     .region-actions {

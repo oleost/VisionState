@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -38,6 +38,12 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
     # Existing sensors keep sending to Home Assistant.
     9: [("sensor", "publish", "BOOLEAN NOT NULL DEFAULT 1")],
+    10: [
+        ("sample", "object_label", "VARCHAR(64)"),
+        ("sample", "detected", "VARCHAR(64)"),
+        ("sample", "box", "JSON"),
+        ("sample", "score", "FLOAT"),
+    ],
 }
 
 
@@ -113,6 +119,13 @@ class Sample(Base):
     # The user confirmed this label is right; it is no longer listed as possibly mislabelled.
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Object sensors: a box the user taught (see settings.TEACH). The image is the box with a
+    # margin; object_label is what it is ("none", a class or an own label), detected the class the
+    # detector gave it (None: a box it missed, drawn by the user), box and score where and how sure.
+    object_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detected: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    box: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Many-to-many on purpose: single-state sensors use one label, multi-label can use more.
     labels: Mapped[list[SampleLabel]] = relationship(cascade="all, delete-orphan", lazy="selectin")

@@ -67,6 +67,17 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                         "width": sample.width,
                         "height": sample.height,
                         "created_at": sample.created_at.isoformat(),
+                        # object sensors: a taught box (see db.Sample)
+                        **(
+                            {
+                                "object_label": sample.object_label,
+                                "detected": sample.detected,
+                                "box": sample.box,
+                                "score": sample.score,
+                            }
+                            if sample.object_label is not None
+                            else {}
+                        ),
                     }
                 )
             archive.writestr(MANIFEST, json.dumps(manifest, indent=2))

@@ -111,6 +111,32 @@ with the 80 COCO labels, their keys, groups and the popular ones):
 4. Per class: on after *N* checks in a row (`debounce`, default 1); off after `clear_after_s`
    (default 30 s) without it.
 
+**Teaching object sensors** (`teach.py`, `api/teach.py`, tunables `settings.TEACH`). The detector
+is never retrained (that needs a GPU and many labels, and a few examples make it forget what it
+knew). Instead a second step compares boxes with boxes the user taught:
+
+- A taught box is a `sample` row (the crop of the box plus `crop_margin`) with `object_label`
+  (`none` = not what the detector said, a class, or an own label), `detected` (the detector's
+  class; `None` = a box it missed, drawn by the user), `box` and `score`. Own labels live in
+  `sensor.objects["custom"]` as `{key, name, parent}`; each active one (its parent class still
+  selected) gets the two entities a class gets, and counts for its parent too.
+- Each check: the counted boxes of every class that has taught boxes (at most `max_checked`, most
+  certain first) are embedded with the DINOv2 backbone (always loaded) and compared with the taught
+  boxes (cosine similarity, best per label). A box takes the closest label only when it is at
+  least `match_similarity` (0.88) and beats the next label by `margin`; otherwise the detector's
+  answer stands. Measured on CC0 photos: the same object in other light or framing scores
+  0.87–0.97, other objects of the same kind mostly below 0.7.
+- Results: `filtered` (not counted, still shown dashed; a history row "filtered" when a class
+  starts being filtered, at most every `filtered_record_cooldown_s`), another class (`was` keeps
+  the detector's), or an own `label`.
+- Once a missed box was taught, the detector also returns boxes down to `rescue_floor`; up to
+  `max_rescue` of those that overlap no counted box are compared and counted (`rescued`) when at
+  least `rescue_similarity` (0.9) to a taught box. Drawing a box tells whether the detector sees
+  anything there at all (`seen`).
+- Nothing changes for a sensor until something is taught; **Use what you taught** off skips it.
+  The analysed frames of the last checks are kept (`frames_kept`) so a box can be taught a while
+  after it was shown. Export/import carries taught boxes and own labels.
+
 - Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
@@ -380,6 +406,7 @@ sensor settings) lives in the UI.
 | **Object sensors** ✅ | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.6.0 (beta 0.5.0b1) |
 | **Reading sensors** ✅ | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0 (betas 0.6.0b2–b4) |
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
+| **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | beta 0.6.3b10 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
@@ -388,8 +415,9 @@ Assistant; mechanical counters: adjustable cell borders for counters seen at an 
 the wheel rule (a wheel only turns while the one to its right goes 9 → 0) to settle digits read
 mid-turn, pointer dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); issue templates; per-sensor model
-choice with unloading of idle models; a "not a person" button that trains a DINOv2 filter on
-rejected detections; zones and line crossing for object sensors.
+choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
+it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
+detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
 
 ## 17. Identity
 

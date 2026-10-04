@@ -19,6 +19,8 @@ import type {
   SettingsInfo,
   Status,
   StorageInfo,
+  Taught,
+  TeachInput,
 } from './types';
 
 // Relative on purpose: the app lives below a dynamic Home Assistant Ingress path.
@@ -185,6 +187,15 @@ export const api = {
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
   readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
+
+  /** Object sensors: what was taught, and teaching one box (or forgetting it). */
+  taught: (id: number) => request<Taught>(`sensors/${id}/taught`),
+  teachBox: (id: number, body: TeachInput) =>
+    request<{ id: number; label: string; seen: boolean | null }>(`sensors/${id}/taught`, send('POST', body)),
+  forgetBox: (id: number, boxId: number) => request<void>(`sensors/${id}/taught/${boxId}`, send('DELETE')),
+  /** Every taught box and every own label of the sensor. */
+  forgetAll: (id: number) => request<void>(`sensors/${id}/taught`, send('DELETE')),
+  removeLabel: (id: number, key: string) => request<void>(`sensors/${id}/labels/${encodeURIComponent(key)}`, send('DELETE')),
 
   importBundle(file: File) {
     const form = new FormData();

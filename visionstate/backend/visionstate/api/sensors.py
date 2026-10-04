@@ -218,7 +218,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         if body.states is not None:
             _apply_states(sensor, body.states)
         if body.objects is not None:
-            sensor.objects = body.objects.model_dump()
+            # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
+            sensor.objects = {**(sensor.objects or {}), **body.objects.model_dump(exclude_unset=True)}
         if body.reading is not None:
             sensor.reading = body.reading.model_dump()
         s.flush()

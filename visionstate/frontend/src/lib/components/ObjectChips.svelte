@@ -1,12 +1,13 @@
 <script lang="ts">
   // What an object sensor reports right now: one chip per class (count when detected).
   // `overlay` = one compact pill for use on top of an image (dashboard).
-  import { objectColor, objectName, objectSummary } from '../objects';
+  import { objectColor, objectKeys, objectName, objectSummary } from '../objects';
   import type { Sensor } from '../types';
 
   let { sensor, overlay = false }: { sensor: Sensor; overlay?: boolean } = $props();
 
-  const classes = $derived(sensor.objects?.classes ?? []);
+  const classes = $derived(objectKeys(sensor));
+  const own = $derived(sensor.objects?.custom ?? []);
   const live = $derived(sensor.objects?.live ?? []);
   const anyOn = $derived(live.some((o) => o.on));
 </script>
@@ -21,7 +22,7 @@
     {#each live as o (o.key)}
       <span class="pill" class:off={!o.on}>
         <span class="dot" style:background={o.on ? objectColor(classes, o.key) : 'var(--c-unknown)'}></span>
-        {objectName(o.key)}
+        {objectName(o.key, own)}
         <span class="count mono">{o.on ? o.count : 0}</span>
       </span>
     {/each}

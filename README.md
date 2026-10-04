@@ -41,7 +41,8 @@ without writing code or leaving Home Assistant:
 - 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
   The model retrains in about a second after every click.
 - 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
-  count and an on/off sensor for each. Pick them, done.
+  count and an on/off sensor for each. Pick them, done. Wrong about your garden statue? Tap the
+  box: *not a person*. Want *our car* apart from any car? Give it its own label.
 - 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters, prices, the
   minutes left on the washing machine. Counters
   only go up and land straight in the Energy dashboard; implausible readings are rejected.
@@ -167,7 +168,8 @@ about a second. Results are debounced so someone walking past doesn't flip the s
 
 Object sensors use a pretrained detector instead ([D-FINE](https://github.com/Peterande/D-FINE),
 Apache-2.0, trained on the COCO objects). It finds every object in the region; each object you
-picked is reported with a count and cleared a while after it was last seen.
+picked is reported with a count and cleared a while after it was last seen. Boxes you corrected
+teach it your camera: later boxes that clearly look like one you taught get your answer.
 
 Reading sensors read the digits in the region with a small text recognizer
 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,

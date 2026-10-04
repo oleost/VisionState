@@ -33,6 +33,9 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     downloads every bundled model of all three.
   - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects` and `reading`; the UI's tabs per kind
     are in `ui.ts` (`TABS_BY_KIND`). New features must say which kind(s) they apply to.
+  - Object sensors can be taught (`teach.py`, `api/teach.py`, `settings.TEACH`): taught boxes are
+    `sample` rows with `object_label`; own labels live in `objects["custom"]`. The detector is never
+    retrained; DINOv2 (always loaded) compares boxes with the taught ones.
   - `frontend/src/lib/tokens.css` holds all colours/type/spacing; `ui.ts` holds UI constants;
     `api.ts` is the only place that builds API URLs; `router.svelte.ts` defines app paths.
   - The UI reads sensor defaults, limits and palette from `GET /api/v1/config`.
@@ -48,7 +51,7 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     **mobile** (Pixel 7, real touch via CDP) and **iphone** (iPhone 14, WebKit like the Home Assistant
     app on iOS; gestures with the mouse): no console errors, no sideways scrolling, no text
     running out of buttons or cards, plus the wizard (all three kinds), region editor gestures,
-    labelling, review, boxes and readings. Add a test
+    labelling, review, boxes, teaching an object sensor and readings. Add a test
     for every new page or gesture.
   - Look at the full-page screenshots in `test-results/pages/{desktop,mobile,iphone}/` after UI changes,
     for every page in all three projects.

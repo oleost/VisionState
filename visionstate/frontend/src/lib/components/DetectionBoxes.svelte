@@ -2,16 +2,28 @@
   // Boxes around detected objects, drawn over an image (place inside RoiEditor, which is the
   // positioned frame). Boxes are normalised to the whole frame. Labels never overlap: the most
   // certain object gets its label above the box, the next one inside the box if that is free,
-  // and a label that fits nowhere is left out (the box stays).
+  // and a label that fits nowhere is left out (the box stays). Boxes filtered away by what the
+  // sensor was taught are dashed and grey. With `onpick`, every box can be tapped.
   import { pct } from '../format';
-  import { objectColor, objectName } from '../objects';
-  import type { Detection } from '../types';
+  import { boxName, objectColor } from '../objects';
+  import type { Detection, OwnLabel } from '../types';
 
   let {
     detections,
     classes,
+    own = [],
     labels = true,
-  }: { detections: Detection[]; classes: string[]; labels?: boolean } = $props();
+    selected = null,
+    onpick,
+  }: {
+    detections: Detection[];
+    /** The sensor's classes and own labels, in order (they pick the colours). */
+    classes: string[];
+    own?: OwnLabel[];
+    labels?: boolean;
+    selected?: number | null;
+    onpick?: (index: number) => void;
+  } = $props();
 
   let width = $state(0);
   let height = $state(0);
@@ -22,16 +34,19 @@
   type Rect = [number, number, number, number]; // x1, y1, x2, y2 in px
   const overlaps = (a: Rect, b: Rect) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
+  const tagText = (d: Detection) => (d.filtered ? `${boxName(d, own)} · filtered` : `${boxName(d, own)} ${pct(d.score)}`);
+
   /** Per detection: 'above', 'inside' or null (no label). */
   const placement = $derived.by(() => {
     const result: ('above' | 'inside' | null)[] = detections.map(() => null);
     if (!labels || !width || !height) return result;
     const placed: Rect[] = [];
-    const order = detections.map((_, i) => i).sort((a, b) => detections[b].score - detections[a].score);
+    // Counted boxes first, then by certainty: a filtered box never takes a counted one's label place.
+    const rank = (d: Detection) => (d.filtered ? -1 : 0) + d.score;
+    const order = detections.map((_, i) => i).sort((a, b) => rank(detections[b]) - rank(detections[a]));
     for (const i of order) {
       const d = detections[i];
-      const text = `${objectName(d.key)} ${pct(d.score)}`;
-      const w = text.length * CHAR_W + 14;
+      const w = tagText(d).length * CHAR_W + 14;
       const x = d.box[0] * width;
       const top = d.box[1] * height;
       const above: Rect = [x, top - TAG_H, x + w, top];
@@ -50,17 +65,32 @@
 
 <div class="layer" bind:clientWidth={width} bind:clientHeight={height}>
   {#each detections as d, i (i)}
-    {@const color = objectColor(classes, d.key)}
-    <div
-      class="box"
-      style:left="{d.box[0] * 100}%"
-      style:top="{d.box[1] * 100}%"
-      style:width="{(d.box[2] - d.box[0]) * 100}%"
-      style:height="{(d.box[3] - d.box[1]) * 100}%"
-      style:--c={color}
-    >
-      {#if placement[i]}<span class="tag" class:inside={placement[i] === 'inside'}>{objectName(d.key)} {pct(d.score)}</span>{/if}
-    </div>
+    {@const color = d.filtered ? 'var(--c-unknown)' : objectColor(classes, d.label ?? d.key)}
+    {@const left = `${d.box[0] * 100}%`}
+    {@const top = `${d.box[1] * 100}%`}
+    {@const w = `${(d.box[2] - d.box[0]) * 100}%`}
+    {@const h = `${(d.box[3] - d.box[1]) * 100}%`}
+    {#if onpick}
+      <button
+        type="button"
+        class="box pickable"
+        class:filtered={d.filtered}
+        class:selected={selected === i}
+        style:left
+        style:top
+        style:width={w}
+        style:height={h}
+        style:--c={color}
+        aria-label="{tagText(d)}: correct it"
+        onclick={() => onpick(i)}
+      >
+        {#if placement[i]}<span class="tag" class:inside={placement[i] === 'inside'}>{tagText(d)}</span>{/if}
+      </button>
+    {:else}
+      <div class="box" class:filtered={d.filtered} style:left style:top style:width={w} style:height={h} style:--c={color}>
+        {#if placement[i]}<span class="tag" class:inside={placement[i] === 'inside'}>{tagText(d)}</span>{/if}
+      </div>
+    {/if}
   {/each}
 </div>
 
@@ -72,9 +102,27 @@
   }
   .box {
     position: absolute;
+    padding: 0;
+    margin: 0;
+    background: transparent;
     border: 2px solid var(--c);
     border-radius: 3px;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    font: inherit;
+  }
+  .box.filtered {
+    border-style: dashed;
+  }
+  .box.pickable {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .box.pickable:hover,
+  .box.selected {
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+  }
+  .box.selected {
+    border-width: 3px;
   }
   .tag {
     position: absolute;
@@ -86,6 +134,7 @@
     color: #12151a;
     font-size: var(--fs-xs);
     font-weight: 600;
+    line-height: 15px;
     white-space: nowrap;
   }
   .tag.inside {
