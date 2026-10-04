@@ -38,8 +38,15 @@
     }
   }
 
+  // Boxes belong to the frame on screen: they are swapped together with the picture, once the
+  // new frame has loaded — not when the next check is announced, which would empty the list
+  // under the frame for a moment and make the page jump.
+  let detections = $state<Detection[]>([]);
+  let boxesFrame = $state<string | null>(null);
+
   $effect(() => {
     const frameId = sensor.live.frame_id;
+    const found = sensor.objects?.detections ?? []; // the boxes of that check
     if (busy) return;
     if (!frameId) {
       if (!src) fallback();
@@ -47,20 +54,28 @@
     }
     if (frameId === requested) return;
     requested = frameId;
-    load(frameId);
+    load(frameId, found);
   });
 
-  async function load(frameId: string) {
+  async function load(frameId: string, found: Detection[]) {
     try {
       const resp = await fetch(api.analysedFrameUrl(sensor.id, frameId));
       if (!resp.ok) throw new Error(String(resp.status));
       const blob = await resp.blob();
-      if (frameId !== requested || busy) return; // a newer check's frame is on its way, or a box is being taught
+      if (frameId !== requested) return; // a newer check's frame is on its way
+      if (busy) {
+        requested = ''; // a box is being taught: load the newest frame once that is done
+        return;
+      }
       const url = URL.createObjectURL(blob);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       objectUrl = src = url;
       shownFrame = resp.headers.get('X-Frame-Id');
       fallbackFrame = null;
+      // The backend sends the latest frame instead when this one is gone: no boxes then.
+      const own = shownFrame === frameId;
+      detections = own ? found : [];
+      boxesFrame = own ? frameId : null;
     } catch {
       if (!src) fallback();
     }
@@ -68,16 +83,6 @@
 
   onDestroy(() => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
-  });
-
-  // Boxes belong to the analysed frame only; they stay as they were while a box is being taught.
-  let detections = $state<Detection[]>([]);
-  let boxesFrame = $state<string | null>(null);
-  $effect(() => {
-    if (busy) return;
-    const matches = !!shownFrame && shownFrame === sensor.live.frame_id;
-    detections = matches ? (sensor.objects?.detections ?? []) : [];
-    boxesFrame = matches ? shownFrame : null;
   });
   const teachOn = $derived(boxesFrame ?? shownFrame ?? fallbackFrame);
 </script>

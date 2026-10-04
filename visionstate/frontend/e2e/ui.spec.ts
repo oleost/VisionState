@@ -358,6 +358,38 @@ test('object sensor shows boxes and history', async ({ page, request }, info) =>
   errors.expectNone();
 });
 
+test('the live page of an object sensor does not jump when a new check comes in', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const id = await seededObjectSensorId(request);
+  // Frames arrive slowly, as through Home Assistant on a phone: the check is announced well
+  // before its picture is there.
+  await page.route('**/frame?frame_id=*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue();
+  });
+  await page.goto(`#/sensors/${id}/live`);
+  await expect(page.locator('button.found').first()).toBeVisible({ timeout: 30_000 });
+  // Every animation frame for 12 s (two or three checks at 5 s): where "Check now" is, and
+  // whether the list of boxes under the frame is there.
+  const seen = await page.evaluate(async () => {
+    const result = { tops: new Set<number>(), emptyList: 0, frames: 0, checks: new Set<string>() };
+    const end = performance.now() + 12_000;
+    while (performance.now() < end) {
+      await new Promise(requestAnimationFrame);
+      const button = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Check now'));
+      if (button) result.tops.add(Math.round(button.getBoundingClientRect().top + window.scrollY));
+      if (!document.querySelector('button.found')) result.emptyList++;
+      result.checks.add(document.querySelector('.roi img')?.getAttribute('src') ?? '');
+      result.frames++;
+    }
+    return { tops: [...result.tops], emptyList: result.emptyList, frames: result.frames, checks: result.checks.size };
+  });
+  expect(seen.checks, 'no new check came in while watching').toBeGreaterThan(1);
+  expect(seen.emptyList, 'the list under the frame disappeared for a moment').toBe(0);
+  expect(seen.tops, 'the page moved').toHaveLength(1);
+  errors.expectNone();
+});
+
 test('teaching an object sensor: correct a box, draw a missed one, forget it all', async ({ page, request }, info) => {
   test.setTimeout(180_000); // waits for the detector's checks several times
   const errors = watchErrors(page);
