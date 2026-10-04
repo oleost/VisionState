@@ -1136,14 +1136,26 @@ class Runtime:
             reason = "unsure"
         else:
             reason = readers.implausible(value, last, settings)
+        # One step below the value: the last wheel turning (see readers.settling). The value stays,
+        # but that is no rejection.
+        settling = reason == "went down" and readers.settling(value, last, settings)
+        if settling:
+            reason = None
         shown = readers.format_value(value, settings)
-        live.reading = {"text": text.text, "score": round(text.score, 4), "value": shown, "reason": reason, "at": now}
+        live.reading = {
+            "text": text.text,
+            "score": round(text.score, 4),
+            "value": shown,
+            "reason": reason,
+            "settling": settling,
+            "at": now,
+        }
         live.reading_image = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
         live.top, live.confidence = shown, text.score
 
         t = topics(cfg.slug)
         changed = False
-        if reason is None:
+        if reason is None and not settling:  # never let a lower reading through the debounce
             changed = live.debouncer.update(shown, cfg.debounce)
             if changed:
                 live.changes.append(now)

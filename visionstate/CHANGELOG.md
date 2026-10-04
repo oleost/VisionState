@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.3b13
+
+- **Counters: the last wheel turning is no longer a rejection.** A wheel between two digits is read
+  as the one or the other; once the higher one was published, every right reading until the
+  counter got there was rejected as "a counter can not go down" — many rejections and review
+  items for nothing. A reading exactly one step of the last digit below the value now keeps the
+  value without counting as rejected (the Live tab says *Last wheel turning*). Lower readings than
+  that are still rejected.
+- **Misread → the value it showed:** the field starts with what was read, so usually one digit is
+  changed; digits typed without a point are placed like the reader does (`0629558` → `629.558`),
+  and the value that will be saved is shown before saving.
+
 ## 0.6.3b12
 
 - **More from a reading sensor in Home Assistant**, off by default — turn on what you need:

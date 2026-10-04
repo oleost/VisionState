@@ -250,6 +250,7 @@
           <span class="spacer"></span>
           <ReadingVerdict
             item={p}
+            reading={sensor.reading}
             {unit}
             onanswer={(verdict) => {
               Object.assign(p, verdict, { reviewed: true });

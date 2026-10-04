@@ -151,6 +151,28 @@ def test_diagnostic_entities_of_reading_sensors():
         assert "rate" not in configs({"mode": mode}) and "problem" in configs({"mode": mode})
 
 
+def test_settling_last_wheel_and_right_values():
+    counter = merge_reading({"mode": "counter", "decimals": 3})
+    # One step of the last digit below the value: the last wheel turning, not a rejection.
+    assert readers.settling(629.078, 629.079, counter)
+    assert not readers.settling(629.077, 629.079, counter)  # two steps: a real "went down"
+    assert not readers.settling(629.079, 629.079, counter) and not readers.settling(629.08, 629.079, counter)
+    assert readers.settling(12344, 12345, merge_reading({"mode": "counter", "decimals": 0}))
+    assert not readers.settling(5.5, 5.6, merge_reading({"mode": "value", "decimals": 1}))
+    assert not readers.settling(None, 5.6, counter) and not readers.settling(5.5, None, counter)
+
+    # The right value someone types: as written with a point or comma, digits as the meter shows them.
+    assert readers.right_value("0629558", counter) == pytest.approx(629.558)
+    assert readers.right_value("629558", counter) == pytest.approx(629.558)
+    assert readers.right_value(" 629.558 ", counter) == pytest.approx(629.558)
+    assert readers.right_value("629,558", counter) == pytest.approx(629.558)
+    assert readers.right_value("12", merge_reading({"mode": "value", "decimals": 0})) == 12
+    assert readers.right_value("abc", counter) is None and readers.right_value("1.2.3", counter) is None
+    timer = merge_reading({"mode": "time_left"})
+    assert readers.right_value("1:25", timer) == 85 and readers.right_value("85", timer) == 85
+    assert readers.right_value("1:75", timer) is None and readers.right_value("1.5", timer) is None
+
+
 def test_problem_accepted_share_and_rate():
     from collections import deque
 
@@ -302,6 +324,16 @@ def test_reading_sensor_flow(settings):
         assert sent[f"{base}/raw"] == "12345.6" and sent[f"{base}/accepted"] == "100"
         assert view()["status"] == "ok"
         assert client.get(f"/api/v1/sensors/{sid}/reading/image").status_code == 200
+
+        # One step of the last digit lower: the last wheel turning. The value stays, without a
+        # rejection, a history row or a review item.
+        camera.text = "0012345.5"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: (view()["reading"]["last"] or {}).get("settling"), timeout=30)
+        assert view()["reading"]["last"]["reason"] is None and view()["reading"]["value"] == "12345.6"
+        assert client.get("/api/v1/review").json()["total"] == 0
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]["rejected"] == 0
+        assert sent[f"{base}/problem"] == "ok"
 
         # A counter never goes down: the lower reading is rejected and the value stays.
         camera.text = "0012300.0"

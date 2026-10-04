@@ -161,7 +161,12 @@ knew). Instead a second step compares boxes with boxes the user taught:
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
    going down, a mechanical counter read with another number of digits than it has wheels, or a
-   change above `max_step`; otherwise publish after `debounce` equal reads.
+   change above `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
+   value stays, but it is no rejection (no history row, no review item, counted as accepted) —
+   seen in a user's export, where one too-high value made every right reading after it a "went
+   down" rejection. A right value typed in the review (`readers.right_value`) is taken as written
+   with a point or comma, and digits only are placed with the configured decimals.
    The last published value is restored from the history after a restart.
 
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment

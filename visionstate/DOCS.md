@@ -175,8 +175,10 @@ First choose **what it looks like**:
   five black and three red wheels has 8 digits and 3 digits after the decimal point. While a
   wheel is turning its digit can be misread; a counter that reads lower than before is
   rejected, and a limit on how much the value may change (Settings → Sensor output) catches a
-  misread that is too high. If the last wheel never stands still, leave it out of the region
-  and count one digit and one decimal less.
+  misread that is too high. A reading exactly one step of the last digit below the value is the
+  last wheel turning: the value stays, but it is not counted as rejected and does not go to the
+  review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
+  you can also leave it out of the region and count one digit and one decimal less.
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -185,7 +187,9 @@ First choose **what it looks like**:
   (adjustable).
 - **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
   the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
-  the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed) —
+  the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the
+  field starts with what was read, digits typed without a point are placed like the reader does
+  (`0629558` → `629.558`), and it shows what will be saved) —
   here or in the review queue. A misread that was rejected shows the checks work; a right
   reading that was rejected points at a setting, for example a change limit that is too low.
   While you set a sensor up, rejected readings can pile up: **Dismiss all** (here, or per sensor

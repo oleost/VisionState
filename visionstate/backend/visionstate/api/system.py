@@ -501,10 +501,9 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
                 row.correct_value = None
                 if body.action == "misread" and body.value and body.value.strip():
                     settings = merge_reading(sensor.reading)
-                    try:
-                        number = float(body.value.strip().replace(",", "."))
-                    except ValueError as err:
-                        raise HTTPException(400, f"Not a number: {body.value!r}") from err
+                    number = readers.right_value(body.value, settings)  # digits only: placed like the reader
+                    if number is None:
+                        raise HTTPException(400, f"Not a number: {body.value!r}")
                     row.correct_value = readers.format_value(number, settings)
             row.reviewed = True
         elif body.action not in ("confirm", "label", "skip"):

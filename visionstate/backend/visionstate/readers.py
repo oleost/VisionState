@@ -257,6 +257,24 @@ def parse(text: str, settings: dict) -> float | None:
     return int(digits) / 10 ** int(settings["decimals"])
 
 
+def right_value(text: str, settings: dict) -> float | None:
+    """The value someone typed as the right one, or None when it is not a number.
+
+    With a decimal point or comma it is taken as written ("629.558", "629,558"); digits only are
+    taken the way the meter shows them, with the sensor's decimals placed like the reader does
+    ("0629558" → 629.558). Time left: minutes or "h:mm".
+    """
+    text = text.strip()
+    if settings["mode"] == "time_left":
+        return parse(text, settings) if re.fullmatch(r"\d+(:\d{1,2})?", text) else None
+    if re.fullmatch(r"\d+", text):
+        return parse(text, settings)
+    try:
+        return float(text.replace(",", "."))
+    except ValueError:
+        return None
+
+
 def digit_count(text: str) -> int:
     return len(re.sub(r"\D", "", text))
 
@@ -276,6 +294,19 @@ def implausible(value: float, last: float | None, settings: dict) -> str | None:
     if step and abs(value - last) > step:
         return "changed too much"
     return None
+
+
+def settling(value: float | None, last: float | None, settings: dict) -> bool:
+    """Whether a counter read exactly one step of its last digit below its value: the last wheel turning.
+
+    A wheel between two digits is read as the one or the other; once the higher one was published,
+    every right reading until the counter gets there is one step lower. Such a reading keeps the
+    value without counting as rejected, so it neither floods the review queue nor the statistics.
+    """
+    if settings["mode"] != "counter" or value is None or last is None:
+        return False
+    step = 10 ** -int(settings["decimals"])
+    return abs((last - value) - step) < step / 1000
 
 
 def problem_key(reason: str | None) -> str:

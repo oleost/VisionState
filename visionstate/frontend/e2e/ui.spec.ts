@@ -668,7 +668,14 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-reading.png'), fullPage: true });
     await press(page.getByRole('button', { name: 'Misread' }), info);
-    await page.getByLabel('The right value').fill('501');
+    const right = page.getByLabel('The right value');
+    await expect(right).toHaveValue('400'); // starts as what was read: usually one digit is changed
+    await right.fill('501');
+    await expect(page.getByText('Saved as 501 m³')).toBeVisible();
+    await right.fill('5x1');
+    await expect(page.getByText('Not a number')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save misread' })).toBeDisabled();
+    await right.fill('501');
     await press(page.getByRole('button', { name: 'Save misread' }), info);
     await expect(page.getByText(/Did it read “00400”/)).toHaveCount(0);
 

@@ -179,7 +179,7 @@
             {:else}Accepted and published. A random check to find misreads that pass every test.{/if}
           </p>
           {#key current.id}
-            <ReadingVerdict item={current} unit={unitOf(current)} large onanswer={readingAnswered} />
+            <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}
         </div>
       {:else if current && predicted}

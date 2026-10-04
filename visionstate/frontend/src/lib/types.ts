@@ -120,6 +120,8 @@ export interface ReadingResult {
   score: number;
   value: string | null;
   reason: string | null;
+  /** A counter read one step below its value: the last wheel turning; the value stays, no rejection. */
+  settling?: boolean;
   at: number;
 }
 
