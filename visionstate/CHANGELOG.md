@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3b11
+
+- The **Live** tab of an object sensor no longer jumps when a new check comes in: the list of
+  boxes under the frame used to disappear for a moment until the new picture had loaded (most
+  visible on a phone). Boxes now change together with the picture they belong to.
+
 ## 0.6.3b10
 
 - **Teach an object sensor your camera.** Tap a box on the Live tab or on a history frame:
