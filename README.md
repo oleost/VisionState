@@ -45,19 +45,24 @@ without writing code or leaving Home Assistant:
   box: *not a person*. Want *our car* apart from any car? Give it its own label.
 - 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters, prices, the
   minutes left on the washing machine. Counters
-  only go up and land straight in the Energy dashboard; implausible readings are rejected.
+  only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
+  Quality tab shows how reliably your meter is read.
 - 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
   the AI ignores everything else.
 - 📦 **Bulk upload** — drop images, ZIP archives or a **video**; frames are extracted, duplicates
   skipped, and the current model suggests a label for each one.
-- ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes,
-  or when the image itself changes. No more polling every few seconds.
+- ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes
+  (or only when it becomes one state), or when the image itself changes. No more polling every
+  few seconds.
+- 💡 **Cameras in the dark** — a light or switch is turned on for each check, and while you frame
+  the image, then off again — for a meter in a cabinet.
 - 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
   doesn't drag the sensor down.
 - 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
   one click turns them into training data.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
-- 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery.
+- 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery,
+  named like any other integration's. Keep a sensor out of Home Assistant while you tune it.
 - 🎥 **Any camera** — every `camera.*` entity in Home Assistant (ESP32-CAM, IP cameras, NVRs…),
   or a direct RTSP / HTTP snapshot URL.
 
@@ -98,8 +103,8 @@ ready for dashboards, automations and the history graph.
 
 ## Install
 
-**Requirements:** Home Assistant OS or Supervised, the **Mosquitto broker** app and the
-**MQTT** integration, and at least one camera.
+**Requirements:** Home Assistant OS or Supervised (2025.10 or newer), the **Mosquitto broker**
+app and the **MQTT** integration, and at least one camera.
 
 1. Click **Add repository** above — or go to **Settings → Apps** (called *Add-ons* in older
    versions) **→ App store → ⋮ → Repositories** and add `https://github.com/oleost/VisionState`.

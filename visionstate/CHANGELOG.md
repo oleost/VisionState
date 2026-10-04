@@ -14,8 +14,9 @@
   in Home Assistant. **Missed something?** lets you draw a box around what the AI missed. From then
   on, a box that clearly looks like one you taught gets your answer; otherwise the AI's own answer
   stands. Nothing changes until you teach something.
-- Boxes filtered away stay visible (dashed in the frame, in the history and on the new **Quality**
-  tab, which appears once you taught something). **Settings → What you taught** turns it off or
+- Every check decides anew by what a box looks like. Boxes filtered away are still shown, dashed,
+  in the frame, and listed in the history and on the new **Quality** tab (which appears once you
+  taught something). **Settings → What you taught** turns it off or
   forgets it all. Export and import take it along.
 - Going back to an older version (e.g. restoring a backup) after making an own label: the older
   version does not know the label, so its entities stay in Home Assistant with their last value.

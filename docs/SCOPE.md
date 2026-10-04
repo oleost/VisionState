@@ -309,21 +309,30 @@ decimals, unit, device class, display, limits). The reading settings start with 
 the region in the wizard and on the Settings tab).
 
 Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
-per-class status), **History** (appeared / cleared, expandable to the frame with boxes) and
-**Settings** (objects, region, triggers, output).
+per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
+boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
+was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
+**Quality** tab (taught boxes per answer, own labels, frames filtered away lately) appears once
+something was taught, so a sensor that was never taught looks exactly as before. The boxes on Live
+change together with the frame they belong to, so the page does not move while the next frame
+loads.
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v7).
+- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`,
+  currently v10). An older version started on a newer database ignores the columns it does not
+  know (rollback works; checked by the upgrade test).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
-  `clear_after_s`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
+  `clear_after_s`, `use_taught` and the own labels `custom`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
   display, `digits`, `max_step`, `spot_rate`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
   (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
   readings are excluded from the history clean-up — they are the data a later reader
-  improvement would learn from (schema v7). Object events are `prediction` rows (class,
-  `on`/`off`, `detections`); readings are `prediction` rows with `state_key` "reading" and the
+  improvement would learn from (schema v7). Object events are `prediction` rows (class or own
+  label, `on`/`off`, or `filtered` when a class starts being filtered away, with `detections`);
+  boxes taught to an object sensor are `sample` rows with `object_label`, `detected`, `box`,
+  `score` (schema v10; their embeddings are cached under `roi_key` "taught"); readings are `prediction` rows with `state_key` "reading" and the
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
 - Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
@@ -338,7 +347,7 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 |---|---|---|
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
-| Training images | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
+| Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
 | History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
@@ -353,7 +362,8 @@ automatically.
 ## 12. Import / export
 
 - **Sensor bundle** (`.zip`): `manifest.json` (schema, app version), sensor settings, states,
-  ROI, triggers, review overrides, all samples with labels.
+  ROI, triggers, review overrides, all samples with labels (object sensors: taught boxes with
+  their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,

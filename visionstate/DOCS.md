@@ -9,6 +9,7 @@ number** from a display, without any training. Everything runs on this machine; 
 
 ## Requirements
 
+- **Home Assistant 2025.10 or newer.**
 - **MQTT**: VisionState publishes its sensors through MQTT discovery. Install the
   **Mosquitto broker** app and the **MQTT** integration if you do not have them yet.
   VisionState finds the broker automatically.
@@ -21,7 +22,8 @@ number** from a display, without any training. Everything runs on this machine; 
 
 1. Open **VisionState** from the sidebar.
 2. Click **New sensor**:
-   1. Give it a name and pick a camera.
+   1. Give it a name and pick a camera — and, for a camera in a dark place, a light to switch on
+      (see *A light for the camera* below).
    2. Draw a box around the thing to watch (for example the garage door). The AI only looks
       inside the box, which makes it far more accurate. For an object that sits at an angle,
       shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
@@ -31,7 +33,8 @@ number** from a display, without any training. Everything runs on this machine; 
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
       This can not be changed later.
    4. Optionally choose when it should check the camera — for example when your motion
-      sensor or garage opener changes (see *When it checks* below). You can skip this step.
+      sensor or garage opener changes (see *When it checks* below) — and whether it sends to
+      Home Assistant right away (see *Tuning a sensor* below). You can skip this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
@@ -72,6 +75,7 @@ away. Sensors not sent are marked on the dashboard.
 An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 70 more —
 with a pretrained detector. There is nothing to label: pick the objects in the wizard (popular
 ones first, all others under **Show all**) and the wizard tests it on a fresh frame right away.
+Where it gets your camera wrong, you can correct it later (see *Teaching an object sensor*).
 
 - **The region** decides what counts: an object counts when the bottom of its box (where a
   person or car stands) is inside it. The detector sees a little more than the region, so an
@@ -119,9 +123,13 @@ like one of the boxes you taught; otherwise the AI's own answer stands, so teach
 something on by a vague resemblance. This uses the same model as state sensors (DINOv2), which is
 always loaded; it costs a little extra time per box, only for the objects you taught.
 
-- Boxes that are filtered away stay visible: **dashed and grey** in the frame, and in the history
-  (*Person filtered away*) the first time it happens. The binary sensor's attributes count them
-  (`filtered`).
+- Every check decides anew, box by box, by what a box looks like — not where it is, so an object
+  that moves a little or is lit differently is still recognised. Boxes filtered away in a check
+  are still shown, **dashed and grey**, in that check's frame; the history keeps a frame (*Person
+  filtered away*) when an object starts being filtered. The binary sensor's attributes count
+  them (`filtered`).
+- Counted again where it should not be (at night, say, when an IR camera shows it in black and
+  white)? Mark it once more on such a frame: every taught box widens what is recognised.
 - The **Quality** tab appears once you taught something: every taught box by answer (tap × to
   forget one), your own labels (**Remove label** removes its entities too) and the frames filtered
   away lately — check now and then that nothing real is filtered away.
@@ -277,7 +285,8 @@ automations.
   readings you verified on a reading sensor's Quality tab or in the review queue, are never
   removed automatically.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
-  reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
+  reading settings, triggers, review overrides) and all its images with labels — for an object
+  sensor, the boxes it was taught and its own labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
@@ -292,11 +301,12 @@ two apps at a time (both publish the same entities).
 
 ## AI models
 
-Two models, chosen under **Settings → AI model** for all sensors of a kind:
+Three models, chosen under **Settings → AI model** for all sensors of a kind:
 
 - **State sensors:** DINOv2 small, 8-bit — included, runs on any CPU including a Raspberry
   Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB).
-  Switching retrains every state sensor from its stored images.
+  Switching retrains every state sensor from its stored images. It is always loaded: object
+  sensors that were taught use it too, to compare boxes with the ones you taught.
 - **Object sensors:** D-FINE S — included, about 0.1 s per check on a modern PC and a few
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
