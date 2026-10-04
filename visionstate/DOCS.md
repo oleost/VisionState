@@ -272,8 +272,10 @@ For a camera in a dark place, such as a meter cabinet: pick a light, switch or h
 the camera (the first step of the wizard, or **Settings → General**). VisionState switches it on:
 
 - **for each check**: before the frame is taken, and off again afterwards. *Wait before taking the
-  frame* (default 1 s) gives the light and the camera time. It stays on during the checks that
-  follow a trigger;
+  frame* (default 1 s) gives the light and the camera time; meanwhile VisionState fetches a frame
+  every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
+  they took earlier, and only adjust their exposure between pictures: this way the frame that is
+  read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
 - **while you look at live frames**: in the wizard (region and test), when you draw the region
   under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
   label are taken in the same light as the checks. A note above the frame says so; its **Light**
@@ -281,8 +283,9 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   leave, and at the latest 30 seconds after a tab is closed or a phone is put away.
 
 A light that is already on is left alone, and one light can serve several sensors. Without the
-light on, the views show the frame of the last check instead of taking dark ones; change
-detection compares frames without the light.
+light on, the views show the frame of the last check instead of taking dark ones. Change
+detection compares frames without the light (and pauses while the light is on); when it sees a
+change, the check takes a new frame in the light.
 
 You can still press the sensor's *Classify now* button (`button.<name>_classify_now`) from your own
 automations.

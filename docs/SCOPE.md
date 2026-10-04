@@ -224,8 +224,17 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
   VisionState switched it on; a light that is already on is not touched. Frames are taken once it
   had `light_delay_s` to get bright; until then (and without a holder) the UI shows the last
   analysed frame instead of grabbing dark ones. The view shows the state and a per-viewer switch
-  (browser storage). Change-detection probes do not switch it. A failure is logged and shown in the
-  settings; the check runs anyway.
+  (browser storage). Change-detection probes do not switch it: they compare frames without the
+  light, are skipped while it is held (a lit frame would always look like a change), and a change
+  is checked on a new frame taken in the light (a lit check never sets the probe baseline). A
+  failure is logged and shown in the settings; the check runs anyway.
+  While a check waits for the light (`_grab_in_light`), frames are fetched and thrown away every
+  `light_warmup_interval_s`, and the frame after the wait is checked. Found with an ESP32 camera
+  (issue #32): ESPHome keeps one picture ready, taken right after the previous one was fetched (up
+  to 1/`idle_framerate` = 10 s earlier), and the sensor only adjusts its exposure between
+  pictures — so the first picture after the light came on was dark. RTSP is live and only waits.
+  A light VisionState switched off less than `light_off_settle_s` ago counts as its own even when
+  Home Assistant still reports it `on`, so a quick next check switches it on and waits.
 - **Unknown state:** top probability below the threshold (default 70 %) → `unknown`.
 - **Debounce:** the state changes only after *N* consecutive agreeing results (default 2).
 - Camera unavailable → entities become `unavailable` (not a false state).

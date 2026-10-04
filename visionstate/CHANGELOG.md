@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3b14
+
+- **A light for the camera: no more dark frames.** Many cameras — an ESP32 camera, for one — hand
+  out a picture they took earlier and only adjust their exposure between pictures, so the first
+  picture after the light came on could still be dark. While the light warms up, VisionState now
+  fetches frames and throws them away; the frame it reads is a fresh one, taken in the light.
+  Nothing to change on the camera.
+- With a light and **Detect changes in the image**: a change is now read on a new frame taken in
+  the light (it used to be read on the dark frame that showed the change), and change detection
+  pauses while the light is on.
+- A check right after the light was switched off no longer takes it for somebody else's light
+  (Home Assistant may still report it on): it is switched on and waited for as usual.
+
 ## 0.6.3b13
 
 - **Counters: the last wheel turning is no longer a rejection.** A wheel between two digits is read

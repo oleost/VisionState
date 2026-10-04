@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .redact import redact
+from .settings import RUNTIME
 from .sources import HomeAssistant
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class Lights:
     def __init__(self, ha: Callable[[], HomeAssistant]):
         self._ha = ha  # looked up on use: the runtime's client (tests swap it)
         self._lights: dict[str, Light] = {}
+        self._switched_off: dict[str, float] = {}  # entity -> when VisionState switched it off
         self._lock = asyncio.Lock()
 
     async def hold(self, entity: str, holder: str, lease_s: float | None = None) -> Light:
@@ -56,7 +58,10 @@ class Lights:
                     state = await ha.state(entity)
                     if state is None:
                         raise RuntimeError(f"{entity} does not exist")
-                    light.ours = state != "on"
+                    # Just switched off by us, Home Assistant may still say "on": then it is ours,
+                    # not somebody else's — switch it on and wait for it as usual.
+                    just_off = now - self._switched_off.get(entity, -math.inf) < RUNTIME["light_off_settle_s"]
+                    light.ours = state != "on" or just_off
                     if light.ours:
                         await ha.switch(entity, True)
                         light.on_since = time.time()
@@ -88,6 +93,7 @@ class Lights:
             return
         self._lights.pop(entity, None)
         if light.ours:
+            self._switched_off[entity] = time.time()
             try:
                 await self._ha().switch(entity, False)
             except Exception as err:  # noqa: BLE001

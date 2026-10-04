@@ -845,12 +845,16 @@ class Runtime:
 
     # --- light ---------------------------------------------------------------------
 
-    async def _light_before(self, cfg: SensorConfig) -> None:
-        """Hold the sensor's light on for a check (see lights.py), and wait until it is bright."""
+    async def _light_before(self, cfg: SensorConfig) -> float | None:
+        """Hold the sensor's light on for a check (see lights.py).
+
+        Returns the seconds until it is bright, or None without a light (or when it could not be
+        switched on: the check goes on without it).
+        """
         entity = cfg.triggers["light_entity"]
         live = self.live_state(cfg.id)
         if not entity:
-            return
+            return None
         if live.light_off_task:
             live.light_off_task.cancel()  # still held from the previous check of a burst
             live.light_off_task = None
@@ -859,11 +863,33 @@ class Runtime:
             if light.error != live.light_error:
                 log.warning("Sensor %s: could not switch on %s: %s", cfg.slug, entity, light.error)
             live.light_error = light.error
-            return
+            return None
         live.light_error = ""
-        wait = self.lights.wait_s(entity, cfg.triggers["light_delay_s"]) or 0.0
-        if wait:
-            await asyncio.sleep(wait)
+        return self.lights.wait_s(entity, cfg.triggers["light_delay_s"]) or 0.0
+
+    async def _grab_in_light(self, cfg: SensorConfig, wait: float) -> tuple[str, bytes]:
+        """A frame taken in the light, ``wait`` seconds after it came on.
+
+        Many cameras hand out a picture they took before (an ESP32 camera keeps one ready, taken
+        right after the previous one was fetched — up to 10 s earlier by default), and only
+        adjust their exposure between pictures. So while the light warms up, frames are fetched
+        and thrown away: the stale one goes, and the camera adjusts to the light. The frame after
+        that is the one checked. An RTSP stream is live already: it just waits.
+        """
+        if cfg.source_type == "rtsp":
+            if wait:
+                await asyncio.sleep(wait)
+            return await self.grab(cfg)
+        deadline = time.time() + wait
+        while True:
+            await self.grabber.grab(cfg.source_type, cfg.source)  # thrown away
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(RUNTIME["light_warmup_interval_s"], remaining))
+            if deadline - time.time() <= 0:
+                break
+        return await self.grab(cfg)
 
     def _light_after(self, cfg: SensorConfig) -> None:
         """Let go of the light — after the burst, so it does not flash for every check of it."""
@@ -903,15 +929,27 @@ class Runtime:
         """Cheap check: compare the region with the last classified frame; classify only if it changed."""
         live = self.live_state(cfg.id)
         live.last_probe = time.time()
+        entity = cfg.triggers["light_entity"]
+        if entity and self.lights.wait_s(entity, 0.0) is not None:
+            # The light is on (a burst of checks, or someone looking): a frame now is lit and the
+            # baseline is not, so every comparison would look like a change. Compare later.
+            return
         try:
             frame_id, data = await self.grab(cfg)
             image = await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
+        # With a light, the probe frame (taken without it) is only for comparing: the check
+        # itself takes a new frame in the light.
+        lit = bool(cfg.triggers["light_entity"])
         if live.signature is None:
-            # No baseline (first run or the region changed): classify this frame, which sets one.
-            await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+            # No baseline (first run or the region changed). With a light this frame is the
+            # baseline (checks in the light never set one); without, check it, which sets one.
+            if lit:
+                live.signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+            else:
+                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
             return
         signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
         score = imaging.change_score(live.signature, signature)
@@ -920,7 +958,11 @@ class Runtime:
             now = time.time()
             live.burst_until = now + cfg.triggers["burst_duration_s"]
             live.last_trigger = {"source": "change", "detail": f"{score:.1%} of the region changed", "at": now}
-            await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+            if lit:
+                live.signature = signature
+                await self.run_once(cfg)
+            else:
+                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         data = await self.grabber.grab(cfg.source_type, cfg.source)
@@ -936,11 +978,16 @@ class Runtime:
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
+        lit = False  # the frame was taken with the sensor's light on
         try:
             if data is None:
-                await self._light_before(cfg)
+                wait = await self._light_before(cfg)
                 try:
-                    frame_id, data = await self.grab(cfg)
+                    if wait is None:
+                        frame_id, data = await self.grab(cfg)
+                    else:
+                        frame_id, data = await self._grab_in_light(cfg, wait)
+                        lit = True
                 finally:
                     self._light_after(cfg)
             if image is None:
@@ -952,10 +999,13 @@ class Runtime:
             await self._send(cfg, t["availability"], "offline", retain=True)
             return
         live.available, live.error = True, ""
-        signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
-        if live.signature is not None:
-            live.change_score = imaging.change_score(live.signature, signature)
-        live.signature = signature
+        # Change detection compares frames without the light (probe), so a frame taken in the
+        # light is no baseline for it: every probe would look like a change.
+        if not lit:
+            signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+            if live.signature is not None:
+                live.change_score = imaging.change_score(live.signature, signature)
+            live.signature = signature
         live.frame_id = frame_id
         await self._send(cfg, t["availability"], "online", retain=True)
         if cfg.is_objects:

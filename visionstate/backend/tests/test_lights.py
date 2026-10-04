@@ -32,7 +32,18 @@ def test_light_is_shared_and_only_switched_off_when_free():
         await lights.sweep()
         assert log == ["on", "off", "on", "off"]
 
-        # Somebody else's light (already on) is used but never switched off.
+        # Just switched off by us, Home Assistant may still say "on" for a moment: still ours, so it
+        # is switched on and waited for (else the frame would be taken in the dark).
+        ha.states["light.flash"] = "on"
+        light = await lights.hold("light.flash", "check:2")
+        assert light.ours and log[-1] == "on" and 0 < lights.wait_s("light.flash", 5.0) <= 5.0
+        await lights.release("light.flash", "check:2")
+        assert log[-1] == "off"
+
+        # Somebody else's light (already on, not just switched off by us) is used but never switched off.
+        lights._switched_off.clear()
+        log.clear()
+        log += ["on", "off", "on", "off"]
         ha.states["light.flash"] = "on"
         await lights.hold("light.flash", "view:c", lease_s=30)
         assert lights.wait_s("light.flash", 5.0) == 0.0  # it is bright already

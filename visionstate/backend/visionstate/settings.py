@@ -326,6 +326,12 @@ RUNTIME = {
     "light_view_renew_s": 10.0,
     "light_view_lease_s": 30.0,
     "light_sweep_s": 5.0,  # how often expired leases are looked for
+    # While a check's light warms up, a frame is fetched (and thrown away) this often: a camera
+    # that hands out a picture it took earlier (ESP32) gives a fresh one, and adjusts its exposure.
+    "light_warmup_interval_s": 1.0,
+    # A light VisionState switched off this recently may still be reported "on" by Home Assistant;
+    # the next check switches it on (and waits) anyway instead of taking it for somebody else's.
+    "light_off_settle_s": 10.0,
 }
 
 

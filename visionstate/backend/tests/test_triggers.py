@@ -361,35 +361,40 @@ def test_only_triggered_checks_with_a_light(tmp_path, model_dir):
         def fire(old, new):
             asyncio.run_coroutine_threadsafe(rt._on_ha_state("sensor.status", old, new), rt._loop).result(10)
 
-        # One check after start-up, with the light on for it.
+        # One check after start-up, with the light on for it: a frame is thrown away while it warms
+        # up (a camera may hand out one it took before), the next one is checked.
+        lit_check = ["on", "grab", "grab", "off"]
         assert wait_for(lambda: view()["reading"]["value"] == "500", timeout=60)
-        assert wait_for(lambda: log == ["on", "grab", "off"], timeout=10), log
+        assert wait_for(lambda: log == lit_check, timeout=10), log
         assert view()["triggers"]["regular"] is False
 
         # No regular check although the interval is one second, and the UI does not take frames either.
         time.sleep(2.5)
         assert client.get(f"/api/v1/sensors/{sid}/frame").status_code == 200
-        assert log == ["on", "grab", "off"], log
+        assert log == lit_check, log
 
         # Only the chosen state of the entity starts a check.
         fire("Flow finished", "Take image")
         time.sleep(1)
-        assert log.count("grab") == 1
+        assert log.count("grab") == 2
         fire("Digitalization", "Flow finished")
-        assert wait_for(lambda: log == ["on", "grab", "off"] * 2, timeout=10), log
+        assert wait_for(lambda: log == lit_check * 2, timeout=10), log
         assert view()["live"]["last_trigger"]["source"] == "entity"
 
-        # A light that is already on is somebody else's: used, but not switched.
+        # A light that is already on is somebody else's: used, but not switched. (Not right after
+        # VisionState switched it off: then Home Assistant may just not have caught up yet.)
+        rt.lights._switched_off.clear()
         rt.ha.states["light.flash"] = "on"
         fire("x", "Flow finished")
-        assert wait_for(lambda: log.count("grab") == 3, timeout=10)
+        assert wait_for(lambda: log.count("grab") == 6, timeout=10)
         time.sleep(0.5)
         assert log[-1] == "grab" and rt.ha.states["light.flash"] == "on"
 
-        # When the light can not be switched the check still runs, and the settings say why.
+        # When the light can not be switched the check still runs (one plain frame), and the
+        # settings say why.
         rt.ha.states["light.flash"], rt.ha.fail = "off", True
         fire("x", "Flow finished")
-        assert wait_for(lambda: log.count("grab") == 4, timeout=10)
+        assert wait_for(lambda: log.count("grab") == 7, timeout=10)
         assert view()["live"]["light_error"] == "no connection"
 
         # During the burst after a trigger the light stays on: one on, several frames, one off.
@@ -401,3 +406,132 @@ def test_only_triggered_checks_with_a_light(tmp_path, model_dir):
         fire("x", "Flow finished")
         assert wait_for(lambda: "off" in log, timeout=15), log
         assert log[0] == "on" and log[-1] == "off" and log.count("on") == 1 and log.count("grab") >= 3, log
+
+
+class EspCamera:
+    """Like an ESP32 camera: it hands out the picture it keeps ready, taken right after the
+    previous one was fetched — so the first picture after the light comes on is a dark one."""
+
+    def __init__(self, ha: FakeHa):
+        self.ha = ha
+        self.ready = self.take()
+
+    def take(self) -> bytes:
+        buf = io.BytesIO()
+        if self.ha.states.get("light.flash") == "on":
+            render("00500").save(buf, format="JPEG", quality=92)
+        else:
+            Image.new("RGB", (400, 160), (6, 6, 8)).save(buf, format="JPEG")  # dark: nothing to read
+        return buf.getvalue()
+
+    async def grab(self, source_type, source):
+        picture, self.ready = self.ready, self.take()
+        return picture
+
+    async def close(self):
+        pass
+
+
+class DimCamera:
+    """A display that is only readable in the light; without it a dim copy (enough to see a change)."""
+
+    def __init__(self, ha: FakeHa, log: list[str]):
+        self.ha, self.log, self.text = ha, log, "00500"
+
+    async def grab(self, source_type, source):
+        lit = self.ha.states.get("light.flash") == "on"
+        self.log.append("grab lit" if lit else "grab dark")
+        image = render(self.text)
+        if not lit:
+            from PIL import ImageEnhance
+
+            image = ImageEnhance.Brightness(image).enhance(0.5)
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    async def close(self):
+        pass
+
+
+@requires_reader
+def test_change_detection_with_a_light_reads_a_new_frame_in_the_light(tmp_path, model_dir):
+    """Changes are looked for without the light; the check itself takes a frame in the light, and
+    a lit frame never counts as a change (that would keep the checks going for ever)."""
+    settings = Settings(
+        data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
+    )
+    log: list[str] = []
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.ha = FakeHa(log)
+        camera = DimCamera(rt.ha, log)
+        rt.grabber = camera
+        triggers = {
+            "regular": False,
+            "change_detection": True,
+            "change_interval_s": 0.5,
+            "change_threshold": 0.005,  # the drawn display changes little (thin segments)
+            "burst_duration_s": 0,
+            "light_entity": "light.flash",
+            "light_delay_s": 0.2,
+        }
+        body = {
+            "name": "Meter",
+            "kind": "reading",
+            "source_type": "http",
+            "source": "x",
+            "interval_s": 3600,
+            "debounce": 1,
+            "threshold": 0.5,  # "88888" below is read at ~0.69
+        }
+        sid = client.post("/api/v1/sensors", json={**body, "triggers": triggers}).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()
+
+        assert wait_for(lambda: view()["reading"]["value"] == "500", timeout=60)  # read in the light
+        time.sleep(2)  # nothing changes: dark probes only, no new check in the light
+        checks = log.count("on")
+        assert checks == 1 and log[-1] == "grab dark", log
+
+        camera.text = "88888"  # the display changes: seen without the light, read with it
+        assert wait_for(lambda: view()["reading"]["value"] == "88888", timeout=30), view()["reading"]["last"]
+        assert view()["live"]["last_trigger"]["source"] == "change"
+        time.sleep(2)
+        assert log.count("on") == 2, log  # and no endless checks after it
+
+
+@requires_reader
+def test_a_camera_that_hands_out_an_older_picture_is_read_in_the_light(tmp_path, model_dir):
+    settings = Settings(
+        data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
+    )
+    log: list[str] = []
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.ha = FakeHa(log)
+        rt.grabber = EspCamera(rt.ha)
+        body = {
+            "name": "Meter",
+            "kind": "reading",
+            "source_type": "ha_camera",
+            "source": "camera.esp",
+            "interval_s": 3600,
+            "debounce": 1,
+            "triggers": {"regular": False, "burst_duration_s": 0, "light_entity": "light.flash", "light_delay_s": 0.2},
+        }
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()
+
+        # The check after start-up: the dark picture kept from before is thrown away.
+        assert wait_for(lambda: view()["reading"]["last"] is not None, timeout=60)
+        assert view()["reading"]["last"]["reason"] is None and view()["reading"]["value"] == "500"
+        for _ in range(3):  # and every check after it, the light going off in between
+            before = view()["reading"]["last"]["at"]
+            client.post(f"/api/v1/sensors/{sid}/classify")
+            assert wait_for(lambda before=before: view()["reading"]["last"]["at"] != before, timeout=30)
+            assert view()["reading"]["last"]["reason"] is None, view()["reading"]["last"]
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]["rejected"] == 0
