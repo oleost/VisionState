@@ -156,7 +156,11 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      - make a backup of the app and restore it: the sensors are back;
      - **soak for 1 hour** with the sensors checking: memory of the app (Supervisor app stats)
        and its data on disk level off instead of growing, the log stays quiet;
-     - open the app in Home Assistant at desktop width and on a phone (Ingress).
+     - open the app in Home Assistant at desktop width and on a phone (Ingress);
+     - prepare the **update from the last stable release in a real Home Assistant**: the stable
+       app (repository without `#beta`) is installed there too. It shares MQTT topics and unique
+       IDs with the beta app, so never run both: stop the beta app, start the stable one and give
+       it one sensor of each kind (import exports of the standing test sensors).
   3. **What changed since the last stable release**: new or upgraded dependencies have a licence
      that fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
      visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest
@@ -167,9 +171,13 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   2. `git merge origin/main`; if `visionstate/config.yaml` conflicts, re-run
      `python scripts/channel.py stable X.Y.Z` to resolve it; commit.
   3. `git tag vX.Y.Z && git push origin vX.Y.Z` (tag only); wait for the images.
-  4. Push the branch, open a PR to `main`, wait for CI, merge it; `gh release create vX.Y.Z --latest`.
+  4. Push the branch, open a PR to `main`, wait for CI, merge it. Right away, update the stable app
+     on the test Home Assistant (reload the store): its sensors keep working, their entities keep
+     their IDs, the log has no warnings or errors. Only then `gh release create vX.Y.Z --latest`;
+     stop the stable app and start the beta app again.
   5. Merge `main` back into `beta`, keeping beta's config: `git switch beta && git merge main`,
-     then `python scripts/channel.py beta <next beta version>` before the next beta release.
+     then `python scripts/channel.py beta <last beta version>` and commit (a beta version whose
+     images exist); the next beta release sets the next version.
 - Python version is **3.14** (Dockerfile image, CI `setup-python`, ruff `target-version`, local
   `.venv` created with `py -3.14`). Upgrade all of them together; Dependabot ignores Python image
   upgrades for that reason.
