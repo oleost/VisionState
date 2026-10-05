@@ -773,3 +773,47 @@ test('review queue can be answered', async ({ page }, info) => {
   await expect(page.getByText(/^(2 \/ \d+|All caught up)$/).first()).toBeVisible();
   errors.expectNone();
 });
+
+test('an answer in the review queue can be changed from the list', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request);
+  const reviewSamples = async () =>
+    ((await (await request.get(`api/v1/sensors/${id}/samples?limit=1000`)).json()).items as { origin: string; labels: string[] }[]).filter(
+      (x) => x.origin === 'review',
+    );
+  await page.goto('#/review');
+  await expect(page.locator('.main .mono').first()).toHaveText(/^1 \/ \d+/);
+  test.skip(!(await page.locator('aside ol').isVisible()), 'the list is only shown on wide screens');
+  // Get past items of other sensors to one of the seeded state sensor.
+  const main = page.locator('.main');
+  for (let i = 0; i < 10 && !(await main.getByText('Is this').isVisible()); i++) await press(main.getByRole('button', { name: 'Skip' }), info);
+  const before = (await reviewSamples()).length;
+  const position = main.locator('.mono').first();
+  const at = (await position.textContent())!;
+
+  // Confirmed by mistake ...
+  const yes = main.getByRole('button', { name: /^Yes, / });
+  const predicted = (await yes.textContent())!.replace('Yes,', '').trim();
+  await press(yes, info);
+  await expect(position).not.toHaveText(at);
+  const entry = page.locator('aside li').filter({ hasText: `✓ Confirmed ${predicted}` }).first();
+  await expect(entry).toBeVisible();
+  // ... opened again from the list: the answer given is marked, and another state is picked.
+  await press(entry.getByRole('button'), info);
+  await expect(position).toHaveText(at);
+  await expect(main.getByText('answer again to change it')).toBeVisible();
+  await expect(main.getByRole('button', { name: /^Yes, / })).toHaveClass(/chosen/);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-change.png'), fullPage: true });
+  const other = main.locator('.btn.state').first();
+  const corrected = (await other.textContent())!.trim();
+  await press(other, info);
+  // Back in the queue where it was; the list shows the new answer.
+  await expect(position).not.toHaveText(at);
+  await expect(main.getByText('answer again to change it')).toHaveCount(0);
+  await expect(page.locator('aside li').filter({ hasText: `✓ Corrected to ${corrected}` }).first()).toBeVisible();
+  // The dataset got one sample from it, labelled with the corrected state.
+  await expect.poll(async () => (await reviewSamples()).length).toBe(before + 1);
+  expect((await reviewSamples())[0].labels).toEqual([corrected.toLowerCase()]);
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3b16
+
+- **Change an answer in the review queue.** Answered frames stay in the list on the left of the
+  Review page; click one to answer it again. The image your first answer added to the dataset gets
+  the new state (or is taken out again with *Skip*) instead of being added a second time — no need
+  to find it in the dataset. Answering a frame again from a sensor's History tab works the same way.
+
 ## 0.6.3b15
 
 - **Reader image in Home Assistant:** a reading sensor has a new image entity, *Reader image* —

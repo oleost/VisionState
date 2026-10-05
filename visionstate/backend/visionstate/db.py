@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -44,6 +44,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
         ("sample", "box", "JSON"),
         ("sample", "score", "FLOAT"),
     ],
+    11: [("prediction", "sample_id", "INTEGER")],
 }
 
 
@@ -175,6 +176,9 @@ class Prediction(Base):
     detections: Mapped[list | None] = mapped_column(JSON, nullable=True)  # object sensors, see detectors.Detection
     read_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # reading sensors, see above
     correct_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # State sensors: the dataset sample a review answer added, so a second answer changes it
+    # instead of adding the frame again. Not a foreign key: the sample may be deleted later.
+    sample_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ReadingStat(Base):

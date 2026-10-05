@@ -241,6 +241,9 @@ First choose **what it looks like**:
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
   shows how many items wait per sensor; **Dismiss all** next to a sensor skips all of them at once.
+  Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
+  again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
+  it is not added a second time.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
   was wrong, add it to the dataset with the correct state.
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image

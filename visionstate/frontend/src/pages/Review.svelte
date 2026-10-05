@@ -13,8 +13,10 @@
   let items = $state<ReviewItem[] | null>(null);
   let total = $state(0);
   let waiting = $state<{ id: number; name: string; count: number }[]>([]);
-  let index = $state(0);
+  let index = $state(0); // the next item waiting for an answer
+  let editing = $state<number | null>(null); // an answered item opened again from the list
   let answers = $state<Record<number, string>>({});
+  let given = $state<Record<number, string | null>>({}); // state answered per item (null: skipped)
   let busy = $state(false);
 
   async function load() {
@@ -24,15 +26,18 @@
       total = result.total;
       waiting = result.sensors;
       index = 0;
+      editing = null;
       refreshStatus(); // keep the nav badge in step with the list
       answers = {};
+      given = {};
     } catch (err) {
       toastError(err);
     }
   }
   load();
 
-  const current = $derived(items?.[index] ?? null);
+  const shown = $derived(editing ?? index);
+  const current = $derived(items?.[shown] ?? null);
   const isReading = (item: ReviewItem) => item.sensor.kind === 'reading';
   const unitOf = (item: ReviewItem) => (item.sensor.reading ? readingUnit(item.sensor.reading) : '');
   /** Sidebar line: what was read, or the state the AI predicted. */
@@ -44,17 +49,29 @@
     waiting = waiting.map((w) => (w.id === sensorId ? { ...w, count: w.count - 1 } : w)).filter((w) => w.count > 0);
   }
 
-  function readingAnswered(verdict: { read_ok: boolean | null; correct_value: string | null }) {
+  /** An answer was saved: on to the next waiting item, or back to it after changing an earlier answer. */
+  function answered(text: string) {
     if (!current) return;
-    countDown(current.sensor.id);
-    answers[current.id] =
+    answers[current.id] = text;
+    if (editing === null) {
+      countDown(current.sensor.id);
+      index += 1;
+    } else {
+      editing = null;
+    }
+    refreshStatus();
+  }
+
+  function readingAnswered(verdict: { read_ok: boolean | null; correct_value: string | null }) {
+    if (!current || !items) return;
+    const text =
       verdict.read_ok === null && current.read_ok === null
         ? 'Skipped'
         : verdict.read_ok
           ? '✓ Read correctly'
           : `✓ Misread${verdict.correct_value ? ` — was ${verdict.correct_value}` : ''}`;
-    index += 1;
-    refreshStatus();
+    items[shown] = { ...current, ...verdict }; // opened again, it shows this verdict
+    answered(text);
   }
   async function dismissAll(sensor: { id: number; name: string }) {
     if (busy) return;
@@ -77,16 +94,16 @@
     if (!current || busy) return;
     busy = true;
     try {
+      // Answering again changes the sample the first answer added (the backend keeps the link).
       await api.answerReview(current.id, action, key);
-      countDown(current.sensor.id);
-      answers[current.id] =
+      given[current.id] = action === 'skip' ? null : action === 'confirm' ? current.state_key : (key ?? null);
+      answered(
         action === 'confirm'
           ? `✓ Confirmed ${predicted?.name}`
           : action === 'label'
             ? `✓ Corrected to ${stateInfo(current.sensor, key).name}`
-            : 'Skipped';
-      index += 1;
-      refreshStatus();
+            : 'Skipped',
+      );
     } catch (err) {
       toastError(err);
     } finally {
@@ -94,9 +111,13 @@
     }
   }
 
+  /** Was this state (null: Skip) the answer given before? Marks the button when an item is opened again. */
+  const chosen = (key: string | null) => editing !== null && !!current && current.id in given && given[current.id] === key;
+
   function onkey(e: KeyboardEvent) {
     if (!current || isReading(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
-    if (e.key === 'Enter') answer('confirm');
+    if (e.key === 'Escape') editing = null;
+    else if (e.key === 'Enter') answer('confirm');
     else if (e.key.toLowerCase() === 's') answer('skip');
     else {
       const state = current.sensor.states[Number(e.key) - 1];
@@ -106,6 +127,24 @@
 </script>
 
 <svelte:window onkeydown={onkey} />
+
+{#snippet header(item: ReviewItem)}
+  {@const reason = item.review_reason ? REVIEW_REASONS[item.review_reason] : null}
+  <div class="row wrap">
+    <span class="mono small muted">{shown + 1} / {items?.length}</span>
+    <strong>{item.sensor.name}</strong>
+    {#if reason}<span class="chip {reason.tone}" title={reason.help}>{reason.label}</span>{/if}
+    <span class="spacer"></span>
+    <span class="xsmall faint">{dateTime(item.created_at)}</span>
+  </div>
+  {#if editing !== null}
+    <div class="row wrap again">
+      <span class="small">Answered: <span style:color={TONE_COLOR.ok}>{answers[item.id]}</span> — answer again to change it.</span>
+      <span class="spacer"></span>
+      <button class="btn sm" onclick={() => (editing = null)}>Back to the queue</button>
+    </div>
+  {/if}
+{/snippet}
 
 <div class="page">
   <div class="layout">
@@ -139,14 +178,24 @@
         <ol>
           {#each items as item, i (item.id)}
             {@const reason = item.review_reason ? REVIEW_REASONS[item.review_reason] : null}
-            <li class:current={i === index} class:done={i < index}>
-              <img src={api.historyImageUrl(item.id, 'thumb')} alt="" loading="lazy" />
-              <span class="col" style="gap:2px;min-width:0">
-                <strong class="small">{item.sensor.name}</strong>
-                <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
-                  {answers[item.id] ?? `${reason?.label ?? ''} · ${summary(item)}`}
+            <li class:current={i === shown} class:done={i < index}>
+              {#snippet entry()}
+                <img src={api.historyImageUrl(item.id, 'thumb')} alt="" loading="lazy" />
+                <span class="col" style="gap:2px;min-width:0">
+                  <strong class="small">{item.sensor.name}</strong>
+                  <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
+                    {answers[item.id] ?? `${reason?.label ?? ''} · ${summary(item)}`}
+                  </span>
                 </span>
-              </span>
+              {/snippet}
+              <!-- Answered items open again to change the answer; the next waiting one leads back. -->
+              {#if i <= index}
+                <button type="button" class="entry" title={i < index ? 'Change this answer' : undefined} onclick={() => (editing = i < index ? i : null)}>
+                  {@render entry()}
+                </button>
+              {:else}
+                <div class="entry">{@render entry()}</div>
+              {/if}
             </li>
           {/each}
         </ol>
@@ -158,15 +207,8 @@
       {#if items === null}
         <p class="muted">Loading…</p>
       {:else if current && isReading(current)}
-        {@const reason = current.review_reason ? REVIEW_REASONS[current.review_reason] : null}
         {@const d = readingDetail(current)}
-        <div class="row wrap">
-          <span class="mono small muted">{index + 1} / {items.length}</span>
-          <strong>{current.sensor.name}</strong>
-          {#if reason}<span class="chip {reason.tone}" title={reason.help}>{reason.label}</span>{/if}
-          <span class="spacer"></span>
-          <span class="xsmall faint">{dateTime(current.created_at)}</span>
-        </div>
+        {@render header(current)}
         <div class="frame">
           <RoiEditor src={api.historyImageUrl(current.id)} roi={current.sensor.roi} />
         </div>
@@ -183,14 +225,7 @@
           {/key}
         </div>
       {:else if current && predicted}
-        {@const reason = current.review_reason ? REVIEW_REASONS[current.review_reason] : null}
-        <div class="row wrap">
-          <span class="mono small muted">{index + 1} / {items.length}</span>
-          <strong>{current.sensor.name}</strong>
-          {#if reason}<span class="chip {reason.tone}" title={reason.help}>{reason.label}</span>{/if}
-          <span class="spacer"></span>
-          <span class="xsmall faint">{dateTime(current.created_at)}</span>
-        </div>
+        {@render header(current)}
         <div class="frame">
           <RoiEditor src={api.historyImageUrl(current.id)} roi={current.sensor.roi} />
         </div>
@@ -200,14 +235,20 @@
             <span class="small muted">The AI was {pct(current.confidence)} sure.</span>
           </p>
           <div class="row wrap center-row">
-            <button class="btn primary lg" disabled={busy} onclick={() => answer('confirm')}>
+            <button class="btn primary lg" class:chosen={chosen(current.state_key)} disabled={busy} onclick={() => answer('confirm')}>
               <Icon name="check" /> Yes, {predicted.name}
             </button>
             <span class="small faint">No, it is</span>
             {#each others as s (s.key)}
-              <button class="btn lg state" style:border-left-color={s.color} disabled={busy} onclick={() => answer('label', s.key)}>{s.name}</button>
+              <button
+                class="btn lg state"
+                class:chosen={chosen(s.key)}
+                style:border-left-color={s.color}
+                disabled={busy}
+                onclick={() => answer('label', s.key)}>{s.name}</button
+              >
             {/each}
-            <button class="btn lg ghost" disabled={busy} onclick={() => answer('skip')}>Skip</button>
+            <button class="btn lg ghost" class:chosen={chosen(null)} disabled={busy} onclick={() => answer('skip')}>Skip</button>
           </div>
           <span class="xsmall faint kbd-only">Enter = yes · 1–9 = pick state · S = skip</span>
         </div>
@@ -247,20 +288,41 @@
   .name {
     overflow-wrap: anywhere;
   }
-  li {
+  .entry {
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    width: 100%;
     padding: var(--space-2);
     border-radius: var(--radius-lg);
     border: 1px solid transparent;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
   }
-  li.current {
+  button.entry {
+    cursor: pointer;
+  }
+  li.current .entry {
     background: var(--c-surface-3);
     border-color: var(--c-border-dashed);
   }
-  li.done {
+  li.done:not(.current) .entry {
     opacity: 0.6;
+  }
+  li.done:not(.current) .entry:hover {
+    opacity: 0.85;
+  }
+  .again {
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-3);
+  }
+  .chosen {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
   }
   li img {
     width: 88px;

@@ -11,10 +11,10 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
-from ..db import Prediction, Sensor
+from ..db import Prediction, Sample, SampleLabel, Sensor
 from ..settings import (
     DETECTION,
     KIND_OBJECTS,
@@ -518,11 +518,26 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
         state_id = state_id_for(sensor, key) if body.action in ("confirm", "label") else None
         sensor_id, frame = row.sensor_id, row.frame
         row.reviewed = True
+        # Answered before: change (or, when skipped now, remove) the sample that answer added.
+        sample = s.get(Sample, row.sample_id) if row.sample_id is not None else None
+        if sample is not None and sample.sensor_id == sensor_id:
+            if state_id is None:
+                rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
+                s.delete(sample)
+                row.sample_id = None
+            else:
+                s.execute(delete(SampleLabel).where(SampleLabel.sample_id == sample.id))
+                s.add(SampleLabel(sample_id=sample.id, state_id=state_id))
+                sample.verified = False
+            rt.schedule_retrain(sensor_id)
+            state_id = None  # nothing more to add
     if state_id is not None and frame:
         path = rt.storage.history_path(sensor_id, frame)
         if path.exists():
             image = await asyncio.to_thread(lambda: Image.open(path).convert("RGB"))
-            await asyncio.to_thread(rt.add_sample, sensor_id, image, "review", state_id)
+            sample_id = await asyncio.to_thread(rt.add_sample, sensor_id, image, "review", state_id)
+            with rt.db.session() as s:
+                s.get(Prediction, prediction_id).sample_id = sample_id
             rt.schedule_retrain(sensor_id)
     await rt.publish_review_count()
     return {"ok": True}

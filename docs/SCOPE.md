@@ -245,6 +245,9 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
   **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
   waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
   up; given answers and the reading counts stay.
+  An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
+  two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
+  relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
