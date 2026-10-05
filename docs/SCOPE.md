@@ -276,7 +276,9 @@ memory and starting over after a restart) and, for counters only, *Rate* (`rate`
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
 readings far apart give the average since the previous one; unit and device class from the
 counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/h and L → L/min volume
-flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate entity.
+flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate entity. A fifth,
+*Reader image* (`image`, `reader_image`, diagnostic, also off by default), is the image the reader
+saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
 for review, per-sensor breakdown as attribute).

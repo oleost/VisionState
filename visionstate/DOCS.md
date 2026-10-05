@@ -216,6 +216,7 @@ First choose **what it looks like**:
   | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`) |
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
   | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
+  | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
   have so far only been tried on one type of water meter: they read well while the wheels stand
   still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on

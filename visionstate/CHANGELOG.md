@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3b15
+
+- **Reader image in Home Assistant:** a reading sensor has a new image entity, *Reader image* —
+  what the reader saw at the last reading (the region after display processing, as *What the reader
+  sees* on the Live tab). Off by default, like the other diagnostic entities: turn it on in Home
+  Assistant.
+
 ## 0.6.3b14
 
 - **A light for the camera: no more dark frames.** Many cameras — an ESP32 camera, for one — hand

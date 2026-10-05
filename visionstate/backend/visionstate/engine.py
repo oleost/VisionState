@@ -1225,6 +1225,7 @@ class Runtime:
         )
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
         await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send(cfg, t["reader_image"], live.reading_image, retain=True)
         await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
 
         await asyncio.to_thread(self._count_reading, cfg.id, reason)

@@ -136,8 +136,10 @@ def test_diagnostic_entities_of_reading_sensors():
         return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
 
     counter = configs({"mode": "counter", "unit": "m³", "device_class": "water"})
-    for key in ("raw", "problem", "accepted", "rate"):
+    for key in ("raw", "problem", "accepted", "rate", "reader_image"):
         assert counter[key]["enabled_by_default"] is False, key
+    assert counter["reader_image"]["image_topic"] == "visionstate/meter/reader_image"
+    assert counter["reader_image"]["entity_category"] == "diagnostic"
     assert counter["problem"]["options"][0] == "ok" and counter["problem"]["device_class"] == "enum"
     assert counter["accepted"]["unit_of_measurement"] == "%"
     assert (counter["rate"]["unit_of_measurement"], counter["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
@@ -322,6 +324,7 @@ def test_reading_sensor_flow(settings):
         assert wait_for(lambda: view()["reading"]["value"] == "12345.6", timeout=60)
         assert wait_for(lambda: sent.get(f"{base}/problem") == "ok", timeout=10)
         assert sent[f"{base}/raw"] == "12345.6" and sent[f"{base}/accepted"] == "100"
+        assert sent[f"{base}/reader_image"][:2] == b"\xff\xd8"  # what the reader saw, as a JPEG
         assert view()["status"] == "ok"
         assert client.get(f"/api/v1/sensors/{sid}/reading/image").status_code == 200
 

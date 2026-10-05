@@ -48,6 +48,7 @@ def topics(slug: str) -> dict[str, str]:
         "problem": f"{base}/problem",
         "accepted": f"{base}/accepted",
         "rate": f"{base}/rate",
+        "reader_image": f"{base}/reader_image",
     }
 
 
@@ -160,6 +161,20 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                     "entity_category": "diagnostic",
                     "enabled_by_default": False,
                     "icon": "mdi:check-circle-outline",
+                    **with_camera,
+                },
+            ),
+            config(
+                "image",
+                "reader_image",
+                {
+                    # What the reader saw: the region after display processing (one field per wheel).
+                    "name": "Reader image",
+                    **suggest(f"image.{uid}_reader_image"),
+                    "image_topic": t["reader_image"],
+                    "content_type": "image/jpeg",
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
                     **with_camera,
                 },
             ),
