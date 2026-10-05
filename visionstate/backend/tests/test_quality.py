@@ -13,7 +13,9 @@ from .test_integration import FakeCamera, wait_for
 def test_hub_discovery_has_review_queue_sensor():
     [(topic, payload)] = hub_discovery_messages("homeassistant")
     assert topic == "homeassistant/sensor/visionstate/review_queue/config"
-    assert payload["default_entity_id"] == "sensor.visionstate_review_queue"
+    # Home Assistant names it sensor.visionstate_review_queue after the device and the entity.
+    assert payload["device"]["name"] == "VisionState" and payload["name"] == "Review queue"
+    assert "default_entity_id" not in payload
     assert payload["state_topic"] == REVIEW_TOPICS["count"]
 
 

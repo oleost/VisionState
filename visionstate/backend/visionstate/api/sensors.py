@@ -5,25 +5,28 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from .. import bundle
-from ..db import ModelInfo, Prediction, Sample, Sensor, State
+from .. import bundle, readers
+from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
 from ..settings import (
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
+    READING,
     READING_SENSOR_DEFAULTS,
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
+    SENSOR_PUBLISH_DEFAULT,
     STATE_PALETTE,
 )
 from ..sources import SOURCE_TYPES, SourceError
@@ -65,6 +68,7 @@ class SensorIn(BaseModel):
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
+    publish: bool = SENSOR_PUBLISH_DEFAULT  # send values to Home Assistant
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
 
@@ -105,6 +109,7 @@ class SensorIn(BaseModel):
             threshold=self.threshold,
             debounce=self.debounce,
             enabled=self.enabled,
+            publish=self.publish,
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
             objects=self.objects.model_dump() if self.objects else None,
@@ -125,6 +130,7 @@ class SensorPatch(BaseModel):
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool | None = None
+    publish: bool | None = None
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
     objects: ObjectsIn | None = None
@@ -197,7 +203,7 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         if sensor.kind != KIND_READING and body.reading is not None:
             raise HTTPException(400, "Only reading sensors have reading settings")
         old_roi, old_keys = sensor.roi, [st.key for st in sensor.states]
-        for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled"):
+        for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
             value = getattr(body, field)
             if value is not None:
                 setattr(sensor, field, value)
@@ -212,7 +218,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
         if body.states is not None:
             _apply_states(sensor, body.states)
         if body.objects is not None:
-            sensor.objects = body.objects.model_dump()
+            # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
+            sensor.objects = {**(sensor.objects or {}), **body.objects.model_dump(exclude_unset=True)}
         if body.reading is not None:
             sensor.reading = body.reading.model_dump()
         s.flush()
@@ -248,12 +255,20 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
     live = rt.live_state(sensor_id)
     if frame_id is not None:
         data = next((d for fid, d in live.frames if fid == frame_id), None)
-        if data is None:
+        if data is not None:
+            headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
+            return Response(data, media_type="image/jpeg", headers=headers)
+        # Gone from the cache already (frequent checks): the latest frame instead. X-Frame-Id says
+        # which one it is, so the UI only draws a check's boxes on the frame they belong to.
+        if not live.frames:
             raise HTTPException(404, "Frame no longer cached")
-        headers = {"X-Frame-Id": frame_id, "Cache-Control": "max-age=3600"}
-        return Response(data, media_type="image/jpeg", headers=headers)
+        latest_id, data = live.frames[-1]
+        return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": latest_id, "Cache-Control": "no-store"})
+    shown = rt.frame_for_view(sensor_id)
     if cached and live.frames:
         frame_id, data = live.frames[-1]
+    elif shown is not None:
+        frame_id, data = shown  # a sensor with a light: the frame of its last check, taken with the light on
     else:
         try:
             frame_id, data = await rt.grab(cfg)
@@ -273,7 +288,7 @@ async def reading_image(sensor_id: int, request: Request) -> Response:
 
 @router.post("/{sensor_id}/classify")
 async def classify_now(sensor_id: int, request: Request) -> dict:
-    runtime(request).wake(sensor_id, force=True)
+    runtime(request).wake(sensor_id, force=True, paused_too=True)
     return {"ok": True}
 
 
@@ -406,7 +421,100 @@ def prediction_view(p: Prediction) -> dict:
         "reviewed": p.reviewed,
         "has_frame": bool(p.frame),
         "detections": p.detections,
+        "read_ok": p.read_ok,
+        "correct_value": p.correct_value,
     }
+
+
+@router.get("/{sensor_id}/reading-quality")
+def reading_quality(sensor_id: int, request: Request) -> dict:
+    """How often a reading sensor's readings were rejected, why, and what the user verified."""
+    rt = runtime(request)
+    today = datetime.now().date()
+    longest = max(READING["quality_periods_days"])
+    first_day = (today - timedelta(days=longest - 1)).isoformat()
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_READING)
+        stats = s.scalars(
+            select(ReadingStat).where(ReadingStat.sensor_id == sensor_id, ReadingStat.day >= first_day)
+        ).all()
+        by_day = {row.day: row for row in stats}
+        daily = []
+        for offset in range(longest - 1, -1, -1):
+            day = (today - timedelta(days=offset)).isoformat()
+            row = by_day.get(day)
+            daily.append(
+                {
+                    "day": day,
+                    "reads": row.reads if row else 0,
+                    "accepted": row.accepted if row else 0,
+                    "rejected": sum(row.rejected.values()) if row else 0,
+                }
+            )
+        periods = []
+        for days in READING["quality_periods_days"]:
+            since = (today - timedelta(days=days - 1)).isoformat()
+            rows = [row for row in stats if row.day >= since]
+            reasons: dict[str, int] = {}
+            for row in rows:
+                for reason, n in row.rejected.items():
+                    reasons[reason] = reasons.get(reason, 0) + n
+            periods.append(
+                {
+                    "days": days,
+                    "reads": sum(row.reads for row in rows),
+                    "accepted": sum(row.accepted for row in rows),
+                    "rejected": sum(reasons.values()),
+                    "by_reason": reasons,
+                }
+            )
+        mine = Prediction.sensor_id == sensor_id
+        rejected = Prediction.published_key.is_(None)
+
+        def count(*where) -> int:
+            return s.scalar(select(func.count()).select_from(Prediction).where(mine, *where)) or 0
+
+        verified = {
+            # rejected, and the reader had indeed misread: the checks did their job
+            "misread_rejected": count(rejected, Prediction.read_ok.is_(False)),
+            # rejected although the reader read it right (e.g. a real jump above the change limit)
+            "right_rejected": count(rejected, Prediction.read_ok.is_(True)),
+            # accepted although the reader misread: a mistake that passed every check
+            "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
+            "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
+            "waiting": count(Prediction.reviewed.is_(False)),
+        }
+        items = s.scalars(
+            select(Prediction)
+            .where(mine, rejected | Prediction.review_reason.is_not(None) | Prediction.read_ok.is_not(None))
+            .order_by(Prediction.created_at.desc())
+            .limit(READING["quality_list_limit"])
+        ).all()
+        return {
+            "periods": periods,
+            "daily": daily,
+            "verified": verified,
+            "items": [prediction_view(p) for p in items],
+        }
+
+
+@router.get("/{sensor_id}/reading-export")
+async def reading_export(sensor_id: int, request: Request, background: BackgroundTasks) -> FileResponse:
+    """A ZIP of the readings checked by hand: only the region of each, what was read, the answer."""
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_READING)
+    reader = await asyncio.to_thread(rt.db.get_setting, "reader", readers.DEFAULT_READER)
+    fd, name = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    tmp = Path(name)
+    try:
+        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader)
+    except LookupError as err:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(404, str(err)) from err
+    background.add_task(tmp.unlink, missing_ok=True)
+    return FileResponse(tmp, media_type="application/zip", filename=filename)
 
 
 @router.get("/{sensor_id}/history")

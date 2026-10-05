@@ -1,6 +1,8 @@
 """Reading sensors: parsing, plausibility, decoding, the reader on drawn displays, and the API."""
 
 import io
+import json
+import zipfile
 
 import numpy as np
 import pytest
@@ -123,6 +125,75 @@ def test_discovery_for_reading_sensor():
     assert "state_class" not in price  # Home Assistant rejects measurement for money
 
 
+def test_diagnostic_entities_of_reading_sensors():
+    """Raw reading, problem, accepted share for every reading sensor; a rate for counters only.
+
+    All off by default in Home Assistant, and the rate in the unit Home Assistant expects.
+    """
+
+    def configs(reading):
+        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading))
+        return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
+
+    counter = configs({"mode": "counter", "unit": "m³", "device_class": "water"})
+    for key in ("raw", "problem", "accepted", "rate", "reader_image"):
+        assert counter[key]["enabled_by_default"] is False, key
+    assert counter["reader_image"]["image_topic"] == "visionstate/meter/reader_image"
+    assert counter["reader_image"]["entity_category"] == "diagnostic"
+    assert counter["problem"]["options"][0] == "ok" and counter["problem"]["device_class"] == "enum"
+    assert counter["accepted"]["unit_of_measurement"] == "%"
+    assert (counter["rate"]["unit_of_measurement"], counter["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
+    assert "entity_category" not in counter["rate"]  # a measurement for automations, not a diagnostic
+    kwh = configs({"mode": "counter", "unit": "kWh"})["rate"]
+    assert (kwh["unit_of_measurement"], kwh["device_class"]) == ("kW", "power")
+    assert configs({"mode": "counter", "unit": "L"})["rate"]["unit_of_measurement"] == "L/min"
+    gallons = configs({"mode": "counter", "unit": "gal"})["rate"]
+    assert gallons["unit_of_measurement"] == "gal/h" and "device_class" not in gallons
+    for mode in ("value", "time_left"):
+        assert "rate" not in configs({"mode": mode}) and "problem" in configs({"mode": mode})
+
+
+def test_settling_last_wheel_and_right_values():
+    counter = merge_reading({"mode": "counter", "decimals": 3})
+    # One step of the last digit below the value: the last wheel turning, not a rejection.
+    assert readers.settling(629.078, 629.079, counter)
+    assert not readers.settling(629.077, 629.079, counter)  # two steps: a real "went down"
+    assert not readers.settling(629.079, 629.079, counter) and not readers.settling(629.08, 629.079, counter)
+    assert readers.settling(12344, 12345, merge_reading({"mode": "counter", "decimals": 0}))
+    assert not readers.settling(5.5, 5.6, merge_reading({"mode": "value", "decimals": 1}))
+    assert not readers.settling(None, 5.6, counter) and not readers.settling(5.5, None, counter)
+
+    # The right value someone types: as written with a point or comma, digits as the meter shows them.
+    assert readers.right_value("0629558", counter) == pytest.approx(629.558)
+    assert readers.right_value("629558", counter) == pytest.approx(629.558)
+    assert readers.right_value(" 629.558 ", counter) == pytest.approx(629.558)
+    assert readers.right_value("629,558", counter) == pytest.approx(629.558)
+    assert readers.right_value("12", merge_reading({"mode": "value", "decimals": 0})) == 12
+    assert readers.right_value("abc", counter) is None and readers.right_value("1.2.3", counter) is None
+    timer = merge_reading({"mode": "time_left"})
+    assert readers.right_value("1:25", timer) == 85 and readers.right_value("85", timer) == 85
+    assert readers.right_value("1:75", timer) is None and readers.right_value("1.5", timer) is None
+
+
+def test_problem_accepted_share_and_rate():
+    from collections import deque
+
+    assert readers.problem_key(None) == "ok" and readers.problem_key("went down") == "went_down"
+    reads = deque([(0, True), (100, False), (200, True), (300, True)])
+    assert readers.accepted_share(reads, 300, 1000) == 75.0
+    assert readers.accepted_share(reads, 1150, 1000) == 100.0 and len(reads) == 2  # the old ones dropped
+    assert readers.accepted_share(deque(), 0, 10) is None
+
+    # 0.003 m³ in 15 minutes = 0.012 m³/h; the window keeps one older sample as the start.
+    samples = deque([(0, 629.0), (600, 629.549), (900, 629.551), (1500, 629.552)])
+    assert readers.counter_rate(samples, 1500, 900, 30) == pytest.approx(0.003 * 3600 / 900)
+    assert samples[0] == (600, 629.549)
+    # Readings far apart (only on triggers): the average since the previous one.
+    assert readers.counter_rate(deque([(0, 10.0), (7200, 12.0)]), 7200, 900, 30) == pytest.approx(1.0)
+    assert readers.counter_rate(deque([(0, 10.0), (10, 10.5)]), 10, 900, 30) is None  # too close together
+    assert readers.counter_rate(deque([(0, 10.0)]), 0, 900, 30) is None
+
+
 # --- with the real reader ---------------------------------------------------------------------------------
 
 
@@ -235,26 +306,54 @@ def test_reading_sensor_flow(settings):
         assert (
             client.post("/api/v1/sensors", json={**body, "states": [{"name": "A"}, {"name": "B"}]}).status_code == 400
         )
+        sent: dict[str, object] = {}  # what goes to MQTT, last payload per topic
+
+        async def publish(topic, payload, retain=False):
+            sent[topic] = payload
+
+        rt.mqtt.publish = publish
         resp = client.post("/api/v1/sensors", json=body)
         assert resp.status_code == 201, resp.text
         sid = resp.json()["id"]
+        base = "visionstate/power_meter"
+        assert client.get(f"/api/v1/sensors/{sid}/reading-export").status_code == 404  # nothing verified yet
 
         def view():
             return client.get(f"/api/v1/sensors/{sid}").json()
 
         assert wait_for(lambda: view()["reading"]["value"] == "12345.6", timeout=60)
+        assert wait_for(lambda: sent.get(f"{base}/problem") == "ok", timeout=10)
+        assert sent[f"{base}/raw"] == "12345.6" and sent[f"{base}/accepted"] == "100"
+        assert sent[f"{base}/reader_image"][:2] == b"\xff\xd8"  # what the reader saw, as a JPEG
         assert view()["status"] == "ok"
         assert client.get(f"/api/v1/sensors/{sid}/reading/image").status_code == 200
+
+        # One step of the last digit lower: the last wheel turning. The value stays, without a
+        # rejection, a history row or a review item.
+        camera.text = "0012345.5"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: (view()["reading"]["last"] or {}).get("settling"), timeout=30)
+        assert view()["reading"]["last"]["reason"] is None and view()["reading"]["value"] == "12345.6"
+        assert client.get("/api/v1/review").json()["total"] == 0
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]["rejected"] == 0
+        assert sent[f"{base}/problem"] == "ok"
 
         # A counter never goes down: the lower reading is rejected and the value stays.
         camera.text = "0012300.0"
         client.post(f"/api/v1/sensors/{sid}/classify")
         assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") == "went down", timeout=30)
         assert view()["reading"]["value"] == "12345.6"
+        assert wait_for(lambda: sent.get(f"{base}/problem") == "went_down", timeout=10)
+        assert sent[f"{base}/raw"] == "12300.0" and float(sent[f"{base}/accepted"]) < 100
 
         camera.text = "0012346.1"
         client.post(f"/api/v1/sensors/{sid}/classify")
         assert wait_for(lambda: view()["reading"]["value"] == "12346.1", timeout=30)
+        # The counter went up 0.5 kWh: a rate in kW once two accepted readings are far enough apart.
+        rt.live[sid].rate_samples[0] = (rt.live[sid].rate_samples[0][0] - 3600, 12345.6)
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: f"{base}/rate" in sent, timeout=30)
+        assert 0 < float(sent[f"{base}/rate"]) <= 0.5
 
         def history():
             return client.get(f"/api/v1/sensors/{sid}/history").json()
@@ -265,10 +364,73 @@ def test_reading_sensor_flow(settings):
         accepted = [h["published_key"] for h in history if h["published_key"]]
         rejected = [h["probs"]["reason"] for h in history if not h["published_key"]]
         assert accepted[:2] == ["12346.1", "12345.6"] and rejected == ["went down"]
-        assert client.get("/api/v1/review").json()["total"] == 0  # readings never enter the review queue
+
+        # Every rejected reading waits in the review queue; the answer says whether the reader misread.
+        queue = client.get("/api/v1/review").json()
+        assert queue["total"] == 1
+        item = queue["items"][0]
+        assert item["review_reason"] == "rejected" and item["sensor"]["kind"] == "reading"
+        assert item["sensor"]["reading"]["unit"] == "kWh"
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "confirm"}).status_code == 400
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "misread", "value": "x"}).status_code == 400
+        answer = client.post(f"/api/v1/review/{item['id']}", json={"action": "misread", "value": "12300,04"})
+        assert answer.status_code == 200, answer.text
+        assert client.get("/api/v1/review").json()["total"] == 0
+
+        # The quality tab: counts per period and per day, the reasons, and what was verified.
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        today = quality["periods"][0]
+        assert today["days"] == 1 and today["rejected"] == 1 and today["by_reason"] == {"went down": 1}
+        assert today["reads"] == today["accepted"] + 1 and today["reads"] >= 3
+        assert len(quality["daily"]) == 30 and quality["daily"][-1]["rejected"] == 1
+        assert quality["verified"]["misread_rejected"] == 1 and quality["verified"]["waiting"] == 0
+        verified = next(i for i in quality["items"] if i["id"] == item["id"])
+        assert verified["read_ok"] is False and verified["correct_value"] == "12300.0"
+
+        # Export to share: only the region of each verified reading, what was read, the answer, CC0.
+        export = client.get(f"/api/v1/sensors/{sid}/reading-export")
+        assert export.status_code == 200
+        assert 'filename="visionstate-readings-power_meter.zip"' in export.headers["content-disposition"]
+        with zipfile.ZipFile(io.BytesIO(export.content)) as archive:
+            assert {"README.txt", "LICENSE.txt", "readings.json"} <= set(archive.namelist())
+            assert "CC0" in archive.read("LICENSE.txt").decode()
+            manifest = json.loads(archive.read("readings.json"))
+            assert manifest["settings"]["unit"] == "kWh" and "source" not in manifest["settings"]
+            [entry] = manifest["readings"]
+            assert (entry["read"], entry["rejected"], entry["answer"], entry["right_value"]) == (
+                "0012300.0",
+                "went down",
+                "misread",
+                "12300.0",
+            )
+            assert Image.open(archive.open(entry["file"])).format == "JPEG"
+        assert client.get(f"/api/v1/sensors/{sid}/quality").status_code == 400  # the state sensors' tab
+
+        # "Dismiss all" empties one sensor's part of the queue; the counts and earlier answers stay.
+        camera.text = "0012300.0"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 1, timeout=30)
+        camera.text = "0012346.1"
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") is None, timeout=30)
+        queue = client.get("/api/v1/review").json()
+        assert queue["sensors"] == [{"id": sid, "name": "Power meter", "count": queue["total"]}]
+        assert client.post("/api/v1/review/sensors/9999/dismiss").status_code == 404
+        dismissed = client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"]
+        assert dismissed == queue["total"]
+        assert client.get("/api/v1/review").json() == {"total": 0, "items": [], "sensors": []}
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["periods"][0]["rejected"] == 1 + dismissed
+        assert quality["verified"]["misread_rejected"] == 1 and quality["verified"]["waiting"] == 0
+
+        # A verified reading is kept like a training image, whatever the history limits say.
+        rt.set_storage_limits({"history_days": 1, "history_max_gb": 0.000001})
+        rt.cleanup_history()
+        kept = [h["id"] for h in client.get(f"/api/v1/sensors/{sid}/history").json()]
+        assert kept == [item["id"]]
+        rt.set_storage_limits({})
 
         # Training endpoints do not apply.
-        assert client.get(f"/api/v1/sensors/{sid}/quality").status_code == 400
         assert client.post(f"/api/v1/sensors/{sid}/capture", json={"state_key": "x"}).status_code == 400
 
         # Wizard preview: the frame, the image the reader used, the text and the value.
@@ -350,8 +512,48 @@ def test_counter_sensor_flow(settings):
         assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") == "wrong digit count", timeout=30)
         assert view()["reading"]["value"] == "89.941"
 
+        # The export to share holds only the counter's window (plus a margin), not the whole frame.
+        # The review item is stored after the rejection is published: wait for it.
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] == 1, timeout=30)
+        item = client.get("/api/v1/review").json()["items"][0]
+        client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"})
+        export = client.get(f"/api/v1/sensors/{sid}/reading-export")
+        with zipfile.ZipFile(io.BytesIO(export.content)) as archive:
+            [entry] = json.loads(archive.read("readings.json"))["readings"]
+            assert entry["answer"] == "read correctly" and entry["rejected"] == "wrong digit count"
+            crop = Image.open(archive.open(entry["file"]))
+        frame = render_counter(89941)
+        box = counter_box(7)
+        assert crop.width < frame.width * box["w"] * 1.4 and crop.height < frame.height * box["h"] * 1.4
+
         preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
         good = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
         assert good["text"] == "0089941" and good["value"] == "89.941" and good["wrong_digit_count"] is False
         bad = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "digits": 8}}).json()
         assert bad["wrong_digit_count"] is True
+
+
+@requires_reader
+def test_spot_checks_of_accepted_readings(settings):
+    camera = DisplayCamera("00500")
+    body = {
+        "name": "Gas",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "x",
+        "interval_s": 3600,
+        "debounce": 1,
+        "reading": {"spot_rate": 1.0},
+    }
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "500", timeout=60)
+        assert client.get("/api/v1/review").json()["total"] == 0  # a new value is not a spot check
+        client.post(f"/api/v1/sensors/{sid}/classify")  # the same value again: checked at random (here always)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] == 1, timeout=30)
+        item = client.get("/api/v1/review").json()["items"][0]
+        assert item["review_reason"] == "spot_check" and item["published_key"] == "500"
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"}).status_code == 200
+        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
+        assert verified["right_accepted"] == 1 and verified["misread_accepted"] == 0

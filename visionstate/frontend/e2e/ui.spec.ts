@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL } from './env';
+import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
 import {
   center,
   doubleTap,
@@ -9,6 +9,7 @@ import {
   expectNoClipping,
   expectNoHorizontalOverflow,
   hold,
+  hasTouchScreen,
   isTouch,
   press,
   seededCounterSensorId,
@@ -36,13 +37,17 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
     ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
-    ['reading-history', `sensors/${readingId}/history`, 'Every new value and the readings that were rejected'],
+    ['reading-history', `sensors/${readingId}/history`, 'Every new value and every rejected reading'],
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
+    ['reading-quality', `sensors/${readingId}/quality`, 'Readings per day'],
     ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
     ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
+  // Native parts of controls are drawn dark (Safari shows light select menus with light text otherwise).
+  await page.goto('#/');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
   for (const [name, route, ready] of pages) {
     await test.step(name, async () => {
       const errors = watchErrors(page);
@@ -53,7 +58,15 @@ test('every page renders without errors and fits the screen', async ({ page, req
       await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
       await expectNoHorizontalOverflow(page);
       await expectNoClipping(page, '.btn, .state-btn, .chip, .pill, .card');
-      await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, `${name}.png`), fullPage: true });
+      // A history page that filled up during the run can be taller than a screenshot may be
+      // (32767 device pixels: on an iPhone at scale 3 that is under 11000 CSS px; WebKit renders
+      // the full height even with a clip): then only the screen at the top. The checks above
+      // cover the whole page.
+      const pixels = await page.evaluate(() => document.documentElement.scrollHeight * devicePixelRatio);
+      await page.screenshot({
+        path: path.join('test-results', 'pages', info.project.name, `${name}.png`),
+        fullPage: pixels <= 30_000,
+      });
       errors.expectNone();
     });
   }
@@ -75,6 +88,41 @@ test('swiping on a camera frame scrolls the page', async ({ page, request }, inf
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(50);
     });
   }
+});
+
+test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Light test');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(`${CAMERA_URL}/snapshot.jpg`);
+  // The light is chosen right with the camera.
+  const light = page.getByLabel('Light to switch on');
+  await light.fill('light.meter_flash');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Next' }), info);
+
+  // While the region shows live frames the light is held on; without Home Assistant (as here) it says why not.
+  const hold = page.getByTestId('light-hold');
+  await expect(hold).toContainText('light.meter_flash');
+  await expect(hold).toContainText('Home Assistant API is not configured');
+  await expect(page.locator('.roi img')).toBeVisible(); // the frame still comes
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .chip, [data-testid="light-hold"]');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-light.png'), fullPage: true });
+  // Its switch keeps the light off for this view (and is remembered); on again for the next tests.
+  const toggle = page.getByLabel('Light on while this view is open');
+  await press(toggle, info);
+  await expect(hold).toContainText('stays off while you look');
+  await press(toggle, info);
+  await expect(hold).toContainText('Home Assistant API is not configured');
+  // Still held on the next step (one hold for region and test: the light does not blink in between).
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.getByText('What should this sensor detect?')).toBeVisible();
+  await expect(hold).toBeVisible();
+  errors.expectNone();
 });
 
 test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
@@ -99,9 +147,11 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   await page.keyboard.type('Partial');
   await expect(page.getByLabel('Name of state 3')).toHaveValue('Partial');
   await expect(page.getByText('options: open, closed, partial, unknown')).toBeVisible();
-  if (isTouch(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
+  if (hasTouchScreen(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
+  // A new sensor is sent to Home Assistant unless switched off here.
+  await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
   await expectNoHorizontalOverflow(page);
   await press(page.getByRole('button', { name: 'Create sensor and start labelling' }), info);
 
@@ -132,7 +182,7 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await press(page.getByRole('button', { name: /Show all \d+ objects/ }), info);
   await page.getByPlaceholder(/Search \d+ objects/).fill('bicy');
   await expect(page.getByRole('button', { name: 'Bicycle' })).toHaveCount(1);
-  await expect(page.getByText('binary_sensor.visionstate_driveway_test_car')).toBeVisible();
+  await expect(page.getByText('binary_sensor.driveway_test_car')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-objects.png'), fullPage: true });
   await expectNoClipping(page, '.btn, .chip-btn, .kind, .card');
@@ -316,6 +366,115 @@ test('object sensor shows boxes and history', async ({ page, request }, info) =>
   errors.expectNone();
 });
 
+test('the live page of an object sensor does not jump when a new check comes in', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const id = await seededObjectSensorId(request);
+  // Frames arrive slowly, as through Home Assistant on a phone: the check is announced well
+  // before its picture is there.
+  await page.route('**/frame?frame_id=*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue();
+  });
+  await page.goto(`#/sensors/${id}/live`);
+  await expect(page.locator('button.found').first()).toBeVisible({ timeout: 30_000 });
+  // Every animation frame for 12 s (two or three checks at 5 s): where "Check now" is, and
+  // whether the list of boxes under the frame is there.
+  const seen = await page.evaluate(async () => {
+    const result = { tops: new Set<number>(), emptyList: 0, frames: 0, checks: new Set<string>() };
+    const end = performance.now() + 12_000;
+    while (performance.now() < end) {
+      await new Promise(requestAnimationFrame);
+      const button = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Check now'));
+      if (button) result.tops.add(Math.round(button.getBoundingClientRect().top + window.scrollY));
+      if (!document.querySelector('button.found')) result.emptyList++;
+      result.checks.add(document.querySelector('.roi img')?.getAttribute('src') ?? '');
+      result.frames++;
+    }
+    return { tops: [...result.tops], emptyList: result.emptyList, frames: result.frames, checks: result.checks.size };
+  });
+  expect(seen.checks, 'no new check came in while watching').toBeGreaterThan(1);
+  expect(seen.emptyList, 'the list under the frame disappeared for a moment').toBe(0);
+  expect(seen.tops, 'the page moved').toHaveLength(1);
+  errors.expectNone();
+});
+
+test('teaching an object sensor: correct a box, draw a missed one, forget it all', async ({ page, request }, info) => {
+  test.setTimeout(180_000); // waits for the detector's checks several times
+  const errors = watchErrors(page);
+  // Its own sensor (per project), so the seeded one stays untaught for the other tests.
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: `Teach ${info.project.name}`,
+      kind: 'objects',
+      source_type: 'http',
+      source: PHOTO_URL('beach'),
+      objects: { classes: ['dog', 'person'] },
+      interval_s: 3,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+  try {
+    await page.goto(`#/sensors/${id}/live`);
+    await expect(page.getByText('Wrong? Tap a box to correct it:')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0); // nothing taught yet
+
+    // Tap the person in the list under the frame: not a person (asked once whether to teach).
+    await press(page.locator('button.found', { hasText: 'Person' }), info);
+    const sheet = page.getByRole('dialog', { name: 'Teach this box' });
+    await expect(sheet.getByText(/Person .*sure/)).toBeVisible();
+    await press(sheet.getByRole('button', { name: 'Not a person' }), info);
+    await expect(sheet.getByText('Teach this sensor?')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-sheet.png'), fullPage: true });
+    await press(sheet.getByRole('button', { name: 'Teach' }), info);
+    await expect(page.getByText(/no longer count as person/)).toBeVisible();
+    // The next check shows the person dashed and filtered, and the Quality tab appears.
+    await expect(page.locator('button.found.filtered', { hasText: 'Person' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.roi .box.filtered')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Quality' })).toBeVisible();
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-live.png'), fullPage: true });
+
+    // Draw a box around something the AI missed, then pick what it is.
+    await press(page.getByRole('button', { name: 'Missed something?' }), info);
+    const draw = page.locator('.roi .draw');
+    // Into the middle of the screen, so the drag does not start under the sticky top bar.
+    await draw.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const area = await draw.boundingBox();
+    if (!area) throw new Error('no drawing area');
+    await drag(page, info, { x: area.x + area.width * 0.3, y: area.y + area.height * 0.35 }, { x: area.x + area.width * 0.5, y: area.y + area.height * 0.6 });
+    await expect(page.locator('.roi .drawn')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Next' }), info);
+    await expect(sheet.getByText('What did the AI miss?')).toBeVisible();
+    await press(sheet.getByRole('button', { name: 'Dog' }), info);
+    await expect(page.getByText('Saved as Dog.')).toBeVisible();
+
+    // The Quality tab lists both, and the filtered frame.
+    await page.goto(`#/sensors/${id}/quality`);
+    await expect(page.getByRole('heading', { name: /Not a person/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Dog/ })).toBeVisible();
+    await expect(page.getByText('Person filtered away').first()).toBeVisible({ timeout: 15_000 });
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-quality.png'), fullPage: true });
+
+    // Settings: turn it off or forget it all; then the Quality tab goes away again.
+    await page.goto(`#/sensors/${id}/settings`);
+    await expect(page.getByText('Use what you taught')).toBeVisible();
+    // The region's camera frame loads above: wait for it, or the page moves under the tap.
+    await expect(page.locator('.roi img')).toBeVisible();
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+    await press(page.getByRole('button', { name: 'Forget all' }), info);
+    await press(page.getByRole('button', { name: 'Tap again to forget everything taught' }), info);
+    await expect(page.getByText('Everything taught is forgotten')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0);
+    errors.expectNone();
+  } finally {
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
 test('region editor: move, add and remove corners', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededSensorId(request);
@@ -363,11 +522,223 @@ test('labelling a frame shows a confirmation', async ({ page, request }, info) =
   await page.goto(`#/sensors/${id}/label`);
   await expect(page.locator('.live img')).toBeVisible();
   // Keyboard shortcuts are hidden on touch screens and shown with a mouse.
-  if (isTouch(info)) await expect(page.locator('.kbd-only').first()).toBeHidden();
+  if (hasTouchScreen(info)) await expect(page.locator('.kbd-only').first()).toBeHidden();
   else await expect(page.locator('.kbd-only').first()).toBeVisible();
   await press(page.locator('.state-btn', { hasText: 'Partial' }), info);
   await expect(page.getByText('Saved as Partial')).toBeVisible();
   errors.expectNone();
+});
+
+test('when to check: no regular check, one state of an entity, and a light', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  // Start from the defaults, whatever an earlier (failed) run left behind.
+  const before = (await (await request.get('api/v1/config')).json()).trigger_defaults;
+  expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+  await page.goto(`#/sensors/${id}/settings`);
+  await expect(page.getByText('When to check')).toBeVisible();
+
+  // The regular check can be switched off; its interval then goes away.
+  const regular = page.getByRole('checkbox', { name: 'Regular check' });
+  await expect(regular).toBeChecked();
+  await press(regular, info);
+  await expect(page.getByLabel('Seconds between regular checks')).toHaveCount(0);
+  await expect(page.getByText('Off: only checks when triggered')).toBeVisible();
+
+  // A trigger entity can be limited to one of its states.
+  const add = page.getByLabel('Add trigger entity');
+  await add.fill('sensor.watermeter_status');
+  await add.press('Enter');
+  await page.getByLabel('Only when sensor.watermeter_status becomes').fill('Flow finished');
+
+  // A light: only lights and switches are accepted.
+  const light = page.getByLabel('Light to switch on');
+  await light.fill('camera.meter');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toHaveCount(0);
+  await light.fill('light.meter_flash');
+  await light.press('Enter');
+  await expect(page.getByText('Wait before taking the frame')).toBeVisible();
+  await expect(page.getByLabel('Light to switch on')).toHaveCount(0); // one light at most
+
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .chip, .card, .chip-entity');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-triggers.png'), fullPage: true });
+
+  const saved = (await (await request.get(`api/v1/sensors/${id}`)).json()).triggers;
+  expect(saved.regular).toBe(false);
+  expect(saved.only_states).toEqual({ 'sensor.watermeter_status': 'Flow finished' });
+  expect(saved.light_entity).toBe('light.meter_flash');
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Regular check' })).not.toBeChecked();
+  await expect(page.getByLabel('Only when sensor.watermeter_status becomes')).toHaveValue('Flow finished');
+  await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible();
+  errors.expectNone();
+  expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+});
+
+test('a sensor can be kept from Home Assistant while it is tuned', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  try {
+    await page.goto(`#/sensors/${id}/settings`);
+    const send = page.getByRole('checkbox', { name: 'Send to Home Assistant' });
+    await expect(send).toBeChecked();
+    await press(send, info);
+    await expect(page.getByText('stay unavailable')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    expect((await (await request.get(`api/v1/sensors/${id}`)).json()).publish).toBe(false);
+    // Marked on the sensor page and on the dashboard, so it is not forgotten.
+    await expect(page.locator('header .chip', { hasText: 'Not sent to Home Assistant' })).toBeVisible();
+    await page.goto('#/');
+    const card = page.locator('.card', { hasText: READING_SENSOR_NAME }).first();
+    await expect(card.getByText('Not sent to Home Assistant')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'dashboard-not-sent.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await request.patch(`api/v1/sensors/${id}`, { data: { publish: true } });
+  }
+});
+
+test('a counter has a rate window for its rate entity', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  await page.goto(`#/sensors/${id}/settings`);
+  const field = page.getByLabel('Rate over the last minutes');
+  await expect(field).toHaveValue('15');
+  await field.fill('30');
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  try {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    expect(sensor.reading.rate_window_min).toBe(30);
+    await expectNoHorizontalOverflow(page);
+    errors.expectNone();
+  } finally {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    const { value: _v, last: _l, has_image: _h, ...reading } = sensor.reading;
+    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, rate_window_min: 15 } } });
+  }
+});
+
+test('rejected readings: review queue and quality tab', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const garage = await seededSensorId(request);
+  // The seeded state sensor flags a frame for review on every check; pause it so ours is the newest.
+  await request.patch(`api/v1/sensors/${garage}`, { data: { enabled: false } });
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Gas meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: DISPLAY_URL('00500'),
+      reading: { mode: 'counter', unit: 'm³' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.value, { timeout: 60_000 }).toBe('500');
+    // The display now shows less: a counter can not go down, so the reading is rejected.
+    await request.patch(`api/v1/sensors/${id}`, { data: { source: DISPLAY_URL('00400') } });
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.last?.reason, { timeout: 30_000 }).toBe('went down');
+
+    // In the review queue: say it misread, and what the meter showed.
+    await page.goto('#/review');
+    // A check of the paused sensor may still have been running: skip anything newer than ours.
+    const ours = page.getByText(/Did it read “00400”/);
+    const position = page.locator('.main .mono').first();
+    for (let i = 0; i < 5; i++) {
+      await expect(page.getByText(/Did it read “00400”|Is this /).first()).toBeVisible();
+      if (await ours.isVisible()) break;
+      // Wait for the next item before looking again, or a second Skip lands on ours.
+      const before = (await position.textContent()) ?? '';
+      await press(page.getByRole('button', { name: 'Skip' }), info);
+      await expect(position).not.toHaveText(before);
+    }
+    await expect(ours).toBeVisible();
+    await expect(page.getByText('Rejected: a counter can not go down')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-reading.png'), fullPage: true });
+    await press(page.getByRole('button', { name: 'Misread' }), info);
+    const right = page.getByLabel('The right value');
+    await expect(right).toHaveValue('400'); // starts as what was read: usually one digit is changed
+    await right.fill('501');
+    await expect(page.getByText('Saved as 501 m³')).toBeVisible();
+    await right.fill('5x1');
+    await expect(page.getByText('Not a number')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save misread' })).toBeDisabled();
+    await right.fill('501');
+    await press(page.getByRole('button', { name: 'Save misread' }), info);
+    await expect(page.getByText(/Did it read “00400”/)).toHaveCount(0);
+
+    // The quality tab sums it up and keeps the answer, which can be changed.
+    await page.goto(`#/sensors/${id}/quality`);
+    await expect(page.getByText('1 of 2 readings accepted').first()).toBeVisible();
+    await expect(page.getByText('50.0 %').first()).toBeVisible();
+    await expect(page.locator('.reasons').getByText('a counter can not go down')).toBeVisible();
+    await expect(page.getByText('Misread — was 501 m³')).toBeVisible();
+    await expect(page.getByText('misread was caught by the checks.')).toBeVisible();
+    await expect(page.locator('.chart .day')).toHaveCount(30);
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-rejected.png'), fullPage: true });
+    await press(page.getByRole('button', { name: 'Change' }), info);
+    await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
+    await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
+
+    // The checked readings can be exported to share: a ZIP with the region of each, and a licence.
+    await expect(page.getByText('The reader does not learn from your answers')).toBeVisible();
+    const exportLink = page.getByRole('link', { name: 'Export checked readings' });
+    await expect(exportLink).toBeVisible();
+    const zip = await request.get(`api/v1/sensors/${id}/reading-export`);
+    expect(zip.ok()).toBeTruthy();
+    expect(zip.headers()['content-disposition']).toContain('visionstate-readings-gas_meter.zip');
+    expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+    await expectNoClipping(page, '.btn, .chip, .card');
+
+    // Dismiss all takes a sensor's waiting items out of the queue; answers already given stay.
+    const waiting = async () =>
+      ((await (await request.get('api/v1/review')).json()).sensors as { id: number; count: number }[]).find((s) => s.id === id)?.count ?? 0;
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(waiting, { timeout: 30_000 }).toBe(1);
+    await page.reload();
+    const bar = page.locator('.dismiss');
+    await expect(bar).toContainText('1 waiting in the review queue.');
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await press(bar.getByRole('button', { name: 'Dismiss all' }), info);
+    await press(bar.getByRole('button', { name: 'Press again' }), info);
+    await expect(page.getByText('Dismissed 1 item from the review queue')).toBeVisible();
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByText(/correct reading was rejected/)).toBeVisible();
+
+    // ... and the same per sensor on the review page.
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(waiting, { timeout: 30_000 }).toBe(1);
+    await page.goto('#/review');
+    const row = page.locator('.wait-row').filter({ hasText: 'Gas meter' });
+    await expect(row).toContainText('1 waiting');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dismiss.png'), fullPage: true });
+    await press(row.getByRole('button', { name: 'Dismiss all' }), info);
+    await press(row.getByRole('button', { name: 'Press again' }), info);
+    await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeVisible();
+    await expect(row).toHaveCount(0);
+    expect(await waiting()).toBe(0);
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+    await request.patch(`api/v1/sensors/${garage}`, { data: { enabled: true } });
+  }
 });
 
 test('storage limits can be changed', async ({ page }, info) => {
@@ -392,7 +763,57 @@ test('review queue can be answered', async ({ page }, info) => {
   await page.goto('#/review');
   const position = page.locator('.main .mono').first();
   await expect(position).toHaveText(/^1 \/ \d+/);
+  // The count per sensor follows each answer, and the sensor goes when nothing of it is left.
+  const name = (await page.locator('.main strong').first().textContent())!;
+  const row = page.locator('.wait-row').filter({ hasText: name });
+  const before = Number((await row.locator('.xsmall').textContent())!.match(/\d+/)![0]);
   await press(page.getByRole('button', { name: 'Skip' }), info);
+  if (before > 1) await expect(row).toContainText(`${before - 1} waiting`);
+  else await expect(row).toHaveCount(0);
   await expect(page.getByText(/^(2 \/ \d+|All caught up)$/).first()).toBeVisible();
+  errors.expectNone();
+});
+
+test('an answer in the review queue can be changed from the list', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request);
+  const reviewSamples = async () =>
+    ((await (await request.get(`api/v1/sensors/${id}/samples?limit=1000`)).json()).items as { origin: string; labels: string[] }[]).filter(
+      (x) => x.origin === 'review',
+    );
+  await page.goto('#/review');
+  await expect(page.locator('.main .mono').first()).toHaveText(/^1 \/ \d+/);
+  test.skip(!(await page.locator('aside ol').isVisible()), 'the list is only shown on wide screens');
+  // Get past items of other sensors to one of the seeded state sensor.
+  const main = page.locator('.main');
+  for (let i = 0; i < 10 && !(await main.getByText('Is this').isVisible()); i++) await press(main.getByRole('button', { name: 'Skip' }), info);
+  const before = (await reviewSamples()).length;
+  const position = main.locator('.mono').first();
+  const at = (await position.textContent())!;
+
+  // Confirmed by mistake ...
+  const yes = main.getByRole('button', { name: /^Yes, / });
+  const predicted = (await yes.textContent())!.replace('Yes,', '').trim();
+  await press(yes, info);
+  await expect(position).not.toHaveText(at);
+  const entry = page.locator('aside li').filter({ hasText: `✓ Confirmed ${predicted}` }).first();
+  await expect(entry).toBeVisible();
+  // ... opened again from the list: the answer given is marked, and another state is picked.
+  await press(entry.getByRole('button'), info);
+  await expect(position).toHaveText(at);
+  await expect(main.getByText('answer again to change it')).toBeVisible();
+  await expect(main.getByRole('button', { name: /^Yes, / })).toHaveClass(/chosen/);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-change.png'), fullPage: true });
+  const other = main.locator('.btn.state').first();
+  const corrected = (await other.textContent())!.trim();
+  await press(other, info);
+  // Back in the queue where it was; the list shows the new answer.
+  await expect(position).not.toHaveText(at);
+  await expect(main.getByText('answer again to change it')).toHaveCount(0);
+  await expect(page.locator('aside li').filter({ hasText: `✓ Corrected to ${corrected}` }).first()).toBeVisible();
+  // The dataset got one sample from it, labelled with the corrected state.
+  await expect.poll(async () => (await reviewSamples()).length).toBe(before + 1);
+  expect((await reviewSamples())[0].labels).toEqual([corrected.toLowerCase()]);
+  await expectNoHorizontalOverflow(page);
   errors.expectNone();
 });

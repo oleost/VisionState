@@ -7,12 +7,24 @@
     threshold = $bindable(),
     debounce = $bindable(),
     maxStep = $bindable(),
+    spotRate = $bindable(),
+    rateWindow = $bindable(),
     mode,
     unit,
-  }: { threshold: number; debounce: number; maxStep: number; mode: ReadingMode; unit: string } = $props();
+  }: {
+    threshold: number;
+    debounce: number;
+    maxStep: number;
+    spotRate: number;
+    rateWindow: number;
+    mode: ReadingMode;
+    unit: string;
+  } = $props();
 
   const limits = $derived(app.config?.sensor_limits);
   const stepLimits = $derived(app.config?.reading_limits.max_step ?? [0, 1e9]);
+  const spotLimits = $derived(app.config?.reading_limits.spot_rate ?? [0, 1]);
+  const windowLimits = $derived(app.config?.reading_limits.rate_window_min ?? [1, 1440]);
 </script>
 
 {#if limits}
@@ -44,8 +56,45 @@
         {mode === 'time_left' ? 'min' : unit}</span
       >
     </label>
+    <label class="line">
+      <span class="col" style="gap:2px">
+        <span>Spot-check accepted readings</span>
+        <span class="xsmall faint">This share goes to the review queue too, to find misreads that passed every check.</span>
+      </span>
+      <span class="row"
+        ><input
+          class="input sm num"
+          type="number"
+          min={spotLimits[0] * 100}
+          max={spotLimits[1] * 100}
+          step="1"
+          value={Math.round(spotRate * 100)}
+          oninput={(e) => (spotRate = Number(e.currentTarget.value) / 100)}
+          aria-label="Share of accepted readings to spot-check"
+        /> %</span
+      >
+    </label>
+    {#if mode === 'counter'}
+      <label class="line">
+        <span class="col" style="gap:2px">
+          <span>Rate over the last</span>
+          <span class="xsmall faint">For the <em>Rate</em> entity in Home Assistant (off there until you turn it on), e.g. to spot a leak.</span>
+        </span>
+        <span class="row"
+          ><input
+            class="input sm num"
+            type="number"
+            min={windowLimits[0]}
+            max={windowLimits[1]}
+            step="1"
+            bind:value={rateWindow}
+            aria-label="Rate over the last minutes"
+          /> min</span
+        >
+      </label>
+    {/if}
     <p class="xsmall muted">
-      Rejected readings keep the last value and are listed in the history.
+      Rejected readings keep the last value; every one of them is listed in the history and waits in the review queue.
       {#if mode === 'counter'}A counter that reads lower than before is always rejected.{/if}
     </p>
   </div>

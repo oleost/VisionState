@@ -9,6 +9,7 @@ number** from a display, without any training. Everything runs on this machine; 
 
 ## Requirements
 
+- **Home Assistant 2025.10 or newer.**
 - **MQTT**: VisionState publishes its sensors through MQTT discovery. Install the
   **Mosquitto broker** app and the **MQTT** integration if you do not have them yet.
   VisionState finds the broker automatically.
@@ -21,7 +22,8 @@ number** from a display, without any training. Everything runs on this machine; 
 
 1. Open **VisionState** from the sidebar.
 2. Click **New sensor**:
-   1. Give it a name and pick a camera.
+   1. Give it a name and pick a camera — and, for a camera in a dark place, a light to switch on
+      (see *A light for the camera* below).
    2. Draw a box around the thing to watch (for example the garage door). The AI only looks
       inside the box, which makes it far more accurate. For an object that sits at an angle,
       shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
@@ -31,21 +33,28 @@ number** from a display, without any training. Everything runs on this machine; 
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
       This can not be changed later.
    4. Optionally choose when it should check the camera — for example when your motion
-      sensor or garage opener changes (see *When it checks* below). You can skip this step.
+      sensor or garage opener changes (see *When it checks* below) — and whether it sends to
+      Home Assistant right away (see *Tuning a sensor* below). You can skip this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
    you what is missing.
 
-The sensor appears in Home Assistant as a device with these entities:
+The sensor appears in Home Assistant as a device named after the sensor, with these entities
+(Home Assistant names them after the device, like other integrations):
 
 | Entity | What it is |
 |---|---|
-| `sensor.visionstate_<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
-| `sensor.visionstate_<name>_confidence` | How sure the AI is, in % |
-| `image.visionstate_<name>_frame` | The image region that was classified |
-| `button.visionstate_<name>_classify` | Classify right now (use it in automations) |
-| `switch.visionstate_<name>_enabled` | Pause / resume the sensor |
+| `sensor.<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
+| `sensor.<name>_confidence` | How sure the AI is, in % |
+| `image.<name>_last_frame` | The image region that was classified |
+| `button.<name>_classify_now` | Classify right now (use it in automations) |
+| `switch.<name>_enabled` | Pause / resume the sensor |
+
+If an ID is already taken, Home Assistant adds `_2`. You can change any of them in Home
+Assistant (the entity's settings → *Entity ID*); VisionState shows the IDs Home Assistant uses.
+Sensors made before 0.6.3b6 keep the IDs they have (`sensor.visionstate_<name>`, …), also
+when exported and imported — nothing changes for them.
 
 In addition, the **VisionState** device has `sensor.visionstate_review_queue`: the number of
 frames waiting for review (with a per-sensor breakdown as attribute).
@@ -53,11 +62,20 @@ frames waiting for review (with a per-sensor breakdown as attribute).
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
 
+**Tuning a sensor before Home Assistant uses it:** switch off **Send to Home Assistant** (in the
+last step of the wizard, or under **Settings → General**). The sensor then runs as usual — its
+history, Quality tab and review queue fill up — but its entities in Home Assistant stay
+*unavailable*: no values, so no statistics either. Useful when the sensor takes over the entity ID
+of an older one and wrong readings must not end up in its statistics. The pause switch and the
+check-now button keep working. Turn it on once the sensor reads reliably; the value is sent right
+away. Sensors not sent are marked on the dashboard.
+
 ## Object sensors
 
 An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 70 more —
 with a pretrained detector. There is nothing to label: pick the objects in the wizard (popular
 ones first, all others under **Show all**) and the wizard tests it on a fresh frame right away.
+Where it gets your camera wrong, you can correct it later (see *Teaching an object sensor*).
 
 - **The region** decides what counts: an object counts when the bottom of its box (where a
   person or car stands) is inside it. The detector sees a little more than the region, so an
@@ -66,10 +84,10 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
 
   | Entity | What it is |
   |---|---|
-  | `binary_sensor.visionstate_<name>_<object>` | `on` while the object is there (occupancy) |
-  | `sensor.visionstate_<name>_<object>_count` | How many there are |
+  | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
+  | `sensor.<name>_<object>_count` | How many there are |
 
-  plus `image.…_frame` (the region with boxes drawn), `button.…_classify` (detect now) and
+  plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence
   and the boxes. Removing an object from the list removes its entities.
 - **Settings tab → Sensor output**:
@@ -85,6 +103,41 @@ ones first, all others under **Show all**) and the wizard tests it on a fresh fr
   appeared and cleared (tap a row for the frame).
 - Object sensors use the same triggers as state sensors. **Detect changes in the image** is
   a good fit: the detector only runs when something in the region changes.
+
+### Teaching an object sensor
+
+The detector works without training, but it can be corrected where it gets your camera wrong.
+Tap a box on the **Live** tab or on a history frame (or its entry under the frame):
+
+| Choice | What happens from then on |
+|---|---|
+| **Correct** | Kept as it is; it also keeps similar boxes from being taken for something else |
+| **Not a …** | Boxes that look like this one no longer count — the statue that is "a person", the shadow that is "a dog" |
+| **Something else… → another object** | Counted as that object instead |
+| **Something else… → New label…** | Your own label, a kind of that object — **Our car**, **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too |
+| **Missed something?** | Draw a box around what the AI missed and say what it is. Boxes the AI was unsure about are looked at again and counted when they look like it |
+
+The first time, VisionState asks whether to start: from then on it checks each box of the objects
+you taught against what you taught. A box only takes over a taught answer when it clearly looks
+like one of the boxes you taught; otherwise the AI's own answer stands, so teaching never turns
+something on by a vague resemblance. This uses the same model as state sensors (DINOv2), which is
+always loaded; it costs a little extra time per box, only for the objects you taught.
+
+- Every check decides anew, box by box, by what a box looks like — not where it is, so an object
+  that moves a little or is lit differently is still recognised. Boxes filtered away in a check
+  are still shown, **dashed and grey**, in that check's frame; the history keeps a frame (*Person
+  filtered away*) when an object starts being filtered. The binary sensor's attributes count
+  them (`filtered`).
+- Counted again where it should not be (at night, say, when an IR camera shows it in black and
+  white)? Mark it once more on such a frame: every taught box widens what is recognised.
+- The **Quality** tab appears once you taught something: every taught box by answer (tap × to
+  forget one), your own labels (**Remove label** removes its entities too) and the frames filtered
+  away lately — check now and then that nothing real is filtered away.
+- **Settings → What you taught**: **Use what you taught** off lets the AI alone decide again (what
+  you taught is kept); **Forget all** removes every taught box and own label.
+- A box drawn where the AI sees nothing at all (not even unsure) cannot be found by itself; you
+  get a note when that is the case.
+- Export and import take what you taught along.
 
 ## Reading sensors
 
@@ -122,16 +175,48 @@ First choose **what it looks like**:
   five black and three red wheels has 8 digits and 3 digits after the decimal point. While a
   wheel is turning its digit can be misread; a counter that reads lower than before is
   rejected, and a limit on how much the value may change (Settings → Sensor output) catches a
-  misread that is too high. If the last wheel never stands still, leave it out of the region
-  and count one digit and one decimal less.
+  misread that is too high. A reading exactly one step of the last digit below the value is the
+  last wheel turning: the value stays, but it is not counted as rejected and does not go to the
+  review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
+  you can also leave it out of the region and count one digit and one decimal less.
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
-  limit you set. Rejected readings are listed in the **History** tab with
-  the reason. A new value is published after 2 equal readings in a row (adjustable).
-- The entity is `sensor.visionstate_<name>` with the value, plus `…_confidence`, `image.…_frame`,
-  `button.…_classify` (read now) and `switch.…_enabled`. Attributes: the text read and why the
+  limit you set. Every rejected reading is listed in the **History** tab with the reason and
+  waits in the **Review** queue. A new value is published after 2 equal readings in a row
+  (adjustable).
+- **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
+  the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
+  the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the
+  field starts with what was read, digits typed without a point are placed like the reader does
+  (`0629558` → `629.558`), and it shows what will be saved) —
+  here or in the review queue. A misread that was rejected shows the checks work; a right
+  reading that was rejected points at a setting, for example a change limit that is too low.
+  While you set a sensor up, rejected readings can pile up: **Dismiss all** (here, or per sensor
+  on the Review page) takes them out of the queue. Answers already given and the counts stay.
+  The reader does **not** learn from these answers: they show how reliable the reading is and
+  which setting to change.
+- **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
+  readings you checked — only the region of each, not the whole picture — with what was read and
+  what was right. Look through it, then share it in
+  [GitHub Discussions](https://github.com/oleost/VisionState/discussions) and say what the display
+  or meter is: that shows what goes wrong where. Shared, the images are public domain (CC0; the
+  README and LICENSE inside the ZIP say so).
+- **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
+  readings also goes to the review queue, to find misreads that passed every check.
+- The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
+  `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
+- More entities, **off by default** — turn them on in Home Assistant (the device page, or the
+  entity's settings → *Enabled*):
+
+  | Entity | What it is |
+  |---|---|
+  | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
+  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`) |
+  | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
+  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
+  | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
   have so far only been tried on one type of water meter: they read well while the wheels stand
   still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
@@ -150,10 +235,15 @@ First choose **what it looks like**:
   for each frame — check them and click **Accept all suggestions**, or select frames and
   press a state key.
 - **Review** (top menu): frames the AI was unsure about and frames where the state flipped back
-  and forth (optionally also random spot checks). Answering these is the fastest way to improve.
+  and forth (optionally also random spot checks). Answering these is the fastest way to improve a
+  state sensor (its answers become training images).
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
-  80 %, or turn review off for it. Empty sensor fields use the global value.
+  80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
+  shows how many items wait per sensor; **Dismiss all** next to a sensor skips all of them at once.
+  Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
+  again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
+  it is not added a second time.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
   was wrong, add it to the dataset with the correct state.
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image
@@ -168,15 +258,41 @@ Set up per sensor under **Settings → When to check**:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| Regular check | every 10 s | The safety net. With triggers set up it can be minutes. |
-| Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… |
+| Regular check | every 10 s | The safety net. It is counted from the last check, whatever caused it, so with frequent triggers it rarely runs. Switch it **off** to check only when triggered (plus once after start-up). |
+| Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… For each entity you can enter the one state that should count (*only when it becomes* `on`, `Flow finished` …). |
 | Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
-| After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. |
+| After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
 A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
 trigger entities, and change detection on for cameras without a motion sensor.
 
-You can still call `button.visionstate_<name>_classify` from your own automations.
+A meter read by a battery or ESP camera: regular check off, the device's status entity as
+trigger with *only when it becomes* the state that means a new picture is ready, and the time
+after a trigger set to 0.
+
+### A light for the camera
+
+For a camera in a dark place, such as a meter cabinet: pick a light, switch or helper right with
+the camera (the first step of the wizard, or **Settings → General**). VisionState switches it on:
+
+- **for each check**: before the frame is taken, and off again afterwards. *Wait before taking the
+  frame* (default 1 s) gives the light and the camera time; meanwhile VisionState fetches a frame
+  every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
+  they took earlier, and only adjust their exposure between pictures: this way the frame that is
+  read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
+- **while you look at live frames**: in the wizard (region and test), when you draw the region
+  under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
+  label are taken in the same light as the checks. A note above the frame says so; its **Light**
+  switch keeps the light off for that view (the browser remembers it). The light goes off when you
+  leave, and at the latest 30 seconds after a tab is closed or a phone is put away.
+
+A light that is already on is left alone, and one light can serve several sensors. Without the
+light on, the views show the frame of the last check instead of taking dark ones. Change
+detection compares frames without the light (and pauses while the light is on); when it sees a
+change, the check takes a new frame in the light.
+
+You can still press the sensor's *Classify now* button (`button.<name>_classify_now`) from your own
+automations.
 
 ## How it decides
 
@@ -194,10 +310,12 @@ You can still call `button.visionstate_<name>_classify` from your own automation
 - **Settings → Storage** shows how much space history frames and training images use and how
   much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
   reached first; the oldest frames are removed first, frames waiting for review last (they are
-  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images are
-  never removed automatically.
+  kept twice as many days). Set either limit there (`0` GB = no size limit). Training images, and
+  readings you verified on a reading sensor's Quality tab or in the review queue, are never
+  removed automatically.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
-  reading settings, triggers, review overrides) and all its images with labels. Camera passwords are removed from the file.
+  reading settings, triggers, review overrides) and all its images with labels — for an object
+  sensor, the boxes it was taught and its own labels. Camera passwords are removed from the file.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
@@ -212,11 +330,12 @@ two apps at a time (both publish the same entities).
 
 ## AI models
 
-Two models, chosen under **Settings → AI model** for all sensors of a kind:
+Three models, chosen under **Settings → AI model** for all sensors of a kind:
 
 - **State sensors:** DINOv2 small, 8-bit — included, runs on any CPU including a Raspberry
   Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB).
-  Switching retrains every state sensor from its stored images.
+  Switching retrains every state sensor from its stored images. It is always loaded: object
+  sensors that were taught use it too, to compare boxes with the ones you taught.
 - **Object sensors:** D-FINE S — included, about 0.1 s per check on a modern PC and a few
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.

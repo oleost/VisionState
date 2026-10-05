@@ -6,7 +6,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../../lib/format';
-  import { REJECT_REASONS, readingUnit } from '../../lib/reading';
+  import { REJECT_REASONS, readingDetail as detail, readingUnit } from '../../lib/reading';
   import type { Prediction, Sensor } from '../../lib/types';
 
   let { sensor }: { sensor: Sensor } = $props();
@@ -25,12 +25,11 @@
   });
 
   const unit = $derived(sensor.reading ? readingUnit(sensor.reading) : '');
-  const detail = (p: Prediction) => p.probs as unknown as { text?: string; value?: string | null; reason?: string | null };
 </script>
 
 <p class="small muted">
-  Every new value and the readings that were rejected (at most one every few minutes), kept as set under <a href={href(paths.settings())}>Settings → Storage</a>. Tap a
-  row to see the frame.
+  Every new value and every rejected reading, kept as set under <a href={href(paths.settings())}>Settings → Storage</a> (readings you verified are
+  kept for good). Tap a row to see the frame; the Quality tab sums them up.
 </p>
 
 {#if items === null}
@@ -53,6 +52,8 @@
                 <span class="chip warn">{REJECT_REASONS[d.reason ?? ''] ?? d.reason}</span>
               {/if}
               <span class="mono small muted">{pct(p.confidence)}</span>
+              {#if p.read_ok === false}<span class="chip danger">Misread{p.correct_value ? ` — was ${p.correct_value}` : ''}</span>
+              {:else if p.read_ok}<span class="chip ok">Read correctly</span>{/if}
             </span>
             <span class="xsmall faint">{dateTime(p.created_at)}</span>
             <span class="xsmall muted">Read “{d.text || '—'}”</span>

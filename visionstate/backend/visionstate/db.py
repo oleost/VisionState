@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 11
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -33,6 +33,18 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     4: [("model_info", "suspects", "JSON"), ("sample", "verified", "BOOLEAN NOT NULL DEFAULT 0")],
     5: [("sensor", "objects", "JSON"), ("prediction", "detections", "JSON")],
     6: [("sensor", "reading", "JSON")],
+    7: [("prediction", "read_ok", "BOOLEAN"), ("prediction", "correct_value", "VARCHAR(64)")],
+    # Sensors made before 0.6.3b6 keep their "visionstate_" entity IDs (see Sensor.entity_prefix).
+    8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
+    # Existing sensors keep sending to Home Assistant.
+    9: [("sensor", "publish", "BOOLEAN NOT NULL DEFAULT 1")],
+    10: [
+        ("sample", "object_label", "VARCHAR(64)"),
+        ("sample", "detected", "VARCHAR(64)"),
+        ("sample", "box", "JSON"),
+        ("sample", "score", "FLOAT"),
+    ],
+    11: [("prediction", "sample_id", "INTEGER")],
 }
 
 
@@ -68,6 +80,12 @@ class Sensor(Base):
     objects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Reading sensors: mode, decimals, unit …; see settings.READING_DEFAULTS.
     reading: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Older sensors suggest "visionstate_<slug>…" entity IDs to Home Assistant, and keep doing so
+    # (also when exported and imported), so entities that come back get the same ID. Newer sensors
+    # let Home Assistant name them after the device and entity, like other integrations.
+    entity_prefix: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Send values to Home Assistant (settings.SENSOR_PUBLISH_DEFAULT). Off: the entities stay unavailable.
+    publish: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     states: Mapped[list[State]] = relationship(
@@ -102,6 +120,13 @@ class Sample(Base):
     # The user confirmed this label is right; it is no longer listed as possibly mislabelled.
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Object sensors: a box the user taught (see settings.TEACH). The image is the box with a
+    # margin; object_label is what it is ("none", a class or an own label), detected the class the
+    # detector gave it (None: a box it missed, drawn by the user), box and score where and how sure.
+    object_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detected: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    box: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Many-to-many on purpose: single-state sensors use one label, multi-label can use more.
     labels: Mapped[list[SampleLabel]] = relationship(cascade="all, delete-orphan", lazy="selectin")
@@ -128,8 +153,11 @@ class Prediction(Base):
 
     Object sensors store one row per object class that appeared (published_key "on") or
     cleared ("off"), with state_key = the class and the frame's detections.
-    Reading sensors store accepted new values (state_key "reading", published_key = the value)
-    and rejected readings (published_key None); probs holds {"text", "value", "reason"}.
+    Reading sensors store accepted new values (state_key "reading", published_key = the value),
+    every rejected reading (published_key None, review_reason "rejected") and spot checks of
+    accepted ones; probs holds {"text", "value", "reason"}. ``read_ok`` is the user's verdict on
+    what the reader read (``correct_value`` when it misread); verified readings are never removed
+    automatically, as they may later teach the reader.
     """
 
     __tablename__ = "prediction"
@@ -146,6 +174,23 @@ class Prediction(Base):
     review_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     detections: Mapped[list | None] = mapped_column(JSON, nullable=True)  # object sensors, see detectors.Detection
+    read_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # reading sensors, see above
+    correct_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # State sensors: the dataset sample a review answer added, so a second answer changes it
+    # instead of adding the frame again. Not a foreign key: the sample may be deleted later.
+    sample_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ReadingStat(Base):
+    """How many readings a reading sensor made per day, and why the rejected ones were rejected."""
+
+    __tablename__ = "reading_stat"
+
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # local date, YYYY-MM-DD
+    reads: Mapped[int] = mapped_column(Integer, default=0)
+    accepted: Mapped[int] = mapped_column(Integer, default=0)
+    rejected: Mapped[dict] = mapped_column(JSON, default=dict)  # reason -> count
 
 
 class ModelInfo(Base):

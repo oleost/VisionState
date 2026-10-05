@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -15,6 +17,8 @@ from .settings import (
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
+    READING_PROBLEMS,
+    READING_RATE_UNITS,
     SUPERVISOR_URL,
     UNKNOWN_STATE,
     VERSION,
@@ -39,6 +43,12 @@ def topics(slug: str) -> dict[str, str]:
         "classify": f"{base}/classify/set",
         "enabled_set": f"{base}/enabled/set",
         "enabled": f"{base}/enabled",
+        # reading sensors: diagnostic entities (off by default in Home Assistant)
+        "raw": f"{base}/raw",
+        "problem": f"{base}/problem",
+        "accepted": f"{base}/accepted",
+        "rate": f"{base}/rate",
+        "reader_image": f"{base}/reader_image",
     }
 
 
@@ -56,6 +66,7 @@ class SensorDescriptor:
     kind: str = KIND_STATES
     objects: list[tuple[str, str, str]] = field(default_factory=list)  # (key, display name, icon) per class
     reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
+    entity_prefix: bool = False  # see db.Sensor.entity_prefix
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
@@ -77,19 +88,30 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         "availability_mode": "all",
     }
 
+    def suggest(entity_id: str) -> dict:
+        # Older sensors keep suggesting their "visionstate_" IDs (an entity that comes back, e.g. a
+        # deselected object class, gets the same ID again); newer ones let Home Assistant name the
+        # entities after the device and the entity, like other integrations. Either way Home
+        # Assistant only uses it when it first creates an entity.
+        return {"default_entity_id": entity_id} if sensor.entity_prefix else {}
+
     def config(component: str, object_id: str, payload: dict) -> tuple[str, dict]:
         payload = {"unique_id": f"{uid}_{object_id}", "device": device, **payload}
         return f"{prefix}/{component}/{uid}/{object_id}/config", payload
 
     if reading:
         kind_specific = [
-            config("sensor", "state", {"name": None, **reading_entity(sensor.reading or {}, uid, t), **with_camera}),
+            config(
+                "sensor",
+                "state",
+                {"name": None, **suggest(f"sensor.{uid}"), **reading_entity(sensor.reading or {}, t), **with_camera},
+            ),
             config(
                 "sensor",
                 "confidence",
                 {
                     "name": "Confidence",
-                    "default_entity_id": f"sensor.{uid}_confidence",
+                    **suggest(f"sensor.{uid}_confidence"),
                     "state_topic": t["confidence"],
                     "unit_of_measurement": "%",
                     "state_class": "measurement",
@@ -97,6 +119,75 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                     "icon": "mdi:percent-circle-outline",
                     **with_camera,
                 },
+            ),
+            # Off by default (enabled_by_default): for those who want them, e.g. leak detection.
+            config(
+                "sensor",
+                "raw",
+                {
+                    "name": "Raw reading",
+                    **suggest(f"sensor.{uid}_raw"),
+                    "state_topic": t["raw"],
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:text-recognition",
+                    **with_camera,
+                },
+            ),
+            config(
+                "sensor",
+                "problem",
+                {
+                    "name": "Problem",
+                    **suggest(f"sensor.{uid}_problem"),
+                    "state_topic": t["problem"],
+                    "device_class": "enum",
+                    "options": list(READING_PROBLEMS),
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:alert-circle-outline",
+                    **with_camera,
+                },
+            ),
+            config(
+                "sensor",
+                "accepted",
+                {
+                    "name": "Accepted (24 h)",
+                    **suggest(f"sensor.{uid}_accepted"),
+                    "state_topic": t["accepted"],
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    "icon": "mdi:check-circle-outline",
+                    **with_camera,
+                },
+            ),
+            config(
+                "image",
+                "reader_image",
+                {
+                    # What the reader saw: the region after display processing (one field per wheel).
+                    "name": "Reader image",
+                    **suggest(f"image.{uid}_reader_image"),
+                    "image_topic": t["reader_image"],
+                    "content_type": "image/jpeg",
+                    "entity_category": "diagnostic",
+                    "enabled_by_default": False,
+                    **with_camera,
+                },
+            ),
+            *(
+                [
+                    config(
+                        "sensor",
+                        "rate",
+                        {**suggest(f"sensor.{uid}_rate"), **rate_entity(sensor.reading or {}, t), **with_camera},
+                    )
+                ]
+                if (sensor.reading or {}).get("mode") == "counter"
+                else []
             ),
         ]
     elif objects:
@@ -109,7 +200,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                     key,
                     {
                         "name": name,
-                        "default_entity_id": f"binary_sensor.{uid}_{key}",
+                        **suggest(f"binary_sensor.{uid}_{key}"),
                         "state_topic": ot["state"],
                         "json_attributes_topic": ot["attributes"],
                         "payload_on": "ON",
@@ -124,7 +215,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                     f"{key}_count",
                     {
                         "name": f"{name} count",
-                        "default_entity_id": f"sensor.{uid}_{key}_count",
+                        **suggest(f"sensor.{uid}_{key}_count"),
                         "state_topic": ot["count"],
                         "state_class": "measurement",
                         "icon": "mdi:counter",
@@ -139,7 +230,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                 "state",
                 {
                     "name": None,
-                    "default_entity_id": f"sensor.{uid}",
+                    **suggest(f"sensor.{uid}"),
                     "state_topic": t["state"],
                     "json_attributes_topic": t["attributes"],
                     "device_class": "enum",
@@ -153,7 +244,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
                 "confidence",
                 {
                     "name": "Confidence",
-                    "default_entity_id": f"sensor.{uid}_confidence",
+                    **suggest(f"sensor.{uid}_confidence"),
                     "state_topic": t["confidence"],
                     "unit_of_measurement": "%",
                     "state_class": "measurement",
@@ -170,7 +261,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             "frame",
             {
                 "name": "Last frame",
-                "default_entity_id": f"image.{uid}_frame",
+                **suggest(f"image.{uid}_frame"),
                 "image_topic": t["image"],
                 "content_type": "image/jpeg",
                 **with_camera,
@@ -181,7 +272,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             "classify",
             {
                 "name": "Detect now" if objects else "Read now" if reading else "Classify now",
-                "default_entity_id": f"button.{uid}_classify",
+                **suggest(f"button.{uid}_classify"),
                 "command_topic": t["classify"],
                 "payload_press": "PRESS",
                 "icon": "mdi:camera-iris",
@@ -193,7 +284,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
             "enabled",
             {
                 "name": "Enabled",
-                "default_entity_id": f"switch.{uid}_enabled",
+                **suggest(f"switch.{uid}_enabled"),
                 "command_topic": t["enabled_set"],
                 "state_topic": t["enabled"],
                 "payload_on": "ON",
@@ -205,7 +296,7 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
     ]
 
 
-def reading_entity(reading: dict, uid: str, t: dict[str, str]) -> dict:
+def reading_entity(reading: dict, t: dict[str, str]) -> dict:
     """Discovery fields of a reading sensor's value: unit, device class and state class.
 
     Counters are ``total_increasing`` so they work in the Energy dashboard; a money value may
@@ -221,7 +312,6 @@ def reading_entity(reading: dict, uid: str, t: dict[str, str]) -> dict:
     else:
         state_class = "measurement"
     payload = {
-        "default_entity_id": f"sensor.{uid}",
         "state_topic": t["state"],
         "json_attributes_topic": t["attributes"],
         "icon": "mdi:counter" if mode == "counter" else "mdi:timer-outline" if mode == "time_left" else "mdi:numeric",
@@ -232,6 +322,59 @@ def reading_entity(reading: dict, uid: str, t: dict[str, str]) -> dict:
     if mode != "time_left":
         payload["suggested_display_precision"] = int(reading.get("decimals", 0))
     return {k: v for k, v in payload.items() if v is not None}
+
+
+def rate_unit(reading: dict) -> tuple[str | None, str | None, float]:
+    """(unit, device class, factor from "per hour") of a counter's rate, from the counter's unit."""
+    unit = (reading.get("unit") or "").strip()
+    if unit in READING_RATE_UNITS:
+        return READING_RATE_UNITS[unit]
+    return (f"{unit}/h" if unit else None), None, 1.0
+
+
+def rate_entity(reading: dict, t: dict[str, str]) -> dict:
+    """Discovery fields of a counter's rate: how fast it goes up (off by default in Home Assistant)."""
+    unit, device_class, _ = rate_unit(reading)
+    payload = {
+        "name": "Rate",
+        "state_topic": t["rate"],
+        "unit_of_measurement": unit,
+        "device_class": device_class,
+        "state_class": "measurement",
+        "enabled_by_default": False,
+        "icon": "mdi:speedometer",
+    }
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+_TRANSLITERATE = str.maketrans({"ø": "o", "æ": "ae", "å": "a", "ß": "ss", "đ": "d", "ł": "l", "œ": "oe", "þ": "th"})
+
+
+def ha_slug(text: str) -> str:
+    """Close to how Home Assistant turns a name into the object ID part of an entity ID."""
+    text = unicodedata.normalize("NFKD", text.lower().translate(_TRANSLITERATE))
+    return re.sub(r"[^a-z0-9]+", "_", text.encode("ascii", "ignore").decode()).strip("_") or "unknown"
+
+
+def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
+    """(unique ID, expected entity ID) of a sensor's main entities: one, or two per object class.
+
+    The expected ID is what Home Assistant gives a new entity; the real one (it may end in _2, or
+    the user changed it) is in Home Assistant's entity registry, see ha_events.fetch_entity_ids.
+    """
+    uid = f"{APP_SLUG}_{sensor.slug}"
+    if sensor.kind != KIND_OBJECTS:
+        expected = f"sensor.{uid}" if sensor.entity_prefix else f"sensor.{ha_slug(sensor.name)}"
+        return [(f"{uid}_state", expected)]
+    entities = []
+    for key, name, _icon in sensor.objects:
+        if sensor.entity_prefix:
+            on, count = f"binary_sensor.{uid}_{key}", f"sensor.{uid}_{key}_count"
+        else:
+            on = f"binary_sensor.{ha_slug(f'{sensor.name} {name}')}"
+            count = f"sensor.{ha_slug(f'{sensor.name} {name} count')}"
+        entities += [(f"{uid}_{key}", on), (f"{uid}_{key}_count", count)]
+    return entities
 
 
 REVIEW_TOPICS = {
@@ -253,8 +396,8 @@ def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
         (
             f"{prefix}/sensor/{APP_SLUG}/review_queue/config",
             {
+                # Home Assistant names it sensor.visionstate_review_queue (device + entity name).
                 "unique_id": f"{APP_SLUG}_review_queue",
-                "default_entity_id": f"sensor.{APP_SLUG}_review_queue",
                 "name": "Review queue",
                 "state_topic": REVIEW_TOPICS["count"],
                 "json_attributes_topic": REVIEW_TOPICS["attributes"],
@@ -406,6 +549,12 @@ class MqttBridge:
             await self.publish(topic, "", retain=True)
         for key, *_ in sensor.objects:
             await self.remove_object_class(sensor.slug, key, discovery=False)
+
+    async def remove_rate(self, slug: str) -> None:
+        """Forget the rate entity of a reading sensor that is no longer a counter."""
+        uid = f"{APP_SLUG}_{slug}"
+        await self.publish(f"{self.settings.discovery_prefix}/sensor/{uid}/rate/config", "", retain=True)
+        await self.publish(topics(slug)["rate"], "", retain=True)
 
     async def remove_object_class(self, slug: str, key: str, discovery: bool = True) -> None:
         """Forget one class of an object sensor (deselected): its entities and retained values."""

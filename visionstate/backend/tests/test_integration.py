@@ -78,7 +78,11 @@ def test_full_flow(settings):
         sensor = resp.json()
         sid = sensor["id"]
         assert [s["key"] for s in sensor["states"]] == ["open", "closed", "partial"]
-        assert sensor["entity_id"] == "sensor.visionstate_garage_door"
+        assert sensor["entity_id"] == "sensor.garage_door"  # as Home Assistant names a new sensor's entity
+        # ... until Home Assistant's entity registry says otherwise (e.g. the user changed it).
+        client.app.state.runtime.ha_entity_ids = {"visionstate_garage_door_state": "sensor.my_garage"}
+        assert client.get(f"/api/v1/sensors/{sid}").json()["entity_id"] == "sensor.my_garage"
+        client.app.state.runtime.ha_entity_ids = {}
 
         # Label frames the way the UI does: fetch a frame, then label it by frame id.
         for state in ("open", "closed", "partial"):

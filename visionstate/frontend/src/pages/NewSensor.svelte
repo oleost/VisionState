@@ -8,10 +8,13 @@
   import ObjectPicker from '../lib/components/ObjectPicker.svelte';
   import ReadingEditor from '../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
+  import LightEditor from '../lib/components/LightEditor.svelte';
+  import PublishSwitch from '../lib/components/PublishSwitch.svelte';
+  import LightHold from '../lib/components/LightHold.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import StatesEditor from '../lib/components/StatesEditor.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
-  import { slugify } from '../lib/format';
+  import { haSlug, slugify } from '../lib/format';
   import { objectCount } from '../lib/objects';
   import { digitsSeen, readingUnit } from '../lib/reading';
   import { pct } from '../lib/format';
@@ -51,10 +54,23 @@
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
   let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
   let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
+  let publish = $state(app.config?.publish_default ?? true);
+  // The camera's light (picked in step 1) is on while the region and the test show live frames.
+  let lightReady = $state(false);
+  $effect(() => {
+    if (!lightReady) return;
+    // Bright now: take the frame again, in the light.
+    untrack(() => {
+      if (step === 1) loadPreview();
+      else if (step === 2 && kind === 'objects') detect();
+      else if (step === 2 && kind === 'reading') readTest();
+    });
+  });
 
   const unknown = $derived(app.config?.unknown_state ?? 'unknown');
   const threshold = $derived(Math.round((app.config?.sensor_defaults.threshold ?? 0.7) * 100));
-  const slug = $derived(slugify(name, 'sensor'));
+  // The entity ID Home Assistant gives the new sensor (it names it after the device).
+  const entity = $derived(haSlug(name));
   const stateKeys = $derived(states.filter((s) => s.name.trim()).map((s) => slugify(s.name, 'state')));
 
   const statesValid = $derived(
@@ -164,6 +180,7 @@
         ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
+        publish,
       });
       toast(learned ? `${sensor.name} created — now label some frames` : `${sensor.name} created`);
       go(paths.sensor(sensor.id, learned ? 'label' : 'live'));
@@ -200,6 +217,9 @@
     </aside>
 
     <section class="col content">
+      {#if (step === 1 || step === 2) && triggers.light_entity}
+        <LightHold entity={triggers.light_entity} delay={triggers.light_delay_s} bind:ready={lightReady} />
+      {/if}
       {#if step === 0}
         <div class="col" style="gap:6px">
           <h2>Name it and pick a camera</h2>
@@ -210,6 +230,7 @@
           <input class="input" bind:value={name} placeholder="Garage door" />
         </label>
         <SourcePicker bind:sourceType bind:source />
+        <div style="max-width:640px"><LightEditor bind:triggers /></div>
       {:else if step === 1}
         <div class="row wrap">
           <div class="col" style="gap:6px">
@@ -309,7 +330,7 @@
           </div>
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
-            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono">sensor.{entity}</span>
             <span class="mono xsmall muted">
               {reading.mode === 'counter' ? 'state_class: total_increasing' : 'state_class: measurement'}{readingUnit(reading)
                 ? ` · unit: ${readingUnit(reading)}`
@@ -347,8 +368,8 @@
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
             {#each classes as key (key)}
-              <span class="mono small">binary_sensor.visionstate_{slug}_{key}</span>
-              <span class="mono xsmall muted">sensor.visionstate_{slug}_{key}_count</span>
+              <span class="mono small">binary_sensor.{haSlug(`${name} ${key}`)}</span>
+              <span class="mono xsmall muted">sensor.{haSlug(`${name} ${key} count`)}</span>
             {:else}
               <span class="xsmall muted">Pick at least one object.</span>
             {/each}
@@ -361,7 +382,7 @@
           <div style="max-width:520px"><StatesEditor bind:states /></div>
           <div class="card pad col preview">
             <span class="eyebrow">In Home Assistant</span>
-            <span class="mono">sensor.visionstate_{slug}</span>
+            <span class="mono">sensor.{entity}</span>
             <span class="mono xsmall muted">options: {[...stateKeys, unknown].join(', ')}</span>
             <span class="xsmall muted">Reports <span class="mono">{unknown}</span> when the AI is less than {threshold}% sure.</span>
           </div>
@@ -375,6 +396,7 @@
           </p>
         </div>
         <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
+        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
       {/if}
 
       <span class="spacer"></span>

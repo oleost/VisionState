@@ -7,17 +7,18 @@ import time
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import detectors, imaging
+from .. import detectors, imaging, teach
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import ObjectTrack, Runtime
+from ..engine import ObjectTrack, Runtime, SensorConfig
+from ..mqtt import main_entities
 from ..settings import (
-    APP_SLUG,
     KIND_OBJECTS,
     KIND_READING,
+    LIGHT_DOMAINS,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
@@ -33,7 +34,9 @@ from ..settings import (
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
+    TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
+    active_custom,
     merge_objects,
     merge_reading,
     merge_review,
@@ -114,10 +117,22 @@ _tlo = {k: v[0] for k, v in TRIGGER_LIMITS.items()}
 _thi = {k: v[1] for k, v in TRIGGER_LIMITS.items()}
 
 
+def valid_light(value: str) -> str:
+    """A light, switch or helper to switch on for a sensor ("" = none)."""
+    value = value.strip()
+    if value and not ENTITY_ID.match(value):
+        raise ValueError(f"Not an entity id: {value!r}")
+    if value and value.split(".", 1)[0] not in LIGHT_DOMAINS:
+        raise ValueError(f"The light must be one of: {', '.join(LIGHT_DOMAINS)}")
+    return value
+
+
 class Triggers(BaseModel):
     """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
 
+    regular: bool = TRIGGER_DEFAULTS["regular"]
     entities: list[str] = Field(default_factory=list, max_length=TRIGGER_MAX_ENTITIES)
+    only_states: dict[str, str] = Field(default_factory=dict)
     burst_interval_s: float = Field(
         TRIGGER_DEFAULTS["burst_interval_s"], ge=_tlo["burst_interval_s"], le=_thi["burst_interval_s"]
     )
@@ -131,6 +146,8 @@ class Triggers(BaseModel):
     change_threshold: float = Field(
         TRIGGER_DEFAULTS["change_threshold"], ge=_tlo["change_threshold"], le=_thi["change_threshold"]
     )
+    light_entity: str = TRIGGER_DEFAULTS["light_entity"]
+    light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
 
     @field_validator("entities")
     @classmethod
@@ -140,6 +157,24 @@ class Triggers(BaseModel):
             if not ENTITY_ID.match(entity):
                 raise ValueError(f"Not an entity id: {entity!r}")
         return cleaned
+
+    @field_validator("light_entity")
+    @classmethod
+    def _valid_light(cls, value: str) -> str:
+        return valid_light(value)
+
+    @model_validator(mode="after")
+    def _valid_only_states(self) -> Triggers:
+        # Only for chosen entities; an empty state means "any change" and is dropped.
+        cleaned = {}
+        for entity, state in self.only_states.items():
+            state = state.strip()
+            if entity in self.entities and state:
+                if len(state) > TRIGGER_STATE_MAX_LENGTH:
+                    raise ValueError(f"State too long for {entity}")
+                cleaned[entity] = state
+        self.only_states = cleaned
+        return self
 
 
 _olo = {k: v[0] for k, v in OBJECT_LIMITS.items()}
@@ -152,6 +187,8 @@ class ObjectsIn(BaseModel):
     classes: list[str] = Field(default_factory=lambda: list(OBJECT_DEFAULTS["classes"]), max_length=OBJECT_MAX_CLASSES)
     min_size: float = Field(OBJECT_DEFAULTS["min_size"], ge=_olo["min_size"], le=_ohi["min_size"])
     clear_after_s: float = Field(OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"])
+    use_taught: bool = OBJECT_DEFAULTS["use_taught"]
+    # Own labels ("custom") are made by teaching a box (api/teach.py), never set here.
 
     @field_validator("classes")
     @classmethod
@@ -179,6 +216,10 @@ class ReadingIn(BaseModel):
     display: str = READING_DEFAULTS["display"]
     digits: int = Field(READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
+    spot_rate: float = Field(READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
+    rate_window_min: float = Field(
+        READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
+    )
 
     @field_validator("mode")
     @classmethod
@@ -266,41 +307,59 @@ def sample_counts(session: Session, sensor: Sensor) -> dict:
     for state_id, night, count in rows:
         if state_id in key_by_id:
             per_state[key_by_id[state_id]]["night" if night else "day"] += count
-    total = session.scalar(select(func.count()).select_from(Sample).where(Sample.sensor_id == sensor.id)) or 0
+    total = (
+        session.scalar(
+            select(func.count())
+            .select_from(Sample)
+            .where(Sample.sensor_id == sensor.id, Sample.object_label.is_(None))  # not boxes taught to an object sensor
+        )
+        or 0
+    )
     labelled = sum(v["day"] + v["night"] for v in per_state.values())
     return {"per_state": per_state, "labelled": labelled, "unlabelled": total - labelled}
 
 
-def entity_ids(sensor: Sensor) -> list[str]:
-    """The sensor's main Home Assistant entities (one per state sensor, two per object class)."""
-    uid = f"{APP_SLUG}_{sensor.slug}"
-    if sensor.kind != KIND_OBJECTS:
-        return [f"sensor.{uid}"]
-    return [
-        e
-        for key in merge_objects(sensor.objects)["classes"]
-        for e in (f"binary_sensor.{uid}_{key}", f"sensor.{uid}_{key}_count")
-    ]
+def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
+    """The sensor's main Home Assistant entities (one, or two per object class).
+
+    As Home Assistant has them when known (its entity registry), else as it would name them.
+    """
+    known = rt.ha_entity_ids
+    return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
-def objects_view(sensor: Sensor, live) -> dict | None:
+def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
     if sensor.kind != KIND_OBJECTS:
         return None
     settings = merge_objects(sensor.objects)
+    parents = {label["key"]: label["parent"] for label in active_custom(settings)}
     tracks = live.tracks if live else {}
     per_class = []
-    for key in settings["classes"]:
+    for key in [*settings["classes"], *parents]:
         track = tracks.get(key) or ObjectTrack()
         per_class.append(
             {
                 "key": key,
+                "parent": parents.get(key),  # own labels: the class they are a kind of
                 "on": track.on,
                 "count": track.count,
                 "score": track.score,
                 "last_seen": track.last_seen or None,
             }
         )
-    return {**settings, "live": per_class, "detections": live.detections if live else []}
+    taught = session.execute(
+        select(Sample.object_label, Sample.detected).where(
+            Sample.sensor_id == sensor.id, Sample.object_label.is_not(None)
+        )
+    ).all()
+    usable = [(label, detected) for label, detected in taught if teach.usable(label, parents)]
+    return {
+        **settings,
+        "live": per_class,
+        "detections": live.detections if live else [],
+        "taught": len(taught),  # boxes taught (Quality tab, first-time question)
+        "taught_keys": sorted(teach.compared_keys(usable, parents)),  # classes compared with them
+    }
 
 
 def reading_view(sensor: Sensor, live) -> dict | None:
@@ -331,6 +390,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         status = "untrained"
     else:
         status = "ok"
+    ids = entity_ids(rt, sensor)
     return {
         "id": sensor.id,
         "slug": sensor.slug,
@@ -343,12 +403,13 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "threshold": sensor.threshold,
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
+        "publish": sensor.publish,
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),
-        "entity_id": entity_ids(sensor)[0],
-        "entity_ids": entity_ids(sensor),
-        "objects": objects_view(sensor, live),
+        "entity_id": ids[0] if ids else None,
+        "entity_ids": ids,
+        "objects": objects_view(session, sensor, live),
         "reading": reading_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,
@@ -365,6 +426,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "in_burst": bool(live and live.burst_until > time.time()),
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
+            "light_error": live.light_error if live else "",
             "frame_id": live.frame_id if live else None,
         },
         "model": {

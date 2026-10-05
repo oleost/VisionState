@@ -50,6 +50,10 @@ OBJECT_DEFAULTS = {
     "classes": ["person"],
     "min_size": 0.0,  # smallest box, as a share of the region's area (0 = any size)
     "clear_after_s": 30.0,  # an object stays "detected" this long after it was last seen
+    "use_taught": True,  # compare boxes with what the user taught (see TEACH); off = the detector alone
+    # The user's own labels, each a kind of one of the classes: [{"key", "name", "parent"}], e.g.
+    # "Our car" under "car". Each gets the same two entities as a class. Made by teaching a box.
+    "custom": [],
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
@@ -82,16 +86,37 @@ READING_DEFAULTS = {
     "device_class": "",
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
-    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
+    "max_step": 0.0,
+    # Share of accepted readings that is also sent to the review queue, to find misreads that
+    # passed every check. Rejected readings always go there.
+    "spot_rate": 0.0,  # largest plausible change between two readings (0 = no limit)
+    # Counters: the rate entity (off by default in Home Assistant) is the change over about this
+    # many minutes — long enough not to jump with every step of the counter, short enough to see a leak.
+    "rate_window_min": 15.0,
 }
 READING_LIMITS = {
     "decimals": (0, 4),
     "digits": (1, 12),
     "max_step": (0.0, 1e9),
+    "spot_rate": (0.0, 1.0),
+    "rate_window_min": (1.0, 1440.0),
+}
+# Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
+# why the last reading was rejected, as a lower-case key.
+READING_PROBLEMS = ("ok", "nothing_read", "unsure", "wrong_digit_count", "went_down", "changed_too_much")
+# Unit of a counter -> (unit of its rate, Home Assistant device class, factor from "per hour").
+# Other units get "<unit>/h" without a device class.
+READING_RATE_UNITS = {
+    "kWh": ("kW", "power", 1.0),
+    "Wh": ("W", "power", 1.0),
+    "m³": ("m³/h", "volume_flow_rate", 1.0),
+    "L": ("L/min", "volume_flow_rate", 1 / 60),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
-    "rejected_cooldown_s": 300,  # at most one rejected reading per sensor is kept in the history per period
+    # Quality tab: the periods it sums up (days, today included) and how many readings it lists.
+    "quality_periods_days": (1, 7, 30),
+    "quality_list_limit": 100,
     "segments_fallback_below": 0.6,  # "auto" display: below this confidence also try without unlit segments
     # "counter" display. Share of each cell's width that is read (the rest holds the dividers).
     "counter_cell_share": 0.7,
@@ -101,6 +126,12 @@ READING = {
     "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
     "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
     "counter_band_min_height": 0.5,
+    "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
+    "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
+    # "Export verified readings" (to share, e.g. on GitHub): at most this many, newest first, each
+    # only the region plus this share of its size around it — not the whole picture.
+    "export_limit": 300,
+    "export_margin": 0.15,
 }
 
 DETECTION = {
@@ -112,6 +143,33 @@ DETECTION = {
     "context_margin": 0.25,
 }
 
+# Teaching an object sensor. The user marks a box as wrong ("none"), as another of the sensor's
+# objects, as one of their own labels ("Our car"), or draws a box around something the detector
+# missed. Later boxes of those classes are compared with the taught ones (DINOv2 embeddings of
+# the box, cosine similarity) and take the label of the closest taught box when they are clearly
+# that one; otherwise the detector's answer stands. Measured on real photos: the same object in
+# other light or framing scores 0.87-0.97, other objects of the same kind mostly below 0.7.
+TEACH = {
+    "match_similarity": 0.88,
+    "margin": 0.03,  # the closest label must beat the next one by this much, else the detector decides
+    "rescue_similarity": 0.9,  # a box the detector was unsure about counts only when this close to a taught one
+    "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
+    "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work
+    "max_rescue": 4,  # unsure boxes compared per check
+    "rescue_overlap_iou": 0.5,  # an unsure box overlapping a counted one this much is that same object
+    "crop_margin": 0.1,  # share of a box's size added on each side of what is compared
+    "min_box": 0.01,  # smallest taught box side, as a share of the frame
+    # A drawn box counts as "seen faintly" when one of the detector's boxes this weak overlaps it.
+    "seen_floor": 0.05,
+    "seen_iou": 0.3,
+    "filtered_record_cooldown_s": 600,  # a class filtered away again soon is not stored in the history again
+    "frames_kept": 6,  # analysed frames kept per object sensor, so a box can still be taught a while later
+    "max_examples": 500,  # taught boxes per sensor
+    "max_labels": 10,  # own labels per sensor (two entities each)
+    "list_limit": 50,  # filtered-away boxes listed on the Quality tab
+}
+NONE_LABEL = "none"  # taught label of a box that is not what the detector said
+
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
 # 1. The regular interval (SENSOR_DEFAULTS["interval_s"]) is the safety net.
@@ -121,20 +179,39 @@ DETECTION = {
 #    runs the AI (and starts a burst) when enough pixels changed.
 
 TRIGGER_DEFAULTS = {
+    # The regular interval check. Off = the sensor only checks when triggered (an entity, a change
+    # in the image, the "check now" button) and once after start-up.
+    "regular": True,
     "entities": [],  # Home Assistant entity ids that trigger a check when their state changes
+    # entity id -> the only new state that triggers (e.g. "Flow finished"); other entities
+    # trigger on any state change. Compared without regard to case.
+    "only_states": {},
     "burst_interval_s": 2.0,  # seconds between checks during a burst
     "burst_duration_s": 30.0,  # how long a burst lasts after the last trigger
     "change_detection": False,
     "change_interval_s": 2.0,  # how often the region is compared
     "change_threshold": 0.04,  # mean pixel difference (0-1) in the region that counts as a change
+    # A light or switch that is turned on before a check takes its frame and off afterwards (a
+    # lamp or flash next to the camera). Left alone when it is already on.
+    "light_entity": "",
+    "light_delay_s": 1.0,  # wait between switching on and taking the frame
 }
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),
     "change_interval_s": (0.5, 60.0),
     "change_threshold": (0.005, 0.5),
+    "light_delay_s": (0.0, 30.0),
 }
 TRIGGER_MAX_ENTITIES = 20
+TRIGGER_STATE_MAX_LENGTH = 255  # Home Assistant's own limit for a state
+# Entity domains offered for the light (anything homeassistant.turn_on / turn_off works on).
+# A new sensor sends its values to Home Assistant. Off: it runs and records everything in
+# VisionState, but its entities stay unavailable in Home Assistant (no values, no statistics) —
+# for tuning a sensor before Home Assistant uses it.
+SENSOR_PUBLISH_DEFAULT = True
+
+LIGHT_DOMAINS = ("light", "switch", "input_boolean")
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
@@ -240,6 +317,21 @@ RUNTIME = {
     "http_timeout_s": 15.0,
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
+    # The entity IDs Home Assistant gave our entities (its entity registry): read again this often,
+    # and this long after discovery was published (so Home Assistant has created the entities).
+    "entity_registry_refresh_s": 300.0,
+    "entity_registry_delay_s": 5.0,
+    # A view with live frames (region editor, labelling, the wizard) holds a sensor's light on with
+    # a lease it renews this often; a lease not renewed in time is let go (closed tab, phone put away).
+    "light_view_renew_s": 10.0,
+    "light_view_lease_s": 30.0,
+    "light_sweep_s": 5.0,  # how often expired leases are looked for
+    # While a check's light warms up, a frame is fetched (and thrown away) this often: a camera
+    # that hands out a picture it took earlier (ESP32) gives a fresh one, and adjusts its exposure.
+    "light_warmup_interval_s": 1.0,
+    # A light VisionState switched off this recently may still be reported "on" by Home Assistant;
+    # the next check switches it on (and waits) anyway instead of taking it for somebody else's.
+    "light_off_settle_s": 10.0,
 }
 
 
@@ -254,7 +346,13 @@ def merge_objects(stored: dict | None) -> dict:
     """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
     merged = {**OBJECT_DEFAULTS, **(stored or {})}
     merged["classes"] = list(merged.get("classes") or [])
+    merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     return merged
+
+
+def active_custom(objects: dict) -> list[dict]:
+    """The sensor's own labels that are in use: those whose class is still selected."""
+    return [label for label in objects["custom"] if label["parent"] in objects["classes"]]
 
 
 def merge_reading(stored: dict | None) -> dict:
@@ -266,6 +364,7 @@ def merge_triggers(stored: dict | None) -> dict:
     """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS."""
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
+    merged["only_states"] = dict(merged.get("only_states") or {})
     return merged
 
 

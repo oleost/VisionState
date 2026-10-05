@@ -4,8 +4,10 @@
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import LightEditor from '../../lib/components/LightEditor.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
+  import PublishSwitch from '../../lib/components/PublishSwitch.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
@@ -18,7 +20,7 @@
   import { isObjectSensor } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
-  import { go, paths } from '../../lib/router.svelte';
+  import { go, href, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
@@ -35,11 +37,15 @@
   let threshold = $state(initial.threshold);
   let debounce = $state(initial.debounce);
   let triggers = $state(initial.triggers);
+  let publish = $state(initial.publish);
   let review = $state(initial.review);
   const objectSensor = isObjectSensor(initial);
   let classes = $state<string[]>(initial.objects?.classes ?? []);
   let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
   let minSize = $state(initial.objects?.min_size ?? 0);
+  let useTaught = $state(initial.objects?.use_taught ?? true);
+  const taughtCount = $derived(sensor.objects?.taught ?? 0);
+  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.length > 0));
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -56,7 +62,7 @@
         source,
         ...(roi ? { roi } : { clear_roi: true }),
         ...(objectSensor
-          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize } }
+          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught } }
           : readingSensor
             ? { reading }
             : { states, review }),
@@ -64,6 +70,7 @@
         threshold,
         debounce,
         triggers,
+        publish,
       });
       toast('Settings saved');
       onchange();
@@ -71,6 +78,16 @@
       toastError(err);
     } finally {
       saving = false;
+    }
+  }
+
+  async function forgetTaught() {
+    try {
+      await api.forgetAll(sensor.id);
+      toast('Everything taught is forgotten');
+      onchange();
+    } catch (err) {
+      toastError(err);
     }
   }
 
@@ -96,6 +113,8 @@
       <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>
       <SourcePicker bind:sourceType bind:source />
+      <LightEditor bind:triggers lightError={sensor.live.light_error} />
+      <PublishSwitch bind:publish />
     </section>
 
     <section class="card pad col">
@@ -119,7 +138,14 @@
             : 'Changing it retrains the model.'}
       </p>
       <div class="frame">
-        <LiveFrame sensorId={sensor.id} bind:roi editable showLive={false} interval={10_000}>
+        <LiveFrame
+          sensorId={sensor.id}
+          bind:roi
+          editable
+          showLive={false}
+          interval={10_000}
+          light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
+        >
           {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
         </LiveFrame>
       </div>
@@ -138,6 +164,31 @@
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <ObjectPicker bind:selected={classes} />
       </section>
+      {#if taughtSomething}
+        <section class="card pad col">
+          <h3>What you taught</h3>
+          <label class="check taught">
+            <input type="checkbox" bind:checked={useTaught} aria-label="Use what you taught" />
+            <span class="col" style="gap:2px">
+              <strong class="small">Use what you taught</strong>
+              <span class="xsmall faint">
+                {#if useTaught}
+                  Boxes are compared with the {taughtCount} {taughtCount === 1 ? 'box' : 'boxes'} you taught
+                  (<a href={href(paths.sensor(sensor.id, 'quality'))}>see them</a>).
+                {:else}
+                  Off: the AI alone decides. What you taught is kept for when you turn it on again; own labels stay off.
+                {/if}
+              </span>
+            </span>
+          </label>
+          <div class="row">
+            <ConfirmButton class="btn sm danger" onconfirm={forgetTaught} confirmLabel="Tap again to forget everything taught">
+              <Icon name="trash" size={14} /> Forget all
+            </ConfirmButton>
+            <span class="xsmall faint">Every taught box and own label, with its entities.</span>
+          </div>
+        </section>
+      {/if}
     {:else}
       <section class="card pad col">
         <h3>States</h3>
@@ -156,7 +207,15 @@
       {#if objectSensor}
         <ObjectParams bind:threshold bind:debounce bind:clearAfter bind:minSize />
       {:else if readingSensor}
-        <ReadingParams bind:threshold bind:debounce bind:maxStep={reading.max_step} mode={reading.mode} unit={reading.unit} />
+        <ReadingParams
+          bind:threshold
+          bind:debounce
+          bind:maxStep={reading.max_step}
+          bind:spotRate={reading.spot_rate}
+          bind:rateWindow={reading.rate_window_min}
+          mode={reading.mode}
+          unit={reading.unit}
+        />
       {:else}
         <SensorParams bind:threshold bind:debounce />
       {/if}
@@ -182,6 +241,12 @@
 </div>
 
 <style>
+  .taught {
+    align-items: flex-start;
+  }
+  .taught input {
+    margin-top: 3px;
+  }
   @media (max-width: 600px) {
     /* Own row on phones, so "Reset to rectangle" coming and going does not move the frame being edited. */
     .region-actions {

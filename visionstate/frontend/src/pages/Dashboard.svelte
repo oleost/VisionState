@@ -14,7 +14,7 @@
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { POLL, SENSOR_STATUS } from '../lib/ui';
+  import { NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
 
   let sensors = $state<Sensor[] | null>(null);
   let importInput: HTMLInputElement;
@@ -48,7 +48,7 @@
 
 
   function meta(s: Sensor) {
-    if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map(objectName).join(', ')}`;
+    if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map((k) => objectName(k)).join(', ')}`;
     if (isReadingSensor(s) && s.reading) {
       const unit = readingUnit(s.reading);
       const what = s.reading.display === 'counter' ? 'mechanical counter' : READING_MODE_INFO[s.reading.mode].title.toLowerCase();
@@ -122,6 +122,7 @@
             </div>
             <div class="col" style="gap:2px">
               <span class="mono xsmall muted">{s.entity_id}</span>
+              {#if !s.publish}<span class="chip warn not-sent" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
               <span class="small muted">{meta(s)}</span>
             </div>
             {#if isObjectSensor(s) || isReadingSensor(s)}
@@ -151,6 +152,10 @@
 </div>
 
 <style>
+  .not-sent {
+    align-self: flex-start;
+    margin: 4px 0;
+  }
   header {
     align-items: flex-end;
   }

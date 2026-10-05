@@ -17,12 +17,19 @@ export interface StateDef {
 }
 
 export interface Triggers {
+  /** The regular interval check; off = only triggers (and once after start-up). */
+  regular: boolean;
   entities: string[];
+  /** entity id → the only new state that triggers; entities not listed trigger on any change. */
+  only_states: Record<string, string>;
   burst_interval_s: number;
   burst_duration_s: number;
   change_detection: boolean;
   change_interval_s: number;
   change_threshold: number;
+  /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
+  light_entity: string;
+  light_delay_s: number;
 }
 
 export interface ReviewRules {
@@ -66,6 +73,34 @@ export interface ReadingSettings {
   /** Mechanical counters only: the number of wheels inside the region. */
   digits: number;
   max_step: number;
+  /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
+  spot_rate: number;
+  /** Counters: the rate entity in Home Assistant is the change over about this many minutes. */
+  rate_window_min: number;
+}
+
+/** One period on a reading sensor's Quality tab (today, 7 days, 30 days). */
+export interface ReadingPeriod {
+  days: number;
+  reads: number;
+  accepted: number;
+  rejected: number;
+  by_reason: Record<string, number>;
+}
+
+export interface ReadingQuality {
+  periods: ReadingPeriod[];
+  /** One entry per day, oldest first, today last. */
+  daily: { day: string; reads: number; accepted: number; rejected: number }[];
+  /** What the user said about stored readings. */
+  verified: {
+    misread_rejected: number;
+    right_rejected: number;
+    misread_accepted: number;
+    right_accepted: number;
+    waiting: number;
+  };
+  items: Prediction[];
 }
 
 /** What the number reader makes of a fresh frame (new sensor wizard). */
@@ -85,6 +120,8 @@ export interface ReadingResult {
   score: number;
   value: string | null;
   reason: string | null;
+  /** A counter read one step below its value: the last wheel turning; the value stays, no rejection. */
+  settling?: boolean;
   at: number;
 }
 
@@ -95,21 +132,42 @@ export interface SensorReading extends ReadingSettings {
   has_image: boolean;
 }
 
-/** One object found in a frame; box = [x1, y1, x2, y2] normalised to the whole frame. */
+/**
+ * One object found in a frame; box = [x1, y1, x2, y2] normalised to the whole frame. After the
+ * sensor was taught (see backend teach.py): `filtered` boxes do not count, `label` is an own label,
+ * `was` the detector's class when it was taught as another one, `rescued` a box the detector was
+ * unsure about, and `match` the taught box it resembles.
+ */
 export interface Detection {
   key: string;
   score: number;
   box: [number, number, number, number];
+  filtered?: boolean;
+  label?: string;
+  was?: string;
+  rescued?: boolean;
+  match?: { id: number; label: string; similarity: number };
+}
+
+/** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
+export interface OwnLabel {
+  key: string;
+  name: string;
+  parent: string;
 }
 
 export interface ObjectSettings {
   classes: string[];
   min_size: number;
   clear_after_s: number;
+  /** Compare boxes with what was taught; off = the detector alone. */
+  use_taught: boolean;
 }
 
 export interface ObjectLive {
   key: string;
+  /** Own labels: the object they are a kind of. */
+  parent: string | null;
   on: boolean;
   count: number;
   score: number;
@@ -117,8 +175,42 @@ export interface ObjectLive {
 }
 
 export interface SensorObjects extends ObjectSettings {
+  custom: OwnLabel[];
   live: ObjectLive[];
   detections: Detection[];
+  /** Boxes taught so far, and the objects whose boxes are compared with them. */
+  taught: number;
+  taught_keys: string[];
+}
+
+/** One taught box; label "none" = not what the detector said, detected null = a box it missed. */
+export interface TaughtBox {
+  id: number;
+  label: string;
+  detected: string | null;
+  score: number | null;
+  origin: string;
+  created_at: string;
+}
+
+export interface Taught {
+  use_taught: boolean;
+  labels: (OwnLabel & { active: boolean })[];
+  examples: TaughtBox[];
+  /** History frames where an object was filtered away, newest first. */
+  filtered: Prediction[];
+}
+
+/** What to teach about one box (POST /sensors/{id}/taught). */
+export interface TeachInput {
+  frame_id?: string | null;
+  history_id?: number | null;
+  box: [number, number, number, number];
+  detected: string | null;
+  score?: number | null;
+  label?: string;
+  new_label?: string;
+  parent?: string;
 }
 
 export interface ObjectLabel {
@@ -138,6 +230,8 @@ export interface Live {
   in_burst: boolean;
   change_score: number | null;
   last_trigger: TriggerInfo | null;
+  /** Why the sensor's light could not be switched ('' = fine). */
+  light_error: string;
   /** The frame the last check analysed (GET .../frame?frame_id=), while it is still cached. */
   frame_id: string | null;
 }
@@ -169,6 +263,8 @@ export interface Sensor {
   threshold: number;
   debounce: number;
   enabled: boolean;
+  /** Values go to Home Assistant; off: its entities stay unavailable (a sensor being tuned). */
+  publish: boolean;
   triggers: Triggers;
   review: ReviewOverrides;
   review_effective: ReviewRules;
@@ -198,6 +294,7 @@ export interface SensorInput {
   threshold?: number;
   debounce?: number;
   enabled?: boolean;
+  publish?: boolean;
   triggers?: Triggers;
   review?: Partial<ReviewOverrides>;
 }
@@ -213,7 +310,15 @@ export interface AppConfig {
   video: { frame_interval_s: number; dedupe_distance: number; max_frames: number };
   quality: { min_samples_per_state: number; min_night_samples: number; cv_folds: number };
   trigger_defaults: Triggers;
-  trigger_limits: Record<'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold', [number, number]>;
+  trigger_limits: Record<
+    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold' | 'light_delay_s',
+    [number, number]
+  >;
+  light_domains: string[];
+  /** Whether a new sensor sends its values to Home Assistant. */
+  publish_default: boolean;
+  /** A view with live frames renews its hold on a sensor's light this often; a lease runs out after lease_s. */
+  light_view: { renew_s: number; lease_s: number };
   trigger_max_entities: number;
   review_defaults: ReviewRules;
   roi_max_points: number;
@@ -225,14 +330,18 @@ export interface AppConfig {
   object_max_classes: number;
   object_labels: ObjectLabel[];
   object_popular: string[];
+  /** Teaching object sensors: the label of a box that is not what the detector said. */
+  teach: { none_label: string; max_labels: number };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'digits' | 'max_step', [number, number]>;
+  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
+  /** At most this many checked readings go into "Export checked readings". */
+  reading_export_limit: number;
   storage_defaults: { history_max_gb: number };
   storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
 }
@@ -288,15 +397,26 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | null;
   reviewed: boolean;
   has_frame: boolean;
-  /** Object sensors: state_key = the class, published_key = 'on' | 'off'. */
+  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered'. */
   detections: Detection[] | null;
+  /** Reading sensors: did the reader read the right number (null = not verified)? */
+  read_ok: boolean | null;
+  /** Reading sensors: the right value, when the user gave it for a misread. */
+  correct_value: string | null;
 }
 
 export interface ReviewItem extends Prediction {
-  sensor: { id: number; name: string; roi: Roi | null; states: StateDef[] };
+  sensor: {
+    id: number;
+    name: string;
+    kind: SensorKind;
+    roi: Roi | null;
+    states: StateDef[];
+    reading: ReadingSettings | null;
+  };
 }
 
 export interface Tip {
@@ -357,4 +477,11 @@ export interface SettingsInfo {
   reader: string;
   readers: DetectorInfo[];
   options: Record<string, string | number>;
+}
+
+/** POST /lights/hold: is the light on, and how long until frames are taken in it (null: not on). */
+export interface LightHold {
+  on: boolean;
+  wait_s: number | null;
+  error: string;
 }

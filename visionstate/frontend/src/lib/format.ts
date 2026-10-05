@@ -31,4 +31,15 @@ export function size(bytes: number): string {
 export const slugify = (text: string, fallback = 'item') =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48) || fallback;
 
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+/** Mirrors the backend's ha_slug (mqtt.py): how Home Assistant turns a name into an entity ID. */
+const TRANSLITERATE: Record<string, string> = { ø: 'o', æ: 'ae', å: 'a', ß: 'ss', đ: 'd', ł: 'l', œ: 'oe', þ: 'th' };
+export const haSlug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[øæåßđłœþ]/g, (c) => TRANSLITERATE[c])
+    .normalize('NFKD')
+    .replace(/[^\x00-\x7f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'unknown';
+
+export const plural =(n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

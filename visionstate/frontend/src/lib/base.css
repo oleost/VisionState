@@ -6,6 +6,12 @@
   box-sizing: border-box;
 }
 
+html {
+  /* The app is always dark: browsers draw their own parts of controls (select menus, number
+     spinners, scrollbars) dark too. Without it Safari shows a light select with light text. */
+  color-scheme: dark;
+}
+
 html,
 body {
   margin: 0;

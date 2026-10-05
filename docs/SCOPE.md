@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.2, 2026-10-02) and the open
+> Describes VisionState **as built** (stable 0.6.3, 2026-10-05) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -111,6 +111,32 @@ with the 80 COCO labels, their keys, groups and the popular ones):
 4. Per class: on after *N* checks in a row (`debounce`, default 1); off after `clear_after_s`
    (default 30 s) without it.
 
+**Teaching object sensors** (`teach.py`, `api/teach.py`, tunables `settings.TEACH`). The detector
+is never retrained (that needs a GPU and many labels, and a few examples make it forget what it
+knew). Instead a second step compares boxes with boxes the user taught:
+
+- A taught box is a `sample` row (the crop of the box plus `crop_margin`) with `object_label`
+  (`none` = not what the detector said, a class, or an own label), `detected` (the detector's
+  class; `None` = a box it missed, drawn by the user), `box` and `score`. Own labels live in
+  `sensor.objects["custom"]` as `{key, name, parent}`; each active one (its parent class still
+  selected) gets the two entities a class gets, and counts for its parent too.
+- Each check: the counted boxes of every class that has taught boxes (at most `max_checked`, most
+  certain first) are embedded with the DINOv2 backbone (always loaded) and compared with the taught
+  boxes (cosine similarity, best per label). A box takes the closest label only when it is at
+  least `match_similarity` (0.88) and beats the next label by `margin`; otherwise the detector's
+  answer stands. Measured on CC0 photos: the same object in other light or framing scores
+  0.87–0.97, other objects of the same kind mostly below 0.7.
+- Results: `filtered` (not counted, still shown dashed; a history row "filtered" when a class
+  starts being filtered, at most every `filtered_record_cooldown_s`), another class (`was` keeps
+  the detector's), or an own `label`.
+- Once a missed box was taught, the detector also returns boxes down to `rescue_floor`; up to
+  `max_rescue` of those that overlap no counted box are compared and counted (`rescued`) when at
+  least `rescue_similarity` (0.9) to a taught box. Drawing a box tells whether the detector sees
+  anything there at all (`seen`).
+- Nothing changes for a sensor until something is taught; **Use what you taught** off skips it.
+  The analysed frames of the last checks are kept (`frames_kept`) so a box can be taught a while
+  after it was shown. Export/import carries taught boxes and own labels.
+
 - Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
@@ -135,7 +161,12 @@ with the 80 COCO labels, their keys, groups and the popular ones):
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
    going down, a mechanical counter read with another number of digits than it has wheels, or a
-   change above `max_step`; otherwise publish after `debounce` equal reads.
+   change above `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
+   value stays, but it is no rejection (no history row, no review item, counted as accepted) —
+   seen in a user's export, where one too-high value made every right reading after it a "went
+   down" rejection. A right value typed in the review (`readers.right_value`) is taken as written
+   with a point or comma, and digits only are placed with the configured decimals.
    The last published value is restored from the history after a restart.
 
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
@@ -173,20 +204,50 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
 ## 7. When and how a sensor decides
 
 - **Triggers** (per sensor, `sensor.triggers`, defaults in `settings.TRIGGER_DEFAULTS`):
-  - Regular interval (default 10 s) — the safety net.
+  - Regular interval (default 10 s) — the safety net, counted from the last check whatever
+    caused it. `regular: false` switches it off: the sensor then checks only when triggered and
+    once after start-up.
   - State changes of chosen HA entities (WebSocket `subscribe_trigger`, attribute-only changes
-    and `unavailable`/`unknown` ignored).
+    and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state
+    (compared without regard to case).
   - Optional region change detection: a small greyscale copy of the ROI is compared every
     *N* seconds; the AI only runs when the difference exceeds a threshold.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
   - The MQTT `classify` button checks once.
+- **Light** (`triggers.light_entity`, `light_delay_s`; picked with the camera in the UI): a light,
+  switch or input_boolean, switched over the HA REST API (`homeassistant.turn_on/off`). `lights.py`
+  shares each light between its *holders*: a full check holds it from before its frame until the
+  end of the burst (so it does not flash for every check), and a view with live frames (wizard
+  region/test, the region editor, the Label tab) holds it with a lease (`POST /lights/hold`,
+  renewed every `RUNTIME["light_view_renew_s"]`, let go after `light_view_lease_s` without renewal,
+  swept every `light_sweep_s`). It is switched on by the first holder and off by the last — only if
+  VisionState switched it on; a light that is already on is not touched. Frames are taken once it
+  had `light_delay_s` to get bright; until then (and without a holder) the UI shows the last
+  analysed frame instead of grabbing dark ones. The view shows the state and a per-viewer switch
+  (browser storage). Change-detection probes do not switch it: they compare frames without the
+  light, are skipped while it is held (a lit frame would always look like a change), and a change
+  is checked on a new frame taken in the light (a lit check never sets the probe baseline). A
+  failure is logged and shown in the settings; the check runs anyway.
+  While a check waits for the light (`_grab_in_light`), frames are fetched and thrown away every
+  `light_warmup_interval_s`, and the frame after the wait is checked. Found with an ESP32 camera
+  (issue #32): ESPHome keeps one picture ready, taken right after the previous one was fetched (up
+  to 1/`idle_framerate` = 10 s earlier), and the sensor only adjusts its exposure between
+  pictures — so the first picture after the light came on was dark. RTSP is live and only waits.
+  A light VisionState switched off less than `light_off_settle_s` ago counts as its own even when
+  Home Assistant still reports it `on`, so a quick next check switches it on and waits.
 - **Unknown state:** top probability below the threshold (default 70 %) → `unknown`.
 - **Debounce:** the state changes only after *N* consecutive agreeing results (default 2).
 - Camera unavailable → entities become `unavailable` (not a false state).
 - **Review queue** (global rules in the DB, per-sensor overrides in `sensor.review`, defaults in
   `settings.REVIEW_DEFAULTS`): frames below 85 % (never below the sensor threshold), frames
   where the state flip-flops (3 changes in 10 min) and optional random spot checks (default 0 %);
-  at most one per sensor per 5 minutes.
+  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown).
+  **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
+  waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
+  up; given answers and the reading counts stay.
+  An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
+  two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
+  relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
@@ -194,31 +255,57 @@ One HA **device** per sensor:
 
 | Entity | Type | Purpose |
 |---|---|---|
-| `sensor.visionstate_<slug>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
+| `sensor.<name>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
 | `…_confidence` | `sensor` (%) | Top probability |
-| `image.…_frame` | `image` | The ROI that was classified |
-| `button.…_classify` | `button` | Check now (automations) |
+| `image.…_last_frame` | `image` | The ROI that was classified |
+| `button.…_classify_now` | `button` | Check now (automations) |
 | `switch.…_enabled` | `switch` | Pause / resume |
 
 **Object sensors** replace the first two with two entities per selected class:
-`binary_sensor.visionstate_<slug>_<class>` (`device_class: occupancy`, attributes: confidence,
+`binary_sensor.<name>_<class>` (`device_class: occupancy`, attributes: confidence,
 boxes, last seen, last trigger) and `sensor.…_<class>_count`. The image shows the region with the
 boxes; the button is named "Detect now". Deselecting a class removes its entities. Each class
 has its own Material Design icon (`icon` in `detectors.json`, checked against `@mdi/svg` 7.4.47,
 the version Home Assistant ships) instead of the occupancy class's house icon.
 
-**Reading sensors** publish the value on `sensor.visionstate_<slug>` with `unit_of_measurement`,
+**Reading sensors** publish the value on `sensor.<name>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
 `measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
 Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
+Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
+them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+`settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
+memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
+about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
+readings far apart give the average since the previous one; unit and device class from the
+counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/h and L → L/min volume
+flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate entity. A fifth,
+*Reader image* (`image`, `reader_image`, diagnostic, also off by default), is the image the reader
+saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
 for review, per-sensor breakdown as attribute).
 
 Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
-`last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Entity ids are
-set with `default_entity_id` (requires Home Assistant 2025.10 or newer). Removing a sensor
-removes its entities.
+`last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
+removes its entities. **Send to Home Assistant** (`sensor.publish`, default
+`settings.SENSOR_PUBLISH_DEFAULT`, DB migration 9 keeps existing sensors on): when off, discovery
+stays (the entities and the IDs the user gave them are kept), but no value is published (the
+engine routes every sensor value through `_send`) and the sensor's availability topic is
+`offline`, so its entities are unavailable and record no statistics. The `enabled` switch's state
+is still published. Turning it on publishes `online` and the last value at once. Kept by
+export/import.
+
+**Entity IDs** follow Home Assistant's convention: VisionState sends no `default_entity_id`, so
+Home Assistant names each entity after the device (the sensor's name) and the entity name
+(`has_entity_name`), e.g. `sensor.garage_door`, `image.garage_door_last_frame`. The `unique_id`s
+(`visionstate_<slug>_<entity>`) never change. Sensors made before 0.6.3b6 have
+`sensor.entity_prefix` set (DB migration 8) and keep sending the `default_entity_id`s they always
+had (`sensor.visionstate_<slug>`, … — exactly the same discovery payload as before), also through
+export/import (bundles without the field count as older). The UI shows the IDs from Home
+Assistant's entity registry (`config/entity_registry/list` over the WebSocket API, read every
+5 minutes and shortly after discovery), so IDs the user changed or that got `_2` are right;
+outside Home Assistant it shows the expected IDs.
 
 ## 9. User interface (Ingress)
 
@@ -240,23 +327,39 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
     global review rules, storage (disk use and history limits), import.
 
-Reading sensors have the same three tabs: **Live** (value, last read, the analysed frame and the
-image the reader saw), **History** (new values and rejected readings) and **Settings** (mode,
+Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
+image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
+the rejected and checked readings with *read correctly* / *misread*), **History** (new values
+and rejected readings) and **Settings** (mode,
 decimals, unit, device class, display, limits). The reading settings start with the type —
 *digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
 the region in the wizard and on the Settings tab).
 
 Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
-per-class status), **History** (appeared / cleared, expandable to the frame with boxes) and
-**Settings** (objects, region, triggers, output).
+per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
+boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
+was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
+**Quality** tab (taught boxes per answer, own labels, frames filtered away lately) appears once
+something was taught, so a sensor that was never taught looks exactly as before. The boxes on Live
+change together with the frame they belong to, so the page does not move while the next frame
+loads.
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`, currently v6).
+- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`,
+  currently v10). An older version started on a newer database ignores the columns it does not
+  know (rollback works; checked by the upgrade test).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
-  `clear_after_s`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
-  display, `digits`, `max_step`); reserved for `multi_label`. Object events are `prediction` rows (class,
-  `on`/`off`, `detections`); readings are `prediction` rows with `state_key` "reading" and the
+  `clear_after_s`, `use_taught` and the own labels `custom`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
+  display, `digits`, `max_step`, `spot_rate`); reserved for `multi_label`. Every reading is
+  counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
+  every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
+  (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
+  readings are excluded from the history clean-up — they are the data a later reader
+  improvement would learn from (schema v7). Object events are `prediction` rows (class or own
+  label, `on`/`off`, or `filtered` when a class starts being filtered away, with `detections`);
+  boxes taught to an object sensor are `sample` rows with `object_label`, `detected`, `box`,
+  `score` (schema v10; their embeddings are cached under `roi_key` "taught"); readings are `prediction` rows with `state_key` "reading" and the
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
 - Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
@@ -271,7 +374,7 @@ per-class status), **History** (appeared / cleared, expandable to the frame with
 |---|---|---|
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
-| Training images | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
+| Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
 | History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
@@ -286,8 +389,16 @@ automatically.
 ## 12. Import / export
 
 - **Sensor bundle** (`.zip`): `manifest.json` (schema, app version), sensor settings, states,
-  ROI, triggers, review overrides, all samples with labels.
+  ROI, triggers, review overrides, all samples with labels (object sensors: taught boxes with
+  their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
+- **Checked readings** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor), to
+  share so reading can be improved: the readings verified by hand (at most
+  `READING["export_limit"]`, newest first), each only the region plus `export_margin`, with
+  `readings.json` (read text, value, rejection reason, confidence, answer, right value, day only),
+  the reading settings without anything that tells where the sensor is (no source, name or
+  region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.
+  The reader itself does not learn from the answers.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,
   exporting trained heads (retraining is faster than shipping them).
@@ -339,6 +450,8 @@ sensor settings) lives in the UI.
 | **Object sensors** ✅ | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.6.0 (beta 0.5.0b1) |
 | **Reading sensors** ✅ | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0 (betas 0.6.0b2–b4) |
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
+| **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
+| **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
@@ -347,8 +460,9 @@ Assistant; mechanical counters: adjustable cell borders for counters seen at an 
 the wheel rule (a wheel only turns while the one to its right goes 9 → 0) to settle digits read
 mid-turn, pointer dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); issue templates; per-sensor model
-choice with unloading of idle models; a "not a person" button that trains a DINOv2 filter on
-rejected detections; zones and line crossing for object sensors.
+choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
+it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
+detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
 
 ## 17. Identity
 

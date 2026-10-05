@@ -20,6 +20,9 @@
     film: 'M2.5 3h11v10h-11zM5 3v10M11 3v10M2.5 6h2.5M2.5 10h2.5M11 6h2.5M11 10h2.5',
     frame: 'M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3',
     eye: 'M1.5 8c1.8-3.3 4-5 6.5-5s4.7 1.7 6.5 5c-1.8 3.3-4 5-6.5 5S3.3 11.3 1.5 8zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4',
+    bulb: 'M6 12.5h4M6.5 14.5h3M8 1.5a4.5 4.5 0 0 0-2.7 8.1c.4.3.7.8.7 1.4v1.5h4V11c0-.6.3-1.1.7-1.4A4.5 4.5 0 0 0 8 1.5',
+    draw: 'M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3M8 5.5v5M5.5 8h5',
+    tag: 'M2 2.5v5l6.5 6.5 5-5L7 2.5zM5 5h.01',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

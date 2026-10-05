@@ -1,5 +1,6 @@
 <script lang="ts">
-  // "When to check": interval, trigger entities with follow-up burst, and optional change detection.
+  // "When to check": interval (can be off), trigger entities (optionally only one state of each)
+  // with follow-up burst, and optional change detection. The light is with the camera (LightEditor).
   // Defaults and limits come from the backend (GET /config → trigger_defaults / trigger_limits).
   import { app } from '../app.svelte';
   import { pct } from '../format';
@@ -21,24 +22,46 @@
 {#if limits && intervalLimits}
   <div class="col triggers">
     <div class="block">
-      <label class="line">
-        <span class="col" style="gap:2px">
-          <strong>Regular check</strong>
-          <span class="xsmall faint">The safety net. Can be long when triggers are set up.</span>
-        </span>
-        <span class="row"
-          ><span class="small muted">every</span>
-          <input class="input sm num" type="number" min={intervalLimits[0]} max={intervalLimits[1]} step="1" bind:value={interval_s} /> s</span
-        >
-      </label>
+      <div class="line">
+        <label class="check">
+          <input type="checkbox" bind:checked={triggers.regular} aria-label="Regular check" />
+          <span class="col" style="gap:2px">
+            <strong>Regular check</strong>
+            <span class="xsmall faint">
+              {#if triggers.regular}
+                The safety net, counted from the last check — so it rarely runs when triggers are frequent.
+              {:else}
+                Off: only checks when triggered, once after start-up and with the <em>check now</em> button in Home Assistant.
+              {/if}
+            </span>
+          </span>
+        </label>
+        {#if triggers.regular}
+          <span class="row"
+            ><span class="small muted">every</span>
+            <input
+              class="input sm num"
+              type="number"
+              min={intervalLimits[0]}
+              max={intervalLimits[1]}
+              step="1"
+              bind:value={interval_s}
+              aria-label="Seconds between regular checks"
+            /> s</span
+          >
+        {/if}
+      </div>
     </div>
 
     <div class="block col">
       <span class="col" style="gap:2px">
         <strong>Check when these change</strong>
-        <span class="xsmall faint">Motion sensors, door contacts, the garage opener… Any state change starts a check.</span>
+        <span class="xsmall faint">
+          Motion sensors, door contacts, the garage opener… Any state change starts a check — or only one state,
+          for example <span class="mono">on</span>.
+        </span>
       </span>
-      <EntityPicker bind:value={triggers.entities} max={maxEntities} />
+      <EntityPicker bind:value={triggers.entities} bind:states={triggers.only_states} max={maxEntities} />
     </div>
 
     <div class="block col">
@@ -143,6 +166,8 @@
     padding-left: 26px;
   }
   .check {
+    display: flex;
+    gap: var(--space-2);
     align-items: flex-start;
   }
   .check input {

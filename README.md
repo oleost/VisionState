@@ -41,22 +41,28 @@ without writing code or leaving Home Assistant:
 - 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
   The model retrains in about a second after every click.
 - 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
-  count and an on/off sensor for each. Pick them, done.
+  count and an on/off sensor for each. Pick them, done. Wrong about your garden statue? Tap the
+  box: *not a person*. Want *our car* apart from any car? Give it its own label.
 - 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters, prices, the
   minutes left on the washing machine. Counters
-  only go up and land straight in the Energy dashboard; implausible readings are rejected.
+  only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
+  Quality tab shows how reliably your meter is read.
 - 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
   the AI ignores everything else.
 - 📦 **Bulk upload** — drop images, ZIP archives or a **video**; frames are extracted, duplicates
   skipped, and the current model suggests a label for each one.
-- ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes,
-  or when the image itself changes. No more polling every few seconds.
+- ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes
+  (or only when it becomes one state), or when the image itself changes. No more polling every
+  few seconds.
+- 💡 **Cameras in the dark** — a light or switch is turned on for each check, and while you frame
+  the image, then off again — for a meter in a cabinet.
 - 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
   doesn't drag the sensor down.
 - 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
   one click turns them into training data.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
-- 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery.
+- 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery,
+  named like any other integration's. Keep a sensor out of Home Assistant while you tune it.
 - 🎥 **Any camera** — every `camera.*` entity in Home Assistant (ESP32-CAM, IP cameras, NVRs…),
   or a direct RTSP / HTTP snapshot URL.
 
@@ -97,8 +103,8 @@ ready for dashboards, automations and the history graph.
 
 ## Install
 
-**Requirements:** Home Assistant OS or Supervised, the **Mosquitto broker** app and the
-**MQTT** integration, and at least one camera.
+**Requirements:** Home Assistant OS or Supervised (2025.10 or newer), the **Mosquitto broker**
+app and the **MQTT** integration, and at least one camera.
 
 1. Click **Add repository** above — or go to **Settings → Apps** (called *Add-ons* in older
    versions) **→ App store → ⋮ → Repositories** and add `https://github.com/oleost/VisionState`.
@@ -124,15 +130,15 @@ help test them, add `https://github.com/oleost/VisionState#beta` as a repository
    **20 per state**, including some at night.
 5. Under **Settings → When to check**, add your motion sensor or garage opener as a trigger.
 
-That's it — `sensor.visionstate_garage_door` is now in Home Assistant:
+That's it — `sensor.garage_door` is now in Home Assistant:
 
 | Entity | What it is |
 |---|---|
-| `sensor.visionstate_<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
-| `sensor.visionstate_<name>_confidence` | How sure the AI is, in % |
-| `image.visionstate_<name>_frame` | The region that was classified |
-| `button.visionstate_<name>_classify` | Check right now (handy in automations) |
-| `switch.visionstate_<name>_enabled` | Pause / resume |
+| `sensor.<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
+| `sensor.<name>_confidence` | How sure the AI is, in % |
+| `image.<name>_last_frame` | The region that was classified |
+| `button.<name>_classify_now` | Check right now (handy in automations) |
+| `switch.<name>_enabled` | Pause / resume |
 | `sensor.visionstate_review_queue` | Frames waiting for review (all sensors) |
 
 ```yaml
@@ -140,7 +146,7 @@ That's it — `sensor.visionstate_garage_door` is now in Home Assistant:
 alias: Garage door left open
 triggers:
   - trigger: state
-    entity_id: sensor.visionstate_garage_door
+    entity_id: sensor.garage_door
     to: open
     for: "00:10:00"
 actions:
@@ -167,7 +173,8 @@ about a second. Results are debounced so someone walking past doesn't flip the s
 
 Object sensors use a pretrained detector instead ([D-FINE](https://github.com/Peterande/D-FINE),
 Apache-2.0, trained on the COCO objects). It finds every object in the region; each object you
-picked is reported with a count and cleared a while after it was last seen.
+picked is reported with a count and cleared a while after it was last seen. Boxes you corrected
+teach it your camera: later boxes that clearly look like one you taught get your answer.
 
 Reading sensors read the digits in the region with a small text recognizer
 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,

@@ -9,14 +9,16 @@
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import { NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
   import HistoryTab from './sensor/HistoryTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
   import ObjectHistoryTab from './sensor/ObjectHistoryTab.svelte';
+  import ObjectQualityTab from './sensor/ObjectQualityTab.svelte';
   import ReadingHistoryTab from './sensor/ReadingHistoryTab.svelte';
   import ReadingLiveTab from './sensor/ReadingLiveTab.svelte';
+  import ReadingQualityTab from './sensor/ReadingQualityTab.svelte';
   import QualityTab from './sensor/QualityTab.svelte';
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
@@ -56,8 +58,16 @@
   }
 
   const current = $derived(sensor ? stateInfo(sensor, sensor.live.published) : null);
-  // Tabs depend on the kind; an unknown or missing tab opens the kind's first tab.
-  const tabs = $derived(sensor ? SENSOR_TABS.filter((t) => TABS_BY_KIND[sensor!.kind].includes(t.id)) : []);
+  // Tabs depend on the kind; an unknown or missing tab opens the kind's first tab. An object
+  // sensor's Quality tab only appears once it was taught something.
+  const taughtSomething = (s: Sensor) => !!s.objects && (s.objects.taught > 0 || s.objects.custom.length > 0);
+  const tabs = $derived(
+    sensor
+      ? SENSOR_TABS.filter(
+          (t) => TABS_BY_KIND[sensor!.kind].includes(t.id) && !(t.id === 'quality' && isObjectSensor(sensor!) && !taughtSomething(sensor!)),
+        )
+      : [],
+  );
   const tab = $derived(tabs.some((t) => t.id === requested) ? (requested as SensorTab) : tabs[0]?.id);
 </script>
 
@@ -82,6 +92,7 @@
                 class="chip {SENSOR_STATUS[sensor.status].tone}">{SENSOR_STATUS[sensor.status].label}</span
               >{/if}
             <span class="mono xsmall muted">{isObjectSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span>
+            {#if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
           </div>
         </div>
         <span class="spacer"></span>
@@ -115,12 +126,16 @@
       <UploadTab {sensor} onchange={load} />
     {:else if tab === 'dataset'}
       <DatasetTab {sensor} onchange={load} />
+    {:else if tab === 'quality' && isReadingSensor(sensor)}
+      <ReadingQualityTab {sensor} />
+    {:else if tab === 'quality' && isObjectSensor(sensor)}
+      <ObjectQualityTab {sensor} onchange={load} />
     {:else if tab === 'quality'}
       <QualityTab {sensor} />
     {:else if tab === 'history' && isReadingSensor(sensor)}
       <ReadingHistoryTab {sensor} />
     {:else if tab === 'history' && isObjectSensor(sensor)}
-      <ObjectHistoryTab {sensor} />
+      <ObjectHistoryTab {sensor} onchange={load} />
     {:else if tab === 'history'}
       <HistoryTab {sensor} />
     {:else if tab === 'settings'}

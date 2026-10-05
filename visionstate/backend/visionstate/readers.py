@@ -257,6 +257,24 @@ def parse(text: str, settings: dict) -> float | None:
     return int(digits) / 10 ** int(settings["decimals"])
 
 
+def right_value(text: str, settings: dict) -> float | None:
+    """The value someone typed as the right one, or None when it is not a number.
+
+    With a decimal point or comma it is taken as written ("629.558", "629,558"); digits only are
+    taken the way the meter shows them, with the sensor's decimals placed like the reader does
+    ("0629558" → 629.558). Time left: minutes or "h:mm".
+    """
+    text = text.strip()
+    if settings["mode"] == "time_left":
+        return parse(text, settings) if re.fullmatch(r"\d+(:\d{1,2})?", text) else None
+    if re.fullmatch(r"\d+", text):
+        return parse(text, settings)
+    try:
+        return float(text.replace(",", "."))
+    except ValueError:
+        return None
+
+
 def digit_count(text: str) -> int:
     return len(re.sub(r"\D", "", text))
 
@@ -276,6 +294,53 @@ def implausible(value: float, last: float | None, settings: dict) -> str | None:
     if step and abs(value - last) > step:
         return "changed too much"
     return None
+
+
+def settling(value: float | None, last: float | None, settings: dict) -> bool:
+    """Whether a counter read exactly one step of its last digit below its value: the last wheel turning.
+
+    A wheel between two digits is read as the one or the other; once the higher one was published,
+    every right reading until the counter gets there is one step lower. Such a reading keeps the
+    value without counting as rejected, so it neither floods the review queue nor the statistics.
+    """
+    if settings["mode"] != "counter" or value is None or last is None:
+        return False
+    step = 10 ** -int(settings["decimals"])
+    return abs((last - value) - step) < step / 1000
+
+
+def problem_key(reason: str | None) -> str:
+    """The "problem" entity's state: "ok", or why the reading was rejected as a key ("went_down")."""
+    return "ok" if reason is None else reason.replace(" ", "_")
+
+
+def accepted_share(reads, now: float, window_s: float) -> float | None:
+    """Share of accepted readings (in %) among ``reads`` ((time, accepted) pairs) of the last window.
+
+    Drops the older pairs from ``reads`` (a deque).
+    """
+    while reads and reads[0][0] < now - window_s:
+        reads.popleft()
+    if not reads:
+        return None
+    return round(100 * sum(1 for _, ok in reads if ok) / len(reads), 1)
+
+
+def counter_rate(samples, now: float, window_s: float, min_span_s: float) -> float | None:
+    """How fast a counter goes up, per hour, over about the last window.
+
+    ``samples`` (a deque of (time, accepted value)) is trimmed to the samples inside the window
+    plus the last one before it, which anchors the start: with readings far apart (a sensor that
+    only checks when triggered) that gives the average since the previous reading.
+    """
+    while len(samples) > 1 and samples[1][0] <= now - window_s:
+        samples.popleft()
+    if len(samples) < 2:
+        return None
+    (t0, v0), (t1, v1) = samples[0], samples[-1]
+    if t1 - t0 < min_span_s:
+        return None
+    return max(0.0, (v1 - v0) * 3600 / (t1 - t0))
 
 
 def format_value(value: float | None, settings: dict) -> str | None:

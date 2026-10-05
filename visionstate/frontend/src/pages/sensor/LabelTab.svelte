@@ -74,7 +74,14 @@
 <div class="layout">
   <div class="col main">
     <section class="card frame">
-      <LiveFrame sensorId={sensor.id} roi={sensor.roi} {frozen} bind:frameId />
+      <!-- Labelled frames become training images: take them in the light, as the checks do. -->
+      <LiveFrame
+        sensorId={sensor.id}
+        roi={sensor.roi}
+        {frozen}
+        bind:frameId
+        light={sensor.triggers.light_entity ? { entity: sensor.triggers.light_entity, delay: sensor.triggers.light_delay_s } : null}
+      />
       <div class="row bar">
         <span class="small">
           {#if !sensor.trained}

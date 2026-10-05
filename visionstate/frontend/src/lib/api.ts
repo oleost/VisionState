@@ -4,9 +4,11 @@ import type {
   Camera,
   Detection,
   HaEntity,
+  LightHold,
   Prediction,
   Quality,
   ReadPreview,
+  ReadingQuality,
   ReadingSettings,
   ReviewRules,
   Roi,
@@ -17,6 +19,8 @@ import type {
   SettingsInfo,
   Status,
   StorageInfo,
+  Taught,
+  TeachInput,
 } from './types';
 
 // Relative on purpose: the app lives below a dynamic Home Assistant Ingress path.
@@ -90,6 +94,9 @@ export const api = {
     request<StorageInfo>('storage', send('PUT', body)),
   cameras: () => request<Camera[]>('cameras'),
   entities: () => request<HaEntity[]>('entities'),
+  /** Hold a sensor's light on while a view with live frames is open (renew it), or let go (`on: false`). */
+  holdLight: (entityId: string, holder: string, delayS: number, on = true) =>
+    request<LightHold>('lights/hold', send('POST', { entity_id: entityId, holder, delay_s: delayS, on })),
   previewUrl: (sourceType: string, source: string) =>
     `${BASE}preview?${qs({ source_type: sourceType, source, t: Date.now() })}`,
   /** A fresh frame (as a data URL) plus every object found in the region. */
@@ -170,9 +177,27 @@ export const api = {
 
   reviewRules: () => request<ReviewRules>('review-rules'),
   saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
-  review: () => request<{ total: number; items: ReviewItem[] }>('review'),
+  review: () =>
+    request<{ total: number; items: ReviewItem[]; sensors: { id: number; name: string; count: number }[] }>('review'),
+  /** Take every waiting item of one sensor out of the queue (as if each was skipped). */
+  dismissReview: (sensorId: number) => request<{ dismissed: number }>(`review/sensors/${sensorId}/dismiss`, send('POST')),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>
     request(`review/${predictionId}`, send('POST', { action, state_key: stateKey })),
+  /** A reading: did the reader read the right number? `value` = the right one, when it misread. */
+  verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
+    request(`review/${predictionId}`, send('POST', { action, value: value || null })),
+  readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
+  /** ZIP of the readings checked by hand (only the region of each), to share. */
+  readingExportUrl: (id: number) => `${BASE}sensors/${id}/reading-export`,
+
+  /** Object sensors: what was taught, and teaching one box (or forgetting it). */
+  taught: (id: number) => request<Taught>(`sensors/${id}/taught`),
+  teachBox: (id: number, body: TeachInput) =>
+    request<{ id: number; label: string; seen: boolean | null }>(`sensors/${id}/taught`, send('POST', body)),
+  forgetBox: (id: number, boxId: number) => request<void>(`sensors/${id}/taught/${boxId}`, send('DELETE')),
+  /** Every taught box and every own label of the sensor. */
+  forgetAll: (id: number) => request<void>(`sensors/${id}/taught`, send('DELETE')),
+  removeLabel: (id: number, key: string) => request<void>(`sensors/${id}/labels/${encodeURIComponent(key)}`, send('DELETE')),
 
   importBundle(file: File) {
     const form = new FormData();

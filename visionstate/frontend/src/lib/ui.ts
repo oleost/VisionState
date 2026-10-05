@@ -11,6 +11,12 @@ export const POLL = {
 };
 
 export const TOAST_MS = 5_000;
+
+/** Shown on a sensor whose values are not sent to Home Assistant (see PublishSwitch). */
+export const NOT_SENT = { label: 'Not sent to Home Assistant', help: 'Its entities in Home Assistant are unavailable until you turn on “Send to Home Assistant” in its settings.' };
+
+/** Browser storage key of the light switch in views with live frames (a per-viewer convenience). */
+export const LIGHT_HOLD_STORAGE_KEY = 'visionstate.lightWhileViewing';
 /** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */
 export const TOAST_MAX = 2;
 
@@ -36,6 +42,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   low_confidence: { label: 'Low confidence', tone: 'warn', help: 'The AI was unsure about this frame.' },
   flip: { label: 'Flip-flopping', tone: 'info', help: 'The state changed several times in a short period.' },
   spot_check: { label: 'Spot check', tone: 'muted', help: 'A random confident frame, to catch silent mistakes.' },
+  rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
 };
 
 /**
@@ -69,11 +76,14 @@ export const SENSOR_TABS = [
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 
-/** Tabs per sensor kind, in order; the first one is where the sensor opens. */
+/**
+ * Tabs per sensor kind, in order; the first one is where the sensor opens. An object sensor shows
+ * its Quality tab (what it was taught) only once something was taught (SensorPage).
+ */
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
   single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
-  objects: ['live', 'history', 'settings'],
-  reading: ['live', 'history', 'settings'],
+  objects: ['live', 'history', 'quality', 'settings'],
+  reading: ['live', 'history', 'quality', 'settings'],
 };
 
 /** The two kinds as offered in the new sensor wizard. */
