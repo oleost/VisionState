@@ -288,7 +288,7 @@ async def reading_image(sensor_id: int, request: Request) -> Response:
 
 @router.post("/{sensor_id}/classify")
 async def classify_now(sensor_id: int, request: Request) -> dict:
-    runtime(request).wake(sensor_id, force=True)
+    runtime(request).wake(sensor_id, force=True, paused_too=True)
     return {"ok": True}
 
 

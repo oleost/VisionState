@@ -291,6 +291,7 @@ class LiveState:
     last_flag: float = 0.0
     changes: deque = field(default_factory=lambda: deque(maxlen=50))
     force: bool = False
+    force_paused: bool = False  # the forced check was asked for by the user: also when paused
     burst_until: float = 0.0
     last_probe: float = 0.0
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
@@ -759,11 +760,14 @@ class Runtime:
             return True
         return False
 
-    def wake(self, sensor_id: int, force: bool = False) -> None:
-        if self._on_loop(self.wake, sensor_id, force):
+    def wake(self, sensor_id: int, force: bool = False, paused_too: bool = False) -> None:
+        """Let the sensor's loop look again; ``force`` checks now (a paused sensor only with ``paused_too``)."""
+        if self._on_loop(self.wake, sensor_id, force, paused_too):
             return
         if force:
-            self.live_state(sensor_id).force = True
+            live = self.live_state(sensor_id)
+            live.force = True
+            live.force_paused = live.force_paused or paused_too
         event = self._wake.get(sensor_id)
         if event:
             event.set()
@@ -776,8 +780,10 @@ class Runtime:
                 return
             live = self.live_state(sensor_id)
             due_at, kind = next_check_at(cfg, live, time.time())
+            if not cfg.enabled and not live.force_paused:
+                live.force = False  # paused: no check after a retrain or a model change, only when asked
             if live.force or (cfg.enabled and due_at <= time.time()):
-                forced, live.force = live.force, False
+                forced, live.force, live.force_paused = live.force, False, False
                 try:
                     if forced or kind == "full":
                         await self.run_once(cfg)
@@ -1394,7 +1400,7 @@ class Runtime:
             if command == "enabled":
                 row.enabled = payload.upper() == "ON"
         if command == "classify":
-            self.wake(sensor_id, force=True)
+            self.wake(sensor_id, force=True, paused_too=True)
         elif command == "enabled":
             cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
             if cfg:

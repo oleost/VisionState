@@ -6,6 +6,9 @@
   Review page; click one to answer it again. The image your first answer added to the dataset gets
   the new state (or is taken out again with *Skip*) instead of being added a second time — no need
   to find it in the dataset. Answering a frame again from a sensor's History tab works the same way.
+- **A paused sensor stays paused.** It no longer checks the camera after each retrain (every review
+  answer retrains), after a model change or after teaching boxes — which could put new frames in the
+  review queue while you were answering it. *Check now* still checks a paused sensor.
 
 ## 0.6.3b15
 
