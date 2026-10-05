@@ -513,6 +513,8 @@ def test_counter_sensor_flow(settings):
         assert view()["reading"]["value"] == "89.941"
 
         # The export to share holds only the counter's window (plus a margin), not the whole frame.
+        # The review item is stored after the rejection is published: wait for it.
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] == 1, timeout=30)
         item = client.get("/api/v1/review").json()["items"][0]
         client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"})
         export = client.get(f"/api/v1/sensors/{sid}/reading-export")
