@@ -1,6 +1,6 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (beta 0.6.3b2 / stable 0.6.2, 2026-10-03) and the open
+> Describes VisionState **as built** (stable 0.6.3, 2026-10-05) and the open
 > ideas. Update it whenever a decision changes.
 > Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
 
@@ -450,7 +450,8 @@ sensor settings) lives in the UI.
 | **Object sensors** ✅ | Pretrained detector (D-FINE), per-class binary + count entities, Live tab | 0.6.0 (beta 0.5.0b1) |
 | **Reading sensors** ✅ | OCR of displays (PP-OCRv6), counter / value / time left, plausibility checks | 0.6.0 (betas 0.6.0b2–b4) |
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
-| **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | beta 0.6.3b10 |
+| **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
+| **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);

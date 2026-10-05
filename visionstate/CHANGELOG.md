@@ -1,66 +1,10 @@
 # Changelog
 
-## 0.6.3b16
+## 0.6.3
 
-- **Change an answer in the review queue.** Answered frames stay in the list on the left of the
-  Review page; click one to answer it again. The image your first answer added to the dataset gets
-  the new state (or is taken out again with *Skip*) instead of being added a second time — no need
-  to find it in the dataset. Answering a frame again from a sensor's History tab works the same way.
-- **A paused sensor stays paused.** It no longer checks the camera after each retrain (every review
-  answer retrains), after a model change or after teaching boxes — which could put new frames in the
-  review queue while you were answering it. *Check now* still checks a paused sensor.
+Needs **Home Assistant 2025.10 or newer** (an older Home Assistant is not offered this update).
 
-## 0.6.3b15
-
-- **Reader image in Home Assistant:** a reading sensor has a new image entity, *Reader image* —
-  what the reader saw at the last reading (the region after display processing, as *What the reader
-  sees* on the Live tab). Off by default, like the other diagnostic entities: turn it on in Home
-  Assistant.
-
-## 0.6.3b14
-
-- **A light for the camera: no more dark frames.** Many cameras — an ESP32 camera, for one — hand
-  out a picture they took earlier and only adjust their exposure between pictures, so the first
-  picture after the light came on could still be dark. While the light warms up, VisionState now
-  fetches frames and throws them away; the frame it reads is a fresh one, taken in the light.
-  Nothing to change on the camera.
-- With a light and **Detect changes in the image**: a change is now read on a new frame taken in
-  the light (it used to be read on the dark frame that showed the change), and change detection
-  pauses while the light is on.
-- A check right after the light was switched off no longer takes it for somebody else's light
-  (Home Assistant may still report it on): it is switched on and waited for as usual.
-
-## 0.6.3b13
-
-- **Counters: the last wheel turning is no longer a rejection.** A wheel between two digits is read
-  as the one or the other; once the higher one was published, every right reading until the
-  counter got there was rejected as "a counter can not go down" — many rejections and review
-  items for nothing. A reading exactly one step of the last digit below the value now keeps the
-  value without counting as rejected (the Live tab says *Last wheel turning*). Lower readings than
-  that are still rejected.
-- **Misread → the value it showed:** the field starts with what was read, so usually one digit is
-  changed; digits typed without a point are placed like the reader does (`0629558` → `629.558`),
-  and the value that will be saved is shown before saving.
-
-## 0.6.3b12
-
-- **More from a reading sensor in Home Assistant**, off by default — turn on what you need:
-  *Raw reading* (what was read, also when rejected), *Problem* (`ok` or why the last reading was
-  rejected), *Accepted (24 h)* (%), and for counters a **Rate**: how fast it goes up over the last
-  15 minutes (adjustable) — kW for kWh, m³/h for m³, L/min for L. Useful to spot a water leak.
-- **Help improve reading:** *Export checked readings* on the Quality tab downloads the readings you
-  checked — only the region of each, not the whole picture — with what was read and what was right,
-  ready to share in GitHub Discussions (shared as public domain, CC0).
-- Clearer that answering a reading (*Read correctly* / *Misread*) does not train the reader: it shows
-  how reliable the reading is. Answers for state sensors still train them.
-
-## 0.6.3b11
-
-- The **Live** tab of an object sensor no longer jumps when a new check comes in: the list of
-  boxes under the frame used to disappear for a moment until the new picture had loaded (most
-  visible on a phone). Boxes now change together with the picture they belong to.
-
-## 0.6.3b10
+### New
 
 - **Teach an object sensor your camera.** Tap a box on the Live tab or on a history frame:
   **Correct**, **Not a person** (the garden statue, a shadow taken for a dog), **another object**,
@@ -68,93 +12,74 @@
   in Home Assistant. **Missed something?** lets you draw a box around what the AI missed. From then
   on, a box that clearly looks like one you taught gets your answer; otherwise the AI's own answer
   stands. Nothing changes until you teach something.
-- Every check decides anew by what a box looks like. Boxes filtered away are still shown, dashed,
-  in the frame, and listed in the history and on the new **Quality** tab (which appears once you
-  taught something). **Settings → What you taught** turns it off or
-  forgets it all. Export and import take it along.
-- Going back to an older version (e.g. restoring a backup) after making an own label: the older
-  version does not know the label, so its entities stay in Home Assistant with their last value.
-  Remove own labels first, or delete those entities in Home Assistant.
+  - Every check decides anew by what a box looks like. Boxes filtered away are still shown, dashed,
+    in the frame, and listed in the history and on the new **Quality** tab (which appears once you
+    taught something). **Settings → What you taught** turns it off or forgets it all. Export and
+    import take it along.
+  - Going back to an older version (e.g. restoring a backup) after making an own label: the older
+    version does not know the label, so its entities stay in Home Assistant with their last value.
+    Remove own labels first, or delete those entities in Home Assistant.
+- **Switch on a light for each check** — for cameras in dark places such as a meter cabinet. Pick
+  a light, switch or helper with the camera (first step of the wizard, or Settings → General); it
+  is turned on before the frame is taken and off again afterwards. A light that is already on is
+  left alone.
+  - While the light warms up, VisionState fetches frames and throws them away, so the frame it
+    reads is taken in the light — also with cameras that hand out a picture taken earlier (an
+    ESP32 camera, for one).
+  - **The light is on while you look**: in the wizard, when you draw the region and on the Label
+    tab, so labelled images are taken in the same light as the checks. A switch keeps it off for
+    that view; it goes off when you leave.
+  - With **Detect changes in the image**, a change is read on a new frame taken in the light, and
+    change detection pauses while the light is on.
+- **When to check** (Settings, and the last step of the wizard): the **regular check can be
+  switched off** — the sensor then only checks when triggered, once after start-up and with its
+  *check now* button — and a trigger entity can be limited to **one state** (*only when it
+  becomes* `on`, `Flow finished` …).
+- **Quality tab for reading sensors**: the share of accepted readings today, in the last 7 and 30
+  days, why the others were rejected, and a chart per day.
+  - **Every rejected reading is kept** with its frame and waits in the **review queue**. Tell
+    whether the reader read the meter right or misread it, optionally with the value it showed
+    (the field starts with what was read, so usually one digit is changed). This does not train the
+    reader: it shows how reliable the reading is and which setting to change.
+  - **Spot checks** (Settings → Sensor output, off by default): a share of the accepted readings
+    goes to the review queue too, to find misreads that passed every check.
+  - **Export checked readings** downloads the readings you checked — only the region of each — ready
+    to share in GitHub Discussions (as public domain, CC0) to help improve reading.
+- **More from a reading sensor in Home Assistant**, off by default — turn on what you need:
+  *Raw reading* (also when rejected), *Problem* (`ok` or why the last reading was rejected),
+  *Accepted (24 h)* (%), *Reader image* (what the reader saw at the last reading), and for counters
+  a **Rate**: how fast it goes up over the last 15 minutes (adjustable) — kW for kWh, m³/h for m³,
+  L/min for L. Useful to spot a water leak.
+- **Review queue**: the Review page shows how many items wait per sensor, and **Dismiss all**
+  skips all of a sensor's items at once (also on a reading sensor's Quality tab). **Change an
+  answer**: answered frames stay in the list on the left; click one to answer it again — the image
+  your first answer added to the dataset gets the new state (or is taken out with *Skip*) instead
+  of being added a second time.
+- **Send to Home Assistant** can be switched off per sensor (last step of the wizard, or Settings →
+  General): the sensor runs and records everything in VisionState, but its entities in Home
+  Assistant stay *unavailable* — for tuning a sensor before Home Assistant uses it.
 
-## 0.6.3b9
-
-- **Send to Home Assistant** can be switched off per sensor (last step of the wizard, or
-  Settings → General): the sensor runs and records everything in VisionState, but its entities in
-  Home Assistant stay *unavailable* — no values, no statistics. For tuning a sensor before Home
-  Assistant uses it, e.g. one that takes over the entity ID (and statistics) of an older sensor.
-  Marked on the dashboard; existing sensors keep sending.
-- Object sensors that check very often no longer show a broken frame for a moment: when the
-  analysed frame is already gone, the latest one is shown (without boxes that belong to another).
-
-## 0.6.3b8
-
-- **The light is picked with the camera** — in the first step of the wizard and under
-  **Settings → General** — instead of under *When to check*.
-- **The light is on while you look**: in the wizard (region and test), when you draw the region
-  in the settings and on the Label tab, so you can see what you frame and the labelled images are
-  taken in the same light as the checks. A note above the frame shows it, with a switch to keep
-  the light off for that view. It goes off when you leave (at the latest 30 s after a tab is closed
-  or a phone is put away); a light that was already on is left alone.
-
-## 0.6.3b7
-
-- **iPhone and iPad** (the Home Assistant app, Safari): drop-down menus such as the AI model
-  choice under Settings were light with light text; they are dark and readable now.
-- The app now says which Home Assistant it needs (**2025.10 or newer**), so an older Home Assistant
-  is not offered an update that cannot work there.
-- Behind the scenes: every release is now also tested as an update from the last stable release
-  (and back), on an emulated Raspberry Pi 3/4 CPU, and in Safari's engine.
-
-## 0.6.3b6
+### Changed
 
 - **Entity IDs like other integrations**: new sensors are named by Home Assistant after the sensor
-  (the device) and the entity, without the `visionstate_` prefix — a sensor named *Water meter*
-  becomes `sensor.water_meter`, `sensor.water_meter_confidence`, `image.water_meter_last_frame` …
-- **Existing sensors keep their entity IDs** (`sensor.visionstate_…`); nothing changes for them,
-  also when they are exported and imported.
-- The app shows the entity IDs Home Assistant actually uses — also when you changed one in Home
-  Assistant or it got a `_2`.
+  and the entity, without the `visionstate_` prefix — a sensor named *Water meter* becomes
+  `sensor.water_meter`, `sensor.water_meter_confidence` … **Existing sensors keep their entity
+  IDs** (`sensor.visionstate_…`), also when they are exported and imported. The app shows the
+  entity IDs Home Assistant actually uses.
+- **Mechanical counters: the last wheel turning is no longer a rejection.** A reading exactly one
+  step of the last digit below the value keeps the value without counting as rejected (the Live tab
+  says *Last wheel turning*). Lower readings than that are still rejected.
+- A paused sensor stays paused: it no longer checks the camera after a retrain, a model change or
+  teaching boxes. *Check now* still checks it.
 
-## 0.6.3b5
+### Fixed
 
-- Review page: the number waiting per sensor now counts down with each answer, and a sensor
-  with nothing left no longer shows **Dismiss all**.
-
-## 0.6.3b4
-
-- **Dismiss all** in the review queue: the Review page shows how many items wait per sensor, and
-  one button skips all of a sensor's items at once — for the many rejected readings that can pile
-  up while a sensor is being set up. Also on a reading sensor's Quality tab. Answers already
-  given and the counts in Quality are kept.
-
-## 0.6.3b3
-
-- Quality tab of reading sensors: the cards show the share of **accepted** readings (100 % = none
-  rejected) instead of the rejected share, which read like a bad score.
-
-## 0.6.3b2
-
-- **Quality tab for reading sensors**: how many readings were rejected today, in the last 7 and
-  30 days, why, and a chart per day — to see how reliable a meter is read.
-- **Every rejected reading is kept** with its frame (before: at most one every 5 minutes) and
-  waits in the **review queue**. Tell whether the reader read the meter right or misread it,
-  optionally with the right value — there or on the Quality tab. Verified readings are kept for
-  good, like training images.
-- **Spot checks** for reading sensors (Settings → Sensor output, off by default): a share of the
-  accepted readings goes to the review queue too, to find misreads that passed every check.
-
-## 0.6.3b1
-
-All under **Settings → When to check** (and the last step of the new sensor wizard), for every
-kind of sensor:
-
-- The **regular check can be switched off**: the sensor then only checks when triggered, once
-  after start-up, and with its *check now* button in Home Assistant.
-- A trigger entity can be limited to **one state**: *only when it becomes* `on`, `Flow finished` …
-  Other changes of that entity are ignored.
-- **Switch on a light for each check**: pick a light, switch or helper; it is turned on before
-  the frame is taken and off again afterwards — for cameras in dark places such as a meter
-  cabinet. A light that is already on is left alone.
+- **iPhone and iPad** (the Home Assistant app, Safari): drop-down menus such as the AI model
+  choice were light with light text; they are dark and readable now.
+- The Live tab of an object sensor no longer jumps when a new check comes in, and sensors that
+  check very often no longer show a broken frame for a moment.
+- Behind the scenes: every release is now also tested as an update from the last stable release
+  (and back), on an emulated Raspberry Pi 3/4 CPU, and in Safari's engine.
 
 ## 0.6.2
 
