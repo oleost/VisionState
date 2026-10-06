@@ -56,6 +56,13 @@ def make_model() -> LogisticRegression:
 
 
 def train(vectors: np.ndarray, labels: list[str], backbone: str, version: int, state_keys: list[str]) -> TrainResult:
+    """Train a head on the labelled samples (one embedding and one state key each).
+
+    Needs two states with samples; with fewer, ``head`` is None (the sensor is untrained).
+    With enough samples per state the quality is measured too: accuracy and confusion from
+    cross-validation, and "suspects" — samples a model that never saw them disagrees with,
+    likely labelled wrong (shown on the Quality tab).
+    """
     started = time.perf_counter()
     counts = {k: labels.count(k) for k in state_keys}
     classes = sorted({k for k in labels})

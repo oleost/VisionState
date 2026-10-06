@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from .. import bundle, readers
 from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
@@ -99,6 +100,7 @@ class SensorIn(BaseModel):
         return self
 
     def new_sensor(self, slug: str) -> Sensor:
+        """The database row of a checked new sensor (see ``checked``)."""
         sensor = Sensor(
             slug=slug,
             name=self.name,
@@ -191,6 +193,7 @@ def get_one(sensor_id: int, request: Request) -> dict:
 
 @router.patch("/{sensor_id}")
 async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> dict:
+    """Change a sensor (only the fields sent); retrains when its region or states changed."""
     rt = runtime(request)
     _check_source_type(body.source_type)
     if body.states is not None:
@@ -371,6 +374,7 @@ def quality_tips(states: list[dict], counts: dict, confusion: dict | None, suspe
 
 @router.get("/{sensor_id}/quality")
 def quality(sensor_id: int, request: Request) -> dict:
+    """The Quality tab of a state sensor: images per state, accuracy, confusion, suspects, tips."""
     rt = runtime(request)
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id, KIND_STATES)
@@ -390,7 +394,7 @@ def quality(sensor_id: int, request: Request) -> dict:
         }
 
 
-def current_suspects(session, sensor: Sensor, info: ModelInfo | None) -> list[dict]:
+def current_suspects(session: Session, sensor: Sensor, info: ModelInfo | None) -> list[dict]:
     """Suspects from the last training that still exist, are unverified and still carry that label."""
     if info is None or not info.suspects:
         return []
@@ -409,6 +413,7 @@ def current_suspects(session, sensor: Sensor, info: ModelInfo | None) -> list[di
 
 
 def prediction_view(p: Prediction) -> dict:
+    """A history row (also a review queue item) as the UI shows it."""
     return {
         "id": p.id,
         "sensor_id": p.sensor_id,

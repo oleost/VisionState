@@ -445,6 +445,8 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    """The app's settings: its options in Home Assistant (``options.json``), else environment
+    variables (``VISIONSTATE_<OPTION>``, for running it outside Home Assistant), else defaults."""
     env = os.environ
     data_dir = Path(env.get("VISIONSTATE_DATA", "/data"))
     options: dict = {}
@@ -452,11 +454,11 @@ def load_settings() -> Settings:
     if options_file.exists():
         options = json.loads(options_file.read_text(encoding="utf-8"))
 
-    def opt(name: str, default):
+    def opt[T: (str, int)](name: str, default: T) -> T:
         value = options.get(name)
         if value in (None, ""):
             value = env.get(f"VISIONSTATE_{name.upper()}", default)
-        return type(default)(value) if default is not None and value is not None else value
+        return type(default)(value)
 
     return Settings(
         data_dir=data_dir,

@@ -162,6 +162,7 @@ class TrainingMixin(RuntimeBase):
     def add_sample(
         self, sensor_id: int, image: Image.Image, origin: str, state_id: int | None, use_roi: bool = True
     ) -> int:
+        """Store a training image of a state sensor, labelled when ``state_id`` is given; returns its id."""
         filename = self.storage.save_sample(sensor_id, image)
         with self.db.session() as s:
             sample = Sample(

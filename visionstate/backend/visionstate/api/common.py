@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import detectors, imaging, teach
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import ObjectTrack, Runtime, SensorConfig
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig
 from ..mqtt import main_entities
 from ..settings import (
     KIND_OBJECTS,
@@ -330,7 +330,8 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
-def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
+def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
+    """An object sensor's part of its view: each class and own label, live, and what was taught."""
     if sensor.kind != KIND_OBJECTS:
         return None
     settings = merge_objects(sensor.objects)
@@ -364,7 +365,8 @@ def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
     }
 
 
-def reading_view(sensor: Sensor, live) -> dict | None:
+def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
+    """A reading sensor's part of its view: its settings, the published value and the last read."""
     if sensor.kind != KIND_READING:
         return None
     return {
@@ -376,6 +378,7 @@ def reading_view(sensor: Sensor, live) -> dict | None:
 
 
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
+    """A sensor as the UI shows it: settings, status, live state, model and the parts of its kind."""
     live = rt.live.get(sensor.id)
     info = session.get(ModelInfo, sensor.id)
     head = rt.heads.get(sensor.id)

@@ -61,6 +61,7 @@ class BackboneSpec:
 
 
 def load_registry() -> tuple[str, dict[str, BackboneSpec]]:
+    """The default backbone's id and every backbone in ``backbones.json``."""
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     specs = {
         key: BackboneSpec(

@@ -7,10 +7,12 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request, Response
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
+from sqlalchemy.orm import Session
 
 from .. import detectors, imaging
 from ..db import Prediction, Sample
+from ..engine import Runtime
 from ..settings import KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 from .sensors import prediction_view
@@ -94,7 +96,7 @@ def taught(sensor_id: int, request: Request) -> dict:
         }
 
 
-async def _frame_image(rt, sensor_id: int, body: TeachIn) -> tuple[Image.Image, str]:
+async def _frame_image(rt: Runtime, sensor_id: int, body: TeachIn) -> tuple[Image.Image, str]:
     """The frame the box was drawn on, and where it came from ("live" or "history")."""
     if body.history_id is not None:
         with rt.db.session() as s:
@@ -170,7 +172,8 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     return {"id": example_id, "label": label, "seen": seen}
 
 
-def _delete_examples(rt, s, sensor_id: int, where) -> int:
+def _delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnElement[bool]]) -> int:
+    """Delete the taught boxes of a sensor that match ``where`` (all with an empty list); returns how many."""
     rows = s.scalars(
         select(Sample).where(Sample.sensor_id == sensor_id, Sample.object_label.is_not(None), *where)
     ).all()
@@ -191,7 +194,7 @@ def forget_box(sensor_id: int, example_id: int, request: Request) -> Response:
     return Response(status_code=204)
 
 
-async def _remove_labels(rt, sensor_id: int, keys: set[str] | None) -> None:
+async def _remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> None:
     """Remove own labels (``None``: all of them, and every taught box) with their entities."""
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
@@ -222,7 +225,7 @@ async def remove_label(sensor_id: int, key: str, request: Request) -> Response:
     return Response(status_code=204)
 
 
-def import_custom(stored) -> list[dict]:
+def import_custom(stored: object) -> list[dict]:
     """Own labels from an exported sensor, checked like new ones."""
     labels: list[dict] = []
     for item in stored if isinstance(stored, list) else []:
@@ -239,6 +242,6 @@ def import_custom(stored) -> list[dict]:
     return labels
 
 
-def importable_label(label, own: set[str]) -> bool:
+def importable_label(label: object, own: set[str]) -> bool:
     """Whether a taught box from an exported sensor has a label this sensor knows."""
     return isinstance(label, str) and (label == NONE_LABEL or label in detectors.LABELS.by_key or label in own)

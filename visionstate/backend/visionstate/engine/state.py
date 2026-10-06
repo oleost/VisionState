@@ -89,6 +89,7 @@ class SensorConfig:
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
+        """A snapshot of the row; settings stored as JSON are filled with their defaults."""
         return cls(
             id=row.id,
             slug=row.slug,

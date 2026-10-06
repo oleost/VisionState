@@ -95,7 +95,9 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, "filtered", score, found)
         live.filtered_keys = filtered
 
-    def _record_detection(self, sensor_id, image, key, published, score, found) -> None:
+    def _record_detection(
+        self, sensor_id: int, image: Image.Image, key: str, published: str, score: float, found: list[dict]
+    ) -> None:
         """A history row of an object sensor: a class or own label went "on" or "off", or was "filtered"."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:

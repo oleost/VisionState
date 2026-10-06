@@ -34,6 +34,8 @@ class Runtime(ChecksMixin, HistoryMixin):
         self.ha_events = HaEventListener(settings, self._on_ha_state)
 
     async def start(self) -> None:
+        """Load the settings and the backbone, retrain outdated heads, start every sensor's loop,
+        MQTT, the Home Assistant event stream and the housekeeping loops."""
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_dict, "review")
         self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
@@ -117,6 +119,8 @@ class Runtime(ChecksMixin, HistoryMixin):
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
+        """Stop a deleted sensor and remove everything of it: entities, files, its head; free
+        the detector or reader when no sensor uses it any more."""
         task = self._tasks.pop(sensor_id, None)
         if task:
             task.cancel()

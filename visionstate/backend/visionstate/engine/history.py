@@ -49,6 +49,9 @@ class HistoryMixin(PublishingMixin, RuntimeBase):
         return size
 
     def cleanup_history(self) -> None:
+        """Remove history older than the limit (frames waiting for review get twice as long),
+        then the oldest frames while the history is larger than its size limit. Readings
+        verified by hand are kept."""
         limits = self.storage_limits()
         days = limits["history_days"]
         cutoff = utcnow() - timedelta(days=days)

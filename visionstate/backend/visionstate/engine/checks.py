@@ -212,6 +212,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
         image: Image.Image | None = None,
         frame_id: str | None = None,
     ) -> None:
+        """One check: take a frame (or use the one given), then hand it to the sensor's kind.
+
+        A frame the camera could not deliver makes the sensor unavailable in Home Assistant.
+        Without a light, the frame also becomes the baseline of change detection.
+        """
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
@@ -309,7 +314,18 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             if reason:
                 await self.publish_review_count()
 
-    def _record_prediction(self, sensor_id, image, top, published, confidence, probs, changed, reason) -> None:
+    def _record_prediction(
+        self,
+        sensor_id: int,
+        image: Image.Image,
+        top: str,
+        published: str | None,
+        confidence: float,
+        probs: dict[str, float],
+        changed: bool,
+        reason: str | None,
+    ) -> None:
+        """A history row of a state sensor; ``reason`` puts it in the review queue."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(

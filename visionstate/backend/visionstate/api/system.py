@@ -18,6 +18,7 @@ from sqlalchemy import CursorResult, delete, func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sample, SampleLabel, Sensor
+from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
     DETECTION,
@@ -129,6 +130,7 @@ def ui_config() -> dict:
 
 @router.get("/status")
 async def status(request: Request) -> dict:
+    """The header and the Settings page: version, counts, MQTT, Home Assistant and model state."""
     rt = runtime(request)
 
     def counts():
@@ -177,6 +179,7 @@ class SettingsIn(BaseModel):
 
 @router.get("/settings")
 def get_settings(request: Request) -> dict:
+    """The chosen AI models and every model that can be chosen."""
     rt = runtime(request)
     return {
         "backbone": rt.embedder.spec.id if rt.embedder else backbones.DEFAULT_BACKBONE,
@@ -225,6 +228,7 @@ def get_settings(request: Request) -> dict:
 
 @router.put("/settings")
 async def put_settings(body: SettingsIn, request: Request) -> dict:
+    """Choose the AI models; only a changed one is loaded (a new backbone retrains the state sensors)."""
     rt = runtime(request)
     if body.backbone not in backbones.BACKBONES:
         raise HTTPException(400, "Unknown backbone")
@@ -435,6 +439,7 @@ class ReviewIn(BaseModel):
 
 @router.get("/review")
 def review_queue(request: Request, limit: int = 50) -> dict:
+    """The newest ``limit`` items waiting for review, and how many wait per sensor."""
     rt = runtime(request)
     with rt.db.session() as s:
         query = select(Prediction).where(Prediction.reviewed.is_(False))
@@ -573,6 +578,7 @@ def history_image(prediction_id: int, request: Request, size: str = "full") -> F
 
 @router.post("/import", status_code=201)
 async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
+    """A new sensor from an exported bundle (validated like the API); a state sensor is trained."""
     rt = runtime(request)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
         path = Path(tmp.name)
@@ -593,7 +599,7 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
     return {"id": sensor_id, "skipped": skipped}
 
 
-def _import_sync(rt, path: Path) -> tuple[int, int]:
+def _import_sync(rt: Runtime, path: Path) -> tuple[int, int]:
     """Creates the sensor of a bundle; returns its ID and how many of its images were unreadable."""
     from pydantic import ValidationError
 
@@ -661,7 +667,7 @@ def _import_sync(rt, path: Path) -> tuple[int, int]:
     return sensor_id, skipped
 
 
-def _import_sample(rt, path: Path, sensor_id: int, kind: str, item: dict, own: set, state_ids: dict) -> None:
+def _import_sample(rt: Runtime, path: Path, sensor_id: int, kind: str, item: dict, own: set, state_ids: dict) -> None:
     if kind == KIND_OBJECTS:
         if not teach.importable_label(item.get("object_label"), own):
             return

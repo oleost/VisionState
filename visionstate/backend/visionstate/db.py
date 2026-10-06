@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -253,7 +254,8 @@ class Database:
         finally:
             session.close()
 
-    def get_setting(self, key: str, default=None):
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """A global setting (stored as JSON), or ``default``; see get_text and get_dict for typed ones."""
         with self.session() as s:
             row = s.get(Setting, key)
             return default if row is None else row.value
@@ -268,7 +270,7 @@ class Database:
         value = self.get_setting(key)
         return value if isinstance(value, dict) else {}
 
-    def set_setting(self, key: str, value) -> None:
+    def set_setting(self, key: str, value: Any) -> None:
         with self.session() as s:
             row = s.get(Setting, key)
             if row is None:

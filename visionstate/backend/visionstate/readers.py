@@ -14,6 +14,7 @@ import json
 import math
 import re
 import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +49,7 @@ class ReaderSpec:
 
 
 def load_registry() -> tuple[str, dict[str, ReaderSpec]]:
+    """The default reader's id and every reader in ``readers.json``."""
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     specs = {
         key: ReaderSpec(
@@ -315,7 +317,7 @@ def problem_key(reason: str | None) -> str:
     return "ok" if reason is None else reason.replace(" ", "_")
 
 
-def accepted_share(reads, now: float, window_s: float) -> float | None:
+def accepted_share(reads: deque[tuple[float, bool]], now: float, window_s: float) -> float | None:
     """Share of accepted readings (in %) among ``reads`` ((time, accepted) pairs) of the last window.
 
     Drops the older pairs from ``reads`` (a deque).
@@ -327,7 +329,7 @@ def accepted_share(reads, now: float, window_s: float) -> float | None:
     return round(100 * sum(1 for _, ok in reads if ok) / len(reads), 1)
 
 
-def counter_rate(samples, now: float, window_s: float, min_span_s: float) -> float | None:
+def counter_rate(samples: deque[tuple[float, float]], now: float, window_s: float, min_span_s: float) -> float | None:
     """How fast a counter goes up, per hour, over about the last window.
 
     ``samples`` (a deque of (time, accepted value)) is trimmed to the samples inside the window

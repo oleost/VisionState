@@ -33,6 +33,10 @@ RECONNECT_DELAY_S = 10
 
 
 def topics(slug: str) -> dict[str, str]:
+    """The MQTT topics of a sensor's values and commands (object classes: ``object_topics``).
+
+    Never rename one once released: Home Assistant's entities are bound to them.
+    """
     base = f"{APP_SLUG}/{slug}"
     return {
         "state": f"{base}/state",
@@ -421,6 +425,8 @@ class MqttConfig:
 
 
 async def resolve_config(settings: Settings) -> MqttConfig | None:
+    """The broker to use: the one in the app options, else the one Home Assistant's Supervisor
+    offers (the Mosquitto app); None when there is none (yet)."""
     if settings.mqtt_host:
         return MqttConfig(
             settings.mqtt_host, settings.mqtt_port, settings.mqtt_username, settings.mqtt_password, "options"

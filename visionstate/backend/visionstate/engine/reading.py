@@ -146,7 +146,17 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             else:
                 row.rejected = {**row.rejected, reason: row.rejected.get(reason, 0) + 1}
 
-    def _record_reading(self, sensor_id, image, published, score, details, changed, review=None) -> None:
+    def _record_reading(
+        self,
+        sensor_id: int,
+        image: Image.Image,
+        published: str | None,
+        score: float,
+        details: dict,
+        changed: bool,
+        review: str | None = None,
+    ) -> None:
+        """A history row of a reading sensor; ``review`` ("rejected", "spot_check") queues it."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(

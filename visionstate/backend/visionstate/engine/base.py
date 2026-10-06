@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from sqlalchemy import select
 
@@ -65,7 +67,8 @@ class RuntimeBase:
         self._sem = asyncio.Semaphore(RUNTIME["max_concurrent_inferences"])
         self._loop: asyncio.AbstractEventLoop | None = None
 
-    def _spawn(self, coro) -> asyncio.Task:
+    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+        """Run ``coro`` in the background, keeping a reference so it is not garbage-collected."""
         task = asyncio.create_task(coro)
         self._background.add(task)
         task.add_done_callback(self._background.discard)
@@ -86,7 +89,7 @@ class RuntimeBase:
     def live_state(self, sensor_id: int) -> LiveState:
         return self.live.setdefault(sensor_id, LiveState())
 
-    def _on_loop(self, func, *args) -> bool:
+    def _on_loop(self, func: Callable[..., object], *args: object) -> bool:
         """Run ``func`` on the event loop. Returns True when called from another thread (deferred).
 
         Sync API endpoints and ``asyncio.to_thread`` workers run in threads; asyncio objects

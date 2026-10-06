@@ -16,12 +16,18 @@ log = logging.getLogger(__name__)
 
 
 class PublishingMixin(RuntimeBase):
-    async def _send(self, cfg: SensorConfig, topic: str, payload, retain: bool = False) -> None:
+    async def _send(self, cfg: SensorConfig, topic: str, payload: str | bytes | dict, retain: bool = False) -> None:
         """Publish one of a sensor's values — unless it is not to be sent to Home Assistant."""
         if cfg.publish:
             await self.mqtt.publish(topic, payload, retain=retain)
 
     async def publish_discovery(self, cfg: SensorConfig) -> None:
+        """Tell Home Assistant about a sensor's entities (again), and repeat what it last knew.
+
+        Called when a sensor is made or changed and when MQTT (re)connects. Entities of object
+        classes no longer selected are removed; the availability, the pause switch and the last
+        value are sent again, so nothing waits for the next check.
+        """
         t = topics(cfg.slug)
         if cfg.is_objects:
             current = set(cfg.object_keys)

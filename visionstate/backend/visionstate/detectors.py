@@ -61,6 +61,7 @@ class LabelSet:
 
 
 def load_registry() -> tuple[str, dict[str, DetectorSpec], dict[str, LabelSet]]:
+    """The default detector's id, every detector in ``detectors.json`` and their label sets."""
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     label_sets = {
         key: LabelSet(

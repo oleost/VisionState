@@ -13,13 +13,18 @@ about: those are compared too, and count only when they are very close to a taug
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
 
 from . import detectors, imaging
 from .settings import NONE_LABEL, TEACH
+
+if TYPE_CHECKING:
+    from .backbones import Embedder
 
 
 @dataclass
@@ -49,7 +54,7 @@ class Match:
 EMBEDDING_KEY = "taught"
 
 
-def embed(embedder, images: list[Image.Image]) -> np.ndarray:
+def embed(embedder: Embedder, images: list[Image.Image]) -> np.ndarray:
     """Embeddings of box crops, one image at a time.
 
     The 8-bit backbone quantises a whole batch together, so the same crop gets a slightly
@@ -59,7 +64,7 @@ def embed(embedder, images: list[Image.Image]) -> np.ndarray:
     return np.stack([embedder.embed([image])[0] for image in images])
 
 
-def crop(image: Image.Image, box) -> Image.Image:
+def crop(image: Image.Image, box: Sequence[float]) -> Image.Image:
     """What is compared of a box: the box plus a small margin of its surroundings."""
     x1, y1, x2, y2 = box
     mx, my = (x2 - x1) * TEACH["crop_margin"], (y2 - y1) * TEACH["crop_margin"]
@@ -101,6 +106,12 @@ def build(
     parents: dict[str, str],
     generation: int = 0,
 ) -> TaughtIndex:
+    """The taught boxes of one sensor, ready to compare new boxes with (one entry per box).
+
+    ``detected`` is the class the detector gave a box, None for a box it missed (drawn by the
+    user): those switch on ``rescue``, looking at the detector's unsure boxes too.
+    ``generation`` counts changes to the taught boxes, so a stale index is noticed.
+    """
     return TaughtIndex(
         backbone=backbone,
         ids=list(ids),
@@ -132,7 +143,8 @@ def nearest(index: TaughtIndex, vector: np.ndarray, min_similarity: float) -> Ma
     return Match(label, similarity, example_id)
 
 
-def _iou(a, b) -> float:
+def _iou(a: Sequence[float], b: Sequence[float]) -> float:
+    """Intersection over union of two boxes (x1, y1, x2, y2)."""
     x1, y1 = max(a[0], b[0]), max(a[1], b[1])
     x2, y2 = min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
@@ -212,6 +224,6 @@ def counts_for(detection: dict, key: str) -> bool:
     return not detection.get("filtered") and (detection["key"] == key or detection.get("label") == key)
 
 
-def seen_faintly(candidates: list[dict], box) -> bool:
+def seen_faintly(candidates: list[dict], box: Sequence[float]) -> bool:
     """Whether any of the detector's boxes (however unsure) overlaps a drawn box."""
     return any(_iou(c["box"], box) >= TEACH["seen_iou"] for c in candidates)

@@ -36,7 +36,7 @@ def _clamp(value: float) -> float:
     return min(max(float(value), 0.0), 1.0)
 
 
-def _normalise_points(points) -> list[list[float]] | None:
+def _normalise_points(points: list | None) -> list[list[float]] | None:
     """Clamped polygon corners, or None when there is no real polygon (missing, <3 points)."""
     if not points or len(points) < 3:
         return None
@@ -92,6 +92,7 @@ def roi_key(roi: dict | None) -> str:
 
 
 def crop(image: Image.Image, roi: dict | None) -> Image.Image:
+    """The region of ``image`` (all of it without one); a polygon's outside is painted neutral."""
     roi = normalise_roi(roi)
     if roi is None:
         return image
