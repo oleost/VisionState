@@ -43,7 +43,7 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             candidates = [d for d in found if d["score"] < cfg.threshold]
             found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
         if index is not None:
-            found = await self.apply_taught(cfg, image, index, found, candidates)
+            found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.detections = found

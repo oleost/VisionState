@@ -89,8 +89,15 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         return np.stack([cached[x.id] for x in examples])
 
     async def apply_taught(
-        self, cfg: SensorConfig, image: Image.Image, index: teach.TaughtIndex, found: list[dict], candidates: list[dict]
+        self,
+        cfg: SensorConfig,
+        image: Image.Image,
+        index: teach.TaughtIndex,
+        found: list[dict],
+        candidates: list[dict],
+        previous: list[dict] | None = None,
     ) -> list[dict]:
+        """Compare a check's boxes with the taught ones (see teach.apply); ``previous``: the last check's."""
         checked, rescue = teach.plan(found, candidates, index)
         crops = [teach.crop(image, found[i]["box"]) for i in checked] + [teach.crop(image, d["box"]) for d in rescue]
         embedder = self.embedder
@@ -99,7 +106,9 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         async with self._sem:
             vectors = await asyncio.to_thread(teach.embed, embedder, crops)
         n = len(checked)
-        return teach.apply(found, checked, vectors[:n], rescue, vectors[n:], index, cfg.objects["classes"], cfg.parents)
+        return teach.apply(
+            found, checked, vectors[:n], rescue, vectors[n:], index, cfg.objects["classes"], cfg.parents, previous
+        )
 
     def taught_changed(self, sensor_id: int) -> None:
         """Taught boxes were added or removed: compare with the new set from the next check on."""

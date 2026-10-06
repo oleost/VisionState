@@ -126,6 +126,10 @@ knew). Instead a second step compares boxes with boxes the user taught:
   least `match_similarity` (0.88) and beats the next label by `margin`; otherwise the detector's
   answer stands. Measured on CC0 photos: the same object in other light or framing scores
   0.87–0.97, other objects of the same kind mostly below 0.7.
+- An object that stays (its box overlaps a box of the last check by `keep_iou`, 0.6) keeps the
+  taught answer it had while it is at least `keep_similarity` (0.8) to that label: a parked car
+  measured 0.94 between two checks seven minutes apart, and a 2 % shift of the detector's box
+  alone costs 0.04 — enough to flip it around 0.88 every few checks. Such boxes carry `kept`.
 - Results: `filtered` (not counted, still shown dashed; a history row "filtered" when a class
   starts being filtered, at most every `filtered_record_cooldown_s`), another class (`was` keeps
   the detector's), or an own `label`.

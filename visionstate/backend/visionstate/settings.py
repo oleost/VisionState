@@ -152,6 +152,11 @@ DETECTION = {
 TEACH = {
     "match_similarity": 0.88,
     "margin": 0.03,  # the closest label must beat the next one by this much, else the detector decides
+    # An object that stays where it was (a parked car) keeps the answer it got in the last check
+    # while it is still this close to that taught box: light and the detector's box move the
+    # similarity by a few hundredths between checks, which would flip it at match_similarity.
+    "keep_similarity": 0.8,
+    "keep_iou": 0.6,  # "where it was": its box overlaps the box of the last check this much
     "rescue_similarity": 0.9,  # a box the detector was unsure about counts only when this close to a taught one
     "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
     "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work

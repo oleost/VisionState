@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.4b4
+
+### Fixed
+
+- **A taught object that stands still no longer flickers.** A parked car taught as an own label
+  (*Our car*) was sometimes taken for an ordinary car when the light changed, and its sensor
+  switched off and on again. An object that stays where it is now keeps its taught answer while
+  it still looks much like it; a new object must still clearly look like what you taught.
+
 ## 0.6.4b3
 
 ### Fixed

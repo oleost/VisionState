@@ -89,6 +89,42 @@ def test_apply_filters_relabels_and_gives_own_labels():
     assert found[0].get("filtered") is None  # the input is not changed
 
 
+def toward(target: np.ndarray, other: np.ndarray, similarity: float) -> np.ndarray:
+    """A unit vector with exactly ``similarity`` to ``target`` (``other`` orthogonal to it)."""
+    return (similarity * target + np.sqrt(1 - similarity**2) * other).astype(np.float32)
+
+
+def test_an_object_that_stays_keeps_its_taught_answer():
+    """A parked car is "Our car" at 0.90 similarity; in the next light it is 0.84 — still ours."""
+    parents = {"our_car": "car"}
+    idx = index([("our_car", "car", OUR_CAR)], parents)
+    side = unit(0, 0, 0, 1)
+    here, elsewhere = (0.1, 0.1, 0.3, 0.5), (0.6, 0.5, 0.9, 0.9)
+
+    def check(similarity, box, previous=None):
+        found = [det("car", box=box)]
+        return teach.apply(
+            found,
+            [0],
+            np.stack([toward(OUR_CAR, side, similarity)]),
+            [],
+            np.zeros((0, 4)),
+            idx,
+            ["car"],
+            parents,
+            previous,
+        )[0]
+
+    first = check(0.90, here)
+    assert first["label"] == "our_car" and "kept" not in first
+    assert "label" not in check(0.84, here)  # a new object needs match_similarity
+    kept = check(0.84, here, [first])
+    assert kept["label"] == "our_car" and kept["kept"]
+    assert check(0.84, (0.11, 0.1, 0.31, 0.5), [kept])["label"] == "our_car"  # and it goes on, also moved a bit
+    assert "label" not in check(0.84, elsewhere, [first])  # another place: another object
+    assert "label" not in check(0.70, here, [first])  # clearly something else now
+
+
 def test_apply_filters_a_class_the_sensor_no_longer_has():
     idx = index([("cat", "dog", STATUE)])
     result = teach.apply([det("dog")], [0], np.stack([STATUE]), [], np.zeros((0, 4)), idx, ["dog"], {})

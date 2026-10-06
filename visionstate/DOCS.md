@@ -121,7 +121,8 @@ Tap a box on the **Live** tab or on a history frame (or its entry under the fram
 The first time, VisionState asks whether to start: from then on it checks each box of the objects
 you taught against what you taught. A box only takes over a taught answer when it clearly looks
 like one of the boxes you taught; otherwise the AI's own answer stands, so teaching never turns
-something on by a vague resemblance. This uses the same model as state sensors (DINOv2), which is
+something on by a vague resemblance. An object that stays where it is (a parked car) keeps its
+answer while it still looks much like it, so a change of light does not make it flicker. This uses the same model as state sensors (DINOv2), which is
 always loaded; it costs a little extra time per box, only for the objects you taught.
 
 - Every check decides anew, box by box, by what a box looks like — not where it is, so an object

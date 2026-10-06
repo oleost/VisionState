@@ -176,16 +176,23 @@ def apply(
     index: TaughtIndex,
     classes: list[str],
     parents: dict[str, str],
+    previous: list[dict] | None = None,
 ) -> list[dict]:
     """The boxes of a check after comparing them with the taught ones.
 
     A box that matches gets ``match`` ({id, label, similarity} of the taught box) and either
     ``filtered`` (not counted), another ``key`` (the detector's class kept in ``was``) or an own
     ``label``. Unsure boxes that match a taught box closely are added with ``rescued``.
+    ``previous`` (the boxes of the last check) lets an object that stayed where it was keep its
+    answer at a lower similarity (``kept``, see TEACH["keep_similarity"]).
     """
     result = [dict(d) for d in found]
     for i, vector in zip(checked, checked_vectors, strict=True):
         match = nearest(index, vector, TEACH["match_similarity"])
+        if match is None:
+            match = _kept(index, vector, result[i]["box"], previous or [])
+            if match is not None:
+                result[i]["kept"] = True
         if match is None:
             continue
         det = result[i]
@@ -217,6 +224,18 @@ def apply(
             det["label"] = label
         result.append(det)
     return result
+
+
+def _kept(index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous: list[dict]) -> Match | None:
+    """The answer a box got in the last check, when it is the same object at the same place and
+    still close to that taught label (just below match_similarity, e.g. in other light)."""
+    before = [
+        d["match"]["label"]
+        for d in previous
+        if d.get("match") and not d.get("rescued") and _iou(d["box"], box) >= TEACH["keep_iou"]
+    ]
+    match = nearest(index, vector, TEACH["keep_similarity"]) if before else None
+    return match if match is not None and match.label in before else None
 
 
 def counts_for(detection: dict, key: str) -> bool:
