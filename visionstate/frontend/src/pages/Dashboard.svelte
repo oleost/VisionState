@@ -36,8 +36,8 @@
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     try {
-      const { id } = await api.importBundle(file);
-      toast('Sensor imported');
+      const { id, skipped } = await api.importBundle(file);
+      toast(skipped ? `Sensor imported; ${skipped} unreadable image${skipped === 1 ? '' : 's'} skipped` : 'Sensor imported');
       go(paths.sensor(id));
     } catch (err) {
       toastError(err);

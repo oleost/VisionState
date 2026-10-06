@@ -1,4 +1,4 @@
-fastapi==0.141.1
+fastapi==0.142.0
 uvicorn[standard]==0.54.0
 python-multipart==0.0.32
 sqlalchemy==2.1.1
@@ -9,5 +9,5 @@ numpy==2.3.5
 pillow==12.3.0
 scikit-learn==1.9.1
 joblib==1.6.0
-av==18.1.0
+av==19.0.0
 websockets==17.1

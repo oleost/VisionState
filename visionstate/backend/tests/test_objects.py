@@ -139,6 +139,33 @@ def test_tracks_switch_on_after_required_checks_and_hold_until_cleared():
     assert (tracks["person"].on, tracks["person"].count) == (False, 0)
 
 
+def test_one_missed_check_does_not_switch_an_object_off():
+    """Off needs DETECTION["clear_misses"] checks in a row without it, not only clear_after_s."""
+    tracks: dict[str, ObjectTrack] = {}
+    update_tracks(tracks, seen(1), ["person"], 1, 30, now=0)
+    assert update_tracks(tracks, [], ["person"], 1, 30, now=60) == []  # long gone, but missed once
+    assert tracks["person"].on and tracks["person"].misses == 1
+    assert update_tracks(tracks, [], ["person"], 1, 30, now=65) == ["person"]  # confirmed
+    update_tracks(tracks, seen(1), ["person"], 1, 30, now=70)
+    assert tracks["person"].misses == 0
+
+
+def test_an_unsure_box_keeps_an_own_label_as_it_was():
+    """A car that may be "Our car" (ask) neither switches the label off nor on."""
+    ours = [{"key": "car", "score": 0.9, "box": [0, 0, 1, 1], "label": "our_car"}]
+    unsure = [
+        {"key": "car", "score": 0.9, "box": [0, 0, 1, 1], "ask": {"id": 1, "label": "our_car", "similarity": 0.8}}
+    ]
+    tracks: dict[str, ObjectTrack] = {}
+    update_tracks(tracks, ours, ["car", "our_car"], 1, 0, now=0)
+    for t in (10, 20, 30):
+        assert update_tracks(tracks, unsure, ["car", "our_car"], 1, 0, now=t) == []
+    assert tracks["our_car"].on and tracks["our_car"].misses == 0
+    off: dict[str, ObjectTrack] = {}
+    update_tracks(off, unsure, ["car", "our_car"], 1, 0, now=0)
+    assert not off["our_car"].on and off["car"].on
+
+
 def test_tracks_forget_deselected_classes():
     tracks: dict[str, ObjectTrack] = {}
     update_tracks(tracks, seen(1), ["person", "car"], 1, 30, 0)

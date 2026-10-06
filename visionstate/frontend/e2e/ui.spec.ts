@@ -774,6 +774,52 @@ test('review queue can be answered', async ({ page }, info) => {
   errors.expectNone();
 });
 
+test('review asks whether an object is one of your own labels', async ({ page, request }, info) => {
+  // A real question needs a box that looks only half like a taught one; the queue is given one
+  // here, on a real photo, so the page itself is what is tested.
+  const errors = watchErrors(page);
+  const photo = await (await request.get(PHOTO_URL('beach'))).body();
+  const item = {
+    id: 99001,
+    sensor_id: 1,
+    created_at: new Date().toISOString(),
+    state_key: 'rex',
+    published_key: 'ask',
+    confidence: 0.93,
+    probs: { ask: { label: 'rex', similarity: 0.81, box: [0.62, 0.48, 0.78, 0.8], detected: 'dog' } },
+    is_change: false,
+    review_reason: 'ask',
+    reviewed: false,
+    has_frame: true,
+    detections: [],
+    read_ok: null,
+    correct_value: null,
+    sensor: { id: 1, name: 'Beach', kind: 'objects', roi: null, states: [], reading: null, labels: [{ key: 'rex', name: 'Rex', parent: 'dog' }] },
+  };
+  await page.route('**/api/v1/review', (route) =>
+    route.fulfill({ json: { total: 1, items: [item], sensors: [{ id: 1, name: 'Beach', count: 1 }] } }),
+  );
+  await page.route('**/api/v1/history/99001/image*', (route) => route.fulfill({ body: photo, contentType: 'image/jpeg' }));
+  const answers: unknown[] = [];
+  await page.route('**/api/v1/review/99001', async (route) => {
+    answers.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('#/review');
+  await expect(page.getByText('Is this Rex?')).toBeVisible();
+  await expect(page.locator('.main .box')).toHaveCount(1); // the box it asks about
+  await expect(page.locator('.main .chip')).toHaveText('Is it yours?');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.main .btn');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-question.png'), fullPage: true });
+  await press(page.getByRole('button', { name: 'Yes, Rex' }), info);
+  await expect.poll(() => answers).toEqual([{ action: 'yes' }]);
+  await expect(page.getByText('All caught up')).toBeVisible();
+  // The answer in the list (shown on wide screens only).
+  if (await page.locator('aside ol').isVisible()) await expect(page.getByText('✓ Rex')).toBeVisible();
+  errors.expectNone();
+});
+
 test('an answer in the review queue can be changed from the list', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededSensorId(request);

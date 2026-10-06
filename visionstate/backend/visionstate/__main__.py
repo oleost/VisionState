@@ -10,6 +10,7 @@ from types import FrameType
 import uvicorn
 
 from .main import create_app
+from .redact import RedactingFormatter
 from .settings import load_settings
 
 
@@ -47,7 +48,9 @@ async def serve(server: Server) -> None:
 
 def main() -> None:
     settings = load_settings()
-    logging.basicConfig(level=settings.log_level.upper(), format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    logging.basicConfig(level=settings.log_level.upper())
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(RedactingFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
     config = uvicorn.Config(
         create_app(settings),
         host="0.0.0.0",  # noqa: S104 - only reachable through Home Assistant Ingress

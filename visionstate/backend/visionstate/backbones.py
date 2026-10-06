@@ -16,6 +16,7 @@ import threading
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 from PIL import Image
@@ -25,6 +26,19 @@ from . import imaging
 log = logging.getLogger(__name__)
 
 REGISTRY_FILE = Path(__file__).with_name("backbones.json")
+
+
+class ModelFile(Protocol):
+    """What downloading and finding a model file needs: any spec (backbone, detector, reader)."""
+
+    @property
+    def id(self) -> str: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def sha256(self) -> str: ...
+    @property
+    def filename(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -47,6 +61,7 @@ class BackboneSpec:
 
 
 def load_registry() -> tuple[str, dict[str, BackboneSpec]]:
+    """The default backbone's id and every backbone in ``backbones.json``."""
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     specs = {
         key: BackboneSpec(
@@ -78,7 +93,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(spec: BackboneSpec, dest_dir: Path) -> Path:
+def download(spec: ModelFile, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / spec.filename
     if target.exists() and sha256_file(target) == spec.sha256:
@@ -96,7 +111,7 @@ def download(spec: BackboneSpec, dest_dir: Path) -> Path:
     return target
 
 
-def locate(spec: BackboneSpec, search_dirs: list[Path]) -> Path | None:
+def locate(spec: ModelFile, search_dirs: list[Path]) -> Path | None:
     for directory in search_dirs:
         candidate = directory / spec.filename
         if candidate.exists():
@@ -139,7 +154,7 @@ class Embedder:
             return np.zeros((0, 0), dtype=np.float32)
         batch = np.stack([self.preprocess(img) for img in images]).astype(np.float32)
         with self._lock:
-            hidden = self.session.run(None, {self.input_name: batch})[0]
+            hidden = np.asarray(self.session.run(None, {self.input_name: batch})[0])
         features = self._pool(hidden)
         norms = np.linalg.norm(features, axis=1, keepdims=True)
         return (features / np.maximum(norms, 1e-8)).astype(np.float32)

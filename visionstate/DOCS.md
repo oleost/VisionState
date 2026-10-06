@@ -14,7 +14,8 @@ number** from a display, without any training. Everything runs on this machine; 
   **Mosquitto broker** app and the **MQTT** integration if you do not have them yet.
   VisionState finds the broker automatically.
 - **A camera** in Home Assistant (any `camera.*` entity: Frigate, ESP32-CAM, Reolink,
-  generic camera…), or a direct HTTP snapshot / RTSP URL.
+  generic camera…), or a direct HTTP snapshot URL (`http://` or `https://`) or stream URL
+  (`rtsp://`, `rtsps://`, also an `http://` video stream).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
   also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
@@ -99,6 +100,9 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   | Clear it when not seen for | 30 s | Keeps a person detected while they turn around |
   | Ignore objects smaller than | 0 % | Share of the region; filters far-away or tiny false hits |
 
+- An object that was there and is missing is **looked for again a few seconds later**, and only
+  cleared once it was missing for two checks in a row (and for the time above): one missed check
+  does not switch it off.
 - **Live** shows the last checked frame with every box, **History** lists when each object
   appeared and cleared (tap a row for the frame).
 - Object sensors use the same triggers as state sensors. **Detect changes in the image** is
@@ -120,8 +124,17 @@ Tap a box on the **Live** tab or on a history frame (or its entry under the fram
 The first time, VisionState asks whether to start: from then on it checks each box of the objects
 you taught against what you taught. A box only takes over a taught answer when it clearly looks
 like one of the boxes you taught; otherwise the AI's own answer stands, so teaching never turns
-something on by a vague resemblance. This uses the same model as state sensors (DINOv2), which is
-always loaded; it costs a little extra time per box, only for the objects you taught.
+something on by a vague resemblance. An object that stays where it is (a parked car) keeps its
+answer while it still looks much like it, so a change of light does not make it flicker. This uses
+the same model as state sensors (DINOv2), which is always loaded; it costs a little extra time per
+box, only for the objects you taught.
+
+**When it is not sure, it asks.** A box that looks somewhat like one of your own labels, but not
+clearly (say a car in light you never taught it in), goes to the **review queue**: *Is this Our
+car?* Meanwhile the label stays as it was — it is not switched off, nor on. **Yes** teaches the box
+as your label, **No** as an ordinary car, both in that light, so the next time it knows. A box that
+looks little like it is simply not yours, and it does not ask. At most one question per label is
+waiting, and no more often than the review cooldown (**Settings → Review queue**).
 
 - Every check decides anew, box by box, by what a box looks like — not where it is, so an object
   that moves a little or is lit differently is still recognised. Boxes filtered away in a check
@@ -319,7 +332,7 @@ automations.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
-  Settings tab.
+  Settings tab. An image in the file that cannot be read is skipped (the message says how many).
 
 ## Beta channel
 

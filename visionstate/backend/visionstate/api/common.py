@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import detectors, imaging, teach
 from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import ObjectTrack, Runtime, SensorConfig
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig
 from ..mqtt import main_entities
 from ..settings import (
     KIND_OBJECTS,
@@ -185,8 +185,10 @@ class ObjectsIn(BaseModel):
     """What an object sensor looks for. Defaults and limits: settings.OBJECT_*."""
 
     classes: list[str] = Field(default_factory=lambda: list(OBJECT_DEFAULTS["classes"]), max_length=OBJECT_MAX_CLASSES)
-    min_size: float = Field(OBJECT_DEFAULTS["min_size"], ge=_olo["min_size"], le=_ohi["min_size"])
-    clear_after_s: float = Field(OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"])
+    min_size: float = Field(default=OBJECT_DEFAULTS["min_size"], ge=_olo["min_size"], le=_ohi["min_size"])
+    clear_after_s: float = Field(
+        default=OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"]
+    )
     use_taught: bool = OBJECT_DEFAULTS["use_taught"]
     # Own labels ("custom") are made by teaching a box (api/teach.py), never set here.
 
@@ -210,15 +212,15 @@ class ReadingIn(BaseModel):
     """How a reading sensor turns what it reads into a value. Defaults and limits: settings.READING_*."""
 
     mode: str = READING_DEFAULTS["mode"]
-    decimals: int = Field(READING_DEFAULTS["decimals"], ge=_dlo["decimals"], le=_dhi["decimals"])
-    unit: str = Field(READING_DEFAULTS["unit"], max_length=16)
+    decimals: int = Field(default=READING_DEFAULTS["decimals"], ge=_dlo["decimals"], le=_dhi["decimals"])
+    unit: str = Field(default=READING_DEFAULTS["unit"], max_length=16)
     device_class: str = READING_DEFAULTS["device_class"]
     display: str = READING_DEFAULTS["display"]
-    digits: int = Field(READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
-    max_step: float = Field(READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
-    spot_rate: float = Field(READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
+    digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
+    max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
+    spot_rate: float = Field(default=READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
     rate_window_min: float = Field(
-        READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
+        default=READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
     )
 
     @field_validator("mode")
@@ -328,7 +330,8 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
-def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
+def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
+    """An object sensor's part of its view: each class and own label, live, and what was taught."""
     if sensor.kind != KIND_OBJECTS:
         return None
     settings = merge_objects(sensor.objects)
@@ -352,7 +355,7 @@ def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
             Sample.sensor_id == sensor.id, Sample.object_label.is_not(None)
         )
     ).all()
-    usable = [(label, detected) for label, detected in taught if teach.usable(label, parents)]
+    usable = [(label, detected) for label, detected in taught if label is not None and teach.usable(label, parents)]
     return {
         **settings,
         "live": per_class,
@@ -362,7 +365,8 @@ def objects_view(session: Session, sensor: Sensor, live) -> dict | None:
     }
 
 
-def reading_view(sensor: Sensor, live) -> dict | None:
+def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
+    """A reading sensor's part of its view: its settings, the published value and the last read."""
     if sensor.kind != KIND_READING:
         return None
     return {
@@ -374,6 +378,7 @@ def reading_view(sensor: Sensor, live) -> dict | None:
 
 
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
+    """A sensor as the UI shows it: settings, status, live state, model and the parts of its kind."""
     live = rt.live.get(sensor.id)
     info = session.get(ModelInfo, sensor.id)
     head = rt.heads.get(sensor.id)

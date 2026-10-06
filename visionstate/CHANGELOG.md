@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.4
+
+A release about sturdiness, and object sensors that know your own labels better.
+
+### New
+
+- **An object sensor asks when it is not sure about your own label.** A box that looks somewhat
+  like *Our car*, but not clearly (in light you never taught it in), goes to the review queue:
+  *Is this Our car?* **Yes** or **No** teaches it, so next time it knows. While it is unsure, the
+  label stays as it was instead of switching off. It asks at most one question per label at a
+  time, and no more often than the review cooldown.
+
+### Fixed
+
+- **A taught object that stands still no longer flickers.** A parked car taught as an own label
+  (*Our car*) was sometimes taken for an ordinary car when the light changed, and its sensor
+  switched off and on again. An object that stays where it is now keeps its taught answer while
+  it still looks much like it; a new object must still clearly look like what you taught.
+- **The MQTT connection could stop for good** after an unexpected error (for one, a message
+  that is not text sent to one of VisionState's command topics). It now reconnects, like after a
+  lost connection.
+- **A sensor could stop checking until a restart** when its settings could not be read at that
+  moment (a busy database). It now tries again after 30 seconds.
+- **Importing a sensor with a damaged image** failed halfway and left a sensor behind that did
+  not run. Unreadable images are now skipped, and the message says how many. A file that is no
+  ZIP gives a clear error instead of an internal one.
+- A message on a sensor's pause switch topic that was not ON or OFF paused the sensor; such a
+  message is now ignored.
+- A camera that did not answer showed "Camera unavailable:" without a reason; it now says it
+  gave no answer in time.
+- Answering a review item or taking a training image while that item or sensor was being removed
+  gave an internal error; it now says it is gone.
+
+### Changed
+
+- **An object is only cleared after it was missing twice in a row.** When something that was
+  there is missing, the sensor looks again a few seconds later instead of waiting for its next
+  check; one missed check no longer switches it off.
+- **Camera passwords are now also masked in error details in the log** (tracebacks), not only
+  in the messages themselves, and in every error shown in the app.
+- **Camera addresses are checked before a picture is fetched**: a snapshot URL starts with
+  `http://` or `https://`, a stream with a network address such as `rtsp://`.
+- **Limits for pictures**: a snapshot larger than 50 MB or an image of more than 60 megapixels is
+  refused instead of filling the memory (a 4K camera picture is 8 megapixels).
+- An unexpected error in a check is logged once, with its details, instead of on every check.
+- Updated libraries: FastAPI 0.142 and PyAV 19 (camera streams and video uploads). With PyAV 19,
+  turning video frames into images uses less memory.
+- Inside: the code is reorganised so it is easier to read and change (a map of the code in
+  `docs/ARCHITECTURE.md`), its types are checked on every change, and more of it is covered by
+  tests.
+
 ## 0.6.3
 
 Needs **Home Assistant 2025.10 or newer** (an older Home Assistant is not offered this update).

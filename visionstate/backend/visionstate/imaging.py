@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
@@ -13,10 +14,23 @@ from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, NEUTRAL_FILL, ROI_MAX
 FULL_FRAME_KEY = "full"
 
 
+class ImageTooLarge(OSError):
+    """An image with more pixels than RUNTIME["max_image_megapixels"]; handled like an unreadable one."""
+
+
 def decode(data: bytes) -> Image.Image:
     image = Image.open(io.BytesIO(data))
+    # Checked from the header, before the pixels are decoded (they could take gigabytes).
+    if image.width * image.height > RUNTIME["max_image_megapixels"] * 1_000_000:
+        raise ImageTooLarge(f"Image too large ({image.width}×{image.height})")
     image = ImageOps.exif_transpose(image)
     return image.convert("RGB")
+
+
+def load(path: Path) -> Image.Image:
+    """A stored image (RGB), with its file closed right away (it may be deleted meanwhile)."""
+    with Image.open(path) as image:
+        return image.convert("RGB")
 
 
 def encode_jpeg(image: Image.Image, quality: int = JPEG_QUALITY) -> bytes:
@@ -29,7 +43,7 @@ def _clamp(value: float) -> float:
     return min(max(float(value), 0.0), 1.0)
 
 
-def _normalise_points(points) -> list[list[float]] | None:
+def _normalise_points(points: list | None) -> list[list[float]] | None:
     """Clamped polygon corners, or None when there is no real polygon (missing, <3 points)."""
     if not points or len(points) < 3:
         return None
@@ -85,6 +99,7 @@ def roi_key(roi: dict | None) -> str:
 
 
 def crop(image: Image.Image, roi: dict | None) -> Image.Image:
+    """The region of ``image`` (all of it without one); a polygon's outside is painted neutral."""
     roi = normalise_roi(roi)
     if roi is None:
         return image

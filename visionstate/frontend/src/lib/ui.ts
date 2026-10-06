@@ -43,6 +43,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   flip: { label: 'Flip-flopping', tone: 'info', help: 'The state changed several times in a short period.' },
   spot_check: { label: 'Spot check', tone: 'muted', help: 'A random confident frame, to catch silent mistakes.' },
   rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
+  ask: { label: 'Is it yours?', tone: 'info', help: 'This may be one of your own labels, but the AI is not sure. Your answer is taught.' },
 };
 
 /**

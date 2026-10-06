@@ -27,6 +27,14 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile).
   - `backend/visionstate/settings.py` holds every backend default/tunable; import from there.
+  - **Map of the code: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — what runs where, how a
+    check flows, which files a common change touches. Keep it current when the structure changes.
+  - `backend/visionstate/engine/` is the runtime: `Runtime` (`runtime.py`) is put together from one
+    mixin per part (`models`, `checks`, `objects`, `reading`, `teaching`, `training`, `publishing`,
+    `history`) on `RuntimeBase` (`base.py`, the shared state); a part inherits the parts it uses.
+    `state.py` holds `SensorConfig`/`LiveState`, `logic.py` the pure decisions. New engine code goes
+    into the part it belongs to; a long-running loop must survive any exception (log it once, try
+    again) — only `CancelledError` may end it.
   - `backend/visionstate/backbones.json` (state sensors), `detectors.json` (object sensors) and
     `readers.json` (reading sensors) are the model registries. Entries are never changed or
     removed once released (a new model gets a new id); `python -m visionstate.backbones <dir>`
@@ -40,7 +48,10 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     `api.ts` is the only place that builds API URLs; `router.svelte.ts` defines app paths.
   - The UI reads sensor defaults, limits and palette from `GET /api/v1/config`.
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
-  (tests need the model: `python -m visionstate.backbones models`).
+  (tests need the model: `python -m visionstate.backbones models`), and the types:
+  `.venv/Scripts/pyright --pythonpath .venv/Scripts/python.exe` (0 errors; CI runs it). CI measures
+  coverage and fails below 88 %; add `--cov=visionstate --cov-report=term-missing:skip-covered` to see
+  what is not tested.
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
 - **UI testing routine** (every UI change, before a beta release) — many users run Home Assistant
   on phones/tablets:
@@ -156,7 +167,11 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
      - make a backup of the app and restore it: the sensors are back;
      - **soak for 1 hour** with the sensors checking: memory of the app (Supervisor app stats)
        and its data on disk level off instead of growing, the log stays quiet;
-     - open the app in Home Assistant at desktop width and on a phone (Ingress).
+     - open the app in Home Assistant at desktop width and on a phone (Ingress);
+     - prepare the **update from the last stable release in a real Home Assistant**: the stable
+       app (repository without `#beta`) is installed there too. It shares MQTT topics and unique
+       IDs with the beta app, so never run both: stop the beta app, start the stable one and give
+       it one sensor of each kind (import exports of the standing test sensors).
   3. **What changed since the last stable release**: new or upgraded dependencies have a licence
      that fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
      visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest
@@ -167,9 +182,13 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
   2. `git merge origin/main`; if `visionstate/config.yaml` conflicts, re-run
      `python scripts/channel.py stable X.Y.Z` to resolve it; commit.
   3. `git tag vX.Y.Z && git push origin vX.Y.Z` (tag only); wait for the images.
-  4. Push the branch, open a PR to `main`, wait for CI, merge it; `gh release create vX.Y.Z --latest`.
+  4. Push the branch, open a PR to `main`, wait for CI, merge it. Right away, update the stable app
+     on the test Home Assistant (reload the store): its sensors keep working, their entities keep
+     their IDs, the log has no warnings or errors. Only then `gh release create vX.Y.Z --latest`;
+     stop the stable app and start the beta app again.
   5. Merge `main` back into `beta`, keeping beta's config: `git switch beta && git merge main`,
-     then `python scripts/channel.py beta <next beta version>` before the next beta release.
+     then `python scripts/channel.py beta <last beta version>` and commit (a beta version whose
+     images exist); the next beta release sets the next version.
 - Python version is **3.14** (Dockerfile image, CI `setup-python`, ruff `target-version`, local
   `.venv` created with `py -3.14`). Upgrade all of them together; Dependabot ignores Python image
   upgrades for that reason.

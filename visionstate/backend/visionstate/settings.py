@@ -141,6 +141,11 @@ DETECTION = {
     # The detector also sees this share of the region's size on each side, so objects at the
     # edge are seen whole (their bottom centre then decides whether they are inside).
     "context_margin": 0.25,
+    # An object that was there and is missing is looked for again soon, and only switches off once
+    # it was missing this many checks in a row (and for clear_after_s): one missed check, a box
+    # taken for something else, a person behind a post, does not switch it off.
+    "clear_misses": 2,
+    "recheck_s": 5.0,
 }
 
 # Teaching an object sensor. The user marks a box as wrong ("none"), as another of the sensor's
@@ -152,6 +157,15 @@ DETECTION = {
 TEACH = {
     "match_similarity": 0.88,
     "margin": 0.03,  # the closest label must beat the next one by this much, else the detector decides
+    # An object that stays where it was (a parked car) keeps the answer it got in the last check
+    # while it is still this close to that taught box: light and the detector's box move the
+    # similarity by a few hundredths between checks, which would flip it at match_similarity.
+    "keep_similarity": 0.8,
+    "keep_iou": 0.6,  # "where it was": its box overlaps the box of the last check this much
+    # Between this and match_similarity a box of an own label's class is unsure: it neither
+    # switches the label on nor off, and the sensor asks in the review queue ("Is this Our car?";
+    # the answer is taught). At most one question per label per review cooldown (review rules).
+    "ask_similarity": 0.75,
     "rescue_similarity": 0.9,  # a box the detector was unsure about counts only when this close to a taught one
     "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
     "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work
@@ -263,6 +277,7 @@ UPLOAD_LIMITS = {
     "max_file_mb": 2048,  # per uploaded file (videos can be large)
     "max_zip_members": 5000,  # images read from one ZIP archive
     "max_zip_member_mb": 50,  # uncompressed size of one image inside a ZIP
+    "max_manifest_mb": 20,  # manifest.json of an imported sensor (5000 samples take about 2 MB)
 }
 
 VIDEO = {
@@ -315,6 +330,11 @@ RUNTIME = {
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
     "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,
+    # A camera picture larger than this is refused (a misconfigured URL streaming without end, a
+    # decompression bomb): a 12-megapixel JPEG is a few MB, an 8K frame 33 megapixels.
+    "max_frame_mb": 50,
+    "max_image_megapixels": 60,
+    "loop_retry_s": 30.0,  # a sensor's loop failed unexpectedly (database busy): try again after this
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
     # The entity IDs Home Assistant gave our entities (its entity registry): read again this often,
@@ -439,6 +459,8 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    """The app's settings: its options in Home Assistant (``options.json``), else environment
+    variables (``VISIONSTATE_<OPTION>``, for running it outside Home Assistant), else defaults."""
     env = os.environ
     data_dir = Path(env.get("VISIONSTATE_DATA", "/data"))
     options: dict = {}
@@ -446,11 +468,11 @@ def load_settings() -> Settings:
     if options_file.exists():
         options = json.loads(options_file.read_text(encoding="utf-8"))
 
-    def opt(name: str, default):
+    def opt[T: (str, int)](name: str, default: T) -> T:
         value = options.get(name)
         if value in (None, ""):
             value = env.get(f"VISIONSTATE_{name.upper()}", default)
-        return type(default)(value) if default is not None and value is not None else value
+        return type(default)(value)
 
     return Settings(
         data_dir=data_dir,

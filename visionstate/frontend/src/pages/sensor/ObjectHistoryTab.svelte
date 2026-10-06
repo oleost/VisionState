@@ -34,7 +34,7 @@
     return [...counts].map(([key, n]) => objectCount(n, key, own)).join(', ');
   }
 
-  const WHAT: Record<string, string> = { on: 'detected', off: 'cleared', filtered: 'filtered away' };
+  const WHAT: Record<string, string> = { on: 'detected', off: 'cleared', filtered: 'filtered away', ask: '? (asked in Review)' };
 </script>
 
 <p class="small muted">
@@ -58,8 +58,7 @@
             <span class="row wrap" style="gap:8px">
               <strong class="row" style="gap:8px" class:muted={filtered}>
                 <span class="dot" class:ring={filtered} style:background={on ? objectColor(classes, p.state_key) : 'var(--c-unknown)'}></span>
-                {objectName(p.state_key, own)}
-                {WHAT[p.published_key ?? ''] ?? ''}
+                {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{WHAT[p.published_key ?? ''] ?? ''}
               </strong>
               {#if (on || filtered) && p.confidence}<span class="mono small muted">{pct(p.confidence)}</span>{/if}
             </span>

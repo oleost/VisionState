@@ -46,7 +46,7 @@ class Storage:
         """Cached thumbnail for a sample or history frame."""
         target = self.thumb_path(kind, item_id)
         if not target.exists() or target.stat().st_mtime < source.stat().st_mtime:
-            self._write(target, imaging.thumbnail(Image.open(source).convert("RGB")))
+            self._write(target, imaging.thumbnail(imaging.load(source)))
         return target
 
     def delete_sample(self, sensor_id: int, sample_id: int, filename: str) -> None:

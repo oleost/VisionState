@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
+from typing import IO
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -13,7 +14,7 @@ from sqlalchemy import delete, func, select
 
 from .. import imaging, uploads
 from ..db import Sample, SampleLabel
-from ..engine import SensorConfig
+from ..engine import Runtime, SensorConfig
 from ..settings import KIND_STATES, UPLOAD_LIMITS, VIDEO
 from .common import API_PREFIX, get_sensor, iso, runtime, state_id_for
 
@@ -34,7 +35,7 @@ class IdsIn(BaseModel):
     sample_ids: list[int]
 
 
-def copy_limited(source, target, max_bytes: int, chunk: int = 1 << 20) -> bool:
+def copy_limited(source: IO[bytes], target: IO[bytes], max_bytes: int, chunk: int = 1 << 20) -> bool:
     """Copies at most ``max_bytes``; returns False if the source was larger."""
     total = 0
     while data := source.read(chunk):
@@ -62,6 +63,8 @@ async def capture(sensor_id: int, body: CaptureIn, request: Request) -> dict:
             data = shown[1]
     if data is None:
         cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
+        if cfg is None:
+            raise HTTPException(404, "Sensor not found")
         _, data = await rt.grab(cfg)
     image = await asyncio.to_thread(imaging.decode, data)
     sample_id = await asyncio.to_thread(rt.add_sample, sensor_id, image, "snapshot", state_id)
@@ -78,6 +81,8 @@ async def upload(
     frame_interval_s: float = Form(VIDEO["frame_interval_s"]),
     use_roi: bool = Form(True),
 ) -> dict:
+    """Training images from uploaded files (images, ZIP archives, videos), labelled with
+    ``state_key`` when given; returns the new samples and an error per file that failed."""
     rt = runtime(request)
     with rt.db.session() as s:
         state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), state_key or None)
@@ -106,14 +111,16 @@ async def upload(
     return {"created": len(created), "sample_ids": created, "errors": errors}
 
 
-def _ingest(rt, sensor_id, path, name, interval, state_id, use_roi) -> list[int]:
+def _ingest(
+    rt: Runtime, sensor_id: int, path: Path, name: str, interval: float, state_id: int | None, use_roi: bool
+) -> list[int]:
     return [
         rt.add_sample(sensor_id, image, origin, state_id, use_roi)
         for image, origin in uploads.frames_from_file(path, name, interval)
     ]
 
 
-def _sample_view(sample: Sample, key_by_state: dict[int, str], suggestion) -> dict:
+def _sample_view(sample: Sample, key_by_state: dict[int, str], suggestion: tuple[str, float] | None) -> dict:
     return {
         "id": sample.id,
         "labels": [key_by_state[lab.state_id] for lab in sample.labels if lab.state_id in key_by_state],
@@ -134,6 +141,8 @@ async def list_samples(
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
+    """A page of a sensor's training images, newest first, with the model's suggestion for
+    unlabelled ones."""
     rt = runtime(request)
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id)
@@ -175,6 +184,7 @@ def label_samples(sensor_id: int, body: LabelIn, request: Request) -> dict:
 
 @router.post("/sensors/{sensor_id}/samples/accept-suggestions")
 async def accept_suggestions(sensor_id: int, body: IdsIn, request: Request) -> dict:
+    """Label the given unlabelled images with what the model suggests for them."""
     rt = runtime(request)
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id)

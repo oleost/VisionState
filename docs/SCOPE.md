@@ -126,6 +126,19 @@ knew). Instead a second step compares boxes with boxes the user taught:
   least `match_similarity` (0.88) and beats the next label by `margin`; otherwise the detector's
   answer stands. Measured on CC0 photos: the same object in other light or framing scores
   0.87–0.97, other objects of the same kind mostly below 0.7.
+- An object that stays (its box overlaps a box of the last check by `keep_iou`, 0.6) keeps the
+  taught answer it had while it is at least `keep_similarity` (0.8) to that label: a parked car
+  measured 0.94 between two checks seven minutes apart, and a 2 % shift of the detector's box
+  alone costs 0.04 — enough to flip it around 0.88 every few checks. Such boxes carry `kept`.
+- Unsure (`ask_similarity` 0.75 up to `match_similarity`, to an own label of the box's class): the
+  box carries `ask`, counts neither for nor against that label (it keeps its published state), and
+  goes to the review queue ("Is this Our car?", a history row `published_key = "ask"`, reason
+  `ask`) — one waiting question per label, at most one per review cooldown, none with review off.
+  Yes/no teach the box from that history frame (as the label / as its class); answering again
+  replaces that taught box. Below 0.75 it is simply not that label.
+- Switching off needs `DETECTION["clear_misses"]` (2) checks in a row without the object as well
+  as `clear_after_s`; a missing object is looked for again after `recheck_s` (5 s) instead of at
+  the next interval (`LiveState.recheck_at`).
 - Results: `filtered` (not counted, still shown dashed; a history row "filtered" when a class
   starts being filtered, at most every `filtered_record_cooldown_s`), another class (`was` keeps
   the detector's), or an own `label`.
@@ -200,6 +213,12 @@ knew). Instead a second step compares boxes with boxes the user taught:
 Video upload: one frame every *N* seconds (default 5), near-duplicates skipped by perceptual
 hash, then the current model suggests a label for each frame. Upload and ZIP sizes are capped
 (`UPLOAD_LIMITS`). A single camera can feed multiple sensors, each with its own ROI.
+
+Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
+`http(s)://`, a stream a network address (FFmpeg would also open local files and its own
+pseudo-protocols), a camera an entity ID. A snapshot is read up to `RUNTIME["max_frame_mb"]`, and
+every image is refused above `RUNTIME["max_image_megapixels"]` — checked from its header, before
+the pixels are decoded.
 
 ## 7. When and how a sensor decides
 
@@ -400,6 +419,8 @@ automatically.
   region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.
   The reader itself does not learn from the answers.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
+  `manifest.json` is capped (`UPLOAD_LIMITS["max_manifest_mb"]`); an unreadable image in a bundle
+  is skipped and counted (the response's `skipped`), so an import never stops halfway.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,
   exporting trained heads (retraining is faster than shipping them).
 
@@ -419,7 +440,7 @@ sensor settings) lives in the UI.
 | MQTT / HA | aiomqtt, websockets, httpx |
 | Frontend | Svelte 5 + Vite + TypeScript, plain CSS with design tokens (`tokens.css`), hash router (Ingress-safe), bundled fonts |
 | Packaging | HA app repository, Docker (python:3.14-slim), GitHub Actions → GHCR |
-| Quality | pytest (unit + integration with a fake camera/HA/MQTT), ruff, svelte-check, Playwright UI tests (desktop + phone with touch, against the real backend and `scripts/fake_camera.py`), image smoke test in CI, Dependabot (monthly, to `beta`) |
+| Quality | pytest (unit + integration with a fake camera/HA/MQTT; coverage measured in CI, floor 88 %), ruff, svelte-check, Playwright UI tests (desktop + phone with touch, against the real backend and `scripts/fake_camera.py`), image smoke test in CI, Dependabot (monthly, to `beta`) |
 | Docs | `README.md`, `visionstate/DOCS.md` (shown in HA), `CHANGELOG.md`, this file |
 
 ## 15. Repo layout
@@ -427,7 +448,10 @@ sensor settings) lives in the UI.
 ```
 /                       repository.yaml, README.md, CLAUDE.md
 /visionstate            HA app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
-/visionstate/backend    Python package + tests (inside the app dir: the Dockerfile builds from it)
+/visionstate/backend    Python package + tests (inside the app dir: the Dockerfile builds from it);
+                        visionstate/engine/ is the runtime: Runtime (runtime.py) from one mixin
+                        per part (models, checks, objects, reading, teaching, training,
+                        publishing, history), state.py and logic.py (pure decisions)
 /visionstate/frontend   Svelte app
 /scripts                channel.py (stable/beta config switch), fake_camera.py (test camera)
 /docs                   SCOPE.md, promo/ (README screenshots and logos)
@@ -452,6 +476,7 @@ sensor settings) lives in the UI.
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
+| **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);

@@ -1,5 +1,7 @@
 """Teaching object sensors: matching taught boxes, own labels, missed boxes and the API."""
 
+import time
+
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -87,6 +89,68 @@ def test_apply_filters_relabels_and_gives_own_labels():
     assert "label" not in other_car  # not close enough to the taught car
     assert cat["key"] == "cat" and cat["was"] == "dog"
     assert found[0].get("filtered") is None  # the input is not changed
+
+
+def toward(target: np.ndarray, other: np.ndarray, similarity: float) -> np.ndarray:
+    """A unit vector with exactly ``similarity`` to ``target`` (``other`` orthogonal to it)."""
+    return (similarity * target + np.sqrt(1 - similarity**2) * other).astype(np.float32)
+
+
+def test_an_object_that_stays_keeps_its_taught_answer():
+    """A parked car is "Our car" at 0.90 similarity; in the next light it is 0.84 — still ours."""
+    parents = {"our_car": "car"}
+    idx = index([("our_car", "car", OUR_CAR)], parents)
+    side = unit(0, 0, 0, 1)
+    here, elsewhere = (0.1, 0.1, 0.3, 0.5), (0.6, 0.5, 0.9, 0.9)
+
+    def check(similarity, box, previous=None):
+        found = [det("car", box=box)]
+        return teach.apply(
+            found,
+            [0],
+            np.stack([toward(OUR_CAR, side, similarity)]),
+            [],
+            np.zeros((0, 4)),
+            idx,
+            ["car"],
+            parents,
+            previous,
+        )[0]
+
+    first = check(0.90, here)
+    assert first["label"] == "our_car" and "kept" not in first
+    assert "label" not in check(0.84, here)  # a new object needs match_similarity
+    kept = check(0.84, here, [first])
+    assert kept["label"] == "our_car" and kept["kept"]
+    assert check(0.84, (0.11, 0.1, 0.31, 0.5), [kept])["label"] == "our_car"  # and it goes on, also moved a bit
+    assert "label" not in check(0.84, elsewhere, [first])  # another place: another object
+    assert "label" not in check(0.70, here, [first])  # clearly something else now
+
+
+def test_a_box_that_may_be_an_own_label_is_asked_about():
+    parents = {"our_car": "car"}
+    idx = index([("our_car", "car", OUR_CAR)], parents)
+    side = unit(0, 0, 0, 1)
+
+    def check(similarity, key="car"):
+        found = [det(key)]
+        return teach.apply(
+            found,
+            [0],
+            np.stack([toward(OUR_CAR, side, similarity)]),
+            [],
+            np.zeros((0, 4)),
+            idx,
+            ["car", "dog"],
+            parents,
+        )[0]
+
+    assert check(0.90)["label"] == "our_car" and "ask" not in check(0.90)  # clear: no question
+    asked = check(0.80)
+    assert "label" not in asked and asked["ask"]["label"] == "our_car" and asked["ask"]["similarity"] == 0.8
+    assert "ask" not in check(0.70)  # clearly not ours: no question either
+    assert "ask" not in check(0.80, key="dog")  # a dog is never "Our car"
+    assert teach.unsure_for(asked, "our_car") and not teach.counts_for(asked, "our_car")
 
 
 def test_apply_filters_a_class_the_sensor_no_longer_has():
@@ -311,7 +375,8 @@ def test_a_missed_box_is_found_again_among_unsure_boxes(settings):  # noqa: F811
         sid = create(
             client, objects={"classes": ["dog", "person"], "clear_after_s": 0}, interval_s=1, threshold=0.99
         ).json()["id"]
-        assert wait_for(lambda: sensor(client, sid)["live"]["last_run"], timeout=60)
+        # The frame of a check (last_run is set when a check starts, before its frame is taken).
+        assert wait_for(lambda: sensor(client, sid)["live"]["frame_id"], timeout=60)
         assert not live(client, sid)["person"]["on"]
         frame_id = sensor(client, sid)["live"]["frame_id"]
         # The person's box, as the user would draw it (from the wizard preview, which sees everything).
@@ -325,3 +390,52 @@ def test_a_missed_box_is_found_again_among_unsure_boxes(settings):  # noqa: F811
         rescued = [d for d in sensor(client, sid)["objects"]["detections"] if d.get("rescued")]
         assert [d["key"] for d in rescued] == ["person"]
         assert not live(client, sid)["dog"]["on"]  # the dogs are not like the person
+
+
+@requires_detector
+def test_an_unsure_own_label_is_asked_about_and_the_answer_taught(settings, monkeypatch):  # noqa: F811
+    """A dog that may be Rex goes to the review queue; "yes" teaches it as Rex, "no" as a dog."""
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = PhotoCamera("beach")
+        sid = create(client, objects={"classes": ["dog"], "clear_after_s": 0}, interval_s=1).json()["id"]
+        assert wait_for(lambda: live(client, sid)["dog"]["on"], timeout=60)
+        view = sensor(client, sid)
+        dog = max((d for d in view["objects"]["detections"] if d["key"] == "dog"), key=lambda d: d["score"])
+        assert teach_box(client, sid, dog, view["live"]["frame_id"], new_label="Rex").status_code == 201
+        assert wait_for(lambda: live(client, sid).get("rex", {}).get("on"), timeout=30)
+
+        # Nothing is ever this sure: Rex's own box is now "may be Rex". Rex stays on (unsure holds
+        # it), and the sensor asks once — not again while the question waits.
+        monkeypatch.setitem(TEACH, "match_similarity", 1.01)
+        monkeypatch.setitem(TEACH, "keep_similarity", 1.01)
+
+        def questions():
+            return [i for i in client.get("/api/v1/review").json()["items"] if i["review_reason"] == "ask"]
+
+        assert wait_for(lambda: len(questions()) == 1, timeout=30)
+        item = questions()[0]
+        assert item["state_key"] == "rex" and item["probs"]["ask"]["detected"] == "dog"
+        assert item["sensor"]["labels"] == [{"key": "rex", "name": "Rex", "parent": "dog"}]
+        assert live(client, sid)["rex"]["on"]
+        time.sleep(2)  # a few more checks
+        assert len(questions()) == 1
+
+        def taught():
+            return [x["label"] for x in client.get(f"/api/v1/sensors/{sid}/taught").json()["examples"]]
+
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "maybe"}).status_code == 400
+
+        def after_a_check():
+            # A check reads the new taught box (Windows can not delete a file while it is read).
+            start = sensor(client, sid)["live"]["last_run"]
+            assert wait_for(lambda: sensor(client, sid)["live"]["last_run"] > start + 0.5, timeout=30)
+
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "yes"}).status_code == 200
+        assert sorted(taught()) == ["rex", "rex"] and questions() == []
+        after_a_check()
+        # Answered again: the first answer's box is replaced, not added to.
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "no"}).status_code == 200
+        assert sorted(taught()) == ["dog", "rex"]
+        after_a_check()
+        assert client.post(f"/api/v1/review/{item['id']}", json={"action": "skip"}).status_code == 200
+        assert taught() == ["rex"]

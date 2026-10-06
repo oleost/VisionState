@@ -42,6 +42,14 @@ def config(**triggers) -> SensorConfig:
     )
 
 
+def test_a_missing_object_is_looked_for_again_soon():
+    live = LiveState(last_run=100, recheck_at=105)
+    assert next_check_at(config(), live, 101) == (105, "full")  # before the regular check at 160
+    assert next_check_at(config(regular=False), live, 101) == (105, "full")  # also with triggers only
+    live.recheck_at = 0
+    assert next_check_at(config(), live, 101) == (160, "full")
+
+
 def test_schedule_uses_interval_burst_and_probe():
     live = LiveState()
     assert next_check_at(config(), live, 100) == (100, "full")  # never run -> now
@@ -117,8 +125,10 @@ def test_migration_adds_triggers_column(tmp_path):
     Database(path).init()
     con = sqlite3.connect(path)
     columns = {row[1] for row in con.execute("PRAGMA table_info(sensor)")}
+    version = con.execute("PRAGMA user_version").fetchone()[0]
+    con.close()
     assert {"triggers", "review"} <= columns
-    assert con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert version == SCHEMA_VERSION
 
 
 class FakeHomeAssistant:

@@ -56,6 +56,13 @@ def make_model() -> LogisticRegression:
 
 
 def train(vectors: np.ndarray, labels: list[str], backbone: str, version: int, state_keys: list[str]) -> TrainResult:
+    """Train a head on the labelled samples (one embedding and one state key each).
+
+    Needs two states with samples; with fewer, ``head`` is None (the sensor is untrained).
+    With enough samples per state the quality is measured too: accuracy and confusion from
+    cross-validation, and "suspects" — samples a model that never saw them disagrees with,
+    likely labelled wrong (shown on the Quality tab).
+    """
     started = time.perf_counter()
     counts = {k: labels.count(k) for k in state_keys}
     classes = sorted({k for k in labels})
@@ -80,7 +87,7 @@ def train(vectors: np.ndarray, labels: list[str], backbone: str, version: int, s
         cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=0)
         # Each sample is predicted by a model that never saw it, so disagreements point at
         # samples that are either labelled wrong or genuinely ambiguous.
-        proba = cross_val_predict(make_model(), vectors, y, cv=cv, method="predict_proba")
+        proba = np.asarray(cross_val_predict(make_model(), vectors, y, cv=cv, method="predict_proba"))
         order = np.array(sorted(classes))
         predicted = order[proba.argmax(axis=1)]
         accuracy = float((predicted == y).mean())
@@ -90,7 +97,7 @@ def train(vectors: np.ndarray, labels: list[str], backbone: str, version: int, s
                 for i in range(len(y))
                 if predicted[i] != y[i]
             ),
-            key=lambda item: -item["confidence"],
+            key=lambda item: -float(item["confidence"]),
         )[: QUALITY["max_suspects"]]
         confusion = {
             "keys": state_keys,

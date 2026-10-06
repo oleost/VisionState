@@ -183,6 +183,9 @@ export const api = {
   dismissReview: (sensorId: number) => request<{ dismissed: number }>(`review/sensors/${sensorId}/dismiss`, send('POST')),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>
     request(`review/${predictionId}`, send('POST', { action, state_key: stateKey })),
+  /** An object sensor's question: is this box the own label it asks about? The answer is taught. */
+  answerQuestion: (predictionId: number, action: 'yes' | 'no' | 'skip') =>
+    request(`review/${predictionId}`, send('POST', { action })),
   /** A reading: did the reader read the right number? `value` = the right one, when it misread. */
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
@@ -202,6 +205,6 @@ export const api = {
   importBundle(file: File) {
     const form = new FormData();
     form.append('file', file, file.name);
-    return request<{ id: number }>('import', { method: 'POST', body: form });
+    return request<{ id: number; skipped: number }>('import', { method: 'POST', body: form });
   },
 };

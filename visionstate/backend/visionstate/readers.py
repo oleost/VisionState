@@ -14,6 +14,7 @@ import json
 import math
 import re
 import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +49,7 @@ class ReaderSpec:
 
 
 def load_registry() -> tuple[str, dict[str, ReaderSpec]]:
+    """The default reader's id and every reader in ``readers.json``."""
     raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     specs = {
         key: ReaderSpec(
@@ -171,7 +173,7 @@ class Reader:
     def read(self, image: Image.Image) -> Text:
         batch = self.preprocess(image)
         with self._lock:
-            probs = self.session.run(None, {self.input_name: batch})[0][0]  # time steps × classes
+            probs = np.asarray(self.session.run(None, {self.input_name: batch})[0])[0]  # time steps × classes
         return decode(probs[:, self._classes], self._chars)
 
     def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
@@ -194,6 +196,7 @@ class Reader:
                     whole = (text, band)
                 if digit_count(text.text) == digits and (best is None or text.score > best[0].score):
                     best = (text, band)
+        assert whole is not None, "READING has at least one counter band"
         return best or whole
 
     def read_display(self, image: Image.Image, display: str, digits: int = 0) -> tuple[Text, Image.Image]:
@@ -314,7 +317,7 @@ def problem_key(reason: str | None) -> str:
     return "ok" if reason is None else reason.replace(" ", "_")
 
 
-def accepted_share(reads, now: float, window_s: float) -> float | None:
+def accepted_share(reads: deque[tuple[float, bool]], now: float, window_s: float) -> float | None:
     """Share of accepted readings (in %) among ``reads`` ((time, accepted) pairs) of the last window.
 
     Drops the older pairs from ``reads`` (a deque).
@@ -326,7 +329,7 @@ def accepted_share(reads, now: float, window_s: float) -> float | None:
     return round(100 * sum(1 for _, ok in reads if ok) / len(reads), 1)
 
 
-def counter_rate(samples, now: float, window_s: float, min_span_s: float) -> float | None:
+def counter_rate(samples: deque[tuple[float, float]], now: float, window_s: float, min_span_s: float) -> float | None:
     """How fast a counter goes up, per hour, over about the last window.
 
     ``samples`` (a deque of (time, accepted value)) is trimmed to the samples inside the window
