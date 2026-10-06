@@ -9,12 +9,13 @@ from sqlalchemy import func, select
 
 from ..db import Prediction, Sensor
 from ..mqtt import REVIEW_TOPICS, object_topics, topics
+from .base import RuntimeBase
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
 
-class PublishingMixin:
+class PublishingMixin(RuntimeBase):
     async def _send(self, cfg: SensorConfig, topic: str, payload, retain: bool = False) -> None:
         """Publish one of a sensor's values — unless it is not to be sent to Home Assistant."""
         if cfg.publish:

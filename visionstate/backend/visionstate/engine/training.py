@@ -12,13 +12,14 @@ from sqlalchemy import delete, select
 from .. import classifier, imaging
 from ..db import Embedding, ModelInfo, Sample, SampleLabel, Sensor, utcnow
 from ..settings import KIND_STATES, RUNTIME
+from .base import RuntimeBase
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 EMBED_BATCH = 16
 
 
-class TrainingMixin:
+class TrainingMixin(RuntimeBase):
     def heads_load(self, sensor_id: int) -> bool:
         """Loads a sensor's head. Returns True when it must be retrained (missing, unreadable or outdated)."""
         path = self.settings.heads_dir / f"{sensor_id}.joblib"

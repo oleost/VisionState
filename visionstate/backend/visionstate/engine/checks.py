@@ -17,13 +17,16 @@ from ..mqtt import topics
 from ..redact import redact
 from ..settings import RUNTIME, UNKNOWN_STATE
 from ..sources import SourceError
+from .base import RuntimeBase
 from .logic import next_check_at, review_reason
+from .objects import ObjectChecksMixin
+from .reading import ReadingChecksMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
 
-class ChecksMixin:
+class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
     async def _sensor_loop(self, sensor_id: int) -> None:
         event = self._wake[sensor_id]
         last_error = ""

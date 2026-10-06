@@ -16,12 +16,15 @@ from ..db import Prediction, ReadingStat
 from ..mqtt import rate_unit, topics
 from ..redact import redact
 from ..settings import READING
+from .base import RuntimeBase
+from .models import ModelsMixin
+from .publishing import PublishingMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
 
-class ReadingChecksMixin:
+class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     async def _run_reading(self, cfg: SensorConfig, image: Image.Image) -> None:
         """One check of a reading sensor: read the number, check it and publish it.
 

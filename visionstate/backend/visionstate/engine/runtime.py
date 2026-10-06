@@ -8,79 +8,30 @@ import time
 
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, readers, teach
+from .. import backbones, detectors, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, fetch_entity_ids
-from ..lights import Lights
 from ..mqtt import MqttBridge, SensorDescriptor
-from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Settings, merge_review, merge_triggers
-from ..sources import FrameGrabber, HomeAssistant
-from ..storage import Storage
+from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Settings, merge_triggers
 from .checks import ChecksMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
-from .models import ModelsMixin
-from .objects import ObjectChecksMixin
-from .publishing import PublishingMixin
-from .reading import ReadingChecksMixin
-from .state import LiveState, SensorConfig
-from .teaching import TeachingMixin
-from .training import TrainingMixin
 
 log = logging.getLogger(__name__)
 
 
-class Runtime(
-    ModelsMixin,
-    TeachingMixin,
-    ChecksMixin,
-    ObjectChecksMixin,
-    ReadingChecksMixin,
-    PublishingMixin,
-    TrainingMixin,
-    HistoryMixin,
-):
+class Runtime(ChecksMixin, HistoryMixin):
     """Runs every sensor, trains heads and publishes results; one instance per app.
 
-    The parts live in mixins, one file each; they share the state set up in ``__init__``.
+    The parts live in mixins, one file each, on top of ``RuntimeBase`` (base.py: the shared state).
+    Each part inherits the parts it uses, so ChecksMixin brings in objects, reading, teaching,
+    models, training and publishing; HistoryMixin the clean-up.
     """
 
     def __init__(self, settings: Settings, db: Database):
-        self.settings = settings
-        self.db = db
-        self.storage = Storage(settings)
-        self.ha = HomeAssistant(settings)
-        self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
-        self.grabber = FrameGrabber(self.ha)
+        super().__init__(settings, db)
         self.mqtt = MqttBridge(settings, self._on_command, self._on_mqtt_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
-        self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
-        # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
-        self.ha_entity_ids: dict[str, str] = {}
-        self._registry_wanted = asyncio.Event()  # discovery was published: read the registry again
-        self.global_review: dict = {}  # global review rules (DB setting "review")
-        self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
-        self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
-        self.embedder: backbones.Embedder | None = None
-        self.embedder_error = ""
-        self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
-        self.detector_error = ""
-        self._detector_lock = asyncio.Lock()
-        self._published_classes: dict[int, set[str]] = {}  # object sensor -> classes in discovery
-        self.reader: readers.Reader | None = None  # loaded on first use by a reading sensor
-        self.reader_error = ""
-        self._reader_lock = asyncio.Lock()
-        self.heads: dict[int, classifier.Head] = {}
-        self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
-        self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes
-        self.live: dict[int, LiveState] = {}
-        self.training: set[int] = set()
-        self._tasks: dict[int, asyncio.Task] = {}
-        self._wake: dict[int, asyncio.Event] = {}
-        self._retrain_handles: dict[int, asyncio.TimerHandle] = {}
-        self._background: set[asyncio.Task] = set()
-        self._sem = asyncio.Semaphore(RUNTIME["max_concurrent_inferences"])
-        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -141,27 +92,6 @@ class Runtime(
                 continue
             await asyncio.sleep(RUNTIME["entity_registry_delay_s"])  # let Home Assistant create the entities
 
-    def _spawn(self, coro) -> asyncio.Task:
-        task = asyncio.create_task(coro)
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
-        return task
-
-    def _sensor_ids(self, kind: str | None = None) -> list[int]:
-        with self.db.session() as s:
-            query = select(Sensor.id)
-            if kind is not None:
-                query = query.where(Sensor.kind == kind)
-            return list(s.scalars(query))
-
-    def load_sensor(self, sensor_id: int) -> SensorConfig | None:
-        with self.db.session() as s:
-            row = s.get(Sensor, sensor_id)
-            return SensorConfig.from_row(row) if row else None
-
-    def live_state(self, sensor_id: int) -> LiveState:
-        return self.live.setdefault(sensor_id, LiveState())
-
     def _start_loop(self, sensor_id: int) -> None:
         self._wake.setdefault(sensor_id, asyncio.Event())
         if sensor_id not in self._tasks or self._tasks[sensor_id].done():
@@ -203,36 +133,6 @@ class Runtime(
             self.detector = None  # the last object sensor is gone: free the memory
         if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
             self.reader = None
-
-    def _on_loop(self, func, *args) -> bool:
-        """Run ``func`` on the event loop. Returns True when called from another thread (deferred).
-
-        Sync API endpoints and ``asyncio.to_thread`` workers run in threads; asyncio objects
-        (events, timers) may only be touched from the loop thread.
-        """
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-        if self._loop is not None and running is not self._loop:
-            self._loop.call_soon_threadsafe(func, *args)
-            return True
-        return False
-
-    def wake(self, sensor_id: int, force: bool = False, paused_too: bool = False) -> None:
-        """Let the sensor's loop look again; ``force`` checks now (a paused sensor only with ``paused_too``)."""
-        if self._on_loop(self.wake, sensor_id, force, paused_too):
-            return
-        if force:
-            live = self.live_state(sensor_id)
-            live.force = True
-            live.force_paused = live.force_paused or paused_too
-        event = self._wake.get(sensor_id)
-        if event:
-            event.set()
-
-    def review_rules(self, cfg: SensorConfig) -> dict:
-        return merge_review(self.global_review, cfg.review)
 
     def set_global_review(self, rules: dict) -> None:
         self.global_review = dict(rules)

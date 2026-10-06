@@ -12,12 +12,14 @@ from sqlalchemy import select
 from .. import imaging, teach
 from ..db import Embedding, Sample
 from ..settings import TEACH
+from .base import RuntimeBase
+from .models import ModelsMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
 
-class TeachingMixin:
+class TeachingMixin(ModelsMixin, RuntimeBase):
     async def taught_index(self, cfg: SensorConfig) -> teach.TaughtIndex | None:
         """What the sensor was taught, ready to compare with; None when there is nothing to compare."""
         if not cfg.objects["use_taught"] or self.embedder is None:

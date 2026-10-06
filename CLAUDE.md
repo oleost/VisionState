@@ -27,11 +27,14 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile).
   - `backend/visionstate/settings.py` holds every backend default/tunable; import from there.
+  - **Map of the code: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — what runs where, how a
+    check flows, which files a common change touches. Keep it current when the structure changes.
   - `backend/visionstate/engine/` is the runtime: `Runtime` (`runtime.py`) is put together from one
     mixin per part (`models`, `checks`, `objects`, `reading`, `teaching`, `training`, `publishing`,
-    `history`); `state.py` holds `SensorConfig`/`LiveState`, `logic.py` the pure decisions. New
-    engine code goes into the part it belongs to; a long-running loop must survive any exception
-    (log it once, try again) — only `CancelledError` may end it.
+    `history`) on `RuntimeBase` (`base.py`, the shared state); a part inherits the parts it uses.
+    `state.py` holds `SensorConfig`/`LiveState`, `logic.py` the pure decisions. New engine code goes
+    into the part it belongs to; a long-running loop must survive any exception (log it once, try
+    again) — only `CancelledError` may end it.
   - `backend/visionstate/backbones.json` (state sensors), `detectors.json` (object sensors) and
     `readers.json` (reading sensors) are the model registries. Entries are never changed or
     removed once released (a new model gets a new id); `python -m visionstate.backbones <dir>`

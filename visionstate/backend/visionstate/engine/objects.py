@@ -14,14 +14,17 @@ from ..db import Prediction
 from ..mqtt import object_topics, topics
 from ..redact import redact
 from ..settings import TEACH
+from .base import RuntimeBase
 from .logic import update_tracks
+from .publishing import PublishingMixin
 from .state import SensorConfig
+from .teaching import TeachingMixin
 
 log = logging.getLogger(__name__)
 OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an object sensor
 
 
-class ObjectChecksMixin:
+class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
     async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
         """One check of an object sensor: detect, compare with what was taught, update and publish."""
         live = self.live_state(cfg.id)

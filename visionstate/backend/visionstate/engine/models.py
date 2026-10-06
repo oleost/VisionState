@@ -11,12 +11,14 @@ from PIL import Image
 from .. import backbones, detectors, imaging, readers
 from ..redact import redact
 from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES
+from .base import RuntimeBase
 from .logic import filter_detections
+from .training import TrainingMixin
 
 log = logging.getLogger(__name__)
 
 
-class ModelsMixin:
+class ModelsMixin(TrainingMixin, RuntimeBase):
     def model_path(self, spec: backbones.BackboneSpec) -> Path | None:
         return backbones.locate(spec, [self.settings.bundled_models_dir, self.settings.models_dir])
 

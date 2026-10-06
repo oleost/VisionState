@@ -10,11 +10,13 @@ from sqlalchemy import func, select
 
 from ..db import Prediction, Sample, utcnow
 from ..settings import RUNTIME, STORAGE_DEFAULTS
+from .base import RuntimeBase
+from .publishing import PublishingMixin
 
 log = logging.getLogger(__name__)
 
 
-class HistoryMixin:
+class HistoryMixin(PublishingMixin, RuntimeBase):
     async def _cleanup_loop(self) -> None:
         while True:
             try:
