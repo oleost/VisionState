@@ -85,7 +85,11 @@ class PublishingMixin(RuntimeBase):
             if row is None:
                 return None
             if command == "enabled":
-                row.enabled = payload.strip().upper() == "ON"
+                value = payload.strip().upper()
+                if value not in ("ON", "OFF"):  # anything else is not from Home Assistant's switch
+                    log.warning("Sensor %s: ignored %r on its pause switch (expected ON or OFF)", slug, payload[:20])
+                    return None
+                row.enabled = value == "ON"
             return row.id
 
     async def _on_command(self, slug: str, command: str, payload: str) -> None:

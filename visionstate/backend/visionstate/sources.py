@@ -154,7 +154,7 @@ class FrameGrabber:
                 return await self._get_limited(source)
             return await asyncio.to_thread(grab_rtsp, source)
         except httpx.HTTPError as err:
-            raise SourceError(redact(str(err))) from err
+            raise SourceError(describe(err)) from err
 
     async def _get_limited(self, url: str) -> bytes:
         """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]."""
@@ -168,6 +168,15 @@ class FrameGrabber:
                 if len(body) > limit:
                     raise SourceError(f"Picture larger than {RUNTIME['max_frame_mb']} MB")
             return bytes(body)
+
+
+def describe(err: httpx.HTTPError) -> str:
+    """Why a request failed, for the UI and the log (some httpx errors have no message)."""
+    if message := redact(str(err)):
+        return message
+    if isinstance(err, httpx.TimeoutException):
+        return f"no answer within {RUNTIME['http_timeout_s']:g} s"
+    return type(err).__name__
 
 
 def grab_rtsp(url: str) -> bytes:

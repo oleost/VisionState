@@ -58,6 +58,9 @@ def test_pause_switch_from_home_assistant(app):
     assert client.get(f"/api/v1/sensors/{sid}").json()["enabled"] is False
     assert rt.mqtt.sent["visionstate/door/enabled"] == "OFF"
     client.portal.call(rt._on_command, "no_such_sensor", "enabled", "ON")  # ignored
+    client.portal.call(rt._on_command, "door", "enabled", "ON")
+    client.portal.call(rt._on_command, "door", "enabled", "��")  # not from the switch: ignored
+    assert client.get(f"/api/v1/sensors/{sid}").json()["enabled"] is True
 
 
 def test_check_now_from_home_assistant_also_when_paused(app):

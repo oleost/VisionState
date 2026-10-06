@@ -82,6 +82,13 @@ def test_snapshot_size_limit(tmp_path, monkeypatch):
     big = grabber_with(tmp_path, lambda request: httpx.Response(200, content=b"x" * 5000))
     with pytest.raises(SourceError, match="larger than"):
         asyncio.run(big.grab("http", "http://cam/snap.jpg"))
+
+    def timeout(request):
+        raise httpx.ConnectTimeout("")
+
+    silent = grabber_with(tmp_path, timeout)
+    with pytest.raises(SourceError, match="no answer within"):  # httpx gives no message of its own
+        asyncio.run(silent.grab("http", "http://cam/snap.jpg"))
     missing = grabber_with(tmp_path, lambda request: httpx.Response(404))
     with pytest.raises(SourceError, match="HTTP 404"):
         asyncio.run(missing.grab("http", "http://cam/snap.jpg"))
