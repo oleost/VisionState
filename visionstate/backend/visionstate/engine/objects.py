@@ -8,12 +8,13 @@ import time
 from datetime import UTC, datetime
 
 from PIL import Image
+from sqlalchemy import select
 
 from .. import detectors, imaging, teach
 from ..db import Prediction
 from ..mqtt import object_topics, topics
 from ..redact import redact
-from ..settings import TEACH
+from ..settings import DETECTION, TEACH
 from .base import RuntimeBase
 from .logic import update_tracks
 from .publishing import PublishingMixin
@@ -52,6 +53,9 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
         keys = cfg.object_keys
         changed = update_tracks(live.tracks, found, keys, cfg.debounce, cfg.objects["clear_after_s"], now)
         live.changes.extend([now] * len(changed))
+        # Something that was there is missing: look again soon instead of at the next interval.
+        missing = any(t.on and 0 < t.misses < DETECTION["clear_misses"] for t in live.tracks.values())
+        live.recheck_at = now + DETECTION["recheck_s"] if missing else 0.0
 
         for key in keys:
             track = live.tracks[key]
@@ -82,6 +86,59 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             published = "on" if track.on else "off"
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, published, track.score, found)
         await self._record_filtered(cfg, image, found, now)
+        await self._ask_unsure(cfg, image, found, now)
+
+    async def _ask_unsure(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
+        """Put a box that may be an own label, but not clearly, in the review queue ("Is this Our
+        car?"); the answer is taught. One question per label at a time, at most one per review
+        cooldown, and none while the review rules are off."""
+        live = self.live_state(cfg.id)
+        rules = self.review_rules(cfg)
+        unsure = [d for d in found if d.get("ask") and not d.get("filtered")]
+        if not rules["enabled"] or not unsure:
+            return
+        asked = False
+        for label in sorted({d["ask"]["label"] for d in unsure}):
+            if now - live.asked.get(label, 0.0) < rules["cooldown_s"]:
+                continue
+            box = max((d for d in unsure if d["ask"]["label"] == label), key=lambda d: d["ask"]["similarity"])
+            live.asked[label] = now
+            asked = await asyncio.to_thread(self._record_question, cfg.id, image, box, found) or asked
+        if asked:
+            await self.publish_review_count()
+
+    def _record_question(self, sensor_id: int, image: Image.Image, box: dict, found: list[dict]) -> bool:
+        """A history row waiting for review: may ``box`` be its own label? False: one is waiting already."""
+        label = box["ask"]["label"]
+        with self.db.session() as s:
+            waiting = s.scalar(
+                select(Prediction.id).where(
+                    Prediction.sensor_id == sensor_id,
+                    Prediction.published_key == "ask",
+                    Prediction.state_key == label,
+                    Prediction.reviewed.is_(False),
+                )
+            )
+        if waiting is not None:
+            return False
+        frame = self.storage.save_history(sensor_id, image)
+        question = {"label": label, "similarity": box["ask"]["similarity"], "box": box["box"], "detected": box["key"]}
+        with self.db.session() as s:
+            s.add(
+                Prediction(
+                    sensor_id=sensor_id,
+                    state_key=label,
+                    published_key="ask",
+                    confidence=box["score"],
+                    probs={"ask": question},
+                    frame=frame,
+                    is_change=False,
+                    review_reason="ask",
+                    reviewed=False,
+                    detections=found,
+                )
+            )
+        return True
 
     async def _record_filtered(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Keep a frame in the history when a class starts being filtered away (not every check)."""

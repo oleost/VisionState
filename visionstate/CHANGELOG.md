@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.4b5
+
+### New
+
+- **An object sensor asks when it is not sure about your own label.** A box that looks somewhat
+  like *Our car*, but not clearly (in light you never taught it in), goes to the review queue:
+  *Is this Our car?* **Yes** or **No** teaches it, so next time it knows. While it is unsure, the
+  label stays as it was instead of switching off. It asks at most one question per label at a
+  time, and no more often than the review cooldown.
+
+### Changed
+
+- **An object is only cleared after it was missing twice in a row.** When something that was
+  there is missing, the sensor looks again a few seconds later instead of waiting for its next
+  check; one missed check no longer switches it off.
+
 ## 0.6.4b4
 
 ### Fixed

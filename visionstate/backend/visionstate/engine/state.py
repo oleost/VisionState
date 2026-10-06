@@ -139,6 +139,7 @@ class ObjectTrack:
     on: bool = False
     count: int = 0  # published count; kept while "on" until the object has cleared
     streak: int = 0  # checks in a row with the object present
+    misses: int = 0  # checks in a row without it (see DETECTION["clear_misses"])
     last_seen: float = 0.0
     score: float = 0.0  # best confidence in the last check
 
@@ -174,6 +175,8 @@ class LiveState:
     analysed: deque = field(default_factory=lambda: deque(maxlen=TEACH["frames_kept"]))
     filtered_keys: set[str] = field(default_factory=set)
     filtered_logged: dict[str, float] = field(default_factory=dict)
+    recheck_at: float = 0.0  # an object that was there went missing: check again then (0: no)
+    asked: dict[str, float] = field(default_factory=dict)  # own label -> when the review last asked
     # Reading sensors: the last read {"text", "score", "value", "reason", "at"} and the image
     # the reader saw (JPEG), shown in the UI so a bad region or display setting is easy to spot.
     reading: dict | None = None

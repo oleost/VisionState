@@ -130,6 +130,15 @@ knew). Instead a second step compares boxes with boxes the user taught:
   taught answer it had while it is at least `keep_similarity` (0.8) to that label: a parked car
   measured 0.94 between two checks seven minutes apart, and a 2 % shift of the detector's box
   alone costs 0.04 — enough to flip it around 0.88 every few checks. Such boxes carry `kept`.
+- Unsure (`ask_similarity` 0.75 up to `match_similarity`, to an own label of the box's class): the
+  box carries `ask`, counts neither for nor against that label (it keeps its published state), and
+  goes to the review queue ("Is this Our car?", a history row `published_key = "ask"`, reason
+  `ask`) — one waiting question per label, at most one per review cooldown, none with review off.
+  Yes/no teach the box from that history frame (as the label / as its class); answering again
+  replaces that taught box. Below 0.75 it is simply not that label.
+- Switching off needs `DETECTION["clear_misses"]` (2) checks in a row without the object as well
+  as `clear_after_s`; a missing object is looked for again after `recheck_s` (5 s) instead of at
+  the next interval (`LiveState.recheck_at`).
 - Results: `filtered` (not counted, still shown dashed; a history row "filtered" when a class
   starts being filtered, at most every `filtered_record_cooldown_s`), another class (`was` keeps
   the detector's), or an own `label`.

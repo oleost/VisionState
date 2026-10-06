@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
@@ -24,6 +25,12 @@ def decode(data: bytes) -> Image.Image:
         raise ImageTooLarge(f"Image too large ({image.width}×{image.height})")
     image = ImageOps.exif_transpose(image)
     return image.convert("RGB")
+
+
+def load(path: Path) -> Image.Image:
+    """A stored image (RGB), with its file closed right away (it may be deleted meanwhile)."""
+    with Image.open(path) as image:
+        return image.convert("RGB")
 
 
 def encode_jpeg(image: Image.Image, quality: int = JPEG_QUALITY) -> bytes:

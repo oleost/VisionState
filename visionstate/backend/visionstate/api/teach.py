@@ -23,13 +23,13 @@ router = APIRouter(prefix=f"{API_PREFIX}/sensors", tags=["teach"])
 class TeachIn(BaseModel):
     """One box to teach, from the frame a check analysed (``frame_id``) or a history frame."""
 
-    frame_id: str | None = Field(None, max_length=64)
+    frame_id: str | None = Field(default=None, max_length=64)
     history_id: int | None = None
     box: list[float] = Field(min_length=4, max_length=4)  # x1, y1, x2, y2 normalised to the frame
     detected: str | None = None  # the detector's class for the box; None: a box it missed (drawn)
-    score: float | None = Field(None, ge=0, le=1)
-    label: str | None = Field(None, max_length=64)  # "none", one of the sensor's classes or own labels
-    new_label: str | None = Field(None, min_length=1, max_length=64)  # name of a new own label for the box
+    score: float | None = Field(default=None, ge=0, le=1)
+    label: str | None = Field(default=None, max_length=64)  # "none", one of the sensor's classes or own labels
+    new_label: str | None = Field(default=None, min_length=1, max_length=64)  # name of a new own label for the box
     parent: str | None = None  # the class a new own label is a kind of (default: ``detected``)
 
     @field_validator("box")
@@ -106,7 +106,7 @@ async def _frame_image(rt: Runtime, sensor_id: int, body: TeachIn) -> tuple[Imag
             path = rt.storage.history_path(sensor_id, row.frame)
         if not path.exists():
             raise HTTPException(404, "History frame file missing")
-        return await asyncio.to_thread(lambda: Image.open(path).convert("RGB")), "history"
+        return await asyncio.to_thread(imaging.load, path), "history"
     if body.frame_id:
         data = rt.live_state(sensor_id).analysed_frame(body.frame_id)
         if data is None:

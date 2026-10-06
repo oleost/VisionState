@@ -147,6 +147,18 @@ export interface Detection {
   was?: string;
   rescued?: boolean;
   match?: { id: number; label: string; similarity: number };
+  /** Kept its taught answer: the same object at the same place, a little less alike. */
+  kept?: boolean;
+  /** May be this own label, but not clearly: asked about in the review queue. */
+  ask?: { id: number; label: string; similarity: number };
+}
+
+/** An object sensor's review question ("Is this Our car?"), in a history row's `probs.ask`. */
+export interface ObjectQuestion {
+  label: string;
+  similarity: number;
+  box: [number, number, number, number];
+  detected: string;
 }
 
 /** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
@@ -397,10 +409,10 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | null;
   reviewed: boolean;
   has_frame: boolean;
-  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered'. */
+  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask'. */
   detections: Detection[] | null;
   /** Reading sensors: did the reader read the right number (null = not verified)? */
   read_ok: boolean | null;
@@ -416,6 +428,8 @@ export interface ReviewItem extends Prediction {
     roi: Roi | null;
     states: StateDef[];
     reading: ReadingSettings | null;
+    /** Object sensors: the own labels a question can be about. */
+    labels: OwnLabel[];
   };
 }
 

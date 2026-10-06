@@ -77,7 +77,7 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         for x in examples:
             if x.id in cached:
                 continue
-            image = Image.open(self.storage.sample_path(cfg.id, x.filename)).convert("RGB")
+            image = imaging.load(self.storage.sample_path(cfg.id, x.filename))
             vector = teach.embed(embedder, [image])[0]
             with self.db.session() as s:
                 s.merge(

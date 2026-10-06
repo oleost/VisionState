@@ -141,6 +141,11 @@ DETECTION = {
     # The detector also sees this share of the region's size on each side, so objects at the
     # edge are seen whole (their bottom centre then decides whether they are inside).
     "context_margin": 0.25,
+    # An object that was there and is missing is looked for again soon, and only switches off once
+    # it was missing this many checks in a row (and for clear_after_s): one missed check, a box
+    # taken for something else, a person behind a post, does not switch it off.
+    "clear_misses": 2,
+    "recheck_s": 5.0,
 }
 
 # Teaching an object sensor. The user marks a box as wrong ("none"), as another of the sensor's
@@ -157,6 +162,10 @@ TEACH = {
     # similarity by a few hundredths between checks, which would flip it at match_similarity.
     "keep_similarity": 0.8,
     "keep_iou": 0.6,  # "where it was": its box overlaps the box of the last check this much
+    # Between this and match_similarity a box of an own label's class is unsure: it neither
+    # switches the label on nor off, and the sensor asks in the review queue ("Is this Our car?";
+    # the answer is taught). At most one question per label per review cooldown (review rules).
+    "ask_similarity": 0.75,
     "rescue_similarity": 0.9,  # a box the detector was unsure about counts only when this close to a taught one
     "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
     "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work

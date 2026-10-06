@@ -8,16 +8,13 @@ from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from PIL import Image
 from pydantic import BaseModel, Field
 from sqlalchemy import CursorResult, delete, func, select, update
 
-from .. import readers
+from .. import imaging, readers
 from ..db import Prediction, Sample, SampleLabel, Sensor
-from ..settings import (
-    KIND_READING,
-    merge_reading,
-)
+from ..engine import Runtime
+from ..settings import KIND_OBJECTS, KIND_READING, merge_objects, merge_reading
 from .common import (
     API_PREFIX,
     get_sensor,
@@ -25,6 +22,7 @@ from .common import (
     state_id_for,
 )
 from .sensors import prediction_view
+from .teach import TeachIn, teach_box
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix=API_PREFIX, tags=["review"])
@@ -32,7 +30,7 @@ router = APIRouter(prefix=API_PREFIX, tags=["review"])
 
 class ReviewIn(BaseModel):
     # State sensors: confirm | label (state_key) | skip. Reading sensors: read_ok | misread
-    # (optionally the value that was right) | skip.
+    # (optionally the value that was right) | skip. Object sensors ("Is this Our car?"): yes | no | skip.
     action: str
     state_key: str | None = None
     value: str | None = Field(None, max_length=32)
@@ -68,6 +66,8 @@ def review_queue(request: Request, limit: int = 50) -> dict:
                         "roi": sensor.roi,
                         "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
                         "reading": merge_reading(sensor.reading) if sensor.kind == KIND_READING else None,
+                        # object sensors: the own labels a question can be about
+                        "labels": merge_objects(sensor.objects)["custom"] if sensor.kind == KIND_OBJECTS else [],
                     },
                 }
             )
@@ -100,6 +100,14 @@ async def review_dismiss_all(sensor_id: int, request: Request) -> dict:
 @router.post("/review/{prediction_id}")
 async def review_answer(prediction_id: int, body: ReviewIn, request: Request) -> dict:
     rt = runtime(request)
+    with rt.db.session() as s:
+        row = s.get(Prediction, prediction_id)
+        if row is None:
+            raise HTTPException(404, "Review item not found")
+        sensor = get_sensor(s, row.sensor_id)
+        kind = sensor.kind
+    if kind == KIND_OBJECTS:
+        return await _answer_object(rt, request, prediction_id, body.action)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
         if row is None:
@@ -148,13 +156,47 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
     if state_id is not None and frame:
         path = rt.storage.history_path(sensor_id, frame)
         if path.exists():
-            image = await asyncio.to_thread(lambda: Image.open(path).convert("RGB"))
+            image = await asyncio.to_thread(lambda: imaging.load(path))
             sample_id = await asyncio.to_thread(rt.add_sample, sensor_id, image, "review", state_id)
             with rt.db.session() as s:
                 answered = s.get(Prediction, prediction_id)
                 if answered is not None:
                     answered.sample_id = sample_id
             rt.schedule_retrain(sensor_id)
+    await rt.publish_review_count()
+    return {"ok": True}
+
+
+async def _answer_object(rt: Runtime, request: Request, prediction_id: int, action: str) -> dict:
+    """ "Is this Our car?" — yes teaches the box as the own label, no as its plain class (both in
+    the light of that frame, so later boxes like it are told apart); skip only takes it out of the
+    queue. Answering again replaces the box the first answer taught."""
+    if action not in ("yes", "no", "skip"):
+        raise HTTPException(400, "Answer yes, no or skip")
+    with rt.db.session() as s:
+        row = s.get(Prediction, prediction_id)
+        if row is None:
+            raise HTTPException(404, "Review item not found")
+        question = (row.probs or {}).get("ask")
+        if not question:
+            raise HTTPException(400, "Not a question about an own label")
+        sensor_id, score, taught = row.sensor_id, row.confidence, row.sample_id
+        row.reviewed = True
+        row.sample_id = None
+        if taught is not None and (sample := s.get(Sample, taught)) is not None:
+            rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
+            s.delete(sample)
+    if taught is not None:
+        rt.taught_changed(sensor_id)
+    if action != "skip":
+        label = question["label"] if action == "yes" else question["detected"]
+        body = TeachIn(
+            history_id=prediction_id, box=question["box"], label=label, detected=question["detected"], score=score
+        )
+        result = await teach_box(sensor_id, body, request)
+        with rt.db.session() as s:
+            if (answered := s.get(Prediction, prediction_id)) is not None:
+                answered.sample_id = result["id"]
     await rt.publish_review_count()
     return {"ok": True}
 

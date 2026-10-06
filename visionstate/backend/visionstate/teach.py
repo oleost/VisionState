@@ -184,7 +184,8 @@ def apply(
     ``filtered`` (not counted), another ``key`` (the detector's class kept in ``was``) or an own
     ``label``. Unsure boxes that match a taught box closely are added with ``rescued``.
     ``previous`` (the boxes of the last check) lets an object that stayed where it was keep its
-    answer at a lower similarity (``kept``, see TEACH["keep_similarity"]).
+    answer at a lower similarity (``kept``, see TEACH["keep_similarity"]). A box that may be an
+    own label, but not clearly, gets ``ask`` ({id, label, similarity}; see TEACH["ask_similarity"]).
     """
     result = [dict(d) for d in found]
     for i, vector in zip(checked, checked_vectors, strict=True):
@@ -194,6 +195,8 @@ def apply(
             if match is not None:
                 result[i]["kept"] = True
         if match is None:
+            if ask := _unsure(index, vector, result[i]["key"], parents):
+                result[i]["ask"] = ask
             continue
         det = result[i]
         key, label = resolve(match.label, parents)
@@ -236,6 +239,22 @@ def _kept(index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous
     ]
     match = nearest(index, vector, TEACH["keep_similarity"]) if before else None
     return match if match is not None and match.label in before else None
+
+
+def _unsure(index: TaughtIndex, vector: np.ndarray, key: str, parents: dict[str, str]) -> dict | None:
+    """The own label (of the box's class) a box is close to but not clearly, to ask about."""
+    near = nearest(index, vector, TEACH["ask_similarity"])
+    if near is None:
+        return None
+    parent, label = resolve(near.label, parents)
+    if label is None or parent != key:
+        return None
+    return {"id": near.example_id, "label": label, "similarity": round(near.similarity, 3)}
+
+
+def unsure_for(detection: dict, key: str) -> bool:
+    """Whether a box may be the own label ``key`` but not clearly (see apply: ``ask``)."""
+    return not detection.get("filtered") and detection.get("ask", {}).get("label") == key
 
 
 def counts_for(detection: dict, key: str) -> bool:

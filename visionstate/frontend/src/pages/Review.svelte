@@ -2,12 +2,14 @@
   import { api } from '../lib/api';
   import { refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
   import ConfirmButton from '../lib/components/ConfirmButton.svelte';
+  import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
+  import { objectName } from '../lib/objects';
   import { REJECT_REASONS, readingDetail, readingUnit } from '../lib/reading';
-  import type { ReviewItem } from '../lib/types';
+  import type { ObjectQuestion, ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
   let items = $state<ReviewItem[] | null>(null);
@@ -39,10 +41,16 @@
   const shown = $derived(editing ?? index);
   const current = $derived(items?.[shown] ?? null);
   const isReading = (item: ReviewItem) => item.sensor.kind === 'reading';
+  /** An object sensor's question: may this box be one of its own labels? */
+  const question = (item: ReviewItem) => (item.sensor.kind === 'objects' ? ((item.probs as unknown as { ask?: ObjectQuestion }).ask ?? null) : null);
+  const labelName = (item: ReviewItem, key: string) => objectName(key, item.sensor.labels);
   const unitOf = (item: ReviewItem) => (item.sensor.reading ? readingUnit(item.sensor.reading) : '');
   /** Sidebar line: what was read, or the state the AI predicted. */
-  const summary = (item: ReviewItem) =>
-    isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
+  const summary = (item: ReviewItem) => {
+    const q = question(item);
+    if (q) return `${labelName(item, q.label)}?`;
+    return isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
+  };
 
   /** One item of this sensor left the queue (answered or skipped): keep the counts in step. */
   function countDown(sensorId: number) {
@@ -111,12 +119,34 @@
     }
   }
 
+  async function answerQuestion(action: 'yes' | 'no' | 'skip') {
+    const q = current && question(current);
+    if (!current || !q || busy) return;
+    busy = true;
+    try {
+      // Answering again replaces the box the first answer taught.
+      await api.answerQuestion(current.id, action);
+      given[current.id] = action === 'skip' ? null : action;
+      const name = labelName(current, q.label);
+      answered(action === 'yes' ? `✓ ${name}` : action === 'no' ? `✓ Not ${name}` : 'Skipped');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      busy = false;
+    }
+  }
+
   /** Was this state (null: Skip) the answer given before? Marks the button when an item is opened again. */
   const chosen = (key: string | null) => editing !== null && !!current && current.id in given && given[current.id] === key;
 
   function onkey(e: KeyboardEvent) {
     if (!current || isReading(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
     if (e.key === 'Escape') editing = null;
+    else if (question(current)) {
+      if (e.key === 'Enter') answerQuestion('yes');
+      else if (e.key.toLowerCase() === 'n') answerQuestion('no');
+      else if (e.key.toLowerCase() === 's') answerQuestion('skip');
+    }
     else if (e.key === 'Enter') answer('confirm');
     else if (e.key.toLowerCase() === 's') answer('skip');
     else {
@@ -152,8 +182,9 @@
       <div class="col" style="gap:4px">
         <h1>Review</h1>
         <p class="small muted">
-          Frames the AI was unsure about, and readings that were rejected. Answers for state sensors train them — a few
-          clicks here help the most. Answers for readings show how reliable they are; the reader does not learn from them.
+          Frames the AI was unsure about, objects that may be one of your own labels, and readings that were rejected.
+          Answers for state sensors and own labels are learned from — a few clicks here help the most. Answers for
+          readings show how reliable they are; the reader does not learn from them.
         </p>
       </div>
       {#if waiting.length}
@@ -223,6 +254,32 @@
           {#key current.id}
             <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}
+        </div>
+      {:else if current && question(current)}
+        {@const q = question(current)!}
+        {@const name = labelName(current, q.label)}
+        {@render header(current)}
+        <div class="frame">
+          <RoiEditor src={api.historyImageUrl(current.id)} roi={current.sensor.roi}>
+            <DetectionBoxes detections={[{ key: q.detected, score: current.confidence, box: q.box }]} classes={[q.detected]} />
+          </RoiEditor>
+        </div>
+        <div class="col center">
+          <p class="question">
+            Is this <strong>{name}</strong>?
+            <span class="small muted">It looks {pct(q.similarity)} like what you taught as {name} — not quite enough to be sure.</span>
+          </p>
+          <div class="row wrap center-row">
+            <button class="btn primary lg" class:chosen={chosen('yes')} disabled={busy} onclick={() => answerQuestion('yes')}>
+              <Icon name="check" /> Yes, {name}
+            </button>
+            <button class="btn lg" class:chosen={chosen('no')} disabled={busy} onclick={() => answerQuestion('no')}>
+              No, another {objectName(q.detected).toLowerCase()}
+            </button>
+            <button class="btn lg ghost" class:chosen={chosen(null)} disabled={busy} onclick={() => answerQuestion('skip')}>Skip</button>
+          </div>
+          <span class="xsmall faint">Your answer is taught: boxes like this one are told apart from now on.</span>
+          <span class="xsmall faint kbd-only">Enter = yes · N = no · S = skip</span>
         </div>
       {:else if current && predicted}
         {@render header(current)}

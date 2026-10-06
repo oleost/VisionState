@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from .. import detectors, imaging, readers, teach
+from ..settings import DETECTION
 from .state import LiveState, ObjectTrack, SensorConfig
 
 
@@ -40,8 +41,10 @@ def update_tracks(
     """Advance each class after one check; returns the classes that switched on or off.
 
     An object switches on after ``required`` checks in a row with it present, and off once it
-    has not been seen for ``clear_after_s`` seconds, so a person turning around does not flicker.
-    ``classes`` may hold own labels too; filtered boxes count for nothing (see teach.counts_for).
+    has been missing for ``DETECTION["clear_misses"]`` checks in a row and ``clear_after_s``
+    seconds, so a person turning around or one missed check does not make it flicker. A box that
+    may be an own label (``ask``, see teach.apply) counts neither way for that label: unsure, it
+    keeps what was published. ``classes`` may hold own labels too; filtered boxes count for nothing.
     """
     changed = []
     for key in classes:
@@ -50,14 +53,19 @@ def update_tracks(
         track.score = max((d["score"] for d in found), default=0.0)
         if found:
             track.streak += 1
+            track.misses = 0
             track.last_seen = now
             if track.on or track.streak >= required:
                 if not track.on:
                     changed.append(key)
                 track.on, track.count = True, len(found)
+        elif any(teach.unsure_for(d, key) for d in detections):
+            track.streak = 0  # neither here nor gone: keep what was published
         else:
             track.streak = 0
-            if track.on and now - track.last_seen >= clear_after_s:
+            track.misses += 1
+            gone = now - track.last_seen >= clear_after_s and track.misses >= DETECTION["clear_misses"]
+            if track.on and gone:
                 track.on, track.count = False, 0
                 changed.append(key)
     for key in [k for k in tracks if k not in classes]:
@@ -114,6 +122,8 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
         full_at = live.last_run + cfg.interval_s
     else:
         full_at = math.inf  # only triggers
+    if live.recheck_at and live.recheck_at < full_at:
+        full_at = live.recheck_at  # an object went missing: look again soon (DETECTION["recheck_s"])
     if cfg.triggers["change_detection"]:
         probe_at = max(live.last_run, live.last_probe) + cfg.triggers["change_interval_s"]
         if probe_at < full_at:

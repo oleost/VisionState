@@ -131,7 +131,7 @@ class TrainingMixin(RuntimeBase):
             batch = missing[start : start + EMBED_BATCH]
             images = []
             for sample in batch:
-                image = Image.open(self.storage.sample_path(cfg.id, sample.filename)).convert("RGB")
+                image = imaging.load(self.storage.sample_path(cfg.id, sample.filename))
                 images.append(imaging.crop(image, cfg.roi) if sample.use_roi else image)
             vectors = embedder.embed(images)
             with self.db.session() as s:
