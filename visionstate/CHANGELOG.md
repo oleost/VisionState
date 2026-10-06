@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.4b2
+
+### Fixed
+
+- Answering a review item or taking a training image while that item or sensor was being removed
+  gave an internal error; it now says it is gone.
+
+### Changed
+
+- Inside: the code is reorganised so it is easier to read and change (a map of the code in
+  `docs/ARCHITECTURE.md`), and its types are checked on every change. Nothing else changes.
+
 ## 0.6.4b1
 
 A release about sturdiness: no new features, fewer ways for things to go wrong.
