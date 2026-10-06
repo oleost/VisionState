@@ -8,12 +8,13 @@ import logging
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sample, SampleLabel, Sensor
@@ -189,7 +190,7 @@ def get_settings(request: Request) -> dict:
             }
             for spec in backbones.BACKBONES.values()
         ],
-        "detector": rt.db.get_setting("detector", detectors.DEFAULT_DETECTOR),
+        "detector": rt.db.get_text("detector", detectors.DEFAULT_DETECTOR),
         "detectors": [
             {
                 "id": spec.id,
@@ -202,7 +203,7 @@ def get_settings(request: Request) -> dict:
             }
             for spec in detectors.DETECTORS.values()
         ],
-        "reader": rt.db.get_setting("reader", readers.DEFAULT_READER),
+        "reader": rt.db.get_text("reader", readers.DEFAULT_READER),
         "readers": [
             {
                 "id": spec.id,
@@ -480,11 +481,12 @@ async def review_dismiss_all(sensor_id: int, request: Request) -> dict:
     rt = runtime(request)
     with rt.db.session() as s:
         get_sensor(s, sensor_id)
-        dismissed = s.execute(
+        result = s.execute(
             update(Prediction)
             .where(Prediction.sensor_id == sensor_id, Prediction.reviewed.is_(False))
             .values(reviewed=True)
-        ).rowcount
+        )
+        dismissed = cast(CursorResult, result).rowcount
     await rt.publish_review_count()
     return {"dismissed": dismissed}
 
@@ -517,6 +519,8 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
         return {"ok": True}
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
+        if row is None:  # removed in the meantime (history clean-up)
+            raise HTTPException(404, "Review item not found")
         sensor = get_sensor(s, row.sensor_id)
         key = row.state_key if body.action == "confirm" else body.state_key
         state_id = state_id_for(sensor, key) if body.action in ("confirm", "label") else None
@@ -541,7 +545,9 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
             image = await asyncio.to_thread(lambda: Image.open(path).convert("RGB"))
             sample_id = await asyncio.to_thread(rt.add_sample, sensor_id, image, "review", state_id)
             with rt.db.session() as s:
-                s.get(Prediction, prediction_id).sample_id = sample_id
+                answered = s.get(Prediction, prediction_id)
+                if answered is not None:
+                    answered.sample_id = sample_id
             rt.schedule_retrain(sensor_id)
     await rt.publish_review_count()
     return {"ok": True}
@@ -637,7 +643,7 @@ def _import_sync(rt, path: Path) -> tuple[int, int]:
         # does not change its entity IDs. Bundles without the field are older: those had the prefix.
         sensor.entity_prefix = bool(data.get("entity_prefix", True))
         if custom:
-            sensor.objects = {**sensor.objects, "custom": custom}
+            sensor.objects = {**(sensor.objects or {}), "custom": custom}
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id

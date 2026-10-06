@@ -48,8 +48,10 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     `api.ts` is the only place that builds API URLs; `router.svelte.ts` defines app paths.
   - The UI reads sensor defaults, limits and palette from `GET /api/v1/config`.
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
-  (tests need the model: `python -m visionstate.backbones models`). CI measures coverage and fails
-  below 88 %; add `--cov=visionstate --cov-report=term-missing:skip-covered` to see what is not tested.
+  (tests need the model: `python -m visionstate.backbones models`), and the types:
+  `.venv/Scripts/pyright --pythonpath .venv/Scripts/python.exe` (0 errors; CI runs it). CI measures
+  coverage and fails below 88 %; add `--cov=visionstate --cov-report=term-missing:skip-covered` to see
+  what is not tested.
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
 - **UI testing routine** (every UI change, before a beta release) — many users run Home Assistant
   on phones/tablets:

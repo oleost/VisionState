@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 
 class ModelsMixin(TrainingMixin, RuntimeBase):
-    def model_path(self, spec: backbones.BackboneSpec) -> Path | None:
+    def model_path(self, spec: backbones.ModelFile) -> Path | None:
         return backbones.locate(spec, [self.settings.bundled_models_dir, self.settings.models_dir])
 
     async def load_embedder(self, backbone_id: str) -> None:
@@ -41,27 +41,28 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         if self.db.get_setting(key) is None:
             self.db.set_setting(key, default)
 
-    async def load_detector(self, detector_id: str) -> None:
+    async def load_detector(self, detector_id: str) -> detectors.Detector:
         spec = detectors.DETECTORS.get(detector_id) or detectors.DETECTORS[detectors.DEFAULT_DETECTOR]
         path = self.model_path(spec)
         if path is None:
             path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-        self.detector = await asyncio.to_thread(detectors.Detector, spec, path)
+        self.detector = detector = await asyncio.to_thread(detectors.Detector, spec, path)
         self.detector_error = ""
         log.info("Detector %s loaded", spec.id)
+        return detector
 
     async def ensure_detector(self) -> detectors.Detector:
         """The detector, loaded on first use so installations without object sensors never pay for it."""
         async with self._detector_lock:
-            if self.detector is None:
-                detector_id = await asyncio.to_thread(self.db.get_setting, "detector", detectors.DEFAULT_DETECTOR)
-                try:
-                    await self.load_detector(detector_id)
-                except Exception as err:
-                    self.detector_error = redact(str(err))
-                    log.exception("Could not load detector %s", detector_id)
-                    raise
-            return self.detector
+            if self.detector is not None:
+                return self.detector
+            detector_id = await asyncio.to_thread(self.db.get_text, "detector", detectors.DEFAULT_DETECTOR)
+            try:
+                return await self.load_detector(detector_id)
+            except Exception as err:
+                self.detector_error = redact(str(err))
+                log.exception("Could not load detector %s", detector_id)
+                raise
 
     async def set_detector(self, detector_id: str) -> None:
         object_sensors = await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS)
@@ -72,27 +73,28 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
 
-    async def load_reader(self, reader_id: str) -> None:
+    async def load_reader(self, reader_id: str) -> readers.Reader:
         spec = readers.READERS.get(reader_id) or readers.READERS[readers.DEFAULT_READER]
         path = self.model_path(spec)
         if path is None:
             path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-        self.reader = await asyncio.to_thread(readers.Reader, spec, path)
+        self.reader = reader = await asyncio.to_thread(readers.Reader, spec, path)
         self.reader_error = ""
         log.info("Reader %s loaded", spec.id)
+        return reader
 
     async def ensure_reader(self) -> readers.Reader:
         """The number reader, loaded on first use so installations without reading sensors never pay for it."""
         async with self._reader_lock:
-            if self.reader is None:
-                reader_id = await asyncio.to_thread(self.db.get_setting, "reader", readers.DEFAULT_READER)
-                try:
-                    await self.load_reader(reader_id)
-                except Exception as err:
-                    self.reader_error = redact(str(err))
-                    log.exception("Could not load reader %s", reader_id)
-                    raise
-            return self.reader
+            if self.reader is not None:
+                return self.reader
+            reader_id = await asyncio.to_thread(self.db.get_text, "reader", readers.DEFAULT_READER)
+            try:
+                return await self.load_reader(reader_id)
+            except Exception as err:
+                self.reader_error = redact(str(err))
+                log.exception("Could not load reader %s", reader_id)
+                raise
 
     async def set_reader(self, reader_id: str) -> None:
         reading_sensors = await asyncio.to_thread(self._sensor_ids, KIND_READING)

@@ -41,21 +41,18 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
 
     def _build_taught(self, cfg: SensorConfig, generation: int = 0) -> teach.TaughtIndex:
         parents = cfg.parents
+        embedder = self.embedder
+        assert embedder is not None  # taught_index only builds one with a backbone
         with self.db.session() as s:
-            examples = [
-                x
-                for x in s.scalars(
-                    select(Sample)
-                    .where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None))
-                    .order_by(Sample.id)
-                )
-                if teach.usable(x.object_label, parents)
-            ]
+            rows = s.scalars(
+                select(Sample).where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None)).order_by(Sample.id)
+            )
+            examples = [x for x in rows if x.object_label is not None and teach.usable(x.object_label, parents)]
         vectors = self._taught_vectors(cfg, examples)
         return teach.build(
-            self.embedder.spec.id,
+            embedder.spec.id,
             [x.id for x in examples],
-            [x.object_label for x in examples],
+            [x.object_label or "" for x in examples],
             [x.detected for x in examples],
             vectors,
             parents,

@@ -75,7 +75,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
         t = topics(cfg.slug)
         changed = False
-        if reason is None and not settling:  # never let a lower reading through the debounce
+        if reason is None and not settling and shown is not None:  # never let a lower reading through
             changed = live.debouncer.update(shown, cfg.debounce)
             if changed:
                 live.changes.append(now)

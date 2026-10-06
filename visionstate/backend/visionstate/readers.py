@@ -171,7 +171,7 @@ class Reader:
     def read(self, image: Image.Image) -> Text:
         batch = self.preprocess(image)
         with self._lock:
-            probs = self.session.run(None, {self.input_name: batch})[0][0]  # time steps × classes
+            probs = np.asarray(self.session.run(None, {self.input_name: batch})[0])[0]  # time steps × classes
         return decode(probs[:, self._classes], self._chars)
 
     def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
@@ -194,6 +194,7 @@ class Reader:
                     whole = (text, band)
                 if digit_count(text.text) == digits and (best is None or text.score > best[0].score):
                     best = (text, band)
+        assert whole is not None, "READING has at least one counter band"
         return best or whole
 
     def read_display(self, image: Image.Image, display: str, digits: int = 0) -> tuple[Text, Image.Image]:

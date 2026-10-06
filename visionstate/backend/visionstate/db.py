@@ -258,6 +258,16 @@ class Database:
             row = s.get(Setting, key)
             return default if row is None else row.value
 
+    def get_text(self, key: str, default: str) -> str:
+        """A setting that is a string (such as the chosen model), or ``default``."""
+        value = self.get_setting(key, default)
+        return value if isinstance(value, str) else default
+
+    def get_dict(self, key: str) -> dict:
+        """A setting that is an object (such as the global review rules), or an empty one."""
+        value = self.get_setting(key)
+        return value if isinstance(value, dict) else {}
+
     def set_setting(self, key: str, value) -> None:
         with self.session() as s:
             row = s.get(Setting, key)

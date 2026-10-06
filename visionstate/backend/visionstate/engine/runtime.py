@@ -35,13 +35,13 @@ class Runtime(ChecksMixin, HistoryMixin):
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
-        self.global_review = await asyncio.to_thread(self.db.get_setting, "review", {}) or {}
-        self.storage_rules = await asyncio.to_thread(self.db.get_setting, "storage", {}) or {}
+        self.global_review = await asyncio.to_thread(self.db.get_dict, "review")
+        self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
         await asyncio.to_thread(self._pin_setting, "reader", readers.DEFAULT_READER)
-        backbone_id = self.db.get_setting("backbone", backbones.DEFAULT_BACKBONE)
+        backbone_id = self.db.get_text("backbone", backbones.DEFAULT_BACKBONE)
         try:
             await self.load_embedder(backbone_id)
         except Exception as err:  # noqa: BLE001

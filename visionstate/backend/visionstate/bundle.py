@@ -136,8 +136,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
     items = []
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         for row in rows:
-            path = storage.history_path(sensor_id, row.frame)
-            if not path.exists():
+            if not row.frame or not (path := storage.history_path(sensor_id, row.frame)).exists():
                 continue
             crop = imaging.crop_box(imaging.decode(path.read_bytes()), box)
             name = f"images/{len(items) + 1:04d}.jpg"

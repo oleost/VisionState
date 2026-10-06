@@ -161,7 +161,7 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     if body.detected is None:
         cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
         try:
-            seen = await rt.seen_faintly(cfg, image, body.box)
+            seen = await rt.seen_faintly(cfg, image, body.box) if cfg else None
         except Exception:  # noqa: BLE001 - detector unavailable: the box is taught anyway
             seen = None
     if new is not None:

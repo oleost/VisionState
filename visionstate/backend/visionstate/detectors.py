@@ -134,7 +134,8 @@ def postprocess(logits: np.ndarray, boxes: np.ndarray, labels: tuple[Label, ...]
         idx = idx[np.argsort(-cand_scores[idx])]
         while len(idx):
             best, idx = idx[0], idx[1:]
-            result.append(Detection(labels[cls].key, float(cand_scores[best]), tuple(float(v) for v in xyxy[best])))
+            x1, y1, x2, y2 = (float(v) for v in xyxy[best])
+            result.append(Detection(labels[cls].key, float(cand_scores[best]), (x1, y1, x2, y2)))
             if len(idx):
                 idx = idx[_iou(xyxy[best], xyxy[idx]) <= DETECTION["nms_iou"]]
     result.sort(key=lambda d: -d.score)
@@ -160,5 +161,5 @@ class Detector:
     def detect(self, image: Image.Image, min_score: float) -> list[Detection]:
         batch = self.preprocess(image)
         with self._lock:
-            logits, boxes = self.session.run(None, {self.input_name: batch})
+            logits, boxes = (np.asarray(out) for out in self.session.run(None, {self.input_name: batch}))
         return postprocess(logits[0], boxes[0], self.labels, min_score)

@@ -267,15 +267,15 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
         return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": latest_id, "Cache-Control": "no-store"})
     shown = rt.frame_for_view(sensor_id)
     if cached and live.frames:
-        frame_id, data = live.frames[-1]
+        new_id, data = live.frames[-1]
     elif shown is not None:
-        frame_id, data = shown  # a sensor with a light: the frame of its last check, taken with the light on
+        new_id, data = shown  # a sensor with a light: the frame of its last check, taken with the light on
     else:
         try:
-            frame_id, data = await rt.grab(cfg)
+            new_id, data = await rt.grab(cfg)
         except SourceError as err:
             raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
-    return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": frame_id, "Cache-Control": "no-store"})
+    return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": new_id, "Cache-Control": "no-store"})
 
 
 @router.get("/{sensor_id}/reading/image")
@@ -505,7 +505,7 @@ async def reading_export(sensor_id: int, request: Request, background: Backgroun
     rt = runtime(request)
     with rt.db.session() as s:
         get_sensor(s, sensor_id, KIND_READING)
-    reader = await asyncio.to_thread(rt.db.get_setting, "reader", readers.DEFAULT_READER)
+    reader = await asyncio.to_thread(rt.db.get_text, "reader", readers.DEFAULT_READER)
     fd, name = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
     tmp = Path(name)

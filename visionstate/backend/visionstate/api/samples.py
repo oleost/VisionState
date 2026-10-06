@@ -62,6 +62,8 @@ async def capture(sensor_id: int, body: CaptureIn, request: Request) -> dict:
             data = shown[1]
     if data is None:
         cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
+        if cfg is None:
+            raise HTTPException(404, "Sensor not found")
         _, data = await rt.grab(cfg)
     image = await asyncio.to_thread(imaging.decode, data)
     sample_id = await asyncio.to_thread(rt.add_sample, sensor_id, image, "snapshot", state_id)
