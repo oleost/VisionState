@@ -1,13 +1,8 @@
 # Changelog
 
-## 0.6.4b6
+## 0.6.4
 
-### Changed
-
-- Updated libraries: FastAPI 0.142 and PyAV 19 (camera streams and video uploads). With PyAV 19,
-  turning video frames into images uses less memory.
-
-## 0.6.4b5
+A release about sturdiness, and object sensors that know your own labels better.
 
 ### New
 
@@ -17,48 +12,12 @@
   label stays as it was instead of switching off. It asks at most one question per label at a
   time, and no more often than the review cooldown.
 
-### Changed
-
-- **An object is only cleared after it was missing twice in a row.** When something that was
-  there is missing, the sensor looks again a few seconds later instead of waiting for its next
-  check; one missed check no longer switches it off.
-
-## 0.6.4b4
-
 ### Fixed
 
 - **A taught object that stands still no longer flickers.** A parked car taught as an own label
   (*Our car*) was sometimes taken for an ordinary car when the light changed, and its sensor
   switched off and on again. An object that stays where it is now keeps its taught answer while
   it still looks much like it; a new object must still clearly look like what you taught.
-
-## 0.6.4b3
-
-### Fixed
-
-- A message on a sensor's pause switch topic that was not ON or OFF paused the sensor; such a
-  message is now ignored.
-- A camera that did not answer showed "Camera unavailable:" without a reason; it now says it
-  gave no answer in time.
-
-## 0.6.4b2
-
-### Fixed
-
-- Answering a review item or taking a training image while that item or sensor was being removed
-  gave an internal error; it now says it is gone.
-
-### Changed
-
-- Inside: the code is reorganised so it is easier to read and change (a map of the code in
-  `docs/ARCHITECTURE.md`), and its types are checked on every change. Nothing else changes.
-
-## 0.6.4b1
-
-A release about sturdiness: no new features, fewer ways for things to go wrong.
-
-### Fixed
-
 - **The MQTT connection could stop for good** after an unexpected error (for one, a message
   that is not text sent to one of VisionState's command topics). It now reconnects, like after a
   lost connection.
@@ -67,9 +26,18 @@ A release about sturdiness: no new features, fewer ways for things to go wrong.
 - **Importing a sensor with a damaged image** failed halfway and left a sensor behind that did
   not run. Unreadable images are now skipped, and the message says how many. A file that is no
   ZIP gives a clear error instead of an internal one.
+- A message on a sensor's pause switch topic that was not ON or OFF paused the sensor; such a
+  message is now ignored.
+- A camera that did not answer showed "Camera unavailable:" without a reason; it now says it
+  gave no answer in time.
+- Answering a review item or taking a training image while that item or sensor was being removed
+  gave an internal error; it now says it is gone.
 
 ### Changed
 
+- **An object is only cleared after it was missing twice in a row.** When something that was
+  there is missing, the sensor looks again a few seconds later instead of waiting for its next
+  check; one missed check no longer switches it off.
 - **Camera passwords are now also masked in error details in the log** (tracebacks), not only
   in the messages themselves, and in every error shown in the app.
 - **Camera addresses are checked before a picture is fetched**: a snapshot URL starts with
@@ -77,7 +45,11 @@ A release about sturdiness: no new features, fewer ways for things to go wrong.
 - **Limits for pictures**: a snapshot larger than 50 MB or an image of more than 60 megapixels is
   refused instead of filling the memory (a 4K camera picture is 8 megapixels).
 - An unexpected error in a check is logged once, with its details, instead of on every check.
-- Inside: the engine is split into smaller parts, and more of it is covered by tests.
+- Updated libraries: FastAPI 0.142 and PyAV 19 (camera streams and video uploads). With PyAV 19,
+  turning video frames into images uses less memory.
+- Inside: the code is reorganised so it is easier to read and change (a map of the code in
+  `docs/ARCHITECTURE.md`), its types are checked on every change, and more of it is covered by
+  tests.
 
 ## 0.6.3
 
