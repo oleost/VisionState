@@ -30,7 +30,7 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`): `sensors.py` (CRUD, quality, history, export), `samples.py` (training images), `teach.py` (taught boxes), `system.py` (config, status, settings, cameras, previews, review queue, storage, import), `common.py` (input models and views shared by them) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, history, export), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue, history frames), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
@@ -124,7 +124,8 @@ error is kept in `LiveState.error` and shown in the UI.
 5. Tests: backend (`tests/test_reading.py`), and an e2e step when it changes the UI.
 
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
-config in `mqtt.discovery_messages`, the value from the engine through `self._send`, removal in
+config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,
+`_reading_entities`; every sensor's: `discovery_messages`), the value from the engine through `self._send`, removal in
 `MqttBridge.remove_discovery`. Unique IDs and topics are never changed once released (entity IDs
 in Home Assistant hang on them).
 

@@ -74,230 +74,208 @@ class SensorDescriptor:
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
-    """Home Assistant MQTT discovery configs for one sensor (one device, several entities)."""
-    t = topics(sensor.slug)
-    uid = f"{APP_SLUG}_{sensor.slug}"
-    objects = sensor.kind == KIND_OBJECTS
-    reading = sensor.kind == KIND_READING
-    device = {
-        "identifiers": [uid],
-        "name": sensor.name,
-        "manufacturer": "VisionState",
-        "model": "Object sensor" if objects else "Reading sensor" if reading else "Image state sensor",
-        "sw_version": VERSION,
-    }
-    bridge_only = {"availability": [{"topic": BRIDGE_AVAILABILITY}]}
-    with_camera = {
-        "availability": [{"topic": BRIDGE_AVAILABILITY}, {"topic": t["availability"]}],
-        "availability_mode": "all",
-    }
+    """Home Assistant MQTT discovery configs for one sensor: one device, its entities.
 
-    def suggest(entity_id: str) -> dict:
-        # Older sensors keep suggesting their "visionstate_" IDs (an entity that comes back, e.g. a
-        # deselected object class, gets the same ID again); newer ones let Home Assistant name the
-        # entities after the device and the entity, like other integrations. Either way Home
-        # Assistant only uses it when it first creates an entity.
-        return {"default_entity_id": entity_id} if sensor.entity_prefix else {}
-
-    def config(component: str, object_id: str, payload: dict) -> tuple[str, dict]:
-        payload = {"unique_id": f"{uid}_{object_id}", "device": device, **payload}
-        return f"{prefix}/{component}/{uid}/{object_id}/config", payload
-
-    if reading:
-        kind_specific = [
-            config(
-                "sensor",
-                "state",
-                {"name": None, **suggest(f"sensor.{uid}"), **reading_entity(sensor.reading or {}, t), **with_camera},
-            ),
-            config(
-                "sensor",
-                "confidence",
-                {
-                    "name": "Confidence",
-                    **suggest(f"sensor.{uid}_confidence"),
-                    "state_topic": t["confidence"],
-                    "unit_of_measurement": "%",
-                    "state_class": "measurement",
-                    "entity_category": "diagnostic",
-                    "icon": "mdi:percent-circle-outline",
-                    **with_camera,
-                },
-            ),
-            # Off by default (enabled_by_default): for those who want them, e.g. leak detection.
-            config(
-                "sensor",
-                "raw",
-                {
-                    "name": "Raw reading",
-                    **suggest(f"sensor.{uid}_raw"),
-                    "state_topic": t["raw"],
-                    "entity_category": "diagnostic",
-                    "enabled_by_default": False,
-                    "icon": "mdi:text-recognition",
-                    **with_camera,
-                },
-            ),
-            config(
-                "sensor",
-                "problem",
-                {
-                    "name": "Problem",
-                    **suggest(f"sensor.{uid}_problem"),
-                    "state_topic": t["problem"],
-                    "device_class": "enum",
-                    "options": list(READING_PROBLEMS),
-                    "entity_category": "diagnostic",
-                    "enabled_by_default": False,
-                    "icon": "mdi:alert-circle-outline",
-                    **with_camera,
-                },
-            ),
-            config(
-                "sensor",
-                "accepted",
-                {
-                    "name": "Accepted (24 h)",
-                    **suggest(f"sensor.{uid}_accepted"),
-                    "state_topic": t["accepted"],
-                    "unit_of_measurement": "%",
-                    "state_class": "measurement",
-                    "entity_category": "diagnostic",
-                    "enabled_by_default": False,
-                    "icon": "mdi:check-circle-outline",
-                    **with_camera,
-                },
-            ),
-            config(
-                "image",
-                "reader_image",
-                {
-                    # What the reader saw: the region after display processing (one field per wheel).
-                    "name": "Reader image",
-                    **suggest(f"image.{uid}_reader_image"),
-                    "image_topic": t["reader_image"],
-                    "content_type": "image/jpeg",
-                    "entity_category": "diagnostic",
-                    "enabled_by_default": False,
-                    **with_camera,
-                },
-            ),
-            *(
-                [
-                    config(
-                        "sensor",
-                        "rate",
-                        {**suggest(f"sensor.{uid}_rate"), **rate_entity(sensor.reading or {}, t), **with_camera},
-                    )
-                ]
-                if (sensor.reading or {}).get("mode") == "counter"
-                else []
-            ),
-        ]
-    elif objects:
-        kind_specific = []
-        for key, name, icon in sensor.objects:
-            ot = object_topics(sensor.slug, key)
-            kind_specific += [
-                config(
-                    "binary_sensor",
-                    key,
-                    {
-                        "name": name,
-                        **suggest(f"binary_sensor.{uid}_{key}"),
-                        "state_topic": ot["state"],
-                        "json_attributes_topic": ot["attributes"],
-                        "payload_on": "ON",
-                        "payload_off": "OFF",
-                        "device_class": "occupancy",
-                        "icon": icon,  # the object itself instead of occupancy's house
-                        **with_camera,
-                    },
-                ),
-                config(
-                    "sensor",
-                    f"{key}_count",
-                    {
-                        "name": f"{name} count",
-                        **suggest(f"sensor.{uid}_{key}_count"),
-                        "state_topic": ot["count"],
-                        "state_class": "measurement",
-                        "icon": "mdi:counter",
-                        **with_camera,
-                    },
-                ),
-            ]
+    The entities of its kind (``_state_entities``, ``_object_entities``, ``_reading_entities``),
+    then those every sensor has: the last frame, "check now" and the pause switch. Unique IDs
+    and topics are never changed once released: Home Assistant's entities are bound to them.
+    """
+    d = _Discovery(prefix, sensor)
+    if sensor.kind == KIND_READING:
+        kind_specific = _reading_entities(d)
+    elif sensor.kind == KIND_OBJECTS:
+        kind_specific = _object_entities(d)
     else:
-        kind_specific = [
-            config(
-                "sensor",
-                "state",
-                {
-                    "name": None,
-                    **suggest(f"sensor.{uid}"),
-                    "state_topic": t["state"],
-                    "json_attributes_topic": t["attributes"],
-                    "device_class": "enum",
-                    "options": [*sensor.state_keys, UNKNOWN_STATE],
-                    "icon": "mdi:eye-check-outline",
-                    **with_camera,
-                },
-            ),
-            config(
-                "sensor",
-                "confidence",
-                {
-                    "name": "Confidence",
-                    **suggest(f"sensor.{uid}_confidence"),
-                    "state_topic": t["confidence"],
-                    "unit_of_measurement": "%",
-                    "state_class": "measurement",
-                    "entity_category": "diagnostic",
-                    "icon": "mdi:percent-circle-outline",
-                    **with_camera,
-                },
-            ),
-        ]
+        kind_specific = _state_entities(d)
+    check_now = {KIND_OBJECTS: "Detect now", KIND_READING: "Read now"}.get(sensor.kind, "Classify now")
+    frame = {
+        "name": "Last frame",
+        **d.suggest("image", "frame"),
+        "image_topic": d.t["image"],
+        "content_type": "image/jpeg",
+        **d.with_camera,
+    }
+    button = {
+        "name": check_now,
+        **d.suggest("button", "classify"),
+        "command_topic": d.t["classify"],
+        "payload_press": "PRESS",
+        "icon": "mdi:camera-iris",
+        **d.bridge_only,
+    }
+    pause = {
+        "name": "Enabled",
+        **d.suggest("switch", "enabled"),
+        "command_topic": d.t["enabled_set"],
+        "state_topic": d.t["enabled"],
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "entity_category": "config",
+        **d.bridge_only,
+    }
     return [
         *kind_specific,
-        config(
-            "image",
-            "frame",
-            {
-                "name": "Last frame",
-                **suggest(f"image.{uid}_frame"),
-                "image_topic": t["image"],
-                "content_type": "image/jpeg",
-                **with_camera,
-            },
-        ),
-        config(
-            "button",
-            "classify",
-            {
-                "name": "Detect now" if objects else "Read now" if reading else "Classify now",
-                **suggest(f"button.{uid}_classify"),
-                "command_topic": t["classify"],
-                "payload_press": "PRESS",
-                "icon": "mdi:camera-iris",
-                **bridge_only,
-            },
-        ),
-        config(
-            "switch",
-            "enabled",
-            {
-                "name": "Enabled",
-                **suggest(f"switch.{uid}_enabled"),
-                "command_topic": t["enabled_set"],
-                "state_topic": t["enabled"],
-                "payload_on": "ON",
-                "payload_off": "OFF",
-                "entity_category": "config",
-                **bridge_only,
-            },
-        ),
+        d.config("image", "frame", frame),
+        d.config("button", "classify", button),
+        d.config("switch", "enabled", pause),
     ]
+
+
+class _Discovery:
+    """What every discovery config of one sensor shares: its device, topics and availability."""
+
+    def __init__(self, prefix: str, sensor: SensorDescriptor):
+        self.prefix, self.sensor = prefix, sensor
+        self.t = topics(sensor.slug)
+        self.uid = f"{APP_SLUG}_{sensor.slug}"
+        models = {KIND_OBJECTS: "Object sensor", KIND_READING: "Reading sensor"}
+        self.device = {
+            "identifiers": [self.uid],
+            "name": sensor.name,
+            "manufacturer": "VisionState",
+            "model": models.get(sensor.kind, "Image state sensor"),
+            "sw_version": VERSION,
+        }
+        # Commands work while the app runs; values only while the camera delivers too.
+        self.bridge_only = {"availability": [{"topic": BRIDGE_AVAILABILITY}]}
+        self.with_camera = {
+            "availability": [{"topic": BRIDGE_AVAILABILITY}, {"topic": self.t["availability"]}],
+            "availability_mode": "all",
+        }
+
+    def suggest(self, component: str, object_id: str | None = None) -> dict:
+        """The entity ID to suggest for a new entity (``object_id`` None: the sensor's main one).
+
+        Older sensors keep suggesting their "visionstate_" IDs (an entity that comes back, e.g. a
+        deselected object class, gets the same ID again); newer ones let Home Assistant name the
+        entities after the device and the entity, like other integrations. Either way Home
+        Assistant only uses it when it first creates an entity.
+        """
+        if not self.sensor.entity_prefix:
+            return {}
+        suffix = f"_{object_id}" if object_id else ""
+        return {"default_entity_id": f"{component}.{self.uid}{suffix}"}
+
+    def config(self, component: str, object_id: str, payload: dict) -> tuple[str, dict]:
+        """One entity's discovery topic and config."""
+        payload = {"unique_id": f"{self.uid}_{object_id}", "device": self.device, **payload}
+        return f"{self.prefix}/{component}/{self.uid}/{object_id}/config", payload
+
+    def confidence(self) -> tuple[str, dict]:
+        """The confidence of the last check, in % (state and reading sensors)."""
+        payload = {
+            "name": "Confidence",
+            **self.suggest("sensor", "confidence"),
+            "state_topic": self.t["confidence"],
+            "unit_of_measurement": "%",
+            "state_class": "measurement",
+            "entity_category": "diagnostic",
+            "icon": "mdi:percent-circle-outline",
+            **self.with_camera,
+        }
+        return self.config("sensor", "confidence", payload)
+
+
+def _state_entities(d: _Discovery) -> list[tuple[str, dict]]:
+    """A state sensor: its state (one of its keys, or unknown) and the confidence."""
+    state = {
+        "name": None,
+        **d.suggest("sensor"),
+        "state_topic": d.t["state"],
+        "json_attributes_topic": d.t["attributes"],
+        "device_class": "enum",
+        "options": [*d.sensor.state_keys, UNKNOWN_STATE],
+        "icon": "mdi:eye-check-outline",
+        **d.with_camera,
+    }
+    return [d.config("sensor", "state", state), d.confidence()]
+
+
+def _object_entities(d: _Discovery) -> list[tuple[str, dict]]:
+    """An object sensor: per class and own label, whether it is there (on/off) and how many."""
+    entities = []
+    for key, name, icon in d.sensor.objects:
+        ot = object_topics(d.sensor.slug, key)
+        present = {
+            "name": name,
+            **d.suggest("binary_sensor", key),
+            "state_topic": ot["state"],
+            "json_attributes_topic": ot["attributes"],
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device_class": "occupancy",
+            "icon": icon,  # the object itself instead of occupancy's house
+            **d.with_camera,
+        }
+        count = {
+            "name": f"{name} count",
+            **d.suggest("sensor", f"{key}_count"),
+            "state_topic": ot["count"],
+            "state_class": "measurement",
+            "icon": "mdi:counter",
+            **d.with_camera,
+        }
+        entities += [d.config("binary_sensor", key, present), d.config("sensor", f"{key}_count", count)]
+    return entities
+
+
+def _reading_entities(d: _Discovery) -> list[tuple[str, dict]]:
+    """A reading sensor: its value and the confidence, and diagnostics that are off by default
+    (raw reading, problem, accepted share, reader image) for those who want them, e.g. for leak
+    detection. A counter also gets its rate."""
+    reading, t = d.sensor.reading or {}, d.t
+    # Diagnostic entities, off until the user switches them on in Home Assistant.
+    hidden = {"entity_category": "diagnostic", "enabled_by_default": False}
+    value = {"name": None, **d.suggest("sensor"), **reading_entity(reading, t), **d.with_camera}
+    raw = {
+        "name": "Raw reading",
+        **d.suggest("sensor", "raw"),
+        "state_topic": t["raw"],
+        **hidden,
+        "icon": "mdi:text-recognition",
+        **d.with_camera,
+    }
+    problem = {
+        "name": "Problem",
+        **d.suggest("sensor", "problem"),
+        "state_topic": t["problem"],
+        "device_class": "enum",
+        "options": list(READING_PROBLEMS),
+        **hidden,
+        "icon": "mdi:alert-circle-outline",
+        **d.with_camera,
+    }
+    accepted = {
+        "name": "Accepted (24 h)",
+        **d.suggest("sensor", "accepted"),
+        "state_topic": t["accepted"],
+        "unit_of_measurement": "%",
+        "state_class": "measurement",
+        **hidden,
+        "icon": "mdi:check-circle-outline",
+        **d.with_camera,
+    }
+    reader_image = {
+        # What the reader saw: the region after display processing (one field per wheel).
+        "name": "Reader image",
+        **d.suggest("image", "reader_image"),
+        "image_topic": t["reader_image"],
+        "content_type": "image/jpeg",
+        **hidden,
+        **d.with_camera,
+    }
+    entities = [
+        d.config("sensor", "state", value),
+        d.confidence(),
+        d.config("sensor", "raw", raw),
+        d.config("sensor", "problem", problem),
+        d.config("sensor", "accepted", accepted),
+        d.config("image", "reader_image", reader_image),
+    ]
+    if reading.get("mode") == "counter":
+        rate = {**d.suggest("sensor", "rate"), **rate_entity(reading, t), **d.with_camera}
+        entities.append(d.config("sensor", "rate", rate))
+    return entities
 
 
 def reading_entity(reading: dict, t: dict[str, str]) -> dict:
