@@ -28,3 +28,21 @@ requires_detector = pytest.mark.skipif(
 @pytest.fixture
 def model_dir() -> Path:
     return MODEL_DIR
+
+
+@pytest.fixture(autouse=True)
+def _close_databases(monkeypatch):
+    """Close every database a test opened (a test that only prepares a file never closes it)."""
+    from visionstate.db import Database
+
+    opened = []
+    original = Database.__init__
+
+    def init(self, path):
+        original(self, path)
+        opened.append(self)
+
+    monkeypatch.setattr(Database, "__init__", init)
+    yield
+    for db in opened:
+        db.engine.dispose()

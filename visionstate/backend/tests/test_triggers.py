@@ -117,8 +117,10 @@ def test_migration_adds_triggers_column(tmp_path):
     Database(path).init()
     con = sqlite3.connect(path)
     columns = {row[1] for row in con.execute("PRAGMA table_info(sensor)")}
+    version = con.execute("PRAGMA user_version").fetchone()[0]
+    con.close()
     assert {"triggers", "review"} <= columns
-    assert con.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert version == SCHEMA_VERSION
 
 
 class FakeHomeAssistant:
