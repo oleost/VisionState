@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.4b3
+
+### Fixed
+
+- A message on a sensor's pause switch topic that was not ON or OFF paused the sensor; such a
+  message is now ignored.
+- A camera that did not answer showed "Camera unavailable:" without a reason; it now says it
+  gave no answer in time.
+
 ## 0.6.4b2
 
 ### Fixed

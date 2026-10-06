@@ -1,5 +1,5 @@
 name: VisionState (beta)
-version: "0.6.4b2"
+version: "0.6.4b3"
 slug: visionstate
 description: Teach a local AI to recognise states (open, closed, …), find objects (people, cars, pets) or read numbers in your camera images
 url: https://github.com/oleost/VisionState
