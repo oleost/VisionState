@@ -17,6 +17,7 @@ from ..mqtt import rate_unit, topics
 from ..redact import redact
 from ..settings import READING
 from .base import RuntimeBase
+from .logic import reading_verdict
 from .models import ModelsMixin
 from .publishing import PublishingMixin
 from .state import SensorConfig
@@ -48,19 +49,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         now = time.time()
         value = readers.parse(text.text, settings)
         last = float(live.debouncer.published) if live.debouncer.published is not None else None
-        if value is None:
-            reason = "nothing read"
-        elif readers.wrong_digit_count(text.text, settings):
-            reason = "wrong digit count"
-        elif text.score < cfg.threshold:
-            reason = "unsure"
-        else:
-            reason = readers.implausible(value, last, settings)
-        # One step below the value: the last wheel turning (see readers.settling). The value stays,
-        # but that is no rejection.
-        settling = reason == "went down" and readers.settling(value, last, settings)
-        if settling:
-            reason = None
+        reason, settling = reading_verdict(text, value, last, cfg.threshold, settings)
         shown = readers.format_value(value, settings)
         live.reading = {
             "text": text.text,
@@ -70,15 +59,32 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             "settling": settling,
             "at": now,
         }
-        live.reading_image = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+        live.reading_image = reader_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
         live.top, live.confidence = shown, text.score
 
-        t = topics(cfg.slug)
         changed = False
         if reason is None and not settling and shown is not None:  # never let a lower reading through
             changed = live.debouncer.update(shown, cfg.debounce)
             if changed:
                 live.changes.append(now)
+        await self._publish_reading(cfg, image, reader_jpeg, text, shown, reason, now)
+        await self._keep_reading(cfg, image, text, shown, reason, changed)
+
+    async def _publish_reading(
+        self,
+        cfg: SensorConfig,
+        image: Image.Image,
+        reader_jpeg: bytes,
+        text: readers.Text,
+        shown: str | None,
+        reason: str | None,
+        now: float,
+    ) -> None:
+        """Send a reading sensor's value (the last accepted one), confidence, images and diagnostics.
+
+        ``reader_jpeg`` is what the reader saw (the region after display processing)."""
+        live = self.live_state(cfg.id)
+        t = topics(cfg.slug)
         if live.debouncer.published is not None:
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)
         await self._send(cfg, t["confidence"], f"{text.score * 100:.1f}", retain=True)
@@ -95,11 +101,23 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         )
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
         await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
-        await self._send(cfg, t["reader_image"], live.reading_image, retain=True)
+        await self._send(cfg, t["reader_image"], reader_jpeg, retain=True)
         await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
 
+    async def _keep_reading(
+        self,
+        cfg: SensorConfig,
+        image: Image.Image,
+        text: readers.Text,
+        shown: str | None,
+        reason: str | None,
+        changed: bool,
+    ) -> None:
+        """Count the reading for the day, and keep it in the history when the value changed, it was
+        rejected (it goes to review) or it was picked for a spot check."""
+        live = self.live_state(cfg.id)
         await asyncio.to_thread(self._count_reading, cfg.id, reason)
-        spot = reason is None and not changed and random.random() < float(settings["spot_rate"])
+        spot = reason is None and not changed and random.random() < float(cfg.reading["spot_rate"])
         if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
             details = {"text": text.text, "value": shown, "reason": reason}

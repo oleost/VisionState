@@ -122,3 +122,23 @@ def test_polygon_roi_normalises_masks_and_keys():
     assert out.size == (80, 80)
     assert out.getpixel((5, 5)) == (255, 255, 255)  # inside the triangle
     assert out.getpixel((75, 75)) == NEUTRAL_FILL  # outside -> neutral
+
+
+def test_reading_verdict():
+    from visionstate.engine.logic import reading_verdict
+    from visionstate.readers import Text
+    from visionstate.settings import merge_reading
+
+    counter = merge_reading({"mode": "counter", "decimals": 1, "max_step": 0})
+    wheels = merge_reading({"mode": "counter", "decimals": 1, "display": "counter", "digits": 5, "max_step": 0})
+    value = merge_reading({"mode": "value", "decimals": 0, "max_step": 10})
+    sure = 0.9
+
+    assert reading_verdict(Text("", 0.0), None, 5.0, 0.5, counter) == ("nothing read", False)
+    assert reading_verdict(Text("1234", sure), 123.4, None, 0.5, wheels) == ("wrong digit count", False)
+    assert reading_verdict(Text("12345", 0.3), 1234.5, None, 0.5, counter) == ("unsure", False)
+    assert reading_verdict(Text("12345", sure), 1234.5, 1234.4, 0.5, counter) == (None, False)  # accepted
+    assert reading_verdict(Text("12340", sure), 1234.0, 1234.5, 0.5, counter) == ("went down", False)
+    # One step below: the last wheel turning — kept, not rejected.
+    assert reading_verdict(Text("12344", sure), 1234.4, 1234.5, 0.5, counter) == (None, True)
+    assert reading_verdict(Text("40", sure), 40.0, 20.0, 0.5, value) == ("changed too much", False)

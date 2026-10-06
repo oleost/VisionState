@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .. import detectors, imaging, teach
+from .. import detectors, imaging, readers, teach
 from .state import LiveState, ObjectTrack, SensorConfig
 
 
@@ -119,3 +119,25 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
         if probe_at < full_at:
             return probe_at, "probe"
     return full_at, "full"
+
+
+def reading_verdict(
+    text: readers.Text, value: float | None, last: float | None, threshold: float, settings: dict
+) -> tuple[str | None, bool]:
+    """Whether a reading is rejected, and why (None: accepted), and whether it is "settling".
+
+    Rejected: nothing read, another number of digits than the counter has wheels, too unsure,
+    or implausible next to the ``last`` published value (see readers.implausible). Settling: one
+    step below the last value, the last wheel of a counter turning; the value stays, but that is
+    no rejection.
+    """
+    if value is None:
+        return "nothing read", False
+    if readers.wrong_digit_count(text.text, settings):
+        return "wrong digit count", False
+    if text.score < threshold:
+        return "unsure", False
+    reason = readers.implausible(value, last, settings)
+    if reason == "went down" and readers.settling(value, last, settings):
+        return None, True
+    return reason, False
