@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4b6
+
+### Changed
+
+- Updated libraries: FastAPI 0.142 and PyAV 19 (camera streams and video uploads). With PyAV 19,
+  turning video frames into images uses less memory.
+
 ## 0.6.4b5
 
 ### New
