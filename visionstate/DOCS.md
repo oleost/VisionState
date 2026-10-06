@@ -14,7 +14,8 @@ number** from a display, without any training. Everything runs on this machine; 
   **Mosquitto broker** app and the **MQTT** integration if you do not have them yet.
   VisionState finds the broker automatically.
 - **A camera** in Home Assistant (any `camera.*` entity: Frigate, ESP32-CAM, Reolink,
-  generic camera…), or a direct HTTP snapshot / RTSP URL.
+  generic camera…), or a direct HTTP snapshot URL (`http://` or `https://`) or stream URL
+  (`rtsp://`, `rtsps://`, also an `http://` video stream).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
   also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
@@ -319,7 +320,7 @@ automations.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
-  Settings tab.
+  Settings tab. An image in the file that cannot be read is skipped (the message says how many).
 
 ## Beta channel
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.4b1
+
+A release about sturdiness: no new features, fewer ways for things to go wrong.
+
+### Fixed
+
+- **The MQTT connection could stop for good** after an unexpected error (for one, a message
+  that is not text sent to one of VisionState's command topics). It now reconnects, like after a
+  lost connection.
+- **A sensor could stop checking until a restart** when its settings could not be read at that
+  moment (a busy database). It now tries again after 30 seconds.
+- **Importing a sensor with a damaged image** failed halfway and left a sensor behind that did
+  not run. Unreadable images are now skipped, and the message says how many. A file that is no
+  ZIP gives a clear error instead of an internal one.
+
+### Changed
+
+- **Camera passwords are now also masked in error details in the log** (tracebacks), not only
+  in the messages themselves, and in every error shown in the app.
+- **Camera addresses are checked before a picture is fetched**: a snapshot URL starts with
+  `http://` or `https://`, a stream with a network address such as `rtsp://`.
+- **Limits for pictures**: a snapshot larger than 50 MB or an image of more than 60 megapixels is
+  refused instead of filling the memory (a 4K camera picture is 8 megapixels).
+- An unexpected error in a check is logged once, with its details, instead of on every check.
+- Inside: the engine is split into smaller parts, and more of it is covered by tests.
+
 ## 0.6.3
 
 Needs **Home Assistant 2025.10 or newer** (an older Home Assistant is not offered this update).

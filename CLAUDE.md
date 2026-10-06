@@ -27,6 +27,11 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile).
   - `backend/visionstate/settings.py` holds every backend default/tunable; import from there.
+  - `backend/visionstate/engine/` is the runtime: `Runtime` (`runtime.py`) is put together from one
+    mixin per part (`models`, `checks`, `objects`, `reading`, `teaching`, `training`, `publishing`,
+    `history`); `state.py` holds `SensorConfig`/`LiveState`, `logic.py` the pure decisions. New
+    engine code goes into the part it belongs to; a long-running loop must survive any exception
+    (log it once, try again) — only `CancelledError` may end it.
   - `backend/visionstate/backbones.json` (state sensors), `detectors.json` (object sensors) and
     `readers.json` (reading sensors) are the model registries. Entries are never changed or
     removed once released (a new model gets a new id); `python -m visionstate.backbones <dir>`
@@ -40,7 +45,8 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     `api.ts` is the only place that builds API URLs; `router.svelte.ts` defines app paths.
   - The UI reads sensor defaults, limits and palette from `GET /api/v1/config`.
 - Backend checks: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
-  (tests need the model: `python -m visionstate.backbones models`).
+  (tests need the model: `python -m visionstate.backbones models`). CI measures coverage and fails
+  below 88 %; add `--cov=visionstate --cov-report=term-missing:skip-covered` to see what is not tested.
 - Frontend checks: `cd visionstate/frontend && npm run check && npm run build`.
 - **UI testing routine** (every UI change, before a beta release) — many users run Home Assistant
   on phones/tablets:
