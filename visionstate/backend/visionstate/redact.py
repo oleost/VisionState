@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from .settings import SECRET_QUERY_KEYS
@@ -22,3 +23,10 @@ def redact(text: str) -> str:
 
 def has_credentials(url: str) -> bool:
     return redact(url) != url
+
+
+class RedactingFormatter(logging.Formatter):
+    """Masks credentials in every log line, tracebacks included (an error message may quote a URL)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact(super().format(record))

@@ -504,13 +504,18 @@ class MqttBridge:
             except aiomqtt.MqttError as err:
                 self.last_error = str(err)
                 log.warning("MQTT connection lost: %s", err)
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001 - a bug must not end the bridge: reconnect
+                self.last_error = str(err) or type(err).__name__
+                log.exception("MQTT bridge failed, reconnecting")
             finally:
                 self.connected = False
                 self._client = None
             await asyncio.sleep(RECONNECT_DELAY_S)
 
     async def _dispatch(self, topic: str, payload: bytes | bytearray | str) -> None:
-        text = payload.decode() if isinstance(payload, (bytes, bytearray)) else str(payload)
+        text = payload.decode(errors="replace") if isinstance(payload, (bytes, bytearray)) else str(payload)
         if topic == f"{self.settings.discovery_prefix}/status":
             if text == ONLINE:
                 await self.publish(BRIDGE_AVAILABILITY, ONLINE, retain=True)

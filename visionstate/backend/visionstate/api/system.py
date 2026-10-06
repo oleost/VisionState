@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import tempfile
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
@@ -15,6 +17,7 @@ from sqlalchemy import delete, func, select, update
 
 from .. import backbones, bundle, detectors, imaging, readers
 from ..db import Prediction, Sample, SampleLabel, Sensor
+from ..redact import redact
 from ..settings import (
     DETECTION,
     KIND_OBJECTS,
@@ -76,6 +79,7 @@ from .common import (
 from .samples import copy_limited
 from .sensors import prediction_view
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix=API_PREFIX, tags=["system"])
 
 
@@ -233,17 +237,17 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         try:
             await rt.set_backbone(body.backbone)
         except Exception as err:  # noqa: BLE001
-            raise HTTPException(500, f"Could not load backbone: {err}") from err
+            raise HTTPException(500, f"Could not load backbone: {redact(str(err))}") from err
     if body.detector is not None and body.detector != current["detector"]:
         try:
             await rt.set_detector(body.detector)
         except Exception as err:  # noqa: BLE001
-            raise HTTPException(500, f"Could not load detector: {err}") from err
+            raise HTTPException(500, f"Could not load detector: {redact(str(err))}") from err
     if body.reader is not None and body.reader != current["reader"]:
         try:
             await rt.set_reader(body.reader)
         except Exception as err:  # noqa: BLE001
-            raise HTTPException(500, f"Could not load reader: {err}") from err
+            raise HTTPException(500, f"Could not load reader: {redact(str(err))}") from err
     return get_settings(request)
 
 
@@ -252,7 +256,7 @@ async def cameras(request: Request) -> list[dict]:
     try:
         return await runtime(request).ha.cameras()
     except Exception as err:  # noqa: BLE001
-        raise HTTPException(502, f"Could not list cameras: {err}") from err
+        raise HTTPException(502, f"Could not list cameras: {redact(str(err))}") from err
 
 
 @router.get("/entities")
@@ -260,7 +264,7 @@ async def entities(request: Request) -> list[dict]:
     try:
         return await runtime(request).ha.entities()
     except Exception as err:  # noqa: BLE001
-        raise HTTPException(502, f"Could not list entities: {err}") from err
+        raise HTTPException(502, f"Could not list entities: {redact(str(err))}") from err
 
 
 class LightHoldIn(BaseModel):
@@ -306,7 +310,7 @@ async def preview(source_type: str, source: str, request: Request) -> Response:
     try:
         data = await runtime(request).grabber.grab(source_type, source)
     except SourceError as err:
-        raise HTTPException(502, f"Camera unavailable: {err}") from err
+        raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
@@ -329,13 +333,13 @@ async def preview_detect(body: DetectPreviewIn, request: Request) -> dict:
     try:
         data = await rt.grabber.grab(body.source_type, body.source)
     except SourceError as err:
-        raise HTTPException(502, f"Camera unavailable: {err}") from err
+        raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
     image = await asyncio.to_thread(imaging.decode, data)
     roi = body.roi.normalised() if body.roi else None
     try:
         found = await rt.detect_objects(image, roi, merge_objects(None), body.threshold, all_classes=True)
     except Exception as err:  # noqa: BLE001
-        raise HTTPException(503, f"Object detector unavailable: {err}") from err
+        raise HTTPException(503, f"Object detector unavailable: {redact(str(err))}") from err
     return {
         "image": "data:image/jpeg;base64," + base64.b64encode(data).decode(),
         "width": image.width,
@@ -360,13 +364,13 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
     try:
         data = await rt.grabber.grab(body.source_type, body.source)
     except SourceError as err:
-        raise HTTPException(502, f"Camera unavailable: {err}") from err
+        raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
     image = await asyncio.to_thread(imaging.decode, data)
     settings = merge_reading(body.reading.model_dump())
     try:
         text, used = await rt.read_number(image, body.roi.normalised() if body.roi else None, settings)
     except Exception as err:  # noqa: BLE001
-        raise HTTPException(503, f"Number reader unavailable: {err}") from err
+        raise HTTPException(503, f"Number reader unavailable: {redact(str(err))}") from err
     used_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
     return {
         "image": "data:image/jpeg;base64," + base64.b64encode(data).decode(),
@@ -571,19 +575,20 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
         path.unlink(missing_ok=True)
         raise HTTPException(413, f"Bundle is larger than {UPLOAD_LIMITS['max_file_mb']} MB")
     try:
-        sensor_id = await asyncio.to_thread(_import_sync, rt, path)
-    except (ValueError, KeyError, OSError) as err:
-        raise HTTPException(400, f"Import failed: {err}") from err
+        sensor_id, skipped = await asyncio.to_thread(_import_sync, rt, path)
+    except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as err:
+        raise HTTPException(400, f"Import failed: {redact(str(err))}") from err
     finally:
         path.unlink(missing_ok=True)
     await rt.sensor_created(sensor_id)
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg and cfg.kind == KIND_STATES:
         rt.schedule_retrain(sensor_id, delay=0)
-    return {"id": sensor_id}
+    return {"id": sensor_id, "skipped": skipped}
 
 
-def _import_sync(rt, path: Path) -> int:
+def _import_sync(rt, path: Path) -> tuple[int, int]:
+    """Creates the sensor of a bundle; returns its ID and how many of its images were unreadable."""
     from pydantic import ValidationError
 
     from .sensors import SensorIn
@@ -638,24 +643,35 @@ def _import_sync(rt, path: Path) -> int:
         sensor_id = sensor.id
         state_ids = {st.key: st.id for st in sensor.states}
     own = {label["key"] for label in custom}
+    skipped = 0
+    # The sensor exists now: a broken image is skipped (like in an uploaded ZIP) instead of
+    # failing the import halfway and leaving a sensor that was never started.
     for item in samples:
-        if spec.kind == KIND_OBJECTS:
-            if not teach.importable_label(item.get("object_label"), own):
-                continue
-            image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
-            detected = item.get("detected")
-            rt.add_object_example(
-                sensor_id,
-                image,
-                item.get("box") or [0.0, 0.0, 1.0, 1.0],
-                item["object_label"],
-                detected if detected in detectors.LABELS.by_key else None,
-                item.get("score"),
-                "import",
-                cropped=True,
-            )
-            continue
+        try:
+            _import_sample(rt, path, sensor_id, spec.kind, item, own, state_ids)
+        except (ValueError, KeyError, TypeError, AttributeError, OSError) as err:
+            skipped += 1
+            log.warning("Import: skipping a sample: %s", err)
+    return sensor_id, skipped
+
+
+def _import_sample(rt, path: Path, sensor_id: int, kind: str, item: dict, own: set, state_ids: dict) -> None:
+    if kind == KIND_OBJECTS:
+        if not teach.importable_label(item.get("object_label"), own):
+            return
         image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
-        labels = [state_ids[k] for k in item.get("labels", []) if k in state_ids]
-        rt.add_sample(sensor_id, image, "import", labels[0] if labels else None, item.get("use_roi", True))
-    return sensor_id
+        detected = item.get("detected")
+        rt.add_object_example(
+            sensor_id,
+            image,
+            item.get("box") or [0.0, 0.0, 1.0, 1.0],
+            item["object_label"],
+            detected if detected in detectors.LABELS.by_key else None,
+            item.get("score"),
+            "import",
+            cropped=True,
+        )
+        return
+    image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"])))
+    labels = [state_ids[k] for k in item.get("labels", []) if k in state_ids]
+    rt.add_sample(sensor_id, image, "import", labels[0] if labels else None, bool(item.get("use_roi", True)))

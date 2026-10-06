@@ -174,8 +174,16 @@ def read_manifest(path: Path) -> dict:
     with zipfile.ZipFile(path) as archive:
         if MANIFEST not in archive.namelist():
             raise ValueError("Not a VisionState bundle (manifest.json missing)")
-        manifest = json.loads(archive.read(MANIFEST))
-    if manifest.get("schema", 0) > BUNDLE_SCHEMA:
+        info = archive.getinfo(MANIFEST)
+        if info.file_size > UPLOAD_LIMITS["max_manifest_mb"] * 1_000_000:
+            raise ValueError("manifest.json is too large")
+        manifest = json.loads(archive.read(info))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("sensor"), dict):
+        raise ValueError("Not a VisionState bundle (no sensor in manifest.json)")
+    schema = manifest.get("schema", 0)
+    if not isinstance(schema, int):
+        raise ValueError("Not a VisionState bundle (bad schema in manifest.json)")
+    if schema > BUNDLE_SCHEMA:
         raise ValueError("Bundle was created by a newer VisionState version")
     return manifest
 

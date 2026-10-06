@@ -287,6 +287,7 @@ class LiveState:
     confidence: float = 0.0
     available: bool | None = None
     error: str = ""
+    failure: str = ""  # the unexpected error last logged by the sensor's loop (logged once)
     last_run: float | None = None
     last_flag: float = 0.0
     changes: deque = field(default_factory=lambda: deque(maxlen=50))
@@ -406,6 +407,8 @@ class Runtime:
             self._spawn(self._entity_registry_loop())
 
     async def stop(self) -> None:
+        for handle in self._retrain_handles.values():
+            handle.cancel()
         for task in [*self._tasks.values(), *self._background]:
             task.cancel()
         await self.mqtt.stop()
@@ -774,35 +777,58 @@ class Runtime:
 
     async def _sensor_loop(self, sensor_id: int) -> None:
         event = self._wake[sensor_id]
+        last_error = ""
         while True:
-            cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
-            if cfg is None:
-                return
-            live = self.live_state(sensor_id)
-            due_at, kind = next_check_at(cfg, live, time.time())
-            if not cfg.enabled and not live.force_paused:
-                live.force = False  # paused: no check after a retrain or a model change, only when asked
-            if live.force or (cfg.enabled and due_at <= time.time()):
-                forced, live.force, live.force_paused = live.force, False, False
-                try:
-                    if forced or kind == "full":
-                        await self.run_once(cfg)
-                    else:
-                        await self.probe(cfg)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as err:  # noqa: BLE001
-                    live.error = redact(str(err))
-                    log.error("Sensor %s failed: %s", cfg.slug, live.error)
-                due_at, _ = next_check_at(cfg, live, time.time())
-            timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
-            if math.isinf(timeout):
-                timeout = None  # no regular check: sleep until something wakes the sensor
+            try:
+                timeout = await self._sensor_step(sensor_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001 - e.g. the database is busy: keep the sensor alive
+                error = redact(str(err)) or type(err).__name__
+                if error != last_error:
+                    log.exception("Sensor %s: check loop failed", sensor_id)
+                last_error = error
+                timeout = RUNTIME["loop_retry_s"]
+            else:
+                last_error = ""
+            if timeout is False:
+                return  # the sensor was deleted
             try:
                 await asyncio.wait_for(event.wait(), timeout=timeout)
             except TimeoutError:
                 pass
             event.clear()
+
+    async def _sensor_step(self, sensor_id: int) -> float | None | bool:
+        """One pass of a sensor's loop: check when due. Returns how long to sleep (None: until
+        woken), or False when the sensor no longer exists."""
+        cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
+        if cfg is None:
+            return False
+        live = self.live_state(sensor_id)
+        due_at, kind = next_check_at(cfg, live, time.time())
+        if not cfg.enabled and not live.force_paused:
+            live.force = False  # paused: no check after a retrain or a model change, only when asked
+        if live.force or (cfg.enabled and due_at <= time.time()):
+            forced, live.force, live.force_paused = live.force, False, False
+            try:
+                if forced or kind == "full":
+                    await self.run_once(cfg)
+                else:
+                    await self.probe(cfg)
+                live.failure = ""
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001
+                live.error = redact(str(err)) or type(err).__name__
+                if live.error != live.failure:
+                    # Camera problems are handled in run_once: this is unexpected, keep the traceback
+                    # (once, not for every check while it keeps failing).
+                    log.exception("Sensor %s failed: %s", cfg.slug, live.error)
+                live.failure = live.error
+            due_at, _ = next_check_at(cfg, live, time.time())
+        timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
+        return None if math.isinf(timeout) else timeout  # no regular check: sleep until woken
 
     # --- review rules -----------------------------------------------------------
 
@@ -1391,14 +1417,20 @@ class Runtime:
                 await self.publish_discovery(cfg)
                 self.wake(sensor_id)
 
-    async def _on_command(self, slug: str, command: str, payload: str) -> None:
+    def _apply_command(self, slug: str, command: str, payload: str) -> int | None:
+        """The sensor a command is for (None: no such sensor); stores "enabled"."""
         with self.db.session() as s:
             row = s.scalar(select(Sensor).where(Sensor.slug == slug))
             if row is None:
-                return
-            sensor_id = row.id
+                return None
             if command == "enabled":
-                row.enabled = payload.upper() == "ON"
+                row.enabled = payload.strip().upper() == "ON"
+            return row.id
+
+    async def _on_command(self, slug: str, command: str, payload: str) -> None:
+        sensor_id = await asyncio.to_thread(self._apply_command, slug, command, payload)
+        if sensor_id is None:
+            return
         if command == "classify":
             self.wake(sensor_id, force=True, paused_too=True)
         elif command == "enabled":

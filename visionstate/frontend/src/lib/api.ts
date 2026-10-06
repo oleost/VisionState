@@ -202,6 +202,6 @@ export const api = {
   importBundle(file: File) {
     const form = new FormData();
     form.append('file', file, file.name);
-    return request<{ id: number }>('import', { method: 'POST', body: form });
+    return request<{ id: number; skipped: number }>('import', { method: 'POST', body: form });
   },
 };

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 
 import httpx
 
@@ -22,6 +23,29 @@ SOURCE_TYPES = {
 
 class SourceError(Exception):
     pass
+
+
+ENTITY_ID = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+_SCHEME = re.compile(r"^(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*)://")
+HTTP_SCHEMES = {"http", "https"}
+# FFmpeg also opens local files and its own pseudo-protocols (file:, concat:, subfile:); a stream
+# source must be a network address.
+STREAM_SCHEMES = {"rtsp", "rtsps", "rtmp", "rtmps", "http", "https", "srt", "udp", "tcp"}
+
+
+def check_source(source_type: str, source: str) -> None:
+    """Raises SourceError when ``source`` is not a valid address for ``source_type``."""
+    if source_type == "ha_camera":
+        if not ENTITY_ID.match(source):
+            raise SourceError(f"Not an entity ID: {source!r}")
+        return
+    match = _SCHEME.match(source)
+    scheme = match.group("scheme").lower() if match else ""
+    allowed = HTTP_SCHEMES if source_type == "http" else STREAM_SCHEMES if source_type == "rtsp" else None
+    if allowed is None:
+        raise SourceError(f"Unknown source type {source_type!r}")
+    if scheme not in allowed:
+        raise SourceError(f"Unsupported address (expected {', '.join(sorted(f'{s}://' for s in allowed))})")
 
 
 class HomeAssistant:
@@ -85,6 +109,8 @@ class HomeAssistant:
 
     async def state(self, entity_id: str) -> str | None:
         """The current state of an entity, or None when it does not exist."""
+        if not self.enabled:
+            raise SourceError("Home Assistant API is not configured")
         resp = await self._client.get(f"{self.base}/states/{entity_id}")
         if resp.status_code == 404:
             return None
@@ -93,6 +119,8 @@ class HomeAssistant:
 
     async def switch(self, entity_id: str, on: bool) -> None:
         """Turn a light, switch or helper on or off."""
+        if not self.enabled:
+            raise SourceError("Home Assistant API is not configured")
         service = "turn_on" if on else "turn_off"
         resp = await self._client.post(f"{self.base}/services/homeassistant/{service}", json={"entity_id": entity_id})
         resp.raise_for_status()
@@ -118,19 +146,28 @@ class FrameGrabber:
         await self._http.aclose()
 
     async def grab(self, source_type: str, source: str) -> bytes:
+        check_source(source_type, source)
         try:
             if source_type == "ha_camera":
                 return await self.ha.snapshot(source)
             if source_type == "http":
-                resp = await self._http.get(source)
-                if resp.status_code != 200:
-                    raise SourceError(f"HTTP {resp.status_code}")
-                return resp.content
-            if source_type == "rtsp":
-                return await asyncio.to_thread(grab_rtsp, source)
+                return await self._get_limited(source)
+            return await asyncio.to_thread(grab_rtsp, source)
         except httpx.HTTPError as err:
             raise SourceError(redact(str(err))) from err
-        raise SourceError(f"Unknown source type {source_type!r}")
+
+    async def _get_limited(self, url: str) -> bytes:
+        """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]."""
+        limit = RUNTIME["max_frame_mb"] * 1_000_000
+        async with self._http.stream("GET", url) as resp:
+            if resp.status_code != 200:
+                raise SourceError(f"HTTP {resp.status_code}")
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                body += chunk
+                if len(body) > limit:
+                    raise SourceError(f"Picture larger than {RUNTIME['max_frame_mb']} MB")
+            return bytes(body)
 
 
 def grab_rtsp(url: str) -> bytes:

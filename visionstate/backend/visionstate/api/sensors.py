@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 
 from .. import bundle, readers
 from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
+from ..redact import redact
 from ..settings import (
     KIND_OBJECTS,
     KIND_READING,
@@ -273,7 +274,7 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
         try:
             frame_id, data = await rt.grab(cfg)
         except SourceError as err:
-            raise HTTPException(502, f"Camera unavailable: {err}") from err
+            raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
     return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": frame_id, "Cache-Control": "no-store"})
 
 

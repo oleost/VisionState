@@ -263,6 +263,7 @@ UPLOAD_LIMITS = {
     "max_file_mb": 2048,  # per uploaded file (videos can be large)
     "max_zip_members": 5000,  # images read from one ZIP archive
     "max_zip_member_mb": 50,  # uncompressed size of one image inside a ZIP
+    "max_manifest_mb": 20,  # manifest.json of an imported sensor (5000 samples take about 2 MB)
 }
 
 VIDEO = {
@@ -315,6 +316,11 @@ RUNTIME = {
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
     "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,
+    # A camera picture larger than this is refused (a misconfigured URL streaming without end, a
+    # decompression bomb): a 12-megapixel JPEG is a few MB, an 8K frame 33 megapixels.
+    "max_frame_mb": 50,
+    "max_image_megapixels": 60,
+    "loop_retry_s": 30.0,  # a sensor's loop failed unexpectedly (database busy): try again after this
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image
     "ha_reconnect_delay_s": 10.0,  # wait before reconnecting to the Home Assistant event stream
     # The entity IDs Home Assistant gave our entities (its entity registry): read again this often,

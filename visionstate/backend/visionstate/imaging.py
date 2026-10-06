@@ -13,8 +13,15 @@ from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, NEUTRAL_FILL, ROI_MAX
 FULL_FRAME_KEY = "full"
 
 
+class ImageTooLarge(OSError):
+    """An image with more pixels than RUNTIME["max_image_megapixels"]; handled like an unreadable one."""
+
+
 def decode(data: bytes) -> Image.Image:
     image = Image.open(io.BytesIO(data))
+    # Checked from the header, before the pixels are decoded (they could take gigabytes).
+    if image.width * image.height > RUNTIME["max_image_megapixels"] * 1_000_000:
+        raise ImageTooLarge(f"Image too large ({image.width}×{image.height})")
     image = ImageOps.exif_transpose(image)
     return image.convert("RGB")
 
