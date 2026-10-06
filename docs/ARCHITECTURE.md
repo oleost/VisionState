@@ -110,7 +110,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling |
 | `lib/router.svelte.ts` | Hash routes (`paths`) |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
-| `pages/` | Dashboard, the new sensor wizard, Review, Settings, and `SensorPage` with one file per tab in `pages/sensor/` |
+| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, Settings, and `SensorPage` with one file per tab in `pages/sensor/` |
 | `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states…) |
 
 ## Recipes
