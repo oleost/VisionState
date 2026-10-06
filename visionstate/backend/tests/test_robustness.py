@@ -227,3 +227,65 @@ def test_import_rejects_a_huge_manifest(client, monkeypatch):
 def test_import_rejects_a_file_that_is_no_zip(client):
     resp = client.post("/api/v1/import", files={"file": ("b.zip", b"not a zip")})
     assert resp.status_code == 400
+
+
+def test_mqtt_bridge_reconnects_after_an_unexpected_error(tmp_path, monkeypatch, caplog):
+    """Before, only MQTT errors were caught: a bug in on_connect ended the bridge until a restart."""
+    import aiomqtt
+
+    from visionstate import mqtt
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def subscribe(self, topic):
+            pass
+
+        async def publish(self, *args, **kwargs):
+            pass
+
+        @property
+        def messages(self):
+            async def forever():
+                await asyncio.Event().wait()
+                yield
+
+            return forever()
+
+    async def config(settings):
+        return mqtt.MqttConfig("broker", 1883, "", "", "options")
+
+    monkeypatch.setattr(aiomqtt, "Client", FakeClient)
+    monkeypatch.setattr(mqtt, "resolve_config", config)
+    monkeypatch.setattr(mqtt, "RECONNECT_DELAY_S", 0.01)
+    connects = []
+
+    async def on_connect():
+        connects.append(1)
+        if len(connects) == 1:
+            raise RuntimeError("bug while publishing discovery")
+
+    async def noop(*args):
+        pass
+
+    async def run():
+        bridge = MqttBridge(make_settings(tmp_path), noop, on_connect)
+        bridge.start()
+        for _ in range(500):
+            if len(connects) >= 2 and bridge.connected:
+                break
+            await asyncio.sleep(0.01)
+        connected = bridge.connected
+        await bridge.stop()
+        return connected
+
+    assert asyncio.run(run()) is True
+    assert len(connects) == 2
+    assert any("MQTT bridge failed" in r.message for r in caplog.records)
