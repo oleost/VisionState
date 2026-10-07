@@ -1,5 +1,6 @@
 <script lang="ts">
   // Reading sensors: every new value and the rejected readings, with the frame.
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { href, paths } from '../../lib/router.svelte';
   import { toastError } from '../../lib/app.svelte';
@@ -14,14 +15,16 @@
   let items = $state<Prediction[] | null>(null);
   let open = $state<number | null>(null);
 
-  // Reload when a new value is published or a reading is rejected.
-  const refreshKey = $derived(`${sensor.reading?.value}|${sensor.reading?.last?.reason}`);
+  // Reload on every poll of the sensor (a new `sensor` object): a check writes its row only after
+  // it published, so reloading when a value changes would come too early.
   $effect(() => {
-    void refreshKey;
-    api
-      .history(sensor.id)
-      .then((r) => (items = r))
-      .catch(toastError);
+    void sensor;
+    untrack(() =>
+      api
+        .history(sensor.id)
+        .then((r) => (items = r))
+        .catch(toastError),
+    );
   });
 
   const unit = $derived(sensor.reading ? readingUnit(sensor.reading) : '');

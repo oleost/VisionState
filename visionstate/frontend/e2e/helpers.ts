@@ -113,3 +113,25 @@ export async function seededSensorId(request: APIRequestContext, name = SENSOR_N
 export const seededObjectSensorId = (request: APIRequestContext) => seededSensorId(request, OBJECT_SENSOR_NAME);
 export const seededReadingSensorId = (request: APIRequestContext) => seededSensorId(request, READING_SENSOR_NAME);
 export const seededCounterSensorId = (request: APIRequestContext) => seededSensorId(request, COUNTER_SENSOR_NAME);
+
+/** API requests per path (without the query) made while `ms` pass on the page. */
+export async function apiRequestsDuring(page: Page, ms: number): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  const count = (req: { url: () => string }) => {
+    const { pathname } = new URL(req.url());
+    if (pathname.includes('/api/')) counts[pathname] = (counts[pathname] ?? 0) + 1;
+  };
+  page.on('request', count);
+  await page.waitForTimeout(ms);
+  page.off('request', count);
+  return counts;
+}
+
+/** Pretends the page was hidden or shown again (another app or tab in front), as a browser does. */
+export async function setVisibility(page: Page, state: 'visible' | 'hidden') {
+  await page.evaluate((s) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => s });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => s === 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
+}

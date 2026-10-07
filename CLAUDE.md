@@ -104,6 +104,14 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     emulation — assert touch-only CSS in the test, not from a screenshot.
   - A change that makes text longer while something reloads can shift the page on phones and make
     a tap land elsewhere; keep the last result on screen while re-testing.
+  - A Svelte `$effect` tracks every state read until the first `await` of any function it calls.
+    If that function later sets what it read, the effect restarts it on every answer — the live
+    frames polled the camera dozens of times a second from 0.1.0 until 0.6.5. Call such functions
+    with `untrack`, name the real dependencies with `void x`, and give a polling loop a counter so
+    a restart ends the old loop (a request still on its way would otherwise start a second one).
+    The e2e test "no page asks the server more often than it polls" counts requests per page.
+  - The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only
+    poll while visible look fine there. Use `setVisibility` (e2e) or override it by hand.
 - **Models:** registries pin a Hugging Face revision and SHA-256. Every model file is checked
   against real inputs in tests (`test_objects.py`, `test_reading.py`) — one public ONNX conversion
   turned out to be broken and only a test with real photos showed it. Test images must be CC0 /

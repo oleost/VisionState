@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { toastError } from '../../lib/app.svelte';
   import SampleGrid from '../../lib/components/SampleGrid.svelte';
@@ -25,10 +26,12 @@
     }
   }
 
+  const sensorId = $derived(sensor.id); // `sensor` is a new object on every poll; its id is not
   $effect(() => {
     void filter;
     void limit;
-    load();
+    void sensorId;
+    untrack(load);
   });
 
   const chips = $derived([

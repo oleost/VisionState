@@ -1,6 +1,7 @@
 <script lang="ts">
   // Object sensors: what the sensor was taught (boxes per label, own labels) and the boxes it
   // filtered away lately, so it is always visible what teaching changes. Shown once a box was taught.
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
@@ -23,11 +24,11 @@
       toastError(err);
     }
   }
-  // Reload when something was taught or forgotten (here, on Live or in the history).
+  // Reload on every poll of the sensor (a new `sensor` object): it shows what was taught (on Live
+  // or in the history) and the boxes recent checks filtered away.
   $effect(() => {
-    void sensor.objects?.taught;
-    void (sensor.objects?.custom ?? []).length;
-    load();
+    void sensor;
+    untrack(load);
   });
 
   const own = $derived(sensor.objects?.custom ?? []);

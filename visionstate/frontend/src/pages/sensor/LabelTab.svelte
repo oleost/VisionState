@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { app, stateInfo, toast, toastError } from '../../lib/app.svelte';
   import Icon from '../../lib/components/Icon.svelte';
@@ -24,12 +25,16 @@
     anyNight ? sensor.states.filter((s) => (sensor.counts.per_state[s.key]?.night ?? 0) < nightTarget) : [],
   );
 
+  const sensorId = $derived(sensor.id); // `sensor` is a new object on every poll; its id is not
   $effect(() => {
     void recentVersion;
-    api
-      .samples(sensor.id, { filter: 'labelled', limit: 4 })
-      .then((r) => (recent = r.items))
-      .catch(() => {});
+    void sensorId;
+    untrack(() =>
+      api
+        .samples(sensor.id, { filter: 'labelled', limit: 4 })
+        .then((r) => (recent = r.items))
+        .catch(() => {}),
+    );
   });
 
   async function label(key: string) {
