@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.5b1
+## 0.6.5
 
 ### Fixed
 
