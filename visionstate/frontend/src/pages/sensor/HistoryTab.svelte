@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { stateInfo, toast, toastError } from '../../lib/app.svelte';
   import { dateTime, pct } from '../../lib/format';
@@ -12,12 +13,16 @@
   let added = $state(new Map<number, string>()); // prediction id → state key it was added as
   let open = $state<number | null>(null); // prediction whose full frame is shown
 
+  // Reload on every poll of the sensor (a new `sensor` object): a check writes its row only after
+  // it published, so reloading when the state changes would come too early.
   $effect(() => {
-    void sensor.live.published;
-    api
-      .history(sensor.id)
-      .then((r) => (items = r))
-      .catch(toastError);
+    void sensor;
+    untrack(() =>
+      api
+        .history(sensor.id)
+        .then((r) => (items = r))
+        .catch(toastError),
+    );
   });
 
   async function addAs(p: Prediction, key: string) {

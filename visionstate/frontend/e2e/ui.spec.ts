@@ -1,8 +1,9 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 import path from 'node:path';
 import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
 import {
+  apiRequestsDuring,
   center,
   doubleTap,
   drag,
@@ -16,15 +17,17 @@ import {
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
+  setVisibility,
   watchErrors,
 } from './helpers';
 
-test('every page renders without errors and fits the screen', async ({ page, request }, info) => {
+/** Every page: [screenshot name, route, text that shows it is ready]. */
+async function allPages(request: APIRequestContext): Promise<[string, string, RegExp | string][]> {
   const id = await seededSensorId(request);
   const objectId = await seededObjectSensorId(request);
   const readingId = await seededReadingSensorId(request);
   const counterId = await seededCounterSensorId(request);
-  const pages: [string, string, RegExp | string][] = [
+  return [
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
@@ -45,6 +48,10 @@ test('every page renders without errors and fits the screen', async ({ page, req
     ['review', 'review', 'Frames the AI was unsure about'],
     ['settings', 'settings', 'AI model'],
   ];
+}
+
+test('every page renders without errors and fits the screen', async ({ page, request }, info) => {
+  const pages = await allPages(request);
   // Native parts of controls are drawn dark (Safari shows light select menus with light text otherwise).
   await page.goto('#/');
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
@@ -70,6 +77,67 @@ test('every page renders without errors and fits the screen', async ({ page, req
       errors.expectNone();
     });
   }
+});
+
+// The UI polls nothing faster than every 2 s (POLL in ui.ts): 4 s on a page may see each path
+// three times, one more for a refresh after a new check. A loop shows up as dozens.
+const POLL_WINDOW_MS = 4_000;
+const MAX_PER_PATH = 4;
+const expectCalm = (counts: Record<string, number>) =>
+  expect.soft(Object.entries(counts).filter(([, n]) => n > MAX_PER_PATH), JSON.stringify(counts)).toEqual([]);
+
+test('no page asks the server more often than it polls', async ({ page, request }) => {
+  for (const [name, route, ready] of await allPages(request)) {
+    await test.step(name, async () => {
+      await page.goto(`#/${route}`);
+      await expect(page.getByText(ready).first()).toBeVisible();
+      expectCalm(await apiRequestsDuring(page, POLL_WINDOW_MS));
+    });
+  }
+});
+
+test('hiding and showing a page with live frames does not start extra polling', async ({ page, request }, info) => {
+  const id = await seededSensorId(request);
+  // Slow answers, so the page is hidden and shown while a request is on its way.
+  await page.route('**/api/v1/sensors/*/frame*', async (route) => {
+    await new Promise((r) => setTimeout(r, 400));
+    await route.continue();
+  });
+  await page.route('**/api/v1/lights/hold', async (route) => {
+    await new Promise((r) => setTimeout(r, 400));
+    await route.continue();
+  });
+  await page.goto(`#/sensors/${id}/label`);
+  await expect(page.locator('.roi img')).toBeVisible();
+  for (let i = 0; i < 5; i++) {
+    await setVisibility(page, 'hidden');
+    await setVisibility(page, 'visible');
+  }
+  expectCalm(await apiRequestsDuring(page, POLL_WINDOW_MS));
+
+  // While hidden, nothing is fetched (frames and the light's lease wait for the page).
+  await setVisibility(page, 'hidden');
+  await page.waitForTimeout(1_000); // answers already on their way
+  const hidden = await apiRequestsDuring(page, POLL_WINDOW_MS);
+  expect(Object.keys(hidden).filter((p) => p.endsWith('/frame') || p.endsWith('/lights/hold')), JSON.stringify(hidden)).toEqual([]);
+  await setVisibility(page, 'visible');
+
+  // The light's lease (renewed every 10 s) is not taken more than once either.
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Light poll test');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Source URL').fill(`${CAMERA_URL}/snapshot.jpg`);
+  const light = page.getByLabel('Light to switch on');
+  await light.fill('light.meter_flash');
+  await light.press('Enter');
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.getByTestId('light-hold')).toContainText('light.meter_flash');
+  for (let i = 0; i < 5; i++) {
+    await setVisibility(page, 'hidden');
+    await setVisibility(page, 'visible');
+  }
+  const counts = await apiRequestsDuring(page, 11_000);
+  expect(counts['/api/v1/lights/hold'] ?? 0, JSON.stringify(counts)).toBeLessThanOrEqual(2);
 });
 
 test('swiping on a camera frame scrolls the page', async ({ page, request }, info) => {

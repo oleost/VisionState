@@ -1,6 +1,7 @@
 <script lang="ts">
   // Object sensors: when each object appeared and cleared (or was filtered away by what the
   // sensor was taught), with the frame and its boxes — which can be corrected there too.
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { href, paths } from '../../lib/router.svelte';
   import { toastError } from '../../lib/app.svelte';
@@ -15,14 +16,16 @@
   let items = $state<Prediction[] | null>(null);
   let open = $state<number | null>(null);
 
-  // Reload when an object appears or clears.
-  const onKey = $derived((sensor.objects?.live ?? []).map((o) => `${o.key}:${o.on}`).join());
+  // Reload on every poll of the sensor (a new `sensor` object): a check writes its row only after
+  // it published, so reloading when a value changes would come too early.
   $effect(() => {
-    void onKey;
-    api
-      .history(sensor.id)
-      .then((r) => (items = r))
-      .catch(toastError);
+    void sensor;
+    untrack(() =>
+      api
+        .history(sensor.id)
+        .then((r) => (items = r))
+        .catch(toastError),
+    );
   });
 
   const classes = $derived(objectKeys(sensor));

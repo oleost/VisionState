@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.5
+
+### Fixed
+
+- **Views with a live camera picture fetched frames as fast as they could** instead of every few
+  seconds: the dashboard, a sensor's Label tab and the region in its Settings asked for a new
+  frame dozens of times a second while they were open on a screen — from the camera itself on the
+  Label and Settings tabs. They now fetch one frame every 2 seconds (the dashboard every 15), as
+  intended. This was there since the first version.
+- Switching away from such a view and back while a frame was on its way started another round of
+  fetching next to the first one; the light held on while you look could likewise be renewed
+  several times over. Now only one runs at a time, and nothing is fetched while the view is hidden.
+- The Dataset tab, the Quality tab of a state sensor and the latest labels on the Label tab were
+  loaded again every 2 seconds; they now reload when something changes there.
+
 ## 0.6.4
 
 A release about sturdiness, and object sensors that know your own labels better.

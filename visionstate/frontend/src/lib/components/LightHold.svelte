@@ -20,6 +20,7 @@
   let error = $state('');
   let timer: ReturnType<typeof setTimeout> | undefined;
   let held = ''; // the entity this view holds right now ("" = none)
+  let lease = 0; // the renewal that counts; each renew() or letGo() ends the one before
 
   /** The switch is a per-viewer convenience: remembered in the browser, if it may store anything. */
   function remembered(): boolean {
@@ -39,9 +40,11 @@
 
   async function renew() {
     clearTimeout(timer);
+    const mine = ++lease;
     if (!enabled || !entity || document.visibilityState !== 'visible') return letGo();
     try {
       const result = await api.holdLight(entity, holder, delay);
+      if (mine !== lease) return; // hidden, closed or renewed meanwhile: that call decides
       held = entity;
       error = result.error;
       const warming = result.on && (result.wait_s ?? 0) > 0;
@@ -50,6 +53,7 @@
       ready = result.on && !warming;
       timer = setTimeout(renew, next);
     } catch (err) {
+      if (mine !== lease) return;
       error = (err as Error).message;
       ready = false;
       timer = setTimeout(renew, (app.config?.light_view.renew_s ?? 10) * 1000);
@@ -58,6 +62,7 @@
 
   function letGo() {
     clearTimeout(timer);
+    lease++; // an answer still on its way no longer counts
     ready = false;
     if (held) api.holdLight(held, holder, delay, false).catch(() => undefined); // the lease runs out anyway
     held = '';

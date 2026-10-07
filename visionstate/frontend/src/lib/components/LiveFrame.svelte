@@ -3,7 +3,7 @@
   // With `light` (the sensor's light), it holds the light on while open and fetches a fresh frame
   // as soon as it is bright; until then the backend shows the frame of the last check.
   import type { Snippet } from 'svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { api } from '../api';
   import { ago } from '../format';
   import type { Roi } from '../types';
@@ -40,45 +40,49 @@
   let updated = $state<number | null>(null);
   let now = $state(Date.now());
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let alive = true;
+  let loop = 0; // the polling loop that runs; restart() ends it and starts the next
   let lightReady = $state(false);
 
-  async function tick() {
-    if (!alive) return;
+  async function tick(mine: number) {
     // Always load the first frame; after that, only refresh while the page is visible.
     if (!frozen && (updated === null || document.visibilityState === 'visible')) {
       try {
         const frame = await api.frame(sensorId, cached);
-        if (!alive) return URL.revokeObjectURL(frame.url);
+        if (mine !== loop) return URL.revokeObjectURL(frame.url); // restarted or closed meanwhile
         if (url) URL.revokeObjectURL(url);
         url = frame.url;
         frameId = frame.frameId;
         updated = Date.now();
         error = '';
       } catch (err) {
+        if (mine !== loop) return;
         error = (err as Error).message;
       }
     }
     now = Date.now();
-    timer = setTimeout(tick, interval);
+    timer = setTimeout(() => tick(mine), interval);
+  }
+
+  /** One loop at a time: a request still on its way belongs to the old loop and ends it. */
+  function restart() {
+    clearTimeout(timer);
+    tick(++loop);
   }
 
   $effect(() => {
     void sensorId;
+    void frozen; // resumed: a fresh frame right away
     void lightReady; // the light is bright now: take a fresh frame right away
-    clearTimeout(timer);
-    tick();
+    // Untracked: tick reads state it sets itself (`updated`), which would restart it on every frame.
+    untrack(restart);
   });
 
   function onVisible() {
-    if (document.visibilityState === 'visible') {
-      clearTimeout(timer);
-      tick();
-    }
+    if (document.visibilityState === 'visible') restart();
   }
 
   onDestroy(() => {
-    alive = false;
+    loop++;
     clearTimeout(timer);
     if (url) URL.revokeObjectURL(url);
   });

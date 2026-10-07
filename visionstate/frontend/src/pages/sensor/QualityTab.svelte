@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { stateInfo, toast, toastError } from '../../lib/app.svelte';
   import Icon from '../../lib/components/Icon.svelte';
@@ -21,9 +22,11 @@
   }
 
   // Reload whenever a new model version is trained.
+  // (`sensor` is a new object on every poll: only a new id or version counts.)
+  const version = $derived(`${sensor.id}|${sensor.model?.version}`);
   $effect(() => {
-    void sensor.model?.version;
-    load();
+    void version;
+    untrack(load);
   });
 
   async function retrain() {
