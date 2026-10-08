@@ -135,7 +135,7 @@
               <Timeline sensor={s} />
               <div class="actions">
                 <a class="btn sm" href={href(paths.sensor(s.id, 'label'))}>Label</a>
-                <a class="btn sm" href={href(paths.sensor(s.id, 'upload'))}>Upload</a>
+                <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
                 <a class="btn sm" href={href(paths.sensor(s.id, 'quality'))}>Quality</a>
               </div>
             {/if}

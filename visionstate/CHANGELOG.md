@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0b2
+
+### Changed
+
+- A state sensor's card on the dashboard links to **History** instead of **Upload**, like the
+  cards of object and reading sensors (Upload is still a tab of the sensor).
+
 ## 0.7.0b1
 
 ### New

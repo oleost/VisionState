@@ -501,6 +501,17 @@ test('new history rows wait behind a button instead of moving the list', async (
   errors.expectNone();
 });
 
+test("a state sensor's card on the dashboard leads to its history", async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request);
+  await page.goto('#/');
+  const history = page.locator(`a[href="#/sensors/${id}/history"]`);
+  await expect(history).toHaveText('History');
+  await press(history, info);
+  await expect(page.getByText('State changes and frames flagged for review')).toBeVisible();
+  errors.expectNone();
+});
+
 test('object sensor shows boxes and history', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededObjectSensorId(request);
