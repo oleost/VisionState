@@ -338,7 +338,8 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
 5. **Dataset** — filter by state/unlabelled, relabel, unlabel, delete.
 6. **Quality** — accuracy, confusion matrix, samples per state (day/night), suggestions,
-   *possibly mislabelled* images with keep / change / delete.
+   *possibly mislabelled* images with keep / change / delete. A red cell of the confusion matrix
+   lists the images behind it (the cross-validation's wrong guesses, also those the user kept).
 7. **History** — published state changes and flagged frames; "add as" to the dataset. The same
    list as the History page (11), fixed to this sensor.
 8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,

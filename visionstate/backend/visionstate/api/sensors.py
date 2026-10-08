@@ -383,19 +383,22 @@ def quality(sensor_id: int, request: Request) -> dict:
         counts = sample_counts(s, sensor)
         confusion = info.confusion if info else None
         suspects = current_suspects(s, sensor, info)
+        unchecked = sum(1 for item in suspects if not item["verified"])
         return {
             "sensor": view,
             "counts": counts,
             "confusion": confusion,
             "accuracy": info.accuracy if info else None,
             "suspects": suspects,
-            "tips": quality_tips(view["states"], counts, confusion, len(suspects)),
+            "tips": quality_tips(view["states"], counts, confusion, unchecked),
             "targets": QUALITY,
         }
 
 
 def current_suspects(session: Session, sensor: Sensor, info: ModelInfo | None) -> list[dict]:
-    """Suspects from the last training that still exist, are unverified and still carry that label."""
+    """The samples the last training's cross-validation guessed wrong (the red cells of the
+    confusion matrix) that still exist and still carry that label. ``verified``: the user said the
+    label is right — no longer listed as possibly mislabelled, still shown under its cell."""
     if info is None or not info.suspects:
         return []
     key_by_state = {st.id: st.key for st in sensor.states}
@@ -404,11 +407,11 @@ def current_suspects(session: Session, sensor: Sensor, info: ModelInfo | None) -
     result = []
     for item in info.suspects:
         sample = samples.get(item["sample_id"])
-        if sample is None or sample.verified:
+        if sample is None:
             continue
         labels = [key_by_state.get(lab.state_id) for lab in sample.labels]
         if item["label"] in labels:
-            result.append(item)
+            result.append({**item, "verified": sample.verified})
     return result
 
 

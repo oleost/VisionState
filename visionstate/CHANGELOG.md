@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0b3
+
+### New
+
+- **Quality tab: tap a red cell of *What gets mixed up*** to see the images behind it — e.g. the
+  ones labelled *Partial* that the AI took for *Closed* — and keep, relabel or delete them there.
+  Images you already said are right are shown too, marked as such; before, they were hidden
+  while the matrix still counted them.
+
 ## 0.7.0b2
 
 ### Changed

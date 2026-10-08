@@ -12,6 +12,20 @@
   let { sensor }: { sensor: Sensor } = $props();
 
   let quality = $state<Quality | null>(null);
+  // A red cell of the matrix that was tapped: the card below lists the images counted there.
+  let cell = $state<{ label: string; predicted: string } | null>(null);
+  // Its count from the current matrix (it changes when the sensor retrains).
+  const shownCell = $derived.by(() => {
+    const confusion = quality?.confusion;
+    if (!cell || !confusion) return null;
+    const count = confusion.matrix[confusion.keys.indexOf(cell.label)]?.[confusion.keys.indexOf(cell.predicted)] ?? 0;
+    return { ...cell, count };
+  });
+
+  function showCell(label: string, predicted: string) {
+    cell = { label, predicted };
+    document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   async function load() {
     try {
@@ -94,10 +108,25 @@
           {@const total = row.reduce((a, b) => a + b, 0)}
           <span class="row small" style="gap:8px"><span class="dot" style:background={stateInfo(sensor, keys[i]).color}></span>{stateInfo(sensor, keys[i]).name}</span>
           {#each row as n, j (j)}
-            <span class="cell mono" style={cellStyle(n, total, i === j)}>{n}</span>
+            {#if n && i !== j}
+              {@const chosen = cell?.label === keys[i] && cell?.predicted === keys[j]}
+              <button
+                class="cell mono mixed"
+                class:chosen
+                style={cellStyle(n, total, false)}
+                aria-pressed={chosen}
+                aria-label="{n} labelled {stateInfo(sensor, keys[i]).name}, guessed {stateInfo(sensor, keys[j]).name}: show them"
+                onclick={() => showCell(keys[i], keys[j])}>{n}</button
+              >
+            {:else}
+              <span class="cell mono" style={cellStyle(n, total, i === j)}>{n}</span>
+            {/if}
           {/each}
         {/each}
       </div>
+      {#if quality.confusion.matrix.some((row, i) => row.some((n, j) => n && i !== j))}
+        <p class="xsmall faint hint">Tap a red cell to see the images behind it.</p>
+      {/if}
     {:else}
       <p class="small muted">Available once every state has at least two labelled samples.</p>
     {/if}
@@ -138,7 +167,7 @@
         <span class="dot" style:background={tip.level === 'ok' ? 'var(--c-accent)' : 'var(--c-warn)'}></span>
         <span class="col" style="gap:2px;flex-grow:1"><strong>{tip.title}</strong><span class="small muted">{tip.text}</span></span>
         {#if tip.action === 'suspects'}
-          <button class="linkish small" onclick={() => document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' })}>Show</button>
+          <button class="linkish small" onclick={() => ((cell = null), document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' }))}>Show</button>
         {:else if link}
           <a class="small" href={href(link.review ? paths.review() : paths.sensor(sensor.id, link.tab))}>{link.label}</a>
         {/if}
@@ -150,7 +179,7 @@
 </section>
 
 {#if quality}
-  <SuspectsCard {sensor} suspects={quality.suspects} onchange={load} />
+  <SuspectsCard {sensor} suspects={quality.suspects} cell={shownCell} onclearcell={() => (cell = null)} onchange={load} />
 {/if}
 
 <style>
@@ -186,6 +215,19 @@
     align-items: center;
     justify-content: center;
     font-size: var(--fs-lg);
+  }
+  button.cell {
+    width: 100%;
+    border: 2px solid transparent;
+    color: var(--c-text);
+    font-family: var(--font-mono);
+    cursor: pointer;
+  }
+  button.cell.chosen {
+    border-color: var(--c-text);
+  }
+  .hint {
+    margin-top: var(--space-3);
   }
   .stack {
     display: flex;

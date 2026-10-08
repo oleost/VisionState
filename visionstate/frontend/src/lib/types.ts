@@ -475,6 +475,8 @@ export interface Suspect {
   label: string;
   predicted: string;
   confidence: number;
+  /** The user said the label is right: no longer "possibly mislabelled", still in its matrix cell. */
+  verified: boolean;
 }
 
 export interface Quality {

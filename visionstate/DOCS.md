@@ -263,6 +263,9 @@ First choose **what it looks like**:
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image
   against a model trained on the *other* images. Images it strongly disagrees with are listed —
   usually a wrong click. Keep the label, change it or delete the image.
+- **Quality tab → What gets mixed up**: tap a red cell to see the images behind it (labelled one
+  state, guessed as another) — also those you already said are right. A red cell turns green only
+  when the label changes or the AI learns the difference from more images like it.
 - Include different light: day, night (IR), sun, rain, snow.
 - Changing the region on the **Settings** tab retrains the model from the stored images.
 

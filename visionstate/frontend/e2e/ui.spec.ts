@@ -512,6 +512,34 @@ test("a state sensor's card on the dashboard leads to its history", async ({ pag
   errors.expectNone();
 });
 
+test('a red cell of the confusion matrix shows the images behind it', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request); // one open frame was labelled closed when seeded
+  await page.goto(`#/sensors/${id}/quality`);
+  const red = page.getByRole('button', { name: /labelled .*, guessed .*: show them/ }).first();
+  await expect(red).toBeVisible({ timeout: 30_000 });
+  const [, label, guess] = /labelled (.*), guessed (.*): show them/.exec((await red.getAttribute('aria-label')) ?? '') ?? [];
+  await press(red, info);
+  await expect(red).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: `Labelled ${label}, the AI guessed ${guess}` })).toBeVisible();
+  await expect(page.locator('#suspects .item').first()).toContainText(`Labelled ${label}, the AI thinks ${guess}`);
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Show all possibly mislabelled' }), info);
+  await expect(page.getByRole('heading', { name: 'Possibly mislabelled' })).toBeVisible();
+
+  // Images already said to be right are no longer "possibly mislabelled", but still behind their cell.
+  await page.route('**/api/v1/sensors/*/quality', async (route) => {
+    const body = await (await route.fetch()).json();
+    body.suspects = body.suspects.map((s: object) => ({ ...s, verified: true }));
+    await route.fulfill({ json: body });
+  });
+  await page.reload();
+  await expect(page.getByText('Nothing suspicious')).toBeVisible();
+  await press(page.getByRole('button', { name: /labelled .*, guessed .*: show them/ }).first(), info);
+  await expect(page.getByText(/You said .* is right/).first()).toBeVisible();
+  errors.expectNone();
+});
+
 test('object sensor shows boxes and history', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededObjectSensorId(request);
