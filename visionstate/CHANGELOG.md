@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0b1
+
+### New
+
+- **History page**, next to Review: what every sensor recorded, in one list. Filter it by
+  sensors, by *what* (a state, an object or your own label — *Car* and *Our car* apart), by
+  event (changed, detected, cleared, rejected reading, sent to review …), by time (the last hour,
+  day, week or month, or from … to …) and by *waiting for review*; each filter takes several
+  choices and shows how many entries each would find. The filter is part of the page address, so
+  it survives a reload and can be bookmarked.
+- **Each sensor's History tab** is the same list for that sensor, with the same filters, and
+  **Open in all history** takes them to the History page. It shows 50 entries at a time with
+  **Load more** (it used to stop at the newest 100).
+- New entries no longer move the list while you read it: **Show N new** appears instead.
+
 ## 0.6.5
 
 ### Fixed

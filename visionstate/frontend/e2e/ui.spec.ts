@@ -1,5 +1,5 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import path from 'node:path';
 import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
 import {
@@ -46,6 +46,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
     ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
+    ['history-all', 'history', 'What every sensor recorded'],
     ['settings', 'settings', 'AI model'],
   ];
 }
@@ -415,6 +416,88 @@ test('reading sensor shows its value everywhere', async ({ page, request }) => {
   await page.goto('#/');
   await expect(page.getByText('12345.6 kWh').first()).toBeVisible();
   await expect(page.getByText('Reads a counter in kWh')).toBeVisible();
+  errors.expectNone();
+});
+
+/** Open a filter of the history (a list below it, a sheet on phones), tap options, close it. */
+async function pick(page: Page, info: TestInfo, filter: string, options: RegExp[]) {
+  await press(page.getByRole('button', { name: new RegExp(`^${filter}`) }), info);
+  for (const option of options) await press(page.getByRole('option', { name: option }), info);
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Done' }), info);
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+}
+
+test('the history page filters by sensor, object and time, and keeps the filter in its URL', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const objectId = await seededObjectSensorId(request);
+  await page.goto('#/history');
+  await expect(page.getByTestId('history-total')).toContainText('entries');
+  // Rows of several sensors, each with its sensor's name; then one sensor taken out again.
+  await pick(page, info, 'Sensors', [/^Beach/, /^Power meter/]);
+  await expect(page.getByRole('button', { name: /^Sensors\s*2 selected/ })).toBeVisible();
+  await expect.poll(async () => [...new Set(await page.locator('.list .sensor').allTextContents())].sort()).toEqual(['Beach', 'Power meter']);
+  await pick(page, info, 'Sensors', [/^Power meter/]);
+  await expect(page).toHaveURL(new RegExp(`#/history\\?sensor=${objectId}$`));
+  await expect(page.getByRole('button', { name: /^Sensors\s*Beach/ })).toBeVisible();
+  await expect.poll(async () => [...new Set(await page.locator('.list .sensor').allTextContents())]).toEqual(['Beach']);
+
+  // A class: only its rows.
+  await pick(page, info, 'What', [/^Dog/]);
+  await expect(page.getByRole('button', { name: /Dog detected/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Person detected/ })).toHaveCount(0);
+
+  // The filter is in the URL: a reload keeps it.
+  await page.reload();
+  await expect(page.getByRole('button', { name: /^What\s*Dog/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Dog detected/ }).first()).toBeVisible();
+
+  // A time window with nothing in it.
+  await page.getByLabel('Time').selectOption('custom');
+  await page.getByLabel('From', { exact: true }).fill('2001-01-01T00:00');
+  await page.getByLabel('To', { exact: true }).fill('2001-01-02T00:00');
+  await expect(page.getByText('Nothing matches these filters.')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Clear filters' }).first(), info);
+  await expect(page).toHaveURL(/#\/history$/);
+  await expect(page.getByRole('button', { name: /^Sensors\s*All/ })).toBeVisible();
+  errors.expectNone();
+});
+
+test("a sensor's History tab is the history of that sensor, and opens in the History page", async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const objectId = await seededObjectSensorId(request);
+  await page.goto(`#/sensors/${objectId}/history`);
+  await expect(page.getByText('When each object appeared and cleared')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Sensors/ })).toHaveCount(0); // the sensor is fixed
+  await pick(page, info, 'What', [/^Person/]);
+  await expect(page).toHaveURL(new RegExp(`#/sensors/${objectId}/history\\?key=person$`));
+  await expect(page.getByRole('button', { name: /Person detected/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Dog detected/ })).toHaveCount(0);
+
+  await press(page.getByRole('link', { name: 'Open in all history' }), info);
+  await expect(page).toHaveURL(new RegExp(`#/history\\?sensor=${objectId}&key=person$`));
+  await expect(page.getByRole('button', { name: /^Sensors\s*Beach/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'History', exact: true })).toHaveAttribute('aria-current', 'page');
+  errors.expectNone();
+});
+
+test('new history rows wait behind a button instead of moving the list', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request); // checks every 2 s and flags every frame for review
+  await page.goto(`#/history?sensor=${id}`);
+  await expect(page.getByTestId('history-total')).toContainText('entries');
+  const total = page.getByTestId('history-total');
+  const before = await total.textContent();
+  const first = await page.locator('.list .item').first().textContent();
+  const fresh = page.getByRole('button', { name: /^Show \d+ new$/ });
+  await expect(fresh).toBeVisible({ timeout: 30_000 });
+  // Nothing moved: the same count and the same first row.
+  expect(await total.textContent()).toBe(before);
+  expect(await page.locator('.list .item').first().textContent()).toBe(first);
+  await press(fresh, info);
+  await expect(fresh).toHaveCount(0);
+  await expect(total).not.toHaveText(before ?? '');
   errors.expectNone();
 });
 

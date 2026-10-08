@@ -258,7 +258,8 @@ First choose **what it looks like**:
   again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
   it is not added a second time.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
-  was wrong, add it to the dataset with the correct state.
+  was wrong, add it to the dataset with the correct state. Filter it by state or event to find
+  the frames you are looking for (see [History](#history)).
 - **Quality tab → Possibly mislabelled**: after each training VisionState checks every image
   against a model trained on the *other* images. Images it strongly disagrees with are listed —
   usually a wrong click. Keep the label, change it or delete the image.
@@ -313,6 +314,26 @@ automations.
 |---|---|---|
 | Report unknown below | 70 % | Confidence needed to report a state |
 | Change after N matching results | 2 | Avoids flicker when someone walks past |
+
+## History
+
+**History** at the top lists what every sensor recorded: state changes, objects that appeared,
+cleared or were filtered away, new values and rejected readings, and frames sent to review. Each
+sensor's **History** tab is the same list for that sensor alone; **Open in all history** there
+takes its filter to the History page.
+
+Narrow it down with the filters above the list — each takes any number of choices, and the
+number next to a choice is how many entries choosing it would find:
+
+- **Sensors** (History page only).
+- **What**: a state, an object or one of your own labels — *Car* and *Our car* are told apart.
+- **Event**: e.g. *State changed*, *Detected*, *Cleared*, *Rejected reading*, *Sent to review*.
+- **Time**: the last hour, 24 hours, 7 or 30 days, or *From … to …*.
+- **Waiting for review**, and newest or oldest first.
+
+The filter is part of the page address, so a reload keeps it and a bookmark opens it again.
+New entries do not push the list down while you read it: **Show N new** appears instead.
+How long history is kept is set under **Settings → Storage** (below).
 
 ## Backup, export and import
 

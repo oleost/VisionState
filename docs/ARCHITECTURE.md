@@ -30,7 +30,7 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, history, export), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue, history frames), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules), `common.py` (input models and views shared by them) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
@@ -108,9 +108,11 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/api.ts` | The only place that builds API URLs; one function per endpoint |
 | `lib/types.ts` | Types of what the API returns |
 | `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling |
-| `lib/router.svelte.ts` | Hash routes (`paths`) |
+| `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
+| `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
-| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, Settings, and `SensorPage` with one file per tab in `pages/sensor/` |
+| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
+| `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
 | `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states…) |
 
 ## Recipes

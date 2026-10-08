@@ -3,20 +3,18 @@
   import { api } from '../lib/api';
   import { shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import HistoryView from '../lib/components/history/HistoryView.svelte';
   import ObjectChips from '../lib/components/ObjectChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
   import { isObjectSensor } from '../lib/objects';
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import { HISTORY_INTRO, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
-  import HistoryTab from './sensor/HistoryTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
-  import ObjectHistoryTab from './sensor/ObjectHistoryTab.svelte';
   import ObjectQualityTab from './sensor/ObjectQualityTab.svelte';
-  import ReadingHistoryTab from './sensor/ReadingHistoryTab.svelte';
   import ReadingLiveTab from './sensor/ReadingLiveTab.svelte';
   import ReadingQualityTab from './sensor/ReadingQualityTab.svelte';
   import QualityTab from './sensor/QualityTab.svelte';
@@ -132,12 +130,8 @@
       <ObjectQualityTab {sensor} onchange={load} />
     {:else if tab === 'quality'}
       <QualityTab {sensor} />
-    {:else if tab === 'history' && isReadingSensor(sensor)}
-      <ReadingHistoryTab {sensor} />
-    {:else if tab === 'history' && isObjectSensor(sensor)}
-      <ObjectHistoryTab {sensor} onchange={load} />
     {:else if tab === 'history'}
-      <HistoryTab {sensor} />
+      <HistoryView sensors={[sensor]} locked={sensor} intro={HISTORY_INTRO[sensor.kind]} onchange={load} />
     {:else if tab === 'settings'}
       <SettingsTab {sensor} onchange={load} />
     {/if}

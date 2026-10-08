@@ -322,7 +322,11 @@ def test_teaching_filters_boxes_and_adds_own_labels(settings):  # noqa: F811
         assert shown["filtered"] and shown["match"]["similarity"] >= TEACH["match_similarity"]
 
         def filtered_rows():
-            return [h for h in client.get(f"/api/v1/sensors/{sid}/history").json() if h["published_key"] == "filtered"]
+            return [
+                h
+                for h in client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
+                if h["published_key"] == "filtered"
+            ]
 
         assert wait_for(lambda: len(filtered_rows()) == 1, timeout=10)
 

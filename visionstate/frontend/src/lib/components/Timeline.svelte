@@ -1,8 +1,8 @@
 <script lang="ts">
   // Coloured bar of published states over the last TIMELINE_HOURS.
   import { api } from '../api';
-  import { stateInfo } from '../app.svelte';
-  import type { Sensor } from '../types';
+  import { app, stateInfo } from '../app.svelte';
+  import type { Prediction, Sensor } from '../types';
   import { TIMELINE_HOURS } from '../ui';
 
   let { sensor }: { sensor: Sensor } = $props();
@@ -12,13 +12,16 @@
   async function load() {
     const end = Date.now();
     const start = end - TIMELINE_HOURS * 3_600_000;
-    const changes = (await api.history(sensor.id, 300))
-      .filter((p) => p.is_change && p.published_key)
-      .map((p) => ({ t: Date.parse(p.created_at), key: p.published_key as string }))
-      .sort((a, b) => a.t - b.t);
-    const before = changes.filter((c) => c.t < start).at(-1);
-    const inside = changes.filter((c) => c.t >= start);
-    const points = [...(before ? [{ t: start, key: before.key }] : []), ...inside];
+    const since = new Date(start).toISOString();
+    const changes = { sensor: [sensor.id], event: ['change'] };
+    // The changes inside the window, and the last one before it (the state the window starts in).
+    const [inside, before] = await Promise.all([
+      api.history({ ...changes, since }, { order: 'oldest', limit: app.config?.history.max_page_size }),
+      api.history({ ...changes, until: since }, { limit: 1 }),
+    ]);
+    const point = (p: Prediction) => ({ t: Date.parse(p.created_at), key: p.published_key ?? '' });
+    const first = before.items[0];
+    const points = [...(first ? [{ t: start, key: first.published_key ?? '' }] : []), ...inside.items.map(point)].filter((p) => p.key);
     const result = [];
     for (let i = 0; i < points.length; i++) {
       const from = Math.max(points[i].t, start);

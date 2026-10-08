@@ -4,8 +4,10 @@ import type {
   Camera,
   Detection,
   HaEntity,
+  HistoryFacets,
+  HistoryFilter,
+  HistoryPage,
   LightHold,
-  Prediction,
   Quality,
   ReadPreview,
   ReadingQuality,
@@ -65,6 +67,25 @@ const qs = (params: Record<string, string | number | boolean | undefined | null>
       .filter(([, v]) => v !== undefined && v !== null && v !== '')
       .map(([k, v]) => [k, String(v)]),
   ).toString();
+
+/** Like `qs`, with a list as one parameter per value (`sensor=1&sensor=2`). */
+const listQs = (params: Record<string, string | number | boolean | (string | number)[] | undefined | null>) => {
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach((x) => search.append(k, String(x)));
+    else if (v !== undefined && v !== null && v !== '') search.append(k, String(v));
+  }
+  return search.toString();
+};
+
+export interface HistoryPageOptions {
+  order?: 'newest' | 'oldest';
+  /** 0: only the total. */
+  limit?: number;
+  cursor?: string | null;
+  /** Only rows newer than this cursor (what arrived since). */
+  newerThan?: string | null;
+}
 
 export interface Frame {
   frameId: string | null;
@@ -170,7 +191,11 @@ export const api = {
   sampleImageUrl: (sampleId: number, size: 'thumb' | 'full' = 'thumb') => `${BASE}samples/${sampleId}/image?size=${size}`,
 
   quality: (id: number) => request<Quality>(`sensors/${id}/quality`),
-  history: (id: number, limit = 100) => request<Prediction[]>(`sensors/${id}/history?limit=${limit}`),
+  history: (filter: HistoryFilter, page: HistoryPageOptions = {}) =>
+    request<HistoryPage>(
+      `history?${listQs({ ...filter, order: page.order, limit: page.limit, cursor: page.cursor, newer_than: page.newerThan })}`,
+    ),
+  historyFacets: (filter: HistoryFilter) => request<HistoryFacets>(`history/facets?${listQs({ ...filter })}`),
   historyImageUrl: (predictionId: number, size: 'thumb' | 'full' = 'full') =>
     `${BASE}history/${predictionId}/image?size=${size}`,
   exportUrl: (id: number) => `${BASE}sensors/${id}/export`,

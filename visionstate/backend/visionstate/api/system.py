@@ -15,6 +15,8 @@ from .. import backbones, detectors, readers
 from ..db import Prediction, Sensor
 from ..redact import redact
 from ..settings import (
+    HISTORY,
+    HISTORY_EVENTS,
     LIGHT_DOMAINS,
     MAX_STATES,
     NONE_LABEL,
@@ -102,6 +104,8 @@ def ui_config() -> dict:
         "reading_export_limit": READING["export_limit"],
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,
+        "history": HISTORY,
+        "history_events": HISTORY_EVENTS,
     }
 
 

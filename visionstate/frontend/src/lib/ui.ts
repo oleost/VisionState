@@ -172,5 +172,25 @@ export const REDACTED_MARK = '***';
 /** Beta versions look like 0.4.1b1 (mirrors scripts/channel.py). */
 export const BETA_VERSION_PATTERN = /^\d+\.\d+\.\d+b\d+$/;
 
+/** History events (backend settings.HISTORY_EVENTS) as offered in the filter. */
+export const HISTORY_EVENTS: Record<string, string> = {
+  change: 'State changed',
+  flagged: 'Sent to review',
+  appeared: 'Detected',
+  cleared: 'Cleared',
+  filtered: 'Filtered away',
+  asked: 'Asked “is it yours?”',
+  value: 'New value',
+  rejected: 'Rejected reading',
+  verified: 'Checked by hand',
+};
+
+/** What a sensor's History tab lists, per kind (the History page lists all of it). */
+export const HISTORY_INTRO: Record<SensorKind, string> = {
+  single_state: 'State changes and frames flagged for review. Tap a frame to see it whole; use “Add as” to turn it into training data — especially when the AI got it wrong.',
+  objects: 'When each object appeared and cleared. Tap a row to see the frame with what the AI found, and tap a box there to correct it.',
+  reading: 'Every new value and every rejected reading (readings you verified are kept for good). Tap a row to see the frame; the Quality tab sums them up.',
+};
+
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;

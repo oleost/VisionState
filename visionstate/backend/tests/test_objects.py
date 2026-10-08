@@ -298,10 +298,13 @@ def test_object_sensor_flow(settings):
         # Each class that appeared is in the history, with the frame's detections.
         # Written right after the state switches on, so wait for it.
         def history_keys():
-            return {(h["state_key"], h["published_key"]) for h in client.get(f"/api/v1/sensors/{sid}/history").json()}
+            return {
+                (h["state_key"], h["published_key"])
+                for h in client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
+            }
 
         assert wait_for(lambda: history_keys() >= {("dog", "on"), ("person", "on")}, timeout=10)
-        history = client.get(f"/api/v1/sensors/{sid}/history").json()
+        history = client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
         assert all(h["detections"] and h["has_frame"] for h in history)
 
         # A region around the person only: the dogs outside stop counting and clear.

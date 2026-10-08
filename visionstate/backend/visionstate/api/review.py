@@ -1,4 +1,4 @@
-"""The review queue (frames waiting for an answer) and history frames."""
+"""The review queue: frames waiting for an answer, and the answers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import logging
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import CursorResult, delete, func, select, update
 
@@ -21,7 +20,7 @@ from .common import (
     runtime,
     state_id_for,
 )
-from .sensors import prediction_view
+from .history import prediction_view
 from .teach import TeachIn, teach_box
 
 log = logging.getLogger(__name__)
@@ -199,18 +198,3 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, acti
                 answered.sample_id = result["id"]
     await rt.publish_review_count()
     return {"ok": True}
-
-
-@router.get("/history/{prediction_id}/image")
-def history_image(prediction_id: int, request: Request, size: str = "full") -> FileResponse:
-    rt = runtime(request)
-    with rt.db.session() as s:
-        row = s.get(Prediction, prediction_id)
-        if row is None or not row.frame:
-            raise HTTPException(404, "Frame not found")
-        path = rt.storage.history_path(row.sensor_id, row.frame)
-    if not path.exists():
-        raise HTTPException(404, "Frame file missing")
-    if size == "thumb":
-        path = rt.storage.thumbnail("history", prediction_id, path)
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
