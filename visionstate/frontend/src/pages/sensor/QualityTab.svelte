@@ -24,7 +24,8 @@
 
   function showCell(label: string, predicted: string) {
     cell = { label, predicted };
-    document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Its list appears right under the matrix; bring it into view once it is there.
+    requestAnimationFrame(() => document.getElementById('cell-samples')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   async function load() {
@@ -127,6 +128,9 @@
       {#if quality.confusion.matrix.some((row, i) => row.some((n, j) => n && i !== j))}
         <p class="xsmall faint hint">Tap a red cell to see the images behind it.</p>
       {/if}
+      {#if shownCell}
+        <SuspectsCard {sensor} suspects={quality.suspects} cell={shownCell} onclearcell={() => (cell = null)} onretrain={retrain} onchange={load} />
+      {/if}
     {:else}
       <p class="small muted">Available once every state has at least two labelled samples.</p>
     {/if}
@@ -167,7 +171,7 @@
         <span class="dot" style:background={tip.level === 'ok' ? 'var(--c-accent)' : 'var(--c-warn)'}></span>
         <span class="col" style="gap:2px;flex-grow:1"><strong>{tip.title}</strong><span class="small muted">{tip.text}</span></span>
         {#if tip.action === 'suspects'}
-          <button class="linkish small" onclick={() => ((cell = null), document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' }))}>Show</button>
+          <button class="linkish small" onclick={() => document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' })}>Show</button>
         {:else if link}
           <a class="small" href={href(link.review ? paths.review() : paths.sensor(sensor.id, link.tab))}>{link.label}</a>
         {/if}
@@ -179,7 +183,7 @@
 </section>
 
 {#if quality}
-  <SuspectsCard {sensor} suspects={quality.suspects} cell={shownCell} onclearcell={() => (cell = null)} onchange={load} />
+  <SuspectsCard {sensor} suspects={quality.suspects} onchange={load} />
 {/if}
 
 <style>

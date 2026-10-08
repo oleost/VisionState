@@ -522,9 +522,12 @@ test('a red cell of the confusion matrix shows the images behind it', async ({ p
   await press(red, info);
   await expect(red).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: `Labelled ${label}, the AI guessed ${guess}` })).toBeVisible();
-  await expect(page.locator('#suspects .item').first()).toContainText(`Labelled ${label}, the AI thinks ${guess}`);
+  const listed = page.locator('#cell-samples');
+  await expect(listed.locator('.item').first()).toContainText(`Labelled ${label}, the AI thinks ${guess}`);
+  await expect(listed).toBeInViewport(); // right under the matrix, not at the bottom of the page
   await expectNoHorizontalOverflow(page);
-  await press(page.getByRole('button', { name: 'Show all possibly mislabelled' }), info);
+  await press(listed.getByRole('button', { name: 'Close', exact: true }), info);
+  await expect(listed).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Possibly mislabelled' })).toBeVisible();
 
   // Images already said to be right are no longer "possibly mislabelled", but still behind their cell.
@@ -536,7 +539,7 @@ test('a red cell of the confusion matrix shows the images behind it', async ({ p
   await page.reload();
   await expect(page.getByText('Nothing suspicious')).toBeVisible();
   await press(page.getByRole('button', { name: /labelled .*, guessed .*: show them/ }).first(), info);
-  await expect(page.getByText(/You said .* is right/).first()).toBeVisible();
+  await expect(page.locator('#cell-samples').getByText(/You said .* is right/).first()).toBeVisible();
   errors.expectNone();
 });
 

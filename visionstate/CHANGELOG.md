@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0b4
+
+### Fixed
+
+- A red cell of *What gets mixed up* could show no images: those you had said are right were
+  left out at the next training while the cell still counted them. They are kept now (after the
+  next training; an empty cell offers **Retrain now**), and the images open right under the
+  matrix instead of at the bottom of the page.
+
 ## 0.7.0b3
 
 ### New

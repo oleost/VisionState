@@ -13,12 +13,14 @@
     suspects,
     cell = null,
     onclearcell = () => {},
+    onretrain = () => {},
     onchange,
   }: {
     sensor: Sensor;
     suspects: Suspect[];
     cell?: { label: string; predicted: string; count: number } | null;
     onclearcell?: () => void;
+    onretrain?: () => void;
     onchange: () => void;
   } = $props();
 
@@ -44,14 +46,15 @@
   }
 </script>
 
-<section class="card pad" id="suspects">
+<!-- For a cell it sits inside the matrix card, right under the cells; otherwise it is its own card. -->
+<svelte:element this={cell ? 'div' : 'section'} class={cell ? 'cell-list' : 'card pad'} id={cell ? 'cell-samples' : 'suspects'}>
   <div class="card-title">
     {#if cell}
       <h3>
         Labelled <span style:color={stateInfo(sensor, cell.label).color}>{stateInfo(sensor, cell.label).name}</span>, the AI guessed
         <span style:color={stateInfo(sensor, cell.predicted).color}>{stateInfo(sensor, cell.predicted).name}</span>
       </h3>
-      <button class="btn sm ghost" onclick={onclearcell}><Icon name="x" size={13} /> Show all possibly mislabelled</button>
+      <button class="btn sm ghost" onclick={onclearcell}><Icon name="x" size={13} /> Close</button>
     {:else}
       <h3>Possibly mislabelled</h3>
       <span class="xsmall faint">images the AI disagrees with — check that the label is right</span>
@@ -110,16 +113,28 @@
       {/each}
     </div>
     {#if missing}
-      <p class="xsmall faint more">{missing} more counted in this cell were relabelled or deleted since the last training.</p>
+      <p class="xsmall faint more">{missing} more counted in this cell are not listed: relabelled or deleted since the last training.</p>
     {/if}
   {:else if cell}
-    <p class="small muted">These images were relabelled or deleted since the last training; the matrix updates when it retrains.</p>
+    <div class="col" style="gap:var(--space-3);align-items:flex-start">
+      <p class="small muted">
+        The images behind this cell are not listed: they were relabelled or deleted since the last training, or that training was
+        made by an older version. Retrain to bring the matrix and this list up to date.
+      </p>
+      <button class="btn sm" onclick={onretrain}><Icon name="refresh" size={14} /> Retrain now</button>
+    </div>
   {:else}
     <p class="small muted">Nothing suspicious — every label agrees with what the AI learned from the other images.</p>
   {/if}
-</section>
+</svelte:element>
 
 <style>
+  .cell-list {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--c-border);
+    scroll-margin-top: calc(var(--nav-h) + var(--space-4));
+  }
   .intro {
     margin-bottom: var(--space-3);
   }
@@ -159,5 +174,16 @@
   }
   .more {
     margin-top: var(--space-2);
+  }
+  @media (max-width: 600px) {
+    /* The image above its text and buttons: side by side they run out of the card. */
+    .item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-3);
+    }
+    img {
+      width: 100%;
+    }
   }
 </style>
