@@ -934,6 +934,49 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
   }
 });
 
+test('a rejected reading keeps the region it was read in', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const half = { ...COUNTER_BOX, w: COUNTER_BOX.w / 2 };
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Gas counter',
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(45730),
+      roi: half, // half the wheels: read with the wrong number of digits, so rejected
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.last?.reason, { timeout: 60_000 }).toBe('wrong digit count');
+    // The history row is written after the rejection is published.
+    const rows = async () => (await (await request.get(`api/v1/history?sensor=${id}`)).json()).items as unknown[];
+    await expect.poll(async () => (await rows()).length, { timeout: 30_000 }).toBeGreaterThan(0);
+    await request.patch(`api/v1/sensors/${id}`, { data: { roi: COUNTER_BOX, enabled: false } });
+
+    await page.goto(`#/sensors/${id}/history`);
+    const row = page.locator('.item').filter({ hasText: 'not the number of digits the counter has' }).first();
+    await press(row.locator('button.head'), info);
+    const frame = row.locator('.full img');
+    await expect.poll(() => frame.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    // The outline is the half region the reading was made in, not the region the sensor has now.
+    const outline = await row.locator('.full polygon.outline').boundingBox();
+    const image = await frame.boundingBox();
+    expect(outline && image ? outline.width / image.width : 0).toBeCloseTo(half.w, 1);
+    // The long reason wraps instead of running out of the card on a phone.
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'history-reading-region.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
 test('storage limits can be changed', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');

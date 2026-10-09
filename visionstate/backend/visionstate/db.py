@@ -157,7 +157,8 @@ class Prediction(Base):
     cleared ("off"), with state_key = the class and the frame's detections.
     Reading sensors store accepted new values (state_key "reading", published_key = the value),
     every rejected reading (published_key None, review_reason "rejected") and spot checks of
-    accepted ones; probs holds {"text", "value", "reason"}. ``read_ok`` is the user's verdict on
+    accepted ones; probs holds {"text", "value", "reason", "roi"} ("roi": the region it was read
+    in, None for the whole frame; missing in rows from before 0.7.1b2). ``read_ok`` is the user's verdict on
     what the reader read (``correct_value`` when it misread); verified readings are never removed
     automatically, as they may later teach the reader.
     """

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.1b2
+
+### Better
+
+- **Mechanical counters with coloured wheels** read more reliably. The red decimal wheels of a
+  water meter were seen as light grey, and a red "9" was read as a "5"; they are now read as
+  dark as the black ones. On the checked readings a user shared of such a meter (thanks,
+  @pedromfa — issue #40) this took exact readings from 61 to 70 of 120, without changing how
+  meters with black digits read. For water and gas meters, choose **PP-OCRv6 small** as the
+  number reader (Settings → AI model): on that meter it read 15 of 17 images right, the included
+  tiny reader 8.
+
+### Fixed
+
+- **Export checked readings** cut every image with the sensor's region as it is now, so after
+  moving the camera or the region the older images showed the wrong part of the picture. Every
+  reading now keeps the region it was read in, and the export, the review queue, the History and
+  the Quality tab use it. Readings from before this version still use the current region (the
+  export marks them `"region": "current"`).
+- On a phone, a rejected reading in the History with a long reason (*not the number of digits
+  the counter has*) made the page scroll sideways; the reason now wraps.
+
 ## 0.7.1b1
 
 ### New

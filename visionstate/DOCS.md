@@ -193,6 +193,9 @@ First choose **what it looks like**:
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
+  For water and gas meters, choose **PP-OCRv6 small** under Settings → AI model → Number
+  reader: on a real water meter with red wheels it read 15 of 17 checked images right, the
+  included tiny reader 8.
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -212,7 +215,8 @@ First choose **what it looks like**:
   which setting to change.
 - **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
   readings you checked — only the region of each, not the whole picture — with what was read and
-  what was right. Look through it, then share it in
+  what was right. Each image is cut with the region the reading was made in, so moving the region
+  later does not spoil the readings from before. Look through it, then share it in
   [GitHub Discussions](https://github.com/oleost/VisionState/discussions) and say what the display
   or meter is: that shows what goes wrong where. Shared, the images are public domain (CC0; the
   README and LICENSE inside the ZIP say so).
@@ -388,7 +392,8 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
-  PP-OCRv6 small is larger and can help with unusual fonts (downloaded on first use, 21 MB).
+  PP-OCRv6 small is larger and reads unusual fonts and mechanical counters (water and gas
+  meters) more reliably (downloaded on first use, 21 MB).
   Only loaded while at least one reading sensor exists.
 
 A choice you made stays when a later version recommends another model.

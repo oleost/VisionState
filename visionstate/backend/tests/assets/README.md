@@ -10,5 +10,10 @@ down to 640 px.
 | `beach.jpg` | one person and several dogs | [Dog owner walking his dogs on the beach..JPG](https://commons.wikimedia.org/wiki/File:Dog_owner_walking_his_dogs_on_the_beach..JPG) |
 | `cat.jpg` | one cat | [House cat sitting next to apartment entrance door looking off to side.jpg](https://commons.wikimedia.org/wiki/File:House_cat_sitting_next_to_apartment_entrance_door_looking_off_to_side.jpg) |
 
+`counter_red.jpg` is the counter of a real water meter (seven wheels, the last three red, read
+as `0632289`): one image from the checked readings a user exported from VisionState and shared
+in [issue #40](https://github.com/oleost/VisionState/issues/40) under CC0 (the export's
+LICENSE.txt), cut to the sensor's region.
+
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.

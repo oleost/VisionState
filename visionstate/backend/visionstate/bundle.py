@@ -100,8 +100,9 @@ https://github.com/oleost/VisionState — please say what the display or meter i
 Look through the images first; share only what you are happy to make public.
 By sharing it you release the images and data as public domain (see LICENSE.txt).
 
-The region is the one the sensor has now; readings from before it was changed may be cut
-differently.
+Each image is cut with the region the reading was made in ("region": "as read"). Readings
+from before VisionState 0.7.1b2 are cut with the region the sensor has now ("region":
+"current"): if the region was moved since, those images may not show the display at all.
 """
 
 READINGS_LICENSE = """CC0 1.0 Universal (public domain dedication)
@@ -131,17 +132,20 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             .order_by(Prediction.created_at.desc())
             .limit(READING["export_limit"])
         ).all()
-        box = imaging.region_box(sensor.roi, READING["export_margin"])
+        current = sensor.roi
         slug = sensor.slug
     items = []
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         for row in rows:
             if not row.frame or not (path := storage.history_path(sensor_id, row.frame)).exists():
                 continue
+            details = row.probs or {}
+            # Cut with the region it was read in; rows from before that was kept use today's region.
+            region_then = "roi" in details
+            box = imaging.region_box(details["roi"] if region_then else current, READING["export_margin"])
             crop = imaging.crop_box(imaging.decode(path.read_bytes()), box)
             name = f"images/{len(items) + 1:04d}.jpg"
             archive.writestr(name, imaging.encode_jpeg(crop))
-            details = row.probs or {}
             items.append(
                 {
                     "file": name,
@@ -152,6 +156,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "answer": "read correctly" if row.read_ok else "misread",
                     "right_value": row.correct_value,
                     "date": row.created_at.date().isoformat(),  # the day only
+                    "region": "as read" if region_then else "current",
                 }
             )
         if not items:

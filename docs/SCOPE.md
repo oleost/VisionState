@@ -167,8 +167,9 @@ knew). Instead a second step compares boxes with boxes the user taught:
    removing faint unlit segments) and keep the more confident read. *led* / *lcd* force that.
    Display *counter* (mechanical counter, rolling digit wheels): the crop is split into
    `digits` equal cells, the middle `READING["counter_cell_share"]` of each cell is pasted into
-   one line (no dividers), and several row bands of that line are read; the most confident read
-   with exactly `digits` digits wins.
+   one line (no dividers), turned grey by each pixel's darkest colour channel (`readers.darkest`:
+   red decimal wheels as dark as black ones), and several row bands of that line are read; the
+   most confident read with exactly `digits` digits wins.
 2. Resize to height 48, BGR, scale to −1…1; greedy CTC decoding **limited to** `0-9 . , : -`
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
@@ -195,6 +196,14 @@ knew). Instead a second step compares boxes with boxes the user taught:
   from the meter's own labelled frames (DINOv2 + head, or matching against labelled wheels) was
   much worse and was dropped. Only one meter type was tested, and the settings were chosen on
   the same frames.
+- Evaluated for red decimal wheels (2026-10, issue #40: 120 checked readings of a user's water
+  meter with red-on-white decimals, from three exports): in a plain grey image a red "9" was
+  read as "5". The darkest colour channel raised exact reads with PP-OCRv6 small from 61 to 70
+  (17 images of the newest export: 13 → 15) and left the black-digit meters above as they were
+  (small 97 → 99, tiny 92 → 91 of 106; every wheel at rest still right). Tiny reads that meter
+  much worse than small (8/17) and its misreads go up, which passes the "went down" check, so
+  the docs recommend small for mechanical counters. Using the last value to pick among the
+  digits the reader hesitated between added only 4 more of 120 and was not built.
 - **Model choice is global per kind** (Settings), so at most three models are loaded. The
   detector and the reader are loaded on first use and released when the last sensor of their kind is deleted. The
   chosen backbone and detector are stored in the database at first start, so a later release
@@ -441,7 +450,9 @@ automatically.
 - Camera credentials are removed from exported URLs; the importer re-enters them.
 - **Checked readings** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor), to
   share so reading can be improved: the readings verified by hand (at most
-  `READING["export_limit"]`, newest first), each only the region plus `export_margin`, with
+  `READING["export_limit"]`, newest first), each only the region it was read in plus
+  `export_margin` (the region is kept with every stored reading since 0.7.1b2, `probs["roi"]`;
+  older ones are cut with today's region, `"region": "current"`), with
   `readings.json` (read text, value, rejection reason, confidence, answer, right value, day only),
   the reading settings without anything that tells where the sensor is (no source, name or
   region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.

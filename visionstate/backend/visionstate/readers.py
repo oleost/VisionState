@@ -126,6 +126,16 @@ def plain(image: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(image.convert("L"), cutoff=1).convert("RGB")
 
 
+def darkest(image: Image.Image) -> Image.Image:
+    """Grey from each pixel's darkest colour channel: coloured digits turn as dark as black ones.
+
+    The red decimal wheels of a water meter are only mid-grey in a plain grey image, and the
+    reader then takes a "9" for a "5". Black digits on white wheels look as before.
+    """
+    grey = Image.fromarray(np.asarray(image.convert("RGB")).min(axis=2))
+    return ImageOps.autocontrast(grey, cutoff=1).convert("RGB")
+
+
 def counter_line(image: Image.Image, digits: int) -> Image.Image:
     """The wheels of a mechanical counter side by side, without the dividers between them.
 
@@ -179,11 +189,12 @@ class Reader:
     def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
         """Read a mechanical counter with ``digits`` wheels; returns the read and the image used.
 
-        The wheels are pasted into one line without their dividers (``counter_line``). Several row
+        The wheels are pasted into one line without their dividers (``counter_line``) and turned
+        grey by their darkest colour channel, so coloured wheels read like black ones. Several row
         bands are read and the most confident read with ``digits`` digits wins; when none has
         that many, the read of the whole height is returned so the caller can say what was seen.
         """
-        line = plain(counter_line(image, digits))
+        line = darkest(counter_line(image, digits))
         best: tuple[Text, Image.Image] | None = None
         whole: tuple[Text, Image.Image] | None = None
         for top in READING["counter_band_tops"]:

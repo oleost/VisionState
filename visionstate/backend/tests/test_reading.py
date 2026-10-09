@@ -10,12 +10,13 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from visionstate import readers
+from visionstate.db import Prediction
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
 from visionstate.settings import KIND_READING, merge_reading
 
-from .conftest import MODEL_DIR, requires_reader
+from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, counter_positions, render, render_counter
 from .test_integration import wait_for
 
@@ -242,6 +243,26 @@ def test_reader_reads_drawn_counters(value, expected, taller):
     result, used = reader.read_display(counter_region(render_counter(value), 7, taller), "counter", 7)
     assert result.text == expected and result.score > 0.8
     assert used.width < counter_region(render_counter(value), 7).width  # the dividers are gone
+
+
+def test_darkest_turns_coloured_digits_as_dark_as_black_ones():
+    image = Image.new("RGB", (3, 1))
+    image.putpixel((0, 0), (200, 30, 35))  # red digit
+    image.putpixel((1, 0), (25, 25, 25))  # black digit
+    image.putpixel((2, 0), (235, 235, 230))  # white wheel
+    red, black, white = (readers.darkest(image).getpixel((x, 0))[0] for x in range(3))
+    assert abs(red - black) < 20 and white > 200
+    plain = [readers.plain(image).getpixel((x, 0))[0] for x in range(3)]
+    assert plain[0] - plain[1] > 40  # in a plain grey image red stays much lighter than black
+
+
+@requires_reader
+def test_reader_reads_red_wheels_of_a_real_meter():
+    """A water meter's red decimal wheels (issue #40): the "9"s were read as "5"s in plain grey."""
+    spec = readers.READERS[readers.DEFAULT_READER]
+    reader = readers.Reader(spec, MODEL_DIR / spec.filename)
+    result, _ = reader.read_display(Image.open(ASSETS / "counter_red.jpg").convert("RGB"), "counter", 7)
+    assert result.text == "0632289"
 
 
 class CounterCamera:
@@ -525,6 +546,27 @@ def test_counter_sensor_flow(settings):
         frame = render_counter(89941)
         box = counter_box(7)
         assert crop.width < frame.width * box["w"] * 1.4 and crop.height < frame.height * box["h"] * 1.4
+        assert entry["region"] == "as read"
+
+        # Moving the region later does not change how earlier readings are cut: they keep theirs.
+        assert item["probs"]["roi"] == view()["roi"]
+        moved = {**box, "x": 0.0, "w": box["w"] / 2}
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"roi": moved}).status_code == 200
+
+        def export_entry():
+            with zipfile.ZipFile(io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export").content)) as archive:
+                [entry] = json.loads(archive.read("readings.json"))["readings"]
+                return entry, Image.open(archive.open(entry["file"])).size
+
+        assert export_entry() == ({**entry}, crop.size)
+        # A reading from before the region was kept is cut with the region the sensor has now.
+        with client.app.state.runtime.db.session() as s:
+            row = s.get(Prediction, item["id"])
+            assert row is not None
+            row.probs = {k: v for k, v in row.probs.items() if k != "roi"}
+        old, size = export_entry()
+        assert old["region"] == "current" and size[0] < crop.size[0]
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"roi": box}).status_code == 200
 
         preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
         good = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()

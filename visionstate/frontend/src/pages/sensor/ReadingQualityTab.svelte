@@ -7,7 +7,7 @@
   import ReadingVerdict from '../../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../../lib/format';
-  import { REJECT_REASONS, rate, readingDetail as detail, readingUnit } from '../../lib/reading';
+  import { REJECT_REASONS, rate, readingDetail as detail, readingRoi, readingUnit } from '../../lib/reading';
   import { href, paths } from '../../lib/router.svelte';
   import type { ReadingQuality, Sensor } from '../../lib/types';
 
@@ -259,7 +259,7 @@
           />
         </div>
         {#if open === p.id && p.has_frame}
-          <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={sensor.roi} /></div>
+          <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={readingRoi(p, sensor)} /></div>
         {/if}
       </div>
     {/each}

@@ -120,7 +120,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         spot = reason is None and not changed and random.random() < float(cfg.reading["spot_rate"])
         if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
-            details = {"text": text.text, "value": shown, "reason": reason}
+            # The region it was read in: the frame is whole, and the region may be moved later.
+            details = {"text": text.text, "value": shown, "reason": reason, "roi": cfg.roi}
             review = "rejected" if reason is not None else "spot_check" if spot else None
             await asyncio.to_thread(
                 self._record_reading, cfg.id, image, published, text.score, details, changed, review
