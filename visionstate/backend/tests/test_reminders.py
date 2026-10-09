@@ -62,6 +62,7 @@ def test_reminder_text():
         == "There are 11 frames waiting for review in VisionState, the oldest for 8 days."
     )
     assert reminder_text(1, DAY_S) == "There is 1 frame waiting for review in VisionState, for 1 day."
+    assert reminder_text(0, 0.0) == "No frames are waiting for review in VisionState right now."  # a test
 
 
 class NotifyHa:

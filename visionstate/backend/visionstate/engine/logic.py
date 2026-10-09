@@ -59,6 +59,8 @@ def reminder_action(
 
 def reminder_text(waiting: int, oldest_age_s: float) -> str:
     """The reminder's message: how many frames wait and for how long the oldest has."""
+    if waiting == 0:  # only a test sends it then
+        return "No frames are waiting for review in VisionState right now."
     days = int(oldest_age_s // DAY_S)
     since = f"{days} day{'' if days == 1 else 's'}"
     if waiting == 1:
