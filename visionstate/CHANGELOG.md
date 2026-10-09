@@ -1,31 +1,9 @@
 # Changelog
 
-## 0.7.0b4
+## 0.7.0
 
-### Fixed
-
-- A red cell of *What gets mixed up* could show no images: those you had said are right were
-  left out at the next training while the cell still counted them. They are kept now (after the
-  next training; an empty cell offers **Retrain now**), and the images open right under the
-  matrix instead of at the bottom of the page.
-
-## 0.7.0b3
-
-### New
-
-- **Quality tab: tap a red cell of *What gets mixed up*** to see the images behind it — e.g. the
-  ones labelled *Partial* that the AI took for *Closed* — and keep, relabel or delete them there.
-  Images you already said are right are shown too, marked as such; before, they were hidden
-  while the matrix still counted them.
-
-## 0.7.0b2
-
-### Changed
-
-- A state sensor's card on the dashboard links to **History** instead of **Upload**, like the
-  cards of object and reading sensors (Upload is still a tab of the sensor).
-
-## 0.7.0b1
+A release about looking back: everything your sensors recorded in one place, and the images
+behind a sensor's mistakes one tap away.
 
 ### New
 
@@ -39,6 +17,20 @@
   **Open in all history** takes them to the History page. It shows 50 entries at a time with
   **Load more** (it used to stop at the newest 100).
 - New entries no longer move the list while you read it: **Show N new** appears instead.
+- **Quality tab: tap a red cell of *What gets mixed up*** to see the images behind it — e.g. the
+  ones labelled *Partial* that the AI took for *Closed* — and keep, relabel or delete them right
+  under the matrix. Images you already said are right are shown too, marked as such.
+
+### Fixed
+
+- A red cell of *What gets mixed up* counted images you had said are right, while they were
+  hidden and left out at the next training. They are kept and shown now (after the next
+  training; an empty cell offers **Retrain now**).
+
+### Changed
+
+- A state sensor's card on the dashboard links to **History** instead of **Upload**, like the
+  cards of object and reading sensors (Upload is still a tab of the sensor).
 
 ## 0.6.5
 
