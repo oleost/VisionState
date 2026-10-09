@@ -1,0 +1,19 @@
+configuration:
+  log_level:
+    name: Livello di log
+    description: Determina la quantità di informazioni che VisionState scrive nel registro dell'applicazione.
+  discovery_prefix:
+    name: Prefisso di individuazione MQTT
+    description: Deve corrispondere al prefisso di individuazione dell'integrazione MQTT di Home Assistant (normalmente "homeassistant").
+  mqtt_host:
+    name: Host MQTT
+    description: Lasciare vuoto per utilizzare il broker configurato in Home Assistant (ad esempio l'add-on Mosquitto Broker).
+  mqtt_port:
+    name: Porta MQTT
+    description: Utilizzata solo quando l'host MQTT è impostato.
+  mqtt_username:
+    name: Nome utente MQTT
+    description: Utilizzato solo quando l'host MQTT è impostato.
+  mqtt_password:
+    name: Password MQTT
+    description: Utilizzata solo quando l'host MQTT è impostato.
