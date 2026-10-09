@@ -63,5 +63,7 @@ $PY evaluate.py ../../VisionStateLocal/wheel/runs/wheels.pt --width 16 --shift 2
   `items.py` also knows local test-only sets that are not redistributable (GPL), which are
   skipped when they are missing.
 
+What is planned next (benchmark, wheels-v2 and more): [`docs/WHEEL_READER_PLAN.md`](../../docs/WHEEL_READER_PLAN.md).
+
 A new model is a new registry entry (`readers.json`, `wheel_readers`) with a new id, hosted on
 Hugging Face with its revision and SHA-256 pinned; released entries are never changed.

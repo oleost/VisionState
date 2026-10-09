@@ -198,7 +198,9 @@ the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounde
 digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
 the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
 the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
-(`db.keep_text_reader`). Training code and data sources: `tools/wheelreader`
+(`db.keep_text_reader`). How it is to get better (benchmark, the last value as an expectation,
+calibrated confidence, self-calibration of the region, wheels-v2, learning per sensor):
+[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md). Training code and data sources: `tools/wheelreader`
 (synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
 the CC0 exports shared in issues #32/#40).
 
@@ -543,15 +545,16 @@ sensor settings) lives in the UI.
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
 | **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
-| **Wheel reader** | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | next beta |
+| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | betas 0.7.1b3–b4 |
+| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Review reminder** | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | next beta |
 | **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; mechanical counters: adjustable cell borders for counters seen at an angle, the
-last wheel's fraction as an extra decimal, pointer dials and gauges; several readings per sensor (a sign with four prices, a
+Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
+dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); issue templates; per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
