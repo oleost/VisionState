@@ -77,6 +77,9 @@ READING_MODES = ("counter", "value", "time_left")
 # counter with rolling digit wheels: the region is split into ``digits`` equal cells and only the
 # middle of each cell is read, so the dividers between the wheels are never read as digits.
 READING_DISPLAYS = ("auto", "led", "lcd", "counter")
+# What reads a "counter" display: "wheels" gives each wheel's position (readers.WheelReader, a wheel
+# half way between two digits is read as such); "ocr" reads the wheels as text with the number reader.
+COUNTER_READERS = ("wheels", "ocr")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
 READING_DEFAULTS = {
@@ -86,6 +89,7 @@ READING_DEFAULTS = {
     "device_class": "",
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
+    "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
     "max_step": 0.0,
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
@@ -126,6 +130,12 @@ READING = {
     "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
     "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
     "counter_band_min_height": 0.5,
+    # Wheel reader: how many position bins (0.1 of a digit each) a wheel at rest may sit off its
+    # digit, how far all wheels may appear shifted together (a region drawn a little above or
+    # below the digits) and what each bin of such a shift costs (log probability).
+    "wheel_slack_bins": 1,
+    "wheel_max_shift_bins": 2,
+    "wheel_shift_penalty": 0.3,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export verified readings" (to share, e.g. on GitHub): at most this many, newest first, each

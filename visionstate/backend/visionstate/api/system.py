@@ -17,6 +17,7 @@ from .. import backbones, detectors, readers
 from ..db import Prediction, Sensor
 from ..redact import redact
 from ..settings import (
+    COUNTER_READERS,
     HISTORY,
     HISTORY_EVENTS,
     LIGHT_DOMAINS,
@@ -105,6 +106,7 @@ def ui_config() -> dict:
         "reading_limits": READING_LIMITS,
         "reading_modes": READING_MODES,
         "reading_displays": READING_DISPLAYS,
+        "counter_readers": COUNTER_READERS,
         "reading_device_classes": READING_DEVICE_CLASSES,
         "reading_counter_cell_share": READING["counter_cell_share"],
         "reading_export_limit": READING["export_limit"],

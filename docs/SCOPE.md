@@ -50,6 +50,7 @@ text recognizer. Neither needs training.
 | **Detector** | Pretrained object detector used by object sensors (registry `detectors.json`). |
 | **Class** | One object type an object sensor looks for (a COCO label, e.g. `person`). |
 | **Reader** | Text recognizer used by reading sensors (registry `readers.json`). |
+| **Wheel reader** | Model that reads how far each wheel of a mechanical counter has turned (registry `readers.json`, `wheel_readers`). |
 
 ## 4. Platform & deployment
 
@@ -169,7 +170,8 @@ knew). Instead a second step compares boxes with boxes the user taught:
    `digits` equal cells, the middle `READING["counter_cell_share"]` of each cell is pasted into
    one line (no dividers), turned grey by each pixel's darkest colour channel (`readers.darkest`:
    red decimal wheels as dark as black ones), and several row bands of that line are read; the
-   most confident read with exactly `digits` digits wins.
+   most confident read with exactly `digits` digits wins. That is the *text reader*
+   (`counter_reader: "ocr"`); by default a counter is read by the **wheel reader** (below).
 2. Resize to height 48, BGR, scale to −1…1; greedy CTC decoding **limited to** `0-9 . , : -`
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
@@ -183,6 +185,29 @@ knew). Instead a second step compares boxes with boxes the user taught:
    with a point or comma, and digits only are placed with the configured decimals.
    The last published value is restored from the history after a restart.
 
+**Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
+`wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
+CPU thread): the crop is split into `digits` equal cells (whole cells, dividers included); each
+cell, grey by its darkest colour channel, 32×48, full contrast, goes through a small CNN that
+gives a distribution over 100 positions around the wheel (0.0–9.9). `readers.wheel_value` then
+finds the most likely *consistent* value by dynamic programming from right to left: the last
+wheel turns freely, every other wheel stands on its digit plus how far its right neighbour is
+past 9. Wheels at rest may sit one bin off (`READING["wheel_slack_bins"]`), and all wheels may
+appear shifted together by up to `wheel_max_shift_bins` (a region drawn a little above or below
+the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounded to the nearest
+digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
+the digit count check does not apply. Training code and data sources: `tools/wheelreader`
+(synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
+the CC0 exports shared in issues #32/#40).
+
+- Evaluated for the wheel reader (2026-10-09; whole reading exact, last digit rounded): a
+  user's ESP32 water meter with red wheels, held out from training: 17/17 (PP-OCRv6 small 15,
+  tiny 8 with 5 too high); two water meters never seen in training (bolausson, test only): 30–33
+  of 35 and 15–18 of 18 with no value too high (small 30 with 2 too high, 15 with 1); the
+  Dryad test set (2,400 photos): 97.7 % when the photo is the right way up. Trained without the
+  user's images it read them just as well. The remaining misses are ±1 on a half-turned last
+  wheel. The decode score separates right from wrong reads only moderately, so it is not used
+  for more than the confidence.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
@@ -419,7 +444,7 @@ loads.
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
 - Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
-  reader registry (`readers.json`),
+  reader registry (`readers.json`, also the wheel readers),
   `sources.SOURCE_TYPES`, trigger settings.
 - Versioned REST API (`/api/v1`) used by the frontend; `GET /api/v1/config` exposes every
   default and limit so the UI never hard-codes them.
@@ -516,15 +541,15 @@ sensor settings) lives in the UI.
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
 | **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
+| **Wheel reader** | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | next beta |
 | **Review reminder** | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | next beta |
 | **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; mechanical counters: adjustable cell borders for counters seen at an angle, using
-the wheel rule (a wheel only turns while the one to its right goes 9 → 0) to settle digits read
-mid-turn, pointer dials and gauges; several readings per sensor (a sign with four prices, a
+Assistant; mechanical counters: adjustable cell borders for counters seen at an angle, the
+last wheel's fraction as an extra decimal, pointer dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); issue templates; per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary

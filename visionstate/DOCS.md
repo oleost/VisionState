@@ -169,9 +169,14 @@ First choose **what it looks like**:
   meters. Draw the region from the first wheel to the last and set the **number of digits**
   (every wheel inside the region, coloured ones too). The region is split into that many equal
   fields, shown on the image: each field should hold one wheel. A little room above and below
-  is fine; a region that cuts the digits is not. Only the middle of each field is read, so the
-  dividers between the wheels are never mistaken for digits, and a reading with another number
-  of digits than the counter has is rejected.
+  is fine; a region that cuts the digits is not. **Read with** chooses what reads the wheels:
+  - *Wheel reader* (default) — a small model made for VisionState that reads how far each wheel
+    has turned, so a wheel half way between two digits is read as such. It reads the wheels
+    together, the way they turn: a wheel only moves on while the wheel to its right goes from 9
+    to 0, so a reading where they do not fit together is never chosen.
+  - *Text reader* — reads the wheels as text with the number reader (Settings → AI model). Only
+    the middle of each field is read, so the dividers between the wheels are never mistaken for
+    digits, and a reading with another number of digits than the counter has is rejected.
 
 | Mode | For | In Home Assistant |
 |---|---|---|
@@ -186,16 +191,17 @@ First choose **what it looks like**:
   dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
   as 8.
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
-  five black and three red wheels has 8 digits and 3 digits after the decimal point. While a
-  wheel is turning its digit can be misread; a counter that reads lower than before is
-  rejected, and a limit on how much the value may change (Settings → Sensor output) catches a
-  misread that is too high. A reading exactly one step of the last digit below the value is the
+  five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
+  wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
+  a limit on how much the value may change (Settings → Sensor output) catches a misread that is
+  too high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
-  For water and gas meters, choose **PP-OCRv6 small** under Settings → AI model → Number
-  reader: on a real water meter with red wheels it read 15 of 17 checked images right, the
-  included tiny reader 8.
+  On a real water meter with red wheels (an ESP32 camera with its flash) the wheel reader read
+  all 17 checked images right; the text reader read 15 with PP-OCRv6 small and 8 with the
+  included tiny reader. Sensors made before 0.7.1b3 switch to the wheel reader; choose *Text
+  reader* on the Settings tab to keep the old way.
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -235,10 +241,10 @@ First choose **what it looks like**:
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
   | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
-- Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
-  have so far only been tried on one type of water meter: they read well while the wheels stand
-  still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
-  some water meters) are not read.
+- Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
+  has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
+  other meters may need a tighter region. Small pointer dials (the red hands on some water
+  meters) are not read.
 - Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
   lot: what the display or meter is, whether it read correctly, and a screenshot of *What the reader
   sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
@@ -392,8 +398,9 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
-  PP-OCRv6 small is larger and reads unusual fonts and mechanical counters (water and gas
-  meters) more reliably (downloaded on first use, 21 MB).
+  PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
+  21 MB). Mechanical counters are read by the included wheel reader (2 MB, a few milliseconds
+  per reading) unless a sensor is set to the text reader.
   Only loaded while at least one reading sensor exists.
 
 A choice you made stays when a later version recommends another model.

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import select
 
 from visionstate import readers
 from visionstate.db import Prediction
@@ -243,6 +244,71 @@ def test_reader_reads_drawn_counters(value, expected, taller):
     result, used = reader.read_display(counter_region(render_counter(value), 7, taller), "counter", 7)
     assert result.text == expected and result.score > 0.8
     assert used.width < counter_region(render_counter(value), 7).width  # the dividers are gone
+
+
+def wheel_logp(value: float, digits: int) -> np.ndarray:
+    """Log probabilities that put every wheel exactly where ``value`` turns it."""
+    logp = np.full((digits, 100), -30.0)
+    for i, position in enumerate(counter_positions(value, digits)):
+        logp[i, round(position * 10) % 100] = 0.0
+    return logp
+
+
+@pytest.mark.parametrize("value", [89932.0, 89939.5, 89949.8, 90099.9, 1234567.0, 9999999.9, 0.0, 0.3])
+def test_wheel_value_follows_the_wheels(value):
+    """The wheels to the left only turn while their right neighbour passes 9: the value is consistent."""
+    found, score = readers.wheel_value(wheel_logp(value, 7))
+    assert found == pytest.approx(value) and score == pytest.approx(0.0)
+
+
+def test_wheel_value_prefers_a_consistent_reading():
+    # The last wheel at 9.8 turns the second-to-last one 0.8 of the way from 4 to 5. Taken on its
+    # own that wheel looks a little more like a 5 (89950 + 9.8 = too high by ten); together with
+    # the last wheel it can only be 4.8.
+    logp = wheel_logp(89949.8, 7)
+    logp[5] = np.log(np.full(100, 1e-6))
+    logp[5, 48], logp[5, 50] = np.log(0.4), np.log(0.6)
+    found, _ = readers.wheel_value(logp)
+    assert found == pytest.approx(89949.8)
+
+
+@requires_reader
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (89932, "0089932"),
+        (7, "0000007"),
+        (1234567, "1234567"),
+        (89949.8, "0089950"),  # two wheels almost turned over
+        (90099.9, "0090100"),  # four wheels almost turned over
+        (89949.3, "0089949"),  # the last wheel a third of the way
+        (629999.6, "0630000"),  # five wheels past half way
+    ],
+)
+@pytest.mark.parametrize("taller", [0.0, 0.25])
+def test_wheel_reader_reads_drawn_counters(value, expected, taller):
+    spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+    reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
+    result, used = reader.read_counter(counter_region(render_counter(value), 7, taller), 7)
+    assert result.text == expected and result.score > 0.8
+    assert used.width > used.height  # the cells side by side
+
+
+@requires_reader
+@pytest.mark.parametrize(
+    ("asset", "expected"),
+    [
+        ("counter_red.jpg", "0632289"),
+        # The second-to-last wheel half way from 8 to 9 while the last shows 0; read as text it was 0632550.
+        ("counter_turning.jpg", "0632590"),
+    ],
+)
+def test_wheel_reader_reads_a_real_meter(asset, expected):
+    """Issue #40: an ESP32 camera with its flash on a water meter with red decimal wheels."""
+    spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+    reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
+    result, _ = reader.read_counter(Image.open(ASSETS / asset).convert("RGB"), 7)
+    assert result.text == expected and result.score > 0.8
 
 
 def test_darkest_turns_coloured_digits_as_dark_as_black_ones():
@@ -497,8 +563,16 @@ def test_restart_keeps_checking_against_the_last_value(settings):
 
 @requires_reader
 def test_counter_sensor_flow(settings):
+    """A counter read as text (OCR): a wrong number of digits is rejected, the export, the preview."""
     camera = CounterCamera(89932)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³"}
+    reading = {
+        "mode": "counter",
+        "display": "counter",
+        "digits": 7,
+        "decimals": 3,
+        "unit": "m³",
+        "counter_reader": "ocr",
+    }
     body = {
         "name": "Water meter",
         "kind": "reading",
@@ -559,6 +633,9 @@ def test_counter_sensor_flow(settings):
                 return entry, Image.open(archive.open(entry["file"])).size
 
         assert export_entry() == ({**entry}, crop.size)
+        with zipfile.ZipFile(io.BytesIO(export.content)) as archive:
+            manifest = json.loads(archive.read("readings.json"))
+        assert manifest["reader"] == readers.DEFAULT_READER and manifest["settings"]["counter_reader"] == "ocr"
         # A reading from before the region was kept is cut with the region the sensor has now.
         with client.app.state.runtime.db.session() as s:
             row = s.get(Prediction, item["id"])
@@ -573,6 +650,57 @@ def test_counter_sensor_flow(settings):
         assert good["text"] == "0089941" and good["value"] == "89.941" and good["wrong_digit_count"] is False
         bad = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "digits": 8}}).json()
         assert bad["wrong_digit_count"] is True
+
+
+@requires_reader
+def test_wheel_counter_sensor_flow(settings):
+    """A counter read with the wheel reader (the default): turning wheels, the preview, the export."""
+    camera = CounterCamera(89949.8)
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³"}
+    body = {
+        "name": "Gas meter",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "http://fake",
+        "roi": counter_box(7),
+        "reading": reading,
+        "interval_s": 1,
+        "debounce": 1,
+    }
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        bad = client.post("/api/v1/sensors", json={**body, "reading": {**reading, "counter_reader": "abacus"}})
+        assert bad.status_code == 422
+        assert client.get("/api/v1/config").json()["counter_readers"] == ["wheels", "ocr"]
+        resp = client.post("/api/v1/sensors", json=body)
+        assert resp.status_code == 201, resp.text
+        sid = resp.json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()
+
+        # Two wheels almost turned over: the wheels together read 89.950.
+        assert wait_for(lambda: view()["reading"]["value"] == "89.950", timeout=60)
+        assert view()["reading"]["counter_reader"] == "wheels"
+        image = client.get(f"/api/v1/sensors/{sid}/reading/image")
+        assert image.status_code == 200 and Image.open(io.BytesIO(image.content)).width > 400
+
+        preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
+        camera.value = 90099.9
+        got = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
+        assert got["text"] == "0090100" and got["value"] == "90.100" and got["wrong_digit_count"] is False
+
+        # Shared exports name the wheel reader.
+        client.post(f"/api/v1/sensors/{sid}/classify")
+        assert wait_for(lambda: view()["reading"]["value"] == "90.100", timeout=30)
+        with client.app.state.runtime.db.session() as s:
+            row = s.scalars(select(Prediction).where(Prediction.sensor_id == sid)).first()
+            assert row is not None
+            row.read_ok = True
+        with zipfile.ZipFile(io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export").content)) as archive:
+            manifest = json.loads(archive.read("readings.json"))
+        assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
+        assert manifest["settings"]["counter_reader"] == "wheels"
 
 
 @requires_reader

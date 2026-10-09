@@ -173,7 +173,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
     destination = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
-    # Every bundled model: backbones (states), detectors (objects) and readers (readings).
-    for spec in [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]:
+    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers (readings).
+    specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
+    for spec in [*specs, *readers.WHEEL_READERS.values()]:
         if spec.bundled:
             print(download(spec, destination))

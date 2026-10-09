@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.1b3
+
+### New
+
+- **Wheel reader for mechanical counters.** Water and gas meters are now read wheel by wheel
+  with a small model made for VisionState: it sees how far each wheel has turned, so a wheel
+  half way between two digits no longer turns into a wrong digit. The wheels are read together,
+  the way they turn (a wheel only moves on while the one to its right goes from 9 to 0), so a
+  reading where they do not fit together is never chosen. On the shared images of a water meter
+  with red wheels (thanks again, @pedromfa — issue #40) it read all 17 right; PP-OCRv6 small read
+  15 and the included tiny reader 8. It is included (2 MB, a few milliseconds per reading) and is
+  the default for every mechanical counter, also the ones you already have; *Read with → Text
+  reader* on the Settings tab keeps the old way. The model, its training code and where its
+  data comes from are in `tools/wheelreader`.
+
 ## 0.7.1b2
 
 ### Better

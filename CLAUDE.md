@@ -36,7 +36,8 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     into the part it belongs to; a long-running loop must survive any exception (log it once, try
     again) — only `CancelledError` may end it.
   - `backend/visionstate/backbones.json` (state sensors), `detectors.json` (object sensors) and
-    `readers.json` (reading sensors) are the model registries. Entries are never changed or
+    `readers.json` (reading sensors; also the wheel readers for mechanical counters, trained with
+    `tools/wheelreader` — see its README) are the model registries. Entries are never changed or
     removed once released (a new model gets a new id); `python -m visionstate.backbones <dir>`
     downloads every bundled model of all three.
   - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects` and `reading`; the UI's tabs per kind

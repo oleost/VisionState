@@ -118,7 +118,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
 
     Returns the suggested download filename; raises LookupError when there is nothing to export.
     """
-    from . import imaging
+    from . import imaging, readers
     from .settings import READING, merge_reading
 
     with db.session() as s:
@@ -126,6 +126,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         if sensor is None:
             raise KeyError(sensor_id)
         settings = merge_reading(sensor.reading)
+        wheels = settings["display"] == "counter" and settings["counter_reader"] == "wheels"
         rows = s.scalars(
             select(Prediction)
             .where(Prediction.sensor_id == sensor_id, Prediction.read_ok.is_not(None), Prediction.frame.is_not(None))
@@ -163,9 +164,9 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             raise LookupError("No verified readings yet")
         manifest = {
             "app_version": VERSION,
-            "reader": reader,
+            "reader": readers.DEFAULT_WHEEL_READER if wheels else reader,
             # How the sensor reads; nothing about where it is (no camera, name or region position).
-            "settings": {k: settings[k] for k in ("mode", "display", "digits", "decimals", "unit")},
+            "settings": {k: settings[k] for k in ("mode", "display", "digits", "counter_reader", "decimals", "unit")},
             "readings": items,
         }
         archive.writestr("readings.json", json.dumps(manifest, indent=2, ensure_ascii=False))

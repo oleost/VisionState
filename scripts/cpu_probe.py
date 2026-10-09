@@ -137,6 +137,20 @@ def _reader():
     return text.text
 
 
+@step("onnxruntime: wheel reader")
+def _wheel_reader():
+    from PIL import Image
+
+    from visionstate import backbones, readers
+    from visionstate.settings import load_settings
+
+    spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+    path = backbones.locate(spec, [load_settings().bundled_models_dir])
+    text, _ = readers.WheelReader(spec, path).read_counter(Image.open(ASSETS / "counter_turning.jpg").convert("RGB"), 7)
+    assert text.text == "0632590", text
+    return text.text
+
+
 @step("av (encode and decode a video)")
 def _av():
     import av

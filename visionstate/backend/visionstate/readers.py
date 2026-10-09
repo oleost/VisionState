@@ -6,6 +6,10 @@ Bundled readers are downloaded together with the backbones (``python -m visionst
 
 A reader is a text recognition model with CTC output (PP-OCR). Decoding is limited to the
 characters in ``settings.READING["chars"]``, so a reading can never contain a letter.
+
+Mechanical counters are read by default with a wheel reader (``wheel_readers`` in the same
+file): a small model trained for VisionState (``tools/wheelreader``) that gives each wheel's
+position, so a wheel half way between two digits is read as such.
 """
 
 from __future__ import annotations
@@ -244,6 +248,155 @@ def decode(probs: np.ndarray, chars: list[str]) -> Text:
             scores.append(float(p))
         previous = index
     return Text("".join(text), float(np.mean(scores)) if scores else 0.0)
+
+
+# --- wheel reader (mechanical counters) -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WheelReaderSpec:
+    id: str
+    name: str
+    description: str
+    url: str
+    sha256: str
+    size: int
+    cell_width: int
+    cell_height: int
+    bins: int  # positions around a wheel: bin b is position b / (bins / 10)
+    license: str
+    source: str
+    bundled: bool
+
+    @property
+    def filename(self) -> str:
+        return f"{self.id}.onnx"
+
+
+def load_wheel_registry() -> tuple[str, dict[str, WheelReaderSpec]]:
+    """The default wheel reader's id and every wheel reader in ``readers.json``."""
+    raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))["wheel_readers"]
+    specs = {
+        key: WheelReaderSpec(
+            id=key,
+            name=v["name"],
+            description=v.get("description", ""),
+            url=v["url"],
+            sha256=v["sha256"],
+            size=int(v.get("size", 0)),
+            cell_width=int(v["cell_width"]),
+            cell_height=int(v["cell_height"]),
+            bins=int(v["bins"]),
+            license=v.get("license", ""),
+            source=v.get("source", ""),
+            bundled=bool(v.get("bundled", False)),
+        )
+        for key, v in raw["readers"].items()
+    }
+    return raw["default"], specs
+
+
+DEFAULT_WHEEL_READER, WHEEL_READERS = load_wheel_registry()
+
+
+def wheel_cells(image: Image.Image, digits: int, width: int, height: int) -> np.ndarray:
+    """The region split into ``digits`` equal cells, each as the wheel model sees it.
+
+    Grey from the darkest colour channel (coloured wheels look like black ones), scaled to
+    ``width`` x ``height`` and stretched to full contrast; float32 in 0..1, cells x height x width.
+    """
+    grey = Image.fromarray(np.asarray(image.convert("RGB")).min(axis=2))
+    cell = grey.width / max(1, digits)
+    out = []
+    for i in range(max(1, digits)):
+        part = grey.crop((round(i * cell), 0, max(round(i * cell) + 1, round((i + 1) * cell)), grey.height))
+        part = ImageOps.autocontrast(part.resize((width, height), Image.Resampling.BILINEAR), cutoff=1)
+        out.append(np.asarray(part, dtype=np.float32) / 255.0)
+    return np.stack(out)
+
+
+def wheel_value(logp: np.ndarray) -> tuple[float, float]:
+    """The most likely counter value for per-wheel position log probabilities (wheels x 100 bins).
+
+    A mechanical counter's wheels are not independent: the last wheel turns freely and every
+    other wheel stands on its digit, turning only while the wheel to its right goes from 9 to 0
+    (by as much as that wheel is past 9). A dynamic programme from right to left finds the
+    value whose wheel positions are most likely together. Returns the value in steps of the
+    last wheel, with its fraction (0089949.8 = last wheel at 9.8), and its log probability.
+    """
+    wheels, bins = logp.shape
+    tenth = bins // 10
+    best = logp[-1].copy()  # best score of the wheels to the right, by this wheel's bin
+    back = []
+    for k in range(wheels - 2, -1, -1):
+        # The right neighbour at bin b moves this wheel by f = max(0, b - 9 * tenth) bins.
+        rest = int(best[: 9 * tenth + 1].argmax())
+        lead = np.concatenate([[best[rest]], best[9 * tenth + 1 :]])  # best score per offset f
+        lead_bin = np.concatenate([[rest], np.arange(9 * tenth + 1, bins)])
+        best = (logp[k].reshape(10, tenth) + lead[None, :]).reshape(bins)
+        back.append(np.tile(lead_bin, 10))
+    b = int(best.argmax())
+    score = float(best[b])
+    digits = [b // tenth]
+    for arg in reversed(back):
+        b = int(arg[b])
+        digits.append(b // tenth)
+    value = 0.0
+    for d in digits[:-1]:
+        value = value * 10 + d
+    return value * 10 + b / tenth, score
+
+
+class WheelReader:
+    """Reads a mechanical counter wheel by wheel: one small ONNX model gives each wheel's position."""
+
+    def __init__(self, spec: WheelReaderSpec, model_path: Path):
+        self.spec = spec
+        self.session = cpu_session(model_path)
+        self.input_name = self.session.get_inputs()[0].name
+        self._lock = threading.Lock()
+
+    def positions(self, image: Image.Image, digits: int) -> np.ndarray:
+        """Log probabilities of every wheel's position (wheels x bins)."""
+        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+        with self._lock:
+            logits = np.asarray(self.session.run(None, {self.input_name: cells[:, None]})[0], dtype=np.float64)
+        logits -= logits.max(axis=1, keepdims=True)
+        probs = np.exp(logits)
+        probs /= probs.sum(axis=1, keepdims=True)
+        # A wheel at rest may sit a little off its digit.
+        slack = READING["wheel_slack_bins"]
+        probs = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
+        return np.log(np.maximum(probs, 1e-12))
+
+    def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
+        """Read ``digits`` wheels; returns the read (all digits, last wheel rounded) and the cells used.
+
+        A region drawn a little above or below the digits shifts every wheel alike, so a few
+        common shifts are tried (each costs a little) and the most likely reading wins. The
+        confidence is the mean probability per wheel of the positions read.
+        """
+        logp = self.positions(image, digits)
+        best: tuple[float, float] | None = None
+        for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
+            value, score = wheel_value(np.roll(logp, -shift, axis=1))
+            score -= READING["wheel_shift_penalty"] * abs(shift)
+            if best is None or score > best[1]:
+                best = (value, score)
+        assert best is not None
+        number = math.floor(best[0] + 0.5) % 10**digits
+        text = Text(f"{number:0{digits}d}", math.exp(best[1] / max(1, digits)))
+        return text, self.cells_image(image, digits)
+
+    def cells_image(self, image: Image.Image, digits: int) -> Image.Image:
+        """The cells side by side as the model sees them (for the "what the reader saw" image)."""
+        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+        gap = 2
+        w, h = self.spec.cell_width, self.spec.cell_height
+        line = Image.new("L", (len(cells) * (w + gap) - gap, h), 255)
+        for i, cell in enumerate(cells):
+            line.paste(Image.fromarray((cell * 255).astype(np.uint8)), (i * (w + gap), 0))
+        return line.resize((line.width * 2, h * 2), Image.Resampling.NEAREST).convert("RGB")
 
 
 # --- interpretation -------------------------------------------------------------------------------

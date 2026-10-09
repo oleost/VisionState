@@ -15,8 +15,9 @@ requires_model = pytest.mark.skipif(
     reason=f"Backbone not downloaded; run `python -m visionstate.backbones {MODEL_DIR}`",
 )
 _reader = readers.READERS[readers.DEFAULT_READER]
+_wheels = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
 requires_reader = pytest.mark.skipif(
-    not (MODEL_DIR / _default.filename).exists() or not (MODEL_DIR / _reader.filename).exists(),
+    not all((MODEL_DIR / spec.filename).exists() for spec in (_default, _reader, _wheels)),
     reason=f"Models not downloaded; run `python -m visionstate.backbones {MODEL_DIR}`",
 )
 requires_detector = pytest.mark.skipif(

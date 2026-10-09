@@ -340,10 +340,16 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.getByLabel('Digits after the decimal point').fill('3');
   await page.getByLabel('Unit').fill('m³');
   await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
-  // Told there are eight wheels, the seven digits read are not accepted.
+  // Read by the wheel reader (the default), which reads every field; the text reader instead
+  // reads the digits it sees: told there are eight wheels, the seven digits it reads are not accepted.
+  const readWith = page.getByLabel('Read with');
+  await expect(readWith).toHaveValue('wheels');
+  await readWith.selectOption('ocr');
+  await expect(page.getByText(/a turning wheel can be misread/)).toBeVisible();
   await page.getByLabel('Number of digits').fill('8');
   await expect(page.getByText(/digits, not 8/)).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Number of digits').fill('7');
+  await readWith.selectOption('wheels');
   await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
   await expectNoHorizontalOverflow(page);
@@ -943,8 +949,8 @@ test('a rejected reading keeps the region it was read in', async ({ page, reques
       kind: 'reading',
       source_type: 'http',
       source: COUNTER_URL(45730),
-      roi: half, // half the wheels: read with the wrong number of digits, so rejected
-      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³' },
+      roi: half, // half the wheels: the text reader reads the wrong number of digits, so rejected
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', counter_reader: 'ocr' },
       interval_s: 3600,
       debounce: 1,
     },

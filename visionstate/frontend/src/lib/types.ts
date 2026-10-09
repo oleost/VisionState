@@ -82,6 +82,8 @@ export type ReadingMode = 'counter' | 'value' | 'time_left';
 export type ReadingDisplay = 'auto' | 'led' | 'lcd' | 'counter';
 /** What is being read, as chosen first in the reading editor ('display' covers auto, led and lcd). */
 export type ReadingType = 'display' | 'counter';
+/** What reads a mechanical counter: each wheel's position, or the wheels as text (OCR). */
+export type CounterReader = 'wheels' | 'ocr';
 
 export interface ReadingSettings {
   mode: ReadingMode;
@@ -91,6 +93,8 @@ export interface ReadingSettings {
   display: ReadingDisplay;
   /** Mechanical counters only: the number of wheels inside the region. */
   digits: number;
+  /** Mechanical counters only: what reads the wheels. */
+  counter_reader: CounterReader;
   max_step: number;
   /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
   spot_rate: number;
@@ -370,6 +374,7 @@ export interface AppConfig {
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
+  counter_readers: CounterReader[];
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;

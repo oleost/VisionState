@@ -1,5 +1,5 @@
 // UI constants: polling intervals, labels and tones. Change behaviour of the UI here.
-import type { ReadingDisplay, ReadingMode, ReadingType, SensorKind, SensorStatus } from './types';
+import type { CounterReader, ReadingDisplay, ReadingMode, ReadingType, SensorKind, SensorStatus } from './types';
 
 /** Refresh intervals in milliseconds. */
 export const POLL = {
@@ -122,6 +122,12 @@ export const READING_DISPLAY_INFO: Record<ReadingDisplay, string> = {
   led: 'Light digits on dark (LED)',
   lcd: 'Dark digits on light (LCD)',
   counter: 'Mechanical counter',
+};
+
+/** What reads a mechanical counter (reading editor). */
+export const COUNTER_READER_INFO: Record<CounterReader, string> = {
+  wheels: 'Wheel reader (recommended)',
+  ocr: 'Text reader',
 };
 
 /** What is being read, as offered first in the reading editor. */
