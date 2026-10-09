@@ -2,6 +2,7 @@
 
 import io
 import json
+import sqlite3
 import zipfile
 
 import numpy as np
@@ -11,7 +12,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from visionstate import readers
-from visionstate.db import Prediction
+from visionstate.db import Database, Prediction, Sensor, keep_text_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
@@ -309,6 +310,33 @@ def test_wheel_reader_reads_a_real_meter(asset, expected):
     reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
     result, _ = reader.read_counter(Image.open(ASSETS / asset).convert("RGB"), 7)
     assert result.text == expected and result.score > 0.8
+
+
+def test_counters_made_before_the_wheel_reader_keep_the_text_reader(tmp_path):
+    path = tmp_path / "old.db"
+    Database(path).init()
+    con = sqlite3.connect(path)
+    row = (
+        "INSERT INTO sensor (slug, name, kind, source_type, source, interval_s, threshold, debounce, enabled, "
+        "entity_prefix, publish, created_at, reading) VALUES (?, ?, 'reading', 'http', 'x', 30, 0.7, 2, 1, 0, 1, "
+        "'2026-10-01', ?)"
+    )
+    con.execute(row, ("old", "Old counter", json.dumps({"mode": "counter", "display": "counter", "digits": 7})))
+    con.execute(
+        row, ("new", "New counter", json.dumps({"display": "counter", "digits": 7, "counter_reader": "wheels"}))
+    )
+    con.execute(row, ("lcd", "Display", json.dumps({"mode": "counter", "display": "auto"})))
+    con.execute("PRAGMA user_version = 11")  # as a database of 0.7.1b3 and older
+    con.commit()
+    con.close()
+    db = Database(path)
+    db.init()
+    with db.session() as s:
+        readers_by_slug = {r.slug: merge_reading(r.reading)["counter_reader"] for r in s.query(Sensor)}
+    # The display keeps no stored choice: should it become a counter, it gets the wheel reader.
+    assert readers_by_slug == {"old": "ocr", "new": "wheels", "lcd": "wheels"}
+    assert keep_text_reader({"display": "counter"}) == {"display": "counter", "counter_reader": "ocr"}
+    assert keep_text_reader(None) is None
 
 
 def test_darkest_turns_coloured_digits_as_dark_as_black_ones():
@@ -682,6 +710,13 @@ def test_wheel_counter_sensor_flow(settings):
         # Two wheels almost turned over: the wheels together read 89.950.
         assert wait_for(lambda: view()["reading"]["value"] == "89.950", timeout=60)
         assert view()["reading"]["counter_reader"] == "wheels"
+        status = client.get("/api/v1/status").json()
+        assert status["wheel_reader"] == readers.DEFAULT_WHEEL_READER and status["wheel_reader_error"] == ""
+        assert status["reader"] is None  # only a counter read with the wheel reader: no text reader loaded
+        models = client.get("/api/v1/settings").json()
+        assert models["wheel_reader"] == readers.DEFAULT_WHEEL_READER
+        assert [m["id"] for m in models["wheel_readers"]] == list(readers.WHEEL_READERS)
+        assert models["wheel_readers"][0]["installed"] and models["wheel_readers"][0]["license"] == "Apache-2.0"
         image = client.get(f"/api/v1/sensors/{sid}/reading/image")
         assert image.status_code == 200 and Image.open(io.BytesIO(image.content)).width > 400
 
@@ -701,6 +736,49 @@ def test_wheel_counter_sensor_flow(settings):
             manifest = json.loads(archive.read("readings.json"))
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
+
+        # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
+        exported = client.get(f"/api/v1/sensors/{sid}/export").content
+
+        def imported_reader(content: bytes) -> str:
+            new_id = client.post("/api/v1/import", files={"file": ("b.zip", content)}).json()["id"]
+            client.patch(f"/api/v1/sensors/{new_id}", json={"enabled": False})
+            return client.get(f"/api/v1/sensors/{new_id}").json()["reading"]["counter_reader"]
+
+        assert imported_reader(exported) == "wheels"
+        old = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(exported)) as source, zipfile.ZipFile(old, "w") as target:
+            for name in source.namelist():
+                data = source.read(name)
+                if name == "manifest.json":
+                    content = json.loads(data)
+                    del content["sensor"]["reading"]["counter_reader"]
+                    data = json.dumps(content).encode()
+                target.writestr(name, data)
+        assert imported_reader(old.getvalue()) == "ocr"
+
+
+@requires_reader
+def test_a_wheel_reader_that_does_not_load_is_shown(settings, monkeypatch):
+    def broken(*_args):
+        raise RuntimeError("model file damaged")
+
+    monkeypatch.setattr(readers, "WheelReader", broken)
+    body = {
+        "name": "Water meter",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "http://fake",
+        "roi": counter_box(7),
+        "reading": {"mode": "counter", "display": "counter", "digits": 7},
+        "interval_s": 1,
+    }
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = CounterCamera(1234)
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        assert wait_for(lambda: client.get("/api/v1/status").json()["wheel_reader_error"] == "model file damaged")
+        assert client.get("/api/v1/status").json()["wheel_reader"] is None
+        assert "model file damaged" in client.get(f"/api/v1/sensors/{sid}").json()["live"]["error"]
 
 
 @requires_reader

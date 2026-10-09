@@ -108,13 +108,20 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     async def ensure_wheel_reader(self) -> readers.WheelReader:
         """The wheel reader for mechanical counters, loaded on first use (it is bundled)."""
         async with self._wheel_reader_lock:
-            if self.wheel_reader is None:
-                spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+            if self.wheel_reader is not None:
+                return self.wheel_reader
+            spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+            try:
                 path = self.model_path(spec)
                 if path is None:
                     path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
                 self.wheel_reader = await asyncio.to_thread(readers.WheelReader, spec, path)
-                log.info("Wheel reader %s loaded", spec.id)
+            except Exception as err:
+                self.wheel_reader_error = redact(str(err))
+                log.exception("Could not load wheel reader %s", spec.id)
+                raise
+            self.wheel_reader_error = ""
+            log.info("Wheel reader %s loaded", spec.id)
             return self.wheel_reader
 
     async def read_number(

@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from .. import bundle, detectors, imaging
+from ..db import keep_text_reader
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
@@ -61,7 +62,8 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int]:
     from .sensors import SensorIn
 
     manifest = bundle.read_manifest(path)
-    data = manifest["sensor"]
+    data = dict(manifest["sensor"])
+    data["reading"] = keep_text_reader(data.get("reading"))  # exported before the wheel reader
     # Validate exactly like a sensor created in the UI (kind, limits, source type, states, objects, triggers).
     try:
         spec = SensorIn.model_validate(

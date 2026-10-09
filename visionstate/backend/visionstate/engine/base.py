@@ -59,6 +59,7 @@ class RuntimeBase:
         self.reader_error = ""
         self._reader_lock = asyncio.Lock()
         self.wheel_reader: readers.WheelReader | None = None  # loaded on first use by a counter
+        self.wheel_reader_error = ""
         self._wheel_reader_lock = asyncio.Lock()
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change

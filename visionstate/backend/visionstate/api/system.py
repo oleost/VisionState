@@ -144,6 +144,9 @@ async def status(request: Request) -> dict:
         "reader": rt.reader.spec.id if rt.reader else None,
         "reader_name": rt.reader.spec.name if rt.reader else None,
         "reader_error": rt.reader_error,
+        "wheel_reader": rt.wheel_reader.spec.id if rt.wheel_reader else None,
+        "wheel_reader_name": rt.wheel_reader.spec.name if rt.wheel_reader else None,
+        "wheel_reader_error": rt.wheel_reader_error,
         "mqtt": {
             "connected": mqtt.connected,
             "host": mqtt.config.host if mqtt.config else None,
@@ -207,6 +210,20 @@ def get_settings(request: Request) -> dict:
                 "source": spec.source,
             }
             for spec in readers.READERS.values()
+        ],
+        # Mechanical counters set to the wheel reader; one model for now, so nothing to choose.
+        "wheel_reader": readers.DEFAULT_WHEEL_READER,
+        "wheel_readers": [
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "description": spec.description,
+                "installed": rt.model_path(spec) is not None,
+                "size": spec.size,
+                "license": spec.license,
+                "source": spec.source,
+            }
+            for spec in readers.WHEEL_READERS.values()
         ],
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,

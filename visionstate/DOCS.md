@@ -200,8 +200,8 @@ First choose **what it looks like**:
   you can also leave it out of the region and count one digit and one decimal less.
   On a real water meter with red wheels (an ESP32 camera with its flash) the wheel reader read
   all 17 checked images right; the text reader read 15 with PP-OCRv6 small and 8 with the
-  included tiny reader. Sensors made before 0.7.1b3 switch to the wheel reader; choose *Text
-  reader* on the Settings tab to keep the old way.
+  included tiny reader. New counters use the wheel reader; counters set up before it came keep the
+  text reader until you choose *Wheel reader* on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -399,8 +399,9 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
-  21 MB). Mechanical counters are read by the included wheel reader (2 MB, a few milliseconds
-  per reading) unless a sensor is set to the text reader.
+  21 MB). Mechanical counters are read by the included **VisionState wheel reader** (2 MB, a few
+  milliseconds per reading, listed under *Reading sensors: mechanical counters*) unless a sensor
+  is set to the text reader. There is one wheel reader so far, so there is nothing to choose.
   Only loaded while at least one reading sensor exists.
 
 A choice you made stays when a later version recommends another model.

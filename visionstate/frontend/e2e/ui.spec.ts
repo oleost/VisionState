@@ -983,6 +983,41 @@ test('a rejected reading keeps the region it was read in', async ({ page, reques
   }
 });
 
+test('the wheel reader shows in Settings and is offered to counters read as text', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  const wheels = page.getByTestId('wheel-reader');
+  await expect(wheels).toContainText('VisionState wheel reader v1');
+  await expect(wheels.getByRole('link', { name: 'source' })).toHaveAttribute('href', /huggingface\.co/);
+  await expect(page.getByText('Wheel reader', { exact: true })).toBeVisible(); // its status row
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.card');
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Old water meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(45730),
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', counter_reader: 'ocr' },
+      interval_s: 3600,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await page.goto(`#/sensors/${id}/live`);
+    const notice = page.getByTestId('try-wheel-reader');
+    await expect(notice).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await press(notice.getByRole('link'), info);
+    await expect(page.getByLabel('Read with')).toHaveValue('ocr');
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
 test('storage limits can be changed', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');

@@ -401,6 +401,10 @@ export interface Status {
   reader: string | null;
   reader_name: string | null;
   reader_error: string;
+  /** Mechanical counters read wheel by wheel; loaded on first use. */
+  wheel_reader: string | null;
+  wheel_reader_name: string | null;
+  wheel_reader_error: string;
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -548,6 +552,9 @@ export interface SettingsInfo {
   detectors: DetectorInfo[];
   reader: string;
   readers: DetectorInfo[];
+  /** The wheel reader for mechanical counters (one model for now, nothing to choose). */
+  wheel_reader: string;
+  wheel_readers: DetectorInfo[];
   options: Record<string, string | number>;
 }
 

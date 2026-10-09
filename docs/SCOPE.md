@@ -196,7 +196,9 @@ past 9. Wheels at rest may sit one bin off (`READING["wheel_slack_bins"]`), and 
 appear shifted together by up to `wheel_max_shift_bins` (a region drawn a little above or below
 the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounded to the nearest
 digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
-the digit count check does not apply. Training code and data sources: `tools/wheelreader`
+the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
+the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
+(`db.keep_text_reader`). Training code and data sources: `tools/wheelreader`
 (synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
 the CC0 exports shared in issues #32/#40).
 

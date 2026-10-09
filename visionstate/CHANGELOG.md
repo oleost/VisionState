@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.1b4
+
+### Changed
+
+- **Counters you already have keep the text reader.** In 0.7.1b3 every mechanical counter moved
+  to the new wheel reader; now only new counters use it, and the ones set up before keep reading
+  the way they did until you choose *Read with → Wheel reader* on their Settings tab. Their Live
+  tab points to it. A sensor imported from an export made before the wheel reader keeps the text
+  reader too.
+- **Settings → AI model** shows the wheel reader under *Reading sensors: mechanical counters*,
+  with its licence and source, and the status at the top of the page has a line for it (loaded,
+  or why it could not be loaded).
+
 ## 0.7.1b3
 
 ### New

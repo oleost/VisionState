@@ -52,6 +52,13 @@
       </div>
     </section>
 
+    {#if reading.display === 'counter' && reading.counter_reader === 'ocr'}
+      <div class="notice small" data-testid="try-wheel-reader">
+        New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is read
+        right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.
+      </div>
+    {/if}
+
     {#if reading.has_image && last}
       <section class="card pad col">
         <div class="card-title"><h3>What the reader sees</h3><span class="xsmall faint">the region after display processing</span></div>
