@@ -41,6 +41,25 @@ export interface ReviewRules {
   spot_rate: number;
 }
 
+/** A reminder in Home Assistant when frames have waited for review a long time (Settings). */
+export interface ReminderRules {
+  enabled: boolean;
+  /** Remind when the oldest frame has waited this many days … */
+  after_days: number;
+  /** … and at least this many frames wait. */
+  min_items: number;
+  /** Remind again every repeat_days while they still wait. */
+  repeat: boolean;
+  repeat_days: number;
+  /** Also push with this notify service ('notify.mobile_app_…'); '' = only the notification in Home Assistant. */
+  notify_service: string;
+}
+
+/** The reminder and when the one that is up now was sent (null: none is up). */
+export interface ReminderInfo extends ReminderRules {
+  sent_at: string | null;
+}
+
 /** Per-sensor overrides: null = use the global value. */
 export type ReviewOverrides = { [K in keyof ReviewRules]: ReviewRules[K] | null };
 
@@ -335,6 +354,8 @@ export interface AppConfig {
   review_defaults: ReviewRules;
   roi_max_points: number;
   review_limits: Record<Exclude<keyof ReviewRules, 'enabled'>, [number, number]>;
+  reminder_defaults: ReminderRules;
+  reminder_limits: Record<'after_days' | 'min_items' | 'repeat_days', [number, number]>;
   sensor_kinds: SensorKind[];
   object_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   object_defaults: ObjectSettings;

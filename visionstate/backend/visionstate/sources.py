@@ -21,6 +21,21 @@ SOURCE_TYPES = {
 }
 
 
+# Notify services not offered for the push: the notification in Home Assistant is sent anyway, and
+# send_message needs a notify entity instead of a message alone.
+NOTIFY_NOT_PUSH = {"persistent_notification", "send_message"}
+
+
+# The first Home Assistant (year, month) whose app pages live at /app/<slug>.
+HA_APP_PANEL_VERSION = (2026, 2)
+
+
+def ha_version(version: str) -> tuple[int, int]:
+    """(year, month) of a Home Assistant version such as "2026.10.0b1"; (0, 0) when unreadable."""
+    match = re.match(r"^(\d+)\.(\d+)", version)
+    return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
+
+
 class SourceError(Exception):
     pass
 
@@ -59,6 +74,8 @@ class HomeAssistant:
             self.base = settings.ha_url.rstrip("/") + "/api" if settings.ha_url else ""
             token = settings.ha_token
         self.enabled = bool(self.base and token)
+        self.supervised = settings.is_supervised
+        self._app_path: str | None = None
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {token}"}, timeout=RUNTIME["http_timeout_s"]
         )
@@ -124,6 +141,47 @@ class HomeAssistant:
         service = "turn_on" if on else "turn_off"
         resp = await self._client.post(f"{self.base}/services/homeassistant/{service}", json={"entity_id": entity_id})
         resp.raise_for_status()
+
+    async def call_service(self, domain: str, service: str, data: dict) -> None:
+        """Call a Home Assistant service (a notification, a push to a phone)."""
+        if not self.enabled:
+            raise SourceError("Home Assistant API is not configured")
+        resp = await self._client.post(f"{self.base}/services/{domain}/{service}", json=data)
+        if resp.status_code >= 400:
+            raise SourceError(f"{domain}.{service}: HTTP {resp.status_code}")
+
+    async def notify_services(self) -> list[str]:
+        """The notify services that push somewhere ("notify.mobile_app_pixel", …), phones first."""
+        if not self.enabled:
+            return []
+        resp = await self._client.get(f"{self.base}/services")
+        resp.raise_for_status()
+        names = [
+            f"notify.{name}"
+            for domain in resp.json()
+            if domain.get("domain") == "notify"
+            for name in domain.get("services", {})
+            if name not in NOTIFY_NOT_PUSH
+        ]
+        return sorted(names, key=lambda n: (not n.startswith("notify.mobile_app_"), n))
+
+    async def app_path(self) -> str | None:
+        """The app's page in Home Assistant, for links in notifications; None outside Home Assistant.
+
+        The slug differs per repository (stable, beta), so the Supervisor is asked. Home Assistant
+        2026.2 moved the page from /hassio/ingress/<slug> to /app/<slug> (the old one is gone).
+        """
+        if not self.supervised:
+            return None
+        if self._app_path is None:
+            resp = await self._client.get(f"{SUPERVISOR_URL}/addons/self/info")
+            resp.raise_for_status()
+            slug = resp.json()["data"]["slug"]
+            resp = await self._client.get(f"{self.base}/config")
+            resp.raise_for_status()
+            new = ha_version(resp.json().get("version", "")) >= HA_APP_PANEL_VERSION
+            self._app_path = f"/app/{slug}" if new else f"/hassio/ingress/{slug}"
+        return self._app_path
 
     async def ping(self) -> bool:
         if not self.enabled:

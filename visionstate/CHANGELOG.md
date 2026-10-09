@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1b1
+
+### New
+
+- **Review reminder**: when frames have waited for review a long time, a notification shows up in
+  Home Assistant — *There are 11 frames waiting for review in VisionState, the oldest for 8 days*
+  — with a link to the app. It never comes just because a frame arrived: by default once the
+  oldest frame has waited 7 days, and it goes away by itself once they are reviewed. Set it under
+  **Settings → Review reminder**: after how many days, from how many frames, whether to remind
+  again every few days (off by default) and whether to push it to a phone as well (off by
+  default; any notify service, such as the Companion app). **Send a test** shows what it looks
+  like.
+- The review queue entity has a new attribute, `oldest_waiting_since`, for automations of your own.
+
 ## 0.7.0
 
 A release about looking back: everything your sensors recorded in one place, and the images

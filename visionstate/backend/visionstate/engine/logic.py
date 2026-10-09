@@ -1,4 +1,5 @@
-"""Pure decisions of the engine (no I/O): object tracks, review, triggers and when to check next."""
+"""Pure decisions of the engine (no I/O): object tracks, review and its reminder, triggers and when
+to check next."""
 
 from __future__ import annotations
 
@@ -28,6 +29,41 @@ def review_reason(
     if roll < rules["spot_rate"]:
         return "spot_check"
     return None
+
+
+DAY_S = 86_400
+
+
+def reminder_action(
+    rules: dict, waiting: int, oldest_age_s: float | None, sent_at: float | None, now: float
+) -> str | None:
+    """What the review reminder does now (rules: see merge_reminder): "send", "clear" or nothing.
+
+    It is due while at least ``min_items`` frames wait and the oldest has waited ``after_days``.
+    One reminder per round (``sent_at``: when this round's last one went out); again after
+    ``repeat_days`` only when ``repeat`` is on. The round ends — and the notification is cleared —
+    as soon as it is no longer due (the queue was handled, or reminders were turned off).
+    """
+    due = (
+        rules["enabled"]
+        and waiting >= rules["min_items"]
+        and oldest_age_s is not None
+        and oldest_age_s >= rules["after_days"] * DAY_S
+    )
+    if not due:
+        return "clear" if sent_at is not None else None
+    if sent_at is None or (rules["repeat"] and now - sent_at >= rules["repeat_days"] * DAY_S):
+        return "send"
+    return None
+
+
+def reminder_text(waiting: int, oldest_age_s: float) -> str:
+    """The reminder's message: how many frames wait and for how long the oldest has."""
+    days = int(oldest_age_s // DAY_S)
+    since = f"{days} day{'' if days == 1 else 's'}"
+    if waiting == 1:
+        return f"There is 1 frame waiting for review in VisionState, for {since}."
+    return f"There are {waiting} frames waiting for review in VisionState, the oldest for {since}."
 
 
 def update_tracks(

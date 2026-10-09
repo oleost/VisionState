@@ -31,7 +31,7 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     check flows, which files a common change touches. Keep it current when the structure changes.
   - `backend/visionstate/engine/` is the runtime: `Runtime` (`runtime.py`) is put together from one
     mixin per part (`models`, `checks`, `objects`, `reading`, `teaching`, `training`, `publishing`,
-    `history`) on `RuntimeBase` (`base.py`, the shared state); a part inherits the parts it uses.
+    `history`, `reminders`) on `RuntimeBase` (`base.py`, the shared state); a part inherits the parts it uses.
     `state.py` holds `SensorConfig`/`LiveState`, `logic.py` the pure decisions. New engine code goes
     into the part it belongs to; a long-running loop must survive any exception (log it once, try
     again) — only `CancelledError` may end it.

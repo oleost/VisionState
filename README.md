@@ -59,7 +59,8 @@ without writing code or leaving Home Assistant:
 - 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
   doesn't drag the sensor down.
 - 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
-  one click turns them into training data.
+  one click turns them into training data. Forgot about it? A reminder shows up in Home Assistant
+  (or on your phone) after a week — never a ping for every frame.
 - 🕓 **Everything in one history** — every state change, object that came and went and reading,
   with its frame; filter by sensor, by what was seen, by event and by time, and bookmark the view.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.

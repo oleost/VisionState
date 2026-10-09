@@ -951,6 +951,39 @@ test('storage limits can be changed', async ({ page }, info) => {
   errors.expectNone();
 });
 
+test('the review reminder can be set', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  try {
+    await page.goto('#/settings');
+    const card = page.locator('section', { has: page.getByRole('heading', { name: 'Review reminder' }) });
+    await expect(card.getByLabel('Remind me in Home Assistant')).toBeChecked(); // on by default
+    await expect(card.getByLabel('Remind again while they still wait')).not.toBeChecked();
+    await expect(card.getByRole('combobox')).toHaveValue(''); // no push by default
+    await expect(card.getByRole('button', { name: 'Send a test' })).toBeDisabled(); // no Home Assistant here
+    const save = card.getByRole('button', { name: 'Save reminder' });
+    await expect(save).toBeDisabled();
+
+    // Longer than frames waiting for review are kept (twice the 7 history days): it says so.
+    const days = card.getByText('When the oldest frame has waited').locator('xpath=..').locator('input');
+    await days.fill('20');
+    await expect(card.getByText('would never come')).toBeVisible();
+    await days.fill('3');
+    await expect(card.getByText('would never come')).toBeHidden();
+    await press(card.getByLabel('Remind again while they still wait'), info);
+    await card.getByText('Every').locator('xpath=..').locator('input').fill('2');
+    await expectNoHorizontalOverflow(page);
+    await press(save, info);
+    await expect(page.getByText('Reminder saved')).toBeVisible();
+    const saved = await (await request.get('api/v1/review-reminder')).json();
+    expect(saved).toMatchObject({ enabled: true, after_days: 3, repeat: true, repeat_days: 2, min_items: 1 });
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-reminder.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    const config = await (await request.get('api/v1/config')).json();
+    await request.put('api/v1/review-reminder', { data: config.reminder_defaults });
+  }
+});
+
 test('review queue can be answered', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/review');

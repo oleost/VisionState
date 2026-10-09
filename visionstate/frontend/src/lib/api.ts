@@ -12,6 +12,8 @@ import type {
   ReadPreview,
   ReadingQuality,
   ReadingSettings,
+  ReminderInfo,
+  ReminderRules,
   ReviewRules,
   Roi,
   ReviewItem,
@@ -202,6 +204,11 @@ export const api = {
 
   reviewRules: () => request<ReviewRules>('review-rules'),
   saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
+  reviewReminder: () => request<ReminderInfo>('review-reminder'),
+  saveReviewReminder: (rules: ReminderRules) => request<ReminderInfo>('review-reminder', send('PUT', rules)),
+  /** Sends a reminder now with these settings (saved or not); push_error: '' = pushed or no push chosen. */
+  testReviewReminder: (rules: ReminderRules) => request<{ push_error: string }>('review-reminder/test', send('POST', rules)),
+  notifyServices: () => request<string[]>('notify-services'),
   review: () =>
     request<{ total: number; items: ReviewItem[]; sensors: { id: number; name: string; count: number }[] }>('review'),
   /** Take every waiting item of one sensor out of the queue (as if each was skipped). */

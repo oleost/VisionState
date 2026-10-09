@@ -1,4 +1,5 @@
-"""App-wide endpoints: the UI config, status, the AI models, history storage limits and review rules.
+"""App-wide endpoints: the UI config, status, the AI models, history storage limits, review rules
+and the review reminder.
 
 Cameras and previews are in cameras.py, the review queue in review.py, import in imports.py."""
 
@@ -6,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -32,6 +34,8 @@ from ..settings import (
     READING_LIMITS,
     READING_MODES,
     READING_SENSOR_DEFAULTS,
+    REMINDER_DEFAULTS,
+    REMINDER_LIMITS,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -52,7 +56,7 @@ from ..settings import (
     VIDEO,
     merge_review,
 )
-from ..sources import SOURCE_TYPES
+from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
     ReviewRules,
@@ -86,6 +90,8 @@ def ui_config() -> dict:
         "roi_max_points": ROI_MAX_POINTS,
         "review_defaults": REVIEW_DEFAULTS,
         "review_limits": REVIEW_LIMITS,
+        "reminder_defaults": REMINDER_DEFAULTS,
+        "reminder_limits": REMINDER_LIMITS,
         "sensor_kinds": SENSOR_KINDS,
         "object_sensor_defaults": OBJECT_SENSOR_DEFAULTS,
         "object_defaults": OBJECT_DEFAULTS,
@@ -276,6 +282,63 @@ async def put_review_rules(body: ReviewRules, request: Request) -> dict:
     rt = runtime(request)
     await asyncio.to_thread(rt.set_global_review, body.model_dump())
     return merge_review(rt.global_review, None)
+
+
+# --- review reminder ----------------------------------------------------------
+
+_mlo = {k: v[0] for k, v in REMINDER_LIMITS.items()}
+_mhi = {k: v[1] for k, v in REMINDER_LIMITS.items()}
+
+
+class ReminderIn(BaseModel):
+    """The review reminder. Defaults and limits: settings.REMINDER_*."""
+
+    enabled: bool = REMINDER_DEFAULTS["enabled"]
+    after_days: int = Field(REMINDER_DEFAULTS["after_days"], ge=_mlo["after_days"], le=_mhi["after_days"])
+    min_items: int = Field(REMINDER_DEFAULTS["min_items"], ge=_mlo["min_items"], le=_mhi["min_items"])
+    repeat: bool = REMINDER_DEFAULTS["repeat"]
+    repeat_days: int = Field(REMINDER_DEFAULTS["repeat_days"], ge=_mlo["repeat_days"], le=_mhi["repeat_days"])
+    notify_service: str = Field(REMINDER_DEFAULTS["notify_service"], pattern=r"^(notify\.[a-z0-9_]+)?$")
+
+
+def _reminder_view(rt) -> dict:
+    sent_at = rt.reminder_sent_at
+    return {**rt.reminder_settings(), "sent_at": iso(datetime.fromtimestamp(sent_at, UTC)) if sent_at else None}
+
+
+@router.get("/review-reminder")
+def get_reminder(request: Request) -> dict:
+    """The review reminder, and when the reminder that is up now was sent (None: none is up)."""
+    return _reminder_view(runtime(request))
+
+
+@router.put("/review-reminder")
+async def put_reminder(body: ReminderIn, request: Request) -> dict:
+    rt = runtime(request)
+    await asyncio.to_thread(rt.set_reminder, body.model_dump())
+    return _reminder_view(rt)
+
+
+@router.post("/review-reminder/test")
+async def test_reminder(body: ReminderIn, request: Request) -> dict:
+    """Send a reminder now, as it would look, with the settings in the form (saved or not)."""
+    rt = runtime(request)
+    if not rt.ha.enabled:
+        raise HTTPException(409, "The Home Assistant API is not available")
+    try:
+        push_error = await rt.test_reminder(body.model_dump())
+    except SourceError as err:
+        raise HTTPException(502, f"Home Assistant did not take the notification: {redact(str(err))}") from err
+    return {"push_error": push_error}
+
+
+@router.get("/notify-services")
+async def notify_services(request: Request) -> list[str]:
+    """Home Assistant's notify services a reminder can also be pushed with (phones first)."""
+    try:
+        return await runtime(request).ha.notify_services()
+    except Exception as err:  # noqa: BLE001
+        raise HTTPException(502, f"Could not read Home Assistant's services: {redact(str(err))}") from err
 
 
 # --- import -------------------------------------------------------------------

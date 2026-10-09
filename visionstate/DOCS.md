@@ -58,7 +58,8 @@ Sensors made before 0.6.3b6 keep the IDs they have (`sensor.visionstate_<name>`,
 when exported and imported — nothing changes for them.
 
 In addition, the **VisionState** device has `sensor.visionstate_review_queue`: the number of
-frames waiting for review (with a per-sensor breakdown as attribute).
+frames waiting for review, with a per-sensor breakdown and `oldest_waiting_since` (when the
+oldest of them came) as attributes.
 
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
@@ -257,6 +258,16 @@ First choose **what it looks like**:
   Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
   again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
   it is not added a second time.
+- **Review reminder** (**Settings → Review reminder**, on by default): when frames have waited a
+  long time, a notification appears in Home Assistant (the bell in the sidebar) — *There are 11
+  frames waiting for review in VisionState, the oldest for 8 days* — with a link to the app. It
+  never comes just because a frame arrived: only once the oldest frame has waited 7 days (and at
+  least 1 frame waits; both can be changed). It goes away by itself once those frames are
+  reviewed. **Remind again** (off by default) repeats it every few days while they still wait.
+  **Also push to a phone** (off by default) sends it to a notify service as well, such as the
+  Companion app (`notify.mobile_app_…`); tapping it opens VisionState. **Send a test** shows what
+  it looks like. Frames waiting for review are removed after twice the history days (Storage), so
+  the reminder must come before that — the card warns when it would not.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
   was wrong, add it to the dataset with the correct state. Filter it by state or event to find
   the frames you are looking for (see [History](#history)).

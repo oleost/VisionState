@@ -264,6 +264,17 @@ the pixels are decoded.
   **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
   waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
   up; given answers and the reading counts stay.
+  **Review reminder** (global, DB setting `reminder`, defaults in `settings.REMINDER_DEFAULTS`,
+  `engine/reminders.py`, decision in `logic.reminder_action`): when at least `min_items` (1)
+  frames wait and the oldest has waited `after_days` (7), a `persistent_notification` with a fixed
+  `notification_id` (`visionstate_review`, so it is replaced, never piled up) links to the app
+  (`/app/<slug>` from Home Assistant 2026.2, `/hassio/ingress/<slug>` before; the slug from the
+  Supervisor). Optionally also a `notify.<service>` push (off by default; `data.url`/`clickAction`
+  open the app). One reminder per round (`reminder_sent_at` in the DB, survives restarts); again
+  every `repeat_days` only with `repeat` (off by default). The round ends — and the notification is
+  dismissed — when it is no longer due. Looked at hourly and right after the queue changes. A
+  failed push is logged and not retried (no hourly notifications); a failed notification is tried
+  again. Not when a frame arrives: no nagging.
   An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
   two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
   relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
@@ -303,7 +314,8 @@ flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate 
 saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
-for review, per-sensor breakdown as attribute).
+for review; attributes: per-sensor breakdown, `oldest_waiting_since`). The review reminder (§7)
+uses Home Assistant's REST API (`persistent_notification`, `notify`), not MQTT.
 
 Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
 `last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
@@ -492,6 +504,8 @@ sensor settings) lives in the UI.
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
+| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
+| **Review reminder** | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | next beta |
 | **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;

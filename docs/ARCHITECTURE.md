@@ -30,8 +30,8 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules), `common.py` (input models and views shared by them) |
-| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules, review reminder), `common.py` (input models and views shared by them) |
+| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
@@ -52,7 +52,8 @@ parts it uses — its class line says what it depends on:
 Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── TeachingMixin ── ModelsMixin ── TrainingMixin
         │                │                    └─ PublishingMixin
         │                └─ ReadingChecksMixin ── ModelsMixin, PublishingMixin
-        └─ HistoryMixin ── PublishingMixin                (all of them on RuntimeBase)
+        ├─ HistoryMixin ── PublishingMixin                (all of them on RuntimeBase)
+        └─ RemindersMixin ── PublishingMixin
 ```
 
 | File | Part |
@@ -68,6 +69,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── TeachingMixin �
 | `training.py` | Training the state sensors' heads; embeddings of samples |
 | `publishing.py` | Discovery and values to Home Assistant, the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
+| `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
 ## How one check flows
 

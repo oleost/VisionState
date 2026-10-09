@@ -271,6 +271,30 @@ REVIEW_LIMITS = {
     "spot_rate": (0.0, 0.5),
 }
 
+# A reminder of a forgotten review queue: a notification in Home Assistant (and, if chosen, a push
+# to a phone) once the oldest frame has waited `after_days` and at least `min_items` frames are
+# waiting — never when a frame arrives. It goes away by itself when the queue is handled. Global
+# (Settings → Review reminder), stored in the database.
+REMINDER_DEFAULTS = {
+    "enabled": True,
+    "after_days": 7,
+    "min_items": 1,
+    "repeat": False,  # remind again every repeat_days while the frames still wait
+    "repeat_days": 7,
+    "notify_service": "",  # also push with this notify service ("notify.mobile_app_…"); "" = no push
+}
+REMINDER_LIMITS = {
+    "after_days": (1, 90),
+    "min_items": (1, 1000),
+    "repeat_days": (1, 90),
+}
+REMINDER = {
+    "check_interval_s": 3600,  # how often the queue's age is looked at (and right after it changes)
+    "notification_id": f"{APP_SLUG}_review",  # one notification, replaced instead of piling up
+    "test_notification_id": f"{APP_SLUG}_review_test",
+    "title": "VisionState",
+}
+
 # --- Uploads ----------------------------------------------------------------
 
 UPLOAD_LIMITS = {
@@ -377,6 +401,11 @@ def merge_review(global_rules: dict | None, sensor_overrides: dict | None) -> di
     merged = {**REVIEW_DEFAULTS, **(global_rules or {})}
     merged.update({k: v for k, v in (sensor_overrides or {}).items() if v is not None and k in REVIEW_DEFAULTS})
     return merged
+
+
+def merge_reminder(stored: dict | None) -> dict:
+    """The review reminder: stored values on top of REMINDER_DEFAULTS."""
+    return {**REMINDER_DEFAULTS, **{k: v for k, v in (stored or {}).items() if k in REMINDER_DEFAULTS}}
 
 
 def merge_objects(stored: dict | None) -> dict:

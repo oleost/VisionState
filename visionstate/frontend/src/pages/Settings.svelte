@@ -2,6 +2,7 @@
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReminderCard from '../lib/components/ReminderCard.svelte';
   import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
   import StorageCard from '../lib/components/StorageCard.svelte';
   import { mb } from '../lib/format';
@@ -193,6 +194,8 @@
         </button>
       {/if}
     </section>
+
+    <ReminderCard />
 
     <StorageCard />
 
