@@ -6,6 +6,7 @@
   import { route } from './lib/router.svelte';
   import { POLL, SENSOR_TABS, type SensorTab } from './lib/ui';
   import Dashboard from './pages/Dashboard.svelte';
+  import History from './pages/History.svelte';
   import NewSensor from './pages/NewSensor.svelte';
   import Review from './pages/Review.svelte';
   import SensorPage from './pages/SensorPage.svelte';
@@ -36,6 +37,8 @@
     <SensorPage id={Number(id)} tab={sensorTab} />
   {:else if section === 'review'}
     <Review />
+  {:else if section === 'history'}
+    <History />
   {:else if section === 'settings'}
     <Settings />
   {:else}

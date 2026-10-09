@@ -41,6 +41,10 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
     downloads every bundled model of all three.
   - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects` and `reading`; the UI's tabs per kind
     are in `ui.ts` (`TABS_BY_KIND`). New features must say which kind(s) they apply to.
+  - The History page and every sensor's History tab are one view (`lib/components/history/`,
+    a row component per kind); its filter is in the page URL (`lib/history.ts`). On the server
+    `api/history.py` turns every filter into SQL in one place (`history_query`); a new filter
+    goes there, a new event into `settings.HISTORY_EVENTS` + `EVENT_ROWS` + `ui.ts HISTORY_EVENTS`.
   - Object sensors can be taught (`teach.py`, `api/teach.py`, `settings.TEACH`): taught boxes are
     `sample` rows with `object_label`; own labels live in `objects["custom"]`. The detector is never
     retrained; DINOv2 (always loaded) compares boxes with the taught ones.

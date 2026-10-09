@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0
+
+A release about looking back: everything your sensors recorded in one place, and the images
+behind a sensor's mistakes one tap away.
+
+### New
+
+- **History page**, next to Review: what every sensor recorded, in one list. Filter it by
+  sensors, by *what* (a state, an object or your own label — *Car* and *Our car* apart), by
+  event (changed, detected, cleared, rejected reading, sent to review …), by time (the last hour,
+  day, week or month, or from … to …) and by *waiting for review*; each filter takes several
+  choices and shows how many entries each would find. The filter is part of the page address, so
+  it survives a reload and can be bookmarked.
+- **Each sensor's History tab** is the same list for that sensor, with the same filters, and
+  **Open in all history** takes them to the History page. It shows 50 entries at a time with
+  **Load more** (it used to stop at the newest 100).
+- New entries no longer move the list while you read it: **Show N new** appears instead.
+- **Quality tab: tap a red cell of *What gets mixed up*** to see the images behind it — e.g. the
+  ones labelled *Partial* that the AI took for *Closed* — and keep, relabel or delete them right
+  under the matrix. Images you already said are right are shown too, marked as such.
+
+### Fixed
+
+- A red cell of *What gets mixed up* counted images you had said are right, while they were
+  hidden and left out at the next training. They are kept and shown now (after the next
+  training; an empty cell offers **Retrain now**).
+
+### Changed
+
+- A state sensor's card on the dashboard links to **History** instead of **Upload**, like the
+  cards of object and reading sensors (Upload is still a tab of the sensor).
+
 ## 0.6.5
 
 ### Fixed

@@ -322,6 +322,23 @@ STORAGE_LIMITS = {
     "history_max_gb": (0.0, 1000.0),
 }
 
+# --- Browsing the history (the History page and each sensor's History tab) ---------------
+
+HISTORY = {
+    "page_size": 50,
+    "max_page_size": 200,
+    "max_filter_values": 50,  # values of one filter (sensors, keys, events) in one request
+    "window_presets_h": (1, 24, 24 * 7, 24 * 30),  # time windows offered besides "any time"
+    "poll_s": 10.0,  # how often an open history asks whether newer rows matching its filter arrived
+}
+# What a history row can be, per sensor kind (a filter takes any of them; names are unique across
+# kinds). api/history.py says which rows each one matches, the UI how it is named.
+HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
+    KIND_STATES: ("change", "flagged"),  # a published change; a frame put in the review queue
+    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked"),  # "asked": "Is this Our car?"
+    KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
+}
+
 # --- Runtime ------------------------------------------------------------------
 
 RUNTIME = {

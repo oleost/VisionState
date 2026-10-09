@@ -1,4 +1,4 @@
-"""Sensor endpoints: CRUD, live frames, quality, history and export."""
+"""Sensor endpoints: CRUD, live frames, quality and export (the history is in history.py)."""
 
 from __future__ import annotations
 
@@ -41,7 +41,6 @@ from .common import (
     StateIn,
     Triggers,
     get_sensor,
-    iso,
     runtime,
     sample_counts,
     sensor_view,
@@ -49,6 +48,7 @@ from .common import (
     unique_slug,
     validate_states,
 )
+from .history import prediction_view
 
 router = APIRouter(prefix=f"{API_PREFIX}/sensors", tags=["sensors"])
 
@@ -383,19 +383,22 @@ def quality(sensor_id: int, request: Request) -> dict:
         counts = sample_counts(s, sensor)
         confusion = info.confusion if info else None
         suspects = current_suspects(s, sensor, info)
+        unchecked = sum(1 for item in suspects if not item["verified"])
         return {
             "sensor": view,
             "counts": counts,
             "confusion": confusion,
             "accuracy": info.accuracy if info else None,
             "suspects": suspects,
-            "tips": quality_tips(view["states"], counts, confusion, len(suspects)),
+            "tips": quality_tips(view["states"], counts, confusion, unchecked),
             "targets": QUALITY,
         }
 
 
 def current_suspects(session: Session, sensor: Sensor, info: ModelInfo | None) -> list[dict]:
-    """Suspects from the last training that still exist, are unverified and still carry that label."""
+    """The samples the last training's cross-validation guessed wrong (the red cells of the
+    confusion matrix) that still exist and still carry that label. ``verified``: the user said the
+    label is right — no longer listed as possibly mislabelled, still shown under its cell."""
     if info is None or not info.suspects:
         return []
     key_by_state = {st.id: st.key for st in sensor.states}
@@ -404,32 +407,12 @@ def current_suspects(session: Session, sensor: Sensor, info: ModelInfo | None) -
     result = []
     for item in info.suspects:
         sample = samples.get(item["sample_id"])
-        if sample is None or sample.verified:
+        if sample is None:
             continue
         labels = [key_by_state.get(lab.state_id) for lab in sample.labels]
         if item["label"] in labels:
-            result.append(item)
+            result.append({**item, "verified": sample.verified})
     return result
-
-
-def prediction_view(p: Prediction) -> dict:
-    """A history row (also a review queue item) as the UI shows it."""
-    return {
-        "id": p.id,
-        "sensor_id": p.sensor_id,
-        "created_at": iso(p.created_at),
-        "state_key": p.state_key,
-        "published_key": p.published_key,
-        "confidence": p.confidence,
-        "probs": p.probs,
-        "is_change": p.is_change,
-        "review_reason": p.review_reason,
-        "reviewed": p.reviewed,
-        "has_frame": bool(p.frame),
-        "detections": p.detections,
-        "read_ok": p.read_ok,
-        "correct_value": p.correct_value,
-    }
 
 
 @router.get("/{sensor_id}/reading-quality")
@@ -521,21 +504,6 @@ async def reading_export(sensor_id: int, request: Request, background: Backgroun
         raise HTTPException(404, str(err)) from err
     background.add_task(tmp.unlink, missing_ok=True)
     return FileResponse(tmp, media_type="application/zip", filename=filename)
-
-
-@router.get("/{sensor_id}/history")
-def history(sensor_id: int, request: Request, limit: int = 100, offset: int = 0) -> list[dict]:
-    rt = runtime(request)
-    with rt.db.session() as s:
-        get_sensor(s, sensor_id)
-        rows = s.scalars(
-            select(Prediction)
-            .where(Prediction.sensor_id == sensor_id)
-            .order_by(Prediction.created_at.desc())
-            .limit(min(limit, 500))
-            .offset(offset)
-        )
-        return [prediction_view(p) for p in rows]
 
 
 @router.get("/{sensor_id}/export")

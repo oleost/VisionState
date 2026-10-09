@@ -50,12 +50,31 @@ def test_mislabelled_sample_is_flagged_and_can_be_verified(tmp_path, model_dir):
 
         assert wait_for(lambda: any(s["sample_id"] == wrong for s in suspects()))
         item = next(s for s in suspects() if s["sample_id"] == wrong)
-        assert item["label"] == "closed" and item["predicted"] == "open"
-        tips = client.get(f"/api/v1/sensors/{sid}/quality").json()["tips"]
-        assert any(t["action"] == "suspects" for t in tips)
+        assert item["label"] == "closed" and item["predicted"] == "open" and not item["verified"]
+        quality = client.get(f"/api/v1/sensors/{sid}/quality").json()
+        assert any(t["action"] == "suspects" for t in quality["tips"])
+        # It is one of the samples counted in its cell of the confusion matrix.
+        keys, matrix = quality["confusion"]["keys"], quality["confusion"]["matrix"]
+        assert matrix[keys.index("closed")][keys.index("open")] >= 1
 
-        # "The label is right" hides it without retraining.
+        # "The label is right" marks it without retraining: no longer a warning, still in its cell.
         client.post(f"/api/v1/sensors/{sid}/samples/verify", json={"sample_ids": [wrong]})
+        assert next(s for s in suspects() if s["sample_id"] == wrong)["verified"]
+        quality = client.get(f"/api/v1/sensors/{sid}/quality").json()
+        assert all(t["action"] != "suspects" for t in quality["tips"]) or any(not s["verified"] for s in suspects())
+
+        # Still listed after the next training, as long as its cell counts it (it used to be dropped).
+        version = client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"]
+        client.post(f"/api/v1/sensors/{sid}/retrain")
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] > version)
+        quality = client.get(f"/api/v1/sensors/{sid}/quality").json()
+        keys, matrix = quality["confusion"]["keys"], quality["confusion"]["matrix"]
+        listed = [s for s in quality["suspects"] if s["label"] == "closed" and s["predicted"] == "open"]
+        assert len(listed) == matrix[keys.index("closed")][keys.index("open")]
+        assert next(s for s in listed if s["sample_id"] == wrong)["verified"]
+
+        # Relabelled: it no longer carries the label it was guessed wrong for.
+        client.post(f"/api/v1/sensors/{sid}/samples/label", json={"sample_ids": [wrong], "state_key": "open"})
         assert all(s["sample_id"] != wrong for s in suspects())
 
 

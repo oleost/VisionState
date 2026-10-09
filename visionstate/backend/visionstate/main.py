@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import cameras, imports, review, samples, sensors, system, teach
+from .api import cameras, history, imports, review, samples, sensors, system, teach
 from .db import Database
 from .engine import Runtime
 from .settings import INGRESS_PROXY_IP, VERSION, Settings, load_settings
@@ -47,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(system.router)
     app.include_router(cameras.router)
     app.include_router(review.router)
+    app.include_router(history.router)
     app.include_router(imports.router)
     app.include_router(sensors.router)
     app.include_router(samples.router)

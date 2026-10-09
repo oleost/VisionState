@@ -356,6 +356,10 @@ export interface AppConfig {
   reading_export_limit: number;
   storage_defaults: { history_max_gb: number };
   storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
+  /** Browsing the history: page sizes, time windows offered (hours) and how often it looks for new rows. */
+  history: { page_size: number; max_page_size: number; max_filter_values: number; window_presets_h: number[]; poll_s: number };
+  /** What a history row can be, per sensor kind (names are unique across kinds). */
+  history_events: Record<SensorKind, string[]>;
 }
 
 export interface Status {
@@ -420,6 +424,32 @@ export interface Prediction {
   correct_value: string | null;
 }
 
+/** Which history rows (api/history.py HistoryFilter); several values of one filter match any of them. */
+export interface HistoryFilter {
+  sensor?: number[];
+  key?: string[];
+  event?: string[];
+  waiting?: boolean;
+  since?: string;
+  until?: string;
+}
+
+export interface HistoryPage {
+  items: Prediction[];
+  total: number;
+  /** Cursor of the next page, null on the last. */
+  next: string | null;
+  /** Cursor of the newest row the filter matches (to ask what arrived since). */
+  newest: string | null;
+}
+
+/** What each filter could still find: rows matching the rest of the filter. */
+export interface HistoryFacets {
+  sensors: { id: number; count: number }[];
+  keys: { sensor_id: number; key: string; count: number }[];
+  events: { event: string; count: number }[];
+}
+
 export interface ReviewItem extends Prediction {
   sensor: {
     id: number;
@@ -445,6 +475,8 @@ export interface Suspect {
   label: string;
   predicted: string;
   confidence: number;
+  /** The user said the label is right: no longer "possibly mislabelled", still in its matrix cell. */
+  verified: boolean;
 }
 
 export interface Quality {

@@ -81,10 +81,11 @@ class TrainingMixin(RuntimeBase):
             info = s.get(ModelInfo, sensor_id)
             version = (info.version if info else 0) + 1
         result = classifier.train(vectors, labels, self.embedder.spec.id, version, cfg.state_keys)
+        # Every sample guessed wrong, also those the user said are right: each is counted in a red
+        # cell of the confusion matrix, which lists them (api/sensors.py current_suspects).
         suspects = [
             {"sample_id": samples[item["index"]].id, **{k: v for k, v in item.items() if k != "index"}}
             for item in result.suspects
-            if not samples[item["index"]].verified
         ]
         head_path = self.settings.heads_dir / f"{sensor_id}.joblib"
         if result.head is None:

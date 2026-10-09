@@ -4,10 +4,11 @@
   import { BETA_VERSION_PATTERN } from '../ui';
   import Logo from './Logo.svelte';
 
-  const section = $derived(route.parts[0] === 'review' ? 'review' : route.parts[0] === 'settings' ? 'settings' : 'sensors');
+  const section = $derived(['review', 'history', 'settings'].includes(route.parts[0]) ? route.parts[0] : 'sensors');
   const items = $derived([
     { id: 'sensors', label: 'Sensors', path: paths.dashboard(), badge: 0 },
     { id: 'review', label: 'Review', path: paths.review(), badge: app.status?.review_count ?? 0 },
+    { id: 'history', label: 'History', path: paths.history(), badge: 0 },
     { id: 'settings', label: 'Settings', path: paths.settings(), badge: 0 },
   ]);
 </script>
@@ -115,6 +116,33 @@
     }
     .brand span {
       display: none;
+    }
+  }
+  @media (max-width: 600px) {
+    nav {
+      gap: var(--space-3);
+    }
+    /* Four sections on a phone: tighter. If they still do not fit (a very narrow screen, a large
+       review count), the links scroll instead of widening the page. */
+    .links {
+      gap: 0;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .links a {
+      gap: var(--space-1);
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+  }
+  @media (max-width: 440px) {
+    /* The logo goes on phones: Sensors leads to the same page. */
+    .brand {
+      display: none;
+    }
+    .links {
+      margin-left: -8px; /* the first link's text lines up with the page */
     }
   }
 </style>

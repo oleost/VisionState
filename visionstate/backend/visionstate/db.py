@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -162,6 +163,8 @@ class Prediction(Base):
     """
 
     __tablename__ = "prediction"
+    # The history of some sensors, newest first, paged by (time, id): see api/history.py.
+    __table_args__ = (Index("ix_prediction_sensor_time", "sensor_id", "created_at", "id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), index=True)
@@ -240,6 +243,10 @@ class Database:
                         columns = {c["name"] for c in inspect(conn).get_columns(table)}
                         if column not in columns:
                             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+            # Indexes added later: create_all only makes those of new tables. Older versions ignore them.
+            for table in Base.metadata.sorted_tables:
+                for index in table.indexes:
+                    index.create(conn, checkfirst=True)
             conn.execute(text(f"PRAGMA user_version = {SCHEMA_VERSION}"))
 
     @contextmanager

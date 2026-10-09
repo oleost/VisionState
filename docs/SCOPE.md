@@ -338,13 +338,29 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
 5. **Dataset** — filter by state/unlabelled, relabel, unlabel, delete.
 6. **Quality** — accuracy, confusion matrix, samples per state (day/night), suggestions,
-   *possibly mislabelled* images with keep / change / delete.
-7. **History** — published state changes and flagged frames; "add as" to the dataset.
+   *possibly mislabelled* images with keep / change / delete. A red cell of the confusion matrix
+   lists the images behind it (the cross-validation's wrong guesses, also those the user kept).
+7. **History** — published state changes and flagged frames; "add as" to the dataset. The same
+   list as the History page (11), fixed to this sensor.
 8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
     global review rules, storage (disk use and history limits), import.
+11. **History** — every sensor's history rows in one list, filtered by sensors, *what* (state,
+    object class or own label — the row's `state_key`; never a reading), event, time window and
+    *waiting for review*, newest or oldest first. Each filter takes several values (any of them
+    matches); filters combine with *and*. Events are a registry per kind
+    (`settings.HISTORY_EVENTS`: `change`, `flagged`; `appeared`, `cleared`, `filtered`, `asked`;
+    `value`, `rejected`, `verified`), sent to the UI in `/config`; `api/history.py` says which rows
+    each matches. One function (`history_query`) turns a filter into SQL for the list
+    (`GET /history`, paged by a cursor on `(created_at, id)` so rows arriving at the top never
+    repeat a row), its count and the facets (`GET /history/facets`: rows per sensor, key and event,
+    each counted without its own filter so other choices stay offered). The filter lives in the
+    page URL (`#/history?sensor=3,5&key=our_car`); a sensor's History tab is the same view with the
+    sensor fixed, and links to the page. New rows are counted every `HISTORY["poll_s"]`
+    (`newer_than` = the newest row when loaded) and shown on request, so the list never moves
+    under a finger. Index `(sensor_id, created_at, id)`; indexes added later are created at start-up.
 
 Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
 image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and

@@ -356,7 +356,7 @@ def test_reading_sensor_flow(settings):
         assert 0 < float(sent[f"{base}/rate"]) <= 0.5
 
         def history():
-            return client.get(f"/api/v1/sensors/{sid}/history").json()
+            return client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
 
         # Rows are written right after a value is published, so wait for the latest one.
         assert wait_for(lambda: any(h["published_key"] == "12346.1" for h in history()), timeout=10)
@@ -426,7 +426,7 @@ def test_reading_sensor_flow(settings):
         # A verified reading is kept like a training image, whatever the history limits say.
         rt.set_storage_limits({"history_days": 1, "history_max_gb": 0.000001})
         rt.cleanup_history()
-        kept = [h["id"] for h in client.get(f"/api/v1/sensors/{sid}/history").json()]
+        kept = [h["id"] for h in client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]]
         assert kept == [item["id"]]
         rt.set_storage_limits({})
 
