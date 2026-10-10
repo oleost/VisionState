@@ -15,6 +15,11 @@ Branches, channels, versions and the release steps. How to work on the code is i
 | Media folder | `/media/visionstate` | `/media/visionstate_beta` |
 | GitHub release | latest | pre-release |
 
+- **Changes go to `beta`.** The maintainer commits and pushes straight to `beta` (after the local
+  checks): config.yaml keeps its version, so Home Assistant users get nothing new until the next
+  tag, and a PR would only run CI twice. Contributors and Dependabot open a PR against `beta`. Edit
+  `visionstate/DOCS.md` together with the feature it describes: the app's Documentation tab may
+  show it from the repository before the feature is released.
 - **Never commit to `main` directly.** Documentation-only changes (Markdown, images, issue
   templates) may go to `main` through a PR without a beta; merge `main` back into `beta` afterwards.
 - `scripts/channel.py` is the only way to change the name, version and channel fields in

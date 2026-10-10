@@ -8,8 +8,9 @@ and AI assistants.
 
 - **Language:** everything in the repository (code, comments, UI text, docs, commit messages) is
   written in English.
-- Public repository `github.com/oleost/VisionState`, Apache-2.0. Pull requests go to `beta`;
-  releases and branches: [`docs/RELEASING.md`](docs/RELEASING.md).
+- Public repository `github.com/oleost/VisionState`, Apache-2.0, owned by its maintainer (oleost).
+  The maintainer (and Claude working for them) commits straight to `beta`; everyone else opens a
+  pull request against `beta`. Branches and releases: [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Where things are written down
 
