@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1b6
+
+### Changed
+
+- **Export readings** (Quality tab of a reading sensor) always takes the accepted readings
+  nobody checked too (marked as unchecked), without a checkbox. Instead of at most 300 readings,
+  the ZIP holds as many as fit in 24 MB, so GitHub takes it (about 1,000): the checked ones
+  first, then the newest unchecked ones.
+- The **Check 10 accepted readings** button is gone again: the accepted readings come along
+  without it.
+
 ## 0.7.1b5
 
 ### Changed

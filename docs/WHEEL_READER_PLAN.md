@@ -149,10 +149,19 @@ In the decoder the expectation can be tested, explained, set per sensor and used
 
 ### B1. The export ("Export checked readings")
 
-**Built in 0.7.1b5**, with two changes to the table below: the light is recorded per reading
-automatically (greyscale picture, and whether VisionState had the sensor's light on) instead of a
-flag in the dialog, and frames are **not** deduplicated in the app — a reading of the same frame is
-still a reading; the training tools remove duplicate images (§B4).
+**Built in 0.7.1b5–b6**, with these changes to the table below (decided 2026-10-10):
+- the light is recorded per reading automatically (greyscale picture, and whether VisionState had
+  the sensor's light on) instead of a flag in the dialog;
+- frames are **not** deduplicated in the app — a reading of the same frame is still a reading; the
+  training tools remove duplicate images (§B4);
+- the unchecked accepted readings are **always** included (no option, no count limit): the images
+  are what is scarce. Their value is the reader's guess, so the tools use them as labels only after
+  a check (§B4);
+- no spot-check button (0.7.1b5 had one; removed in b6);
+- no count limits: one ZIP of at most 24 MB (GitHub's limit is 25 MB per file; about 1,000
+  readings), checked readings first, then the newest unchecked ones; what does not fit is counted
+  in `left_out`. Splitting into parts was built and dropped as more than we need now. Images are
+  not scaled down: the data stays as the app stored it.
 
 It already gives the region with a margin, the right value, the answer, the region each reading
 was made in and the CC0 licence. To add (format version `"format": 2` in `readings.json`, and
@@ -193,6 +202,10 @@ day only. The user looks at the images before sharing (README.txt).
 ### B4. Data hygiene
 
 - Deduplicate by frame. Split by meter (or by date for one meter, as for #40).
+- **Unchecked readings** (`"answer": "unchecked"`) are the reader's own value, so they are never a
+  label as they are (principle 3). They become one after a check: a person looks at them, or the
+  sequence confirms them (a counter only goes up: a value between two confirmed neighbours that
+  fits the rate). Until the tools do that check, they skip them.
 - A label check after every training run (§3).
 - `VisionStateLocal/README.md` lists the source and licence of every set, as it does now.
 

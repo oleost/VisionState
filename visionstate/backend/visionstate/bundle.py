@@ -84,24 +84,28 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 2  # readings.json; 2 added per-reading reader details, "meter" and unchecked readings
+READINGS_FORMAT = 2  # readings.json; 2 added per-reading reader details, "meter", unchecked readings
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
 
 Every image is only the region the sensor reads (a display or counter, with a little room
-around it) — not the whole camera picture. readings.json lists for each image (newest first)
-what the reader read, the value it made of it, why it was rejected (if it was), and the answer
-given in VisionState: "read correctly", "misread" (with the right value when it was entered),
-or "unchecked" (an accepted reading nobody checked; only when chosen in the export).
+around it) — not the whole camera picture. readings.json lists for each image what the reader
+read, the value it made of it, why it was rejected (if it was), and the answer given in
+VisionState: "read correctly", "misread" (with the right value when it was entered), or
+"unchecked" (an accepted reading nobody checked: the reader's value, not confirmed by a person).
+The checked readings come first, newest first, then the unchecked ones, newest first.
 
 Per reading it also says which reader read it ("reader"; null for readings from before
 VisionState 0.7.1b5), the app version ("app"), whether the whole picture was greyscale (an
 infrared or night camera) and whether VisionState had switched the sensor's light on ("lamp").
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
 image), how sure it was, its most likely positions, the common shift of all wheels and the
-value with the last wheel's fraction. "seconds" is the time since the oldest reading in this
-file (no time of day).
+value with the last wheel's fraction. "seconds" is the time since the oldest reading of the
+export (no time of day).
+
+The file stays under 24 MB (GitHub takes files up to 25 MB): the readings that did not fit
+are counted in "left_out" — export again later for newer ones.
 
 The reader does not learn from these answers by itself. Shared, they help make reading better
 for everyone: what goes wrong on which kind of display or meter.
@@ -126,20 +130,14 @@ Full text: https://creativecommons.org/publicdomain/zero/1.0/
 ANSWERS = {True: "read correctly", False: "misread", None: "unchecked"}
 
 
-def export_readings(
-    db: Database,
-    storage: Storage,
-    sensor_id: int,
-    target: Path,
-    reader: str,
-    meter: str = "",
-    unchecked: bool = False,
-) -> str:
-    """Writes the readings verified by hand (region crops + what was read) to ``target``.
+def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path, reader: str, meter: str = "") -> str:
+    """Writes a reading sensor's readings to share to ``target`` (one ZIP).
 
-    ``meter``: what the user says the meter is. ``unchecked``: also the newest accepted readings
-    nobody checked. Returns the suggested download filename; raises LookupError when there is
-    nothing to export.
+    The readings checked by hand come first, then the accepted ones nobody checked (marked
+    "unchecked"), each newest first; every image is the region crop of the stored frame. The ZIP
+    stays under ``READING["export_max_mb"]``; the readings that did not fit are counted.
+    ``meter``: what the user says the meter is. Returns the suggested download filename; raises
+    LookupError when there is nothing to export.
     """
     from . import imaging, readers
     from .settings import READING, merge_reading
@@ -151,37 +149,41 @@ def export_readings(
         settings = merge_reading(sensor.reading)
         wheels = settings["display"] == "counter" and settings["counter_reader"] == "wheels"
         mine = (Prediction.sensor_id == sensor_id, Prediction.frame.is_not(None))
-        rows = list(
-            s.scalars(
-                select(Prediction)
-                .where(*mine, Prediction.read_ok.is_not(None))
-                .order_by(Prediction.created_at.desc())
-                .limit(READING["export_limit"])
-            ).all()
-        )
-        if unchecked:
-            rows += s.scalars(
+        newest = Prediction.created_at.desc()
+        rows = [
+            *s.scalars(select(Prediction).where(*mine, Prediction.read_ok.is_not(None)).order_by(newest)),
+            *s.scalars(
                 select(Prediction)
                 .where(*mine, Prediction.read_ok.is_(None), Prediction.published_key.is_not(None))
-                .order_by(Prediction.created_at.desc())
-                .limit(READING["export_unchecked_limit"])
-            ).all()
-        rows.sort(key=lambda row: row.created_at, reverse=True)
+                .order_by(newest)
+            ),
+        ]
         current = sensor.roi
         slug = sensor.slug
     oldest = min((row.created_at for row in rows), default=None)
-    items = []
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+    budget = READING["export_max_mb"] * 1_000_000
+    items: list[dict] = []
+    listed = 0  # length of the readings so far in readings.json
+    left_out = 0
+    with target.open("wb") as file, zipfile.ZipFile(file, "w", zipfile.ZIP_DEFLATED) as archive:
         for row in rows:
             if not row.frame or not (path := storage.history_path(sensor_id, row.frame)).exists():
+                continue
+            if left_out:  # full
+                left_out += 1
                 continue
             details = row.probs or {}
             frame = imaging.decode(path.read_bytes())
             # Cut with the region it was read in; rows from before that was kept use today's region.
             region_then = "roi" in details
             box = imaging.region_box(details["roi"] if region_then else current, READING["export_margin"])
+            image = imaging.encode_jpeg(imaging.crop_box(frame, box))
+            # Room for readings.json still to come: it compresses to well under a fifth.
+            if items and file.tell() + len(image) + listed // 4 + 100_000 > budget:
+                left_out += 1
+                continue
             name = f"images/{len(items) + 1:04d}.jpg"
-            archive.writestr(name, imaging.encode_jpeg(imaging.crop_box(frame, box)))
+            archive.writestr(name, image, compress_type=zipfile.ZIP_STORED)  # JPEG does not shrink
             items.append(
                 {
                     "file": name,
@@ -201,8 +203,9 @@ def export_readings(
                     **({"wheels": details["wheels"]} if "wheels" in details else {}),
                 }
             )
+            listed += len(json.dumps(items[-1]))
         if not items:
-            raise LookupError("No verified readings yet")
+            raise LookupError("No readings to export yet")
         manifest = {
             "format": READINGS_FORMAT,
             "app_version": VERSION,
@@ -212,6 +215,7 @@ def export_readings(
             "settings": {
                 k: settings[k] for k in ("mode", "display", "digits", "counter_reader", "decimals", "unit", "max_step")
             },
+            "left_out": left_out,
             "readings": items,
         }
         archive.writestr("readings.json", json.dumps(manifest, indent=2, ensure_ascii=False))

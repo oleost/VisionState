@@ -893,36 +893,19 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
     await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
 
-    // The checked readings can be exported to share: a ZIP with the region of each, and a licence.
+    // The readings can be exported to share (the checked ones and the accepted one nobody checked):
+    // a ZIP with the region of each and a licence, and what the meter is.
     await expect(page.getByText('The reader does not learn from your answers')).toBeVisible();
-    const exportLink = page.getByRole('link', { name: 'Export checked readings' });
-    await expect(exportLink).toBeVisible();
-    const zip = await request.get(`api/v1/sensors/${id}/reading-export`);
+    const exportLink = page.locator('.share').getByRole('link', { name: 'Export readings' });
+    await page.getByLabel(/What meter is this/).fill('Gas meter, white on black');
+    await expect(exportLink).toHaveAttribute('href', /meter=Gas\+meter%2C\+white\+on\+black/);
+    const zip = await request.get((await exportLink.getAttribute('href'))!);
     expect(zip.ok()).toBeTruthy();
     expect(zip.headers()['content-disposition']).toContain('visionstate-readings-gas_meter.zip');
     expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
-    await expectNoClipping(page, '.btn, .chip, .card');
-    // What the meter is, and the accepted reading nobody checked (the first one, 500), go along when asked.
-    await page.getByLabel(/What meter is this/).fill('Gas meter, white on black');
-    await expect(exportLink).toHaveAttribute('href', /meter=Gas\+meter%2C\+white\+on\+black/);
-    const withUnchecked = page.getByRole('checkbox', { name: /accepted readings nobody checked \(1\)/ });
-    await press(withUnchecked, info);
-    await expect(withUnchecked).toBeChecked();
-    await expect(exportLink).toHaveAttribute('href', /unchecked=true/);
-    await expect(page.locator('.share')).toContainText('and 1 unchecked');
-    expect((await request.get((await exportLink.getAttribute('href'))!.replace(/^\.\//, ''))).ok()).toBeTruthy();
     await expectNoHorizontalOverflow(page);
-    await expectNoClipping(page, '.btn, .chip, .card, .check');
+    await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-export.png'), fullPage: true });
-    // A spot check sends it to the review queue, and it is answered right here.
-    await press(page.getByRole('button', { name: 'Check 1 accepted reading' }), info);
-    const told = page.getByText('1 accepted reading to check below');
-    await expect(told).toBeVisible();
-    await expect(told).toBeHidden(); // on a phone the toast covers the bottom of the list, where it is
-    const spot = page.locator('.card.item').filter({ hasText: 'Spot check' });
-    await press(spot.getByRole('button', { name: 'Read correctly' }), info);
-    await expect(spot.getByRole('button', { name: 'Change' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Check \d+ accepted/ })).toHaveCount(0);
 
     // Dismiss all takes a sensor's waiting items out of the queue; answers already given stay.
     const waiting = async () =>

@@ -55,40 +55,9 @@
   const shownDay = $derived(quality ? quality.daily[hover ?? quality.daily.length - 1] : null);
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
-  const exportLimit = $derived(app.config?.reading_export_limit ?? verifiedTotal);
   const unchecked = $derived(v?.unchecked_accepted ?? 0);
 
-  // The export: what the meter is (optional) and, when chosen, the accepted readings nobody checked.
-  let meter = $state('');
-  let withUnchecked = $state(false);
-  const exportChecked = $derived(Math.min(verifiedTotal, exportLimit));
-  const exportUnchecked = $derived(
-    withUnchecked ? Math.min(unchecked, app.config?.reading_export_unchecked_limit ?? unchecked) : 0,
-  );
-  const exportWhat = $derived(
-    [
-      exportChecked === 1 ? 'the reading you checked' : exportChecked ? `the ${exportChecked} readings you checked` : '',
-      exportUnchecked ? `${exportUnchecked} unchecked` : '',
-    ]
-      .filter(Boolean)
-      .join(' and ') || 'the readings you check',
-  );
-  const spotCount = $derived(Math.min(v?.never_asked ?? 0, app.config?.reading_spot_check_count ?? 10));
-
-  let spotting = $state(false);
-  async function spotCheck() {
-    spotting = true;
-    try {
-      const { queued } = await api.readingSpotCheck(sensor.id);
-      toast(queued ? `${queued} accepted ${queued === 1 ? 'reading' : 'readings'} to check below` : 'Nothing left to check');
-      refreshStatus();
-      await load();
-    } catch (err) {
-      toastError(err);
-    } finally {
-      spotting = false;
-    }
-  }
+  let meter = $state(''); // the export's optional "What meter is this?"
 
   let dismissing = $state(false);
   async function dismissAll() {
@@ -231,14 +200,13 @@
         <div class="col" style="gap:2px;min-width:0">
           <strong class="small">Help improve reading</strong>
           <span class="xsmall muted">
-            A ZIP with {exportWhat}: only the region, not the whole picture, with what was read, which reader read it and what was right.
-            Share it in
-            <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>
-            — shared, the images are public domain (CC0, see the README inside).
+            A ZIP of the readings — only the region — to share in
+            <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>.
+            Shared, the images are public domain (CC0).
           </span>
         </div>
         <label class="field small">
-          <span>What meter is this? <span class="hint">optional — make, type, camera, light</span></span>
+          <span>What meter is this? <span class="hint">optional</span></span>
           <input
             class="input sm"
             bind:value={meter}
@@ -246,25 +214,10 @@
             placeholder="e.g. water meter with red wheels, ESP32 camera with flash"
           />
         </label>
-        {#if unchecked}
-          <label class="check small">
-            <input type="checkbox" bind:checked={withUnchecked} />
-            <span>Also the accepted readings nobody checked ({unchecked}), marked as unchecked</span>
-          </label>
-        {/if}
         <div class="row wrap actions">
-          {#if spotCount}
-            <button class="btn sm" disabled={spotting} onclick={spotCheck}>
-              <Icon name="check" size={14} /> Check {spotCount} accepted {spotCount === 1 ? 'reading' : 'readings'}
-            </button>
-          {/if}
-          {#if exportChecked + exportUnchecked}
-            <a class="btn sm" href={api.readingExportUrl(sensor.id, { meter, unchecked: withUnchecked })} download>
-              <Icon name="download" size={14} /> Export checked readings
-            </a>
-          {:else}
-            <button class="btn sm" disabled><Icon name="download" size={14} /> Export checked readings</button>
-          {/if}
+          <a class="btn sm" href={api.readingExportUrl(sensor.id, meter)} download>
+            <Icon name="download" size={14} /> Export readings
+          </a>
         </div>
       </div>
     {/if}

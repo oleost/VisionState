@@ -4,6 +4,7 @@ import io
 import json
 import sqlite3
 import zipfile
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -16,7 +17,7 @@ from visionstate.db import Database, Prediction, Sensor, keep_text_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
-from visionstate.settings import KIND_READING, VERSION, merge_reading
+from visionstate.settings import KIND_READING, READING, VERSION, merge_reading
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, counter_positions, render, render_counter
@@ -439,7 +440,8 @@ def test_reading_sensor_flow(settings):
         assert resp.status_code == 201, resp.text
         sid = resp.json()["id"]
         base = "visionstate/power_meter"
-        assert client.get(f"/api/v1/sensors/{sid}/reading-export").status_code == 404  # nothing verified yet
+        # Nothing read yet: nothing to export.
+        assert client.get(f"/api/v1/sensors/{sid}/reading-export").status_code == 404
 
         def view():
             return client.get(f"/api/v1/sensors/{sid}").json()
@@ -519,7 +521,7 @@ def test_reading_sensor_flow(settings):
             assert "CC0" in archive.read("LICENSE.txt").decode()
             manifest = json.loads(archive.read("readings.json"))
             assert manifest["settings"]["unit"] == "kWh" and "source" not in manifest["settings"]
-            [entry] = manifest["readings"]
+            entry = manifest["readings"][0]  # the checked ones come first
             assert (entry["read"], entry["rejected"], entry["answer"], entry["right_value"]) == (
                 "0012300.0",
                 "went down",
@@ -650,7 +652,7 @@ def test_counter_sensor_flow(settings):
         client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"})
         export = client.get(f"/api/v1/sensors/{sid}/reading-export")
         with zipfile.ZipFile(io.BytesIO(export.content)) as archive:
-            [entry] = json.loads(archive.read("readings.json"))["readings"]
+            entry = json.loads(archive.read("readings.json"))["readings"][0]
             assert entry["answer"] == "read correctly" and entry["rejected"] == "wrong digit count"
             crop = Image.open(archive.open(entry["file"]))
         frame = render_counter(89941)
@@ -665,7 +667,7 @@ def test_counter_sensor_flow(settings):
 
         def export_entry():
             with zipfile.ZipFile(io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export").content)) as archive:
-                [entry] = json.loads(archive.read("readings.json"))["readings"]
+                entry = json.loads(archive.read("readings.json"))["readings"][0]
                 return entry, Image.open(archive.open(entry["file"])).size
 
         assert export_entry() == ({**entry}, crop.size)
@@ -742,43 +744,34 @@ def test_wheel_counter_sensor_flow(settings):
             assert row is not None
             row.read_ok = True
 
-        def export(**params) -> dict:
-            got = client.get(f"/api/v1/sensors/{sid}/reading-export", params=params)
-            with zipfile.ZipFile(io.BytesIO(got.content)) as archive:
+        def export(meter: str = "") -> dict:
+            with zipfile.ZipFile(
+                io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export", params={"meter": meter}).content)
+            ) as archive:
                 manifest = json.loads(archive.read("readings.json"))
                 assert len({r["file"] for r in manifest["readings"]}) == len(manifest["readings"])
                 assert all(r["file"] in archive.namelist() for r in manifest["readings"])
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 2 and manifest["meter"] is None
+        assert manifest["format"] == 2 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
-        [entry] = manifest["readings"]
+        # The checked reading first, then the accepted one nobody checked, marked as such.
+        entry, unchecked = manifest["readings"]
+        assert (unchecked["answer"], unchecked["value"], unchecked["right_value"]) == ("unchecked", "90.100", None)
         assert entry["reader"] == readers.DEFAULT_WHEEL_READER and entry["app"] == VERSION
-        assert entry["answer"] == "read correctly" and entry["seconds"] == 0
+        assert entry["answer"] == "read correctly" and entry["seconds"] == 0 <= unchecked["seconds"]
         assert entry["lamp"] is False and entry["greyscale"] is False
         assert round(entry["wheels"]["value"]) == 89950 and len(entry["wheels"]["per_wheel"]) == 7
-
-        # The accepted readings nobody checked come along when asked for, marked as such, and
-        # what the user says the meter is.
-        manifest = export(unchecked="true", meter="  Gas meter, white on black  ")
-        assert manifest["meter"] == "Gas meter, white on black"
-        newest, oldest = manifest["readings"]
-        assert (newest["answer"], newest["value"], oldest["answer"]) == ("unchecked", "90.100", "read correctly")
-        assert newest["seconds"] >= oldest["seconds"] == 0 and newest["file"] != oldest["file"]
+        assert export(meter="  Gas meter, white on black  ")["meter"] == "Gas meter, white on black"
         verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
-        assert verified["unchecked_accepted"] == verified["never_asked"] == 1
+        assert verified["unchecked_accepted"] == 1
 
-        # "Spot-check accepted readings" sends the ones never asked about to the review queue, once.
-        assert client.post(f"/api/v1/sensors/{sid}/reading-spot-check").json() == {"queued": 1}
-        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
-        assert (verified["unchecked_accepted"], verified["never_asked"]) == (1, 0)
-        [item] = client.get("/api/v1/review").json()["items"]
-        assert item["review_reason"] == "spot_check" and item["published_key"] == "90.100"
-        assert client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"] == 1
-        assert client.post(f"/api/v1/sensors/{sid}/reading-spot-check").json() == {"queued": 0}
-        assert client.post("/api/v1/sensors/9999/reading-spot-check").status_code == 404
+        # The ZIP stays small enough for GitHub: what does not fit is left out (the oldest) and counted.
+        with patch.dict(READING, {"export_max_mb": 0.0001}):  # room for one image only
+            small = export()
+        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 1
 
         # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
         exported = client.get(f"/api/v1/sensors/{sid}/export").content

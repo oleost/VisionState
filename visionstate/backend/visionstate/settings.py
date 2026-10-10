@@ -138,16 +138,14 @@ READING = {
     "wheel_shift_penalty": 0.3,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
-    # "Export verified readings" (to share, e.g. on GitHub): at most this many, newest first, each
-    # only the region plus this share of its size around it — not the whole picture.
-    "export_limit": 300,
+    # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones
+    # nobody checked whose frame is kept, each only the region plus this share of its size around
+    # it — not the whole picture. One ZIP of at most this size (GitHub takes 25 MB per file; about
+    # 1,000 readings).
     "export_margin": 0.15,
-    # Optionally also the newest accepted readings nobody checked (marked "unchecked"), at most this many.
-    "export_unchecked_limit": 300,
+    "export_max_mb": 24,
     "export_meter_max_chars": 300,  # the optional "What meter is this?" text
     "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
-    # "Spot-check accepted readings" on the Quality tab sends this many of the newest to review.
-    "spot_check_count": 10,
 }
 
 DETECTION = {

@@ -472,15 +472,8 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
             "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
             "waiting": count(Prediction.reviewed.is_(False)),
-            # accepted, nobody checked, the frame kept: for the export and for spot checks
+            # accepted, nobody checked, the frame kept: they go into the export too
             "unchecked_accepted": count(~rejected, Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
-            # ... of those, never in the review queue: what "Check N accepted readings" can send there
-            "never_asked": count(
-                ~rejected,
-                Prediction.read_ok.is_(None),
-                Prediction.frame.is_not(None),
-                Prediction.review_reason.is_(None),
-            ),
         }
         items = s.scalars(
             select(Prediction)
@@ -496,43 +489,13 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
         }
 
 
-@router.post("/{sensor_id}/reading-spot-check")
-async def reading_spot_check(sensor_id: int, request: Request) -> dict:
-    """Send the newest accepted readings that were never in the review queue there (a spot check)."""
-    rt = runtime(request)
-
-    def queue() -> int:
-        with rt.db.session() as s:
-            get_sensor(s, sensor_id, KIND_READING)
-            rows = s.scalars(
-                select(Prediction)
-                .where(
-                    Prediction.sensor_id == sensor_id,
-                    Prediction.published_key.is_not(None),
-                    Prediction.read_ok.is_(None),
-                    Prediction.review_reason.is_(None),  # never asked (a dismissed one stays dismissed)
-                    Prediction.frame.is_not(None),
-                )
-                .order_by(Prediction.created_at.desc())
-                .limit(READING["spot_check_count"])
-            ).all()
-            for row in rows:
-                row.review_reason, row.reviewed = "spot_check", False
-            return len(rows)
-
-    queued = await asyncio.to_thread(queue)
-    if queued:
-        await rt.publish_review_count()
-    return {"queued": queued}
-
-
 @router.get("/{sensor_id}/reading-export")
 async def reading_export(
-    sensor_id: int, request: Request, background: BackgroundTasks, meter: str = "", unchecked: bool = False
+    sensor_id: int, request: Request, background: BackgroundTasks, meter: str = ""
 ) -> FileResponse:
-    """A ZIP of the readings checked by hand: only the region of each, what was read, the answer.
-
-    ``meter``: what the user says the meter is; ``unchecked``: also accepted readings nobody checked."""
+    """A ZIP of the readings to share (checked ones, then accepted ones nobody checked), under
+    GitHub's file size: only the region of each, what was read, the answer.
+    ``meter``: what the user says the meter is."""
     rt = runtime(request)
     with rt.db.session() as s:
         get_sensor(s, sensor_id, KIND_READING)
@@ -541,9 +504,7 @@ async def reading_export(
     os.close(fd)
     tmp = Path(name)
     try:
-        filename = await asyncio.to_thread(
-            bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader, meter, unchecked
-        )
+        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader, meter)
     except LookupError as err:
         tmp.unlink(missing_ok=True)
         raise HTTPException(404, str(err)) from err

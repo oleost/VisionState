@@ -219,14 +219,13 @@ First choose **what it looks like**:
   on the Review page) takes them out of the queue. Answers already given and the counts stay.
   The reader does **not** learn from these answers: they show how reliable the reading is and
   which setting to change.
-- **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
-  readings you checked — only the region of each, not the whole picture — with what was read and
-  what was right, which reader read it and (for the wheel reader) where it saw each wheel. Each
-  image is cut with the region the reading was made in, so moving the region later does not spoil
-  the readings from before. Write what the meter is in *What meter is this?* (make, type, camera,
-  light). Most checked readings are rejected ones; for a fairer picture, press **Check 10 accepted
-  readings** to answer a few accepted ones first, or tick *Also the accepted readings nobody
-  checked* (they are marked as unchecked). Look through the ZIP, then share it in
+- **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
+  checked and the accepted ones nobody checked (marked as unchecked) — only the region of each,
+  not the whole picture — with what was read and what was right, which reader read it and (for
+  the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
+  made in, so moving the region later does not spoil the readings from before. Write what the
+  meter is in *What meter is this?* (make, type, camera, light) first. The ZIP stays under 24 MB
+  so GitHub takes it (about 1,000 readings, newest first). Look through the ZIP, then share it in
   [GitHub Discussions](https://github.com/oleost/VisionState/discussions): that shows what goes
   wrong where. Shared, the images are public domain (CC0; the README and LICENSE inside the ZIP
   say so). Nothing leaves your Home Assistant unless you share the file yourself.
