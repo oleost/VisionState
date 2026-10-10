@@ -1,8 +1,9 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.3, 2026-10-05) and the open
-> ideas. Update it whenever a decision changes.
-> Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
+> The design as built, the decisions behind it, and the roadmap. Update it in the same change as
+> the decision. How to use the app: [`visionstate/DOCS.md`](../visionstate/DOCS.md); where the code
+> is: [`ARCHITECTURE.md`](ARCHITECTURE.md); channels and releases: [`RELEASING.md`](RELEASING.md).
+> Setting names below are keys in `settings.py`, which holds their values.
 
 ## 1. Vision
 
@@ -13,8 +14,8 @@ the matching state on a live image, or by bulk-uploading images/video. Everythin
 locally, on any CPU, with a polished UI inside Home Assistant.
 
 A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
-pretrained detector, and a third, **reading sensors**, reads a number from a display with a
-text recognizer. Neither needs training.
+pretrained detector, and a third, **reading sensors**, reads a number from a display or the wheels
+of a meter. Neither needs training.
 
 ## 2. Goals / Non-goals
 
@@ -31,7 +32,7 @@ text recognizer. Neither needs training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §16.
+- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §14.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -39,7 +40,7 @@ text recognizer. Neither needs training.
 
 | Term | Meaning |
 |---|---|
-| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states) or `objects` (detector), fixed at creation. |
+| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector) or `reading` (a number), fixed at creation. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
 | **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
 | **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
@@ -57,7 +58,7 @@ text recognizer. Neither needs training.
 - Home Assistant app with **Ingress** (sidebar panel, HA handles authentication); requests
   from anything other than the Ingress proxy are refused.
 - Architectures: `amd64`, `aarch64`. Prebuilt images on GHCR, pulled by Home Assistant.
-- Two release channels (see §18): stable (`main`) and beta (`beta` branch, `#beta` repo URL).
+- Two release channels, stable and beta ([`RELEASING.md`](RELEASING.md)).
 - Also runnable as a plain Docker container / Python process for development, configured via
   environment variables and a long-lived HA token (no login outside HA).
 - MQTT broker discovered automatically through the Supervisor services API
@@ -198,20 +199,13 @@ the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounde
 digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
 the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
 the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
-(`db.keep_text_reader`). How it is to get better (benchmark, the last value as an expectation,
-calibrated confidence, self-calibration of the region, wheels-v2, learning per sensor):
-[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md). Training code and data sources: `tools/wheelreader`
-(synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
-the CC0 exports shared in issues #32/#40).
+(`db.keep_text_reader`). The model, its training data and its
+results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it is to get better:
+[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md).
 
-- Evaluated for the wheel reader (2026-10-09; whole reading exact, last digit rounded): a
-  user's ESP32 water meter with red wheels, held out from training: 17/17 (PP-OCRv6 small 15,
-  tiny 8 with 5 too high); two water meters never seen in training (bolausson, test only): 30–33
-  of 35 and 15–18 of 18 with no value too high (small 30 with 2 too high, 15 with 1); the
-  Dryad test set (2,400 photos): 97.7 % when the photo is the right way up. Trained without the
-  user's images it read them just as well. The remaining misses are ±1 on a half-turned last
-  wheel. The decode score separates right from wrong reads only moderately, so it is not used
-  for more than the confidence.
+- Why a wheel reader (2026-10-09): on every meter tested it read more readings right than
+  PP-OCRv6 small and gave no value too high, which the text reader did (numbers in its README).
+  The remaining misses are ±1 on a half-turned last wheel.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
@@ -319,15 +313,10 @@ the pixels are decoded.
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
-One HA **device** per sensor:
-
-| Entity | Type | Purpose |
-|---|---|---|
-| `sensor.<name>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
-| `…_confidence` | `sensor` (%) | Top probability |
-| `image.…_last_frame` | `image` | The ROI that was classified |
-| `button.…_classify_now` | `button` | Check now (automations) |
-| `switch.…_enabled` | `switch` | Pause / resume |
+One HA **device** per sensor (the entities a user sees are listed in DOCS.md). A state sensor:
+the result as `sensor` with `device_class: enum` (options = state keys + `unknown`), its
+confidence, an `image` of the region that was classified, a `button` to check now and a `switch`
+to pause it.
 
 **Object sensors** replace the first two with two entities per selected class:
 `binary_sensor.<name>_<class>` (`device_class: occupancy`, attributes: confidence,
@@ -381,8 +370,9 @@ outside Home Assistant it shows the expected IDs.
 Principle: **easy by default, details on demand.** Dark theme, responsive.
 
 1. **Dashboard** — cards per sensor: live thumbnail, state, confidence, 24 h timeline, health.
-2. **New sensor wizard** — camera → region → *detect*: states (names) or objects (popular
-   first, all 80 behind "Show all", with a test on a fresh frame) → optional triggers.
+2. **New sensor wizard** — camera → region → *detect*: states (names), objects (popular
+   first, all 80 behind "Show all") or a reading (display or counter), each tested on a fresh
+   frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
@@ -431,12 +421,12 @@ loads.
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`,
-  currently v10). An older version started on a newer database ignores the columns it does not
+- SQLite; schema version in `PRAGMA user_version` (`db.SCHEMA_VERSION`) with additive migrations
+  (`db.MIGRATIONS`). An older version started on a newer database ignores the columns it does not
   know (rollback works; checked by the upgrade test).
-- `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
-  `clear_after_s`, `use_taught` and the own labels `custom`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
-  display, `digits`, `max_step`, `spot_rate`); reserved for `multi_label`. Every reading is
+- `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds the fields of
+  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`) or `reading`
+  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
   (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
@@ -501,41 +491,13 @@ automatically.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,
   exporting trained heads (retraining is faster than shipping them).
 
-## 13. Configuration (app options)
+## 13. Configuration
 
-`log_level`, `discovery_prefix`, and optional `mqtt_host`,
-`mqtt_port`, `mqtt_username`, `mqtt_password`. Everything else (AI model, review rules,
-sensor settings) lives in the UI.
+App options are only for logging and a broker Home Assistant does not provide (list in DOCS.md).
+Everything else (AI models, review rules, sensor settings) lives in the UI and the database, so it
+is part of backups and needs no restart.
 
-## 14. Tech stack
-
-| Layer | Choice |
-|---|---|
-| Runtime | Python 3.14 (image and CI), FastAPI, uvicorn, SQLAlchemy, asyncio |
-| Inference | ONNX Runtime, NumPy, Pillow, PyAV (bundled FFmpeg) |
-| Training | scikit-learn |
-| MQTT / HA | aiomqtt, websockets, httpx |
-| Frontend | Svelte 5 + Vite + TypeScript, plain CSS with design tokens (`tokens.css`), hash router (Ingress-safe), bundled fonts |
-| Packaging | HA app repository, Docker (python:3.14-slim), GitHub Actions → GHCR |
-| Quality | pytest (unit + integration with a fake camera/HA/MQTT; coverage measured in CI, floor 88 %), ruff, svelte-check, Playwright UI tests (desktop + phone with touch, against the real backend and `scripts/fake_camera.py`), image smoke test in CI, Dependabot (monthly, to `beta`) |
-| Docs | `README.md`, `visionstate/DOCS.md` (shown in HA), `CHANGELOG.md`, this file |
-
-## 15. Repo layout
-
-```
-/                       repository.yaml, README.md, CLAUDE.md
-/visionstate            HA app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
-/visionstate/backend    Python package + tests (inside the app dir: the Dockerfile builds from it);
-                        visionstate/engine/ is the runtime: Runtime (runtime.py) from one mixin
-                        per part (models, checks, objects, reading, teaching, training,
-                        publishing, history), state.py and logic.py (pure decisions)
-/visionstate/frontend   Svelte app
-/scripts                channel.py (stable/beta config switch), fake_camera.py (test camera)
-/docs                   SCOPE.md, promo/ (README screenshots and logos)
-/.github                CI workflow, Dependabot
-```
-
-## 16. Roadmap
+## 14. Roadmap
 
 | Milestone | Content | Version |
 |---|---|---|
@@ -553,48 +515,20 @@ sensor settings) lives in the UI.
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
-| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
-| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | 0.8.0 (betas 0.7.1b3–b4) |
-| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | export v2 in 0.8.0 (betas 0.7.1b5–b6); the rest planned |
-| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
 | **Hardening** ✅ | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | 0.6.4 |
+| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
+| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right; export v2 of readings | 0.8.0 (betas 0.7.1b3–b6) |
+| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
+| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
-**Open ideas** (not scheduled): full export/import of everything; merge/replace import;
+**Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
+summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); full
+export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
 Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
 dials and gauges; several readings per sensor (a sign with four prices, a
-counter plus its dials); issue templates; per-sensor model
+counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
-
-## 17. Identity
-
-| Item | Value |
-|---|---|
-| Name | VisionState (beta: "VisionState (beta)") |
-| App slug | `visionstate` |
-| Repository | `github.com/oleost/VisionState` (`#beta` for the beta channel) |
-| Images | `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.Z` (+`latest`) / `:X.Y.ZbN` (+`beta`) |
-| MQTT discovery prefix / node id | `homeassistant` / `visionstate` |
-| Licence | Apache-2.0 |
-
-## 18. Release channels
-
-- **beta** branch: all changes land here first; versions `X.Y.ZbN`, GitHub pre-releases, own
-  media folder. The maintainer runs it permanently.
-- **main** branch: stable; changes only by promoting a tested beta through a PR
-  (branch-protected, CI required).
-- CI builds, tests and smoke-tests the image on both architectures, each on its own hardware
-  (start, MQTT, discovery, clean `docker stop` with exit code 0) before publishing, refuses
-  tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
-- The amd64 image is also run under an emulated x86-64-v1 CPU (`kvm64`, qemu-user) with
-  `scripts/cpu_probe.py`, which exercises every native library and the app. NumPy is pinned
-  below 2.4 for that reason (2.4+ needs x86-64-v2; found through issue #29). Checked 2026-10:
-  with NumPy 2.3.5 all other pins (SciPy 1.18, scikit-learn 1.9, ONNX Runtime 1.30, Pillow 12,
-  PyAV 18) work on `kvm64` and `qemu64`.
-- A beta tag is the whole release: after both images are published CI creates the pre-release
-  from the changelog entry and fast-forwards `beta`, so the branch never carries a version
-  without images. Stable releases are promoted by hand.
-- Step-by-step procedures are in `CLAUDE.md`.

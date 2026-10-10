@@ -4,6 +4,26 @@ A map of the code: what runs where, how one check flows through it, and which fi
 for common changes. What VisionState does and why is in [`SCOPE.md`](SCOPE.md); how to work on
 it is in [`CLAUDE.md`](../CLAUDE.md).
 
+## Repository
+
+```
+repository.yaml, README.md, CLAUDE.md, SECURITY.md
+visionstate/            the Home Assistant app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
+  backend/              Python package `visionstate` + tests (the Dockerfile builds from visionstate/)
+  frontend/             Svelte app, Playwright tests in e2e/
+scripts/                channel.py (stable/beta config), fake_camera.py (test camera), CI helpers:
+                        check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py
+tools/wheelreader/      training code of the wheel reader model (not part of the app image)
+docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md, promo/ (README images)
+.github/                CI workflow, Dependabot, issue forms
+```
+
+**Stack:** Python 3.14, FastAPI, uvicorn, SQLAlchemy (SQLite), asyncio; ONNX Runtime (CPU only),
+NumPy, Pillow, PyAV (bundled FFmpeg), scikit-learn; aiomqtt, websockets, httpx. Frontend: Svelte 5 +
+Vite + TypeScript, plain CSS with design tokens, a hash router (Ingress-safe), bundled fonts. Docker
+image `python:3.14-slim`, built by GitHub Actions and published on GHCR. Quality: pytest (with a fake
+camera, Home Assistant and MQTT), ruff, pyright, svelte-check, Playwright, an image smoke test.
+
 ## The process
 
 One Python process (`python -m visionstate`) serves the API and the built UI through Home
@@ -97,8 +117,12 @@ error is kept in `LiveState.error` and shown in the UI.
 - **SQLite** (`<data>/visionstate.db`): `sensor` (+ `state`), `sample` (+ `sample_label`,
   `embedding` cache), `prediction` (the history and the review queue), `reading_stat`,
   `model_info` (per sensor), `setting` (global settings as JSON).
-- **Files** (`<media>/`): `samples/<sensor>/`, `history/<sensor>/`, thumbnails; `<data>/heads/`
-  (trained heads), `<data>/models/` (downloaded models).
+- **Files** (`<media>/`): `samples/<sensor>/` (training images; for object sensors the crops of
+  taught boxes), `history/<sensor>/`, `thumbs/`; `<data>/heads/` (trained heads), `<data>/models/`
+  (downloaded models, left out of backups).
+- **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
+  `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
+  `prediction` rows (see `db.py`).
 - **Settings of a sensor** that have many fields (`triggers`, `objects`, `reading`, `review`) are
   stored as JSON and always read through `settings.merge_*`, so a field added later gets its
   default for existing sensors without a migration.
@@ -113,6 +137,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
+| `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
 | `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states…) |
@@ -138,6 +163,10 @@ a test that an old database is upgraded (see `tests/test_entity_ids.py`).
 
 **A new API endpoint**: in the `api/` file of its topic, input as a pydantic model, its function
 in `lib/api.ts`, its type in `lib/types.ts`.
+
+**A new history event**: its name in `settings.HISTORY_EVENTS`, which rows it matches in
+`EVENT_ROWS` (`api/history.py`; every filter becomes SQL in `history_query`, nowhere else), its
+label in `HISTORY_EVENTS` in `lib/ui.ts`.
 
 **A new AI model**: a new entry in the registry JSON (never change a released one), checked
 against real inputs in the tests.
