@@ -74,7 +74,7 @@ away. Sensors not sent are marked on the dashboard.
 
 ## Object sensors
 
-An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 70 more —
+An object sensor finds common objects — people, cars, bicycles, cats, dogs, birds and 74 more —
 with a pretrained detector. There is nothing to label: pick the objects in the wizard (popular
 ones first, all others under **Show all**) and the wizard tests it on a fresh frame right away.
 Where it gets your camera wrong, you can correct it later (see *Teaching an object sensor*).
@@ -198,10 +198,9 @@ First choose **what it looks like**:
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
-  On a real water meter with red wheels (an ESP32 camera with its flash) the wheel reader read
-  all 17 checked images right; the text reader read 15 with PP-OCRv6 small and 8 with the
-  included tiny reader. New counters use the wheel reader; counters set up before it came keep the
-  text reader until you choose *Wheel reader* on their Settings tab (their Live tab suggests it).
+  The wheel reader reads mechanical counters better than the text reader on every meter it was
+  tried on. New counters use it; counters set up before it came keep the text reader until you
+  choose *Wheel reader* on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -248,10 +247,9 @@ First choose **what it looks like**:
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
   other meters may need a tighter region. Small pointer dials (the red hands on some water
   meters) are not read.
-- Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
-  lot: what the display or meter is, whether it read correctly, and a screenshot of *What the reader
-  sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
-  issue.
+- Feedback on reading helps a lot, above all from meters and displays it has not seen yet: what
+  the display or meter is, whether it read correctly, and a screenshot of *What the reader sees* —
+  or an export (above) — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions).
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change
   detection) makes it read right away.
 

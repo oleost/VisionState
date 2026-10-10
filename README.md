@@ -133,16 +133,8 @@ help test them, add `https://github.com/oleost/VisionState#beta` as a repository
    **20 per state**, including some at night.
 5. Under **Settings → When to check**, add your motion sensor or garage opener as a trigger.
 
-That's it — `sensor.garage_door` is now in Home Assistant:
-
-| Entity | What it is |
-|---|---|
-| `sensor.<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
-| `sensor.<name>_confidence` | How sure the AI is, in % |
-| `image.<name>_last_frame` | The region that was classified |
-| `button.<name>_classify_now` | Check right now (handy in automations) |
-| `switch.<name>_enabled` | Pause / resume |
-| `sensor.visionstate_review_queue` | Frames waiting for review (all sensors) |
+That's it — `sensor.garage_door` is now in Home Assistant, with its confidence, the last frame,
+a button to check now and a switch to pause it:
 
 ```yaml
 # Example: notify when the garage door has been open for 10 minutes
@@ -158,8 +150,8 @@ actions:
       message: The garage door has been open for 10 minutes.
 ```
 
-The full user guide is in [`visionstate/DOCS.md`](visionstate/DOCS.md) (also on the app's
-*Documentation* tab).
+The full user guide — every entity, object and reading sensors, triggers, review — is in
+[`visionstate/DOCS.md`](visionstate/DOCS.md) (also on the app's *Documentation* tab).
 
 ## How it works
 
@@ -198,58 +190,17 @@ the app's data folder (included in Home Assistant backups).
 ## Development
 
 ```
-visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
-  backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
-  frontend/             Svelte 5 · Vite · TypeScript
-scripts/channel.py      Switches the app config between the stable and beta channel
-scripts/fake_camera.py  A fake camera (garage door, real photos, drawn displays and counters) for local testing
-docs/SCOPE.md           Design as built, decisions and roadmap
-CLAUDE.md               Contributor guide: conventions, how to test and verify, release steps
+visionstate/          the Home Assistant app — backend/ (Python 3.14, FastAPI, ONNX Runtime) and frontend/ (Svelte 5)
+tools/wheelreader/    training code of the wheel reader model
+scripts/              fake camera for local testing, channel switch, CI helpers
+docs/                 design (SCOPE), map of the code (ARCHITECTURE), releases (RELEASING)
 ```
 
-New features land on the `beta` branch first and reach `main` (stable) only after testing;
-please open pull requests against `beta`. [`CLAUDE.md`](CLAUDE.md) explains the conventions, how to
-test changes locally (fake camera, MQTT, UI tests on desktop and phone) and the pitfalls we ran
-into — it is written for people and AI coding assistants alike.
-
-<details>
-<summary>Run it locally</summary>
-
-Backend:
-
-```bash
-cd visionstate/backend
-python3.14 -m venv .venv && . .venv/bin/activate  # Windows: py -3.14 -m venv .venv; .venv\Scripts\activate
-pip install -r requirements-dev.txt
-python -m visionstate.backbones models            # download the bundled model once
-pytest
-VISIONSTATE_DATA=./dev/data VISIONSTATE_MEDIA=./dev/media VISIONSTATE_BUNDLED_MODELS=./models \
-  HA_URL=http://homeassistant.local:8123 HA_TOKEN=<long-lived token> \
-  VISIONSTATE_MQTT_HOST=<broker> python -m visionstate
-```
-
-> ⚠️ Outside Home Assistant the app has **no login**: anyone who can reach port 8099 can use it.
-> Only run it like this on your own machine or behind a reverse proxy with authentication.
-
-Frontend (proxies `/api` to the backend on port 8099):
-
-```bash
-cd visionstate/frontend
-npm install
-npm run dev
-```
-
-UI tests (Playwright) start the backend and a fake camera by themselves and run every page on a
-desktop browser and on an emulated phone with touch:
-
-```bash
-cd visionstate/frontend
-npx playwright install chromium   # once
-npm run build
-VS_PYTHON=../backend/.venv/bin/python npm run e2e
-```
-
-</details>
+New features land on the `beta` branch first and reach `main` (stable) only after testing; please
+open pull requests against `beta`. [`CLAUDE.md`](CLAUDE.md) is the contributor guide — how to run it
+locally against a fake camera, the checks, the UI tests on desktop and phones, and the pitfalls we
+ran into — written for people and AI coding assistants alike. Security issues: see
+[`SECURITY.md`](SECURITY.md).
 
 Issues and ideas are welcome in [GitHub Issues](https://github.com/oleost/VisionState/issues).
 

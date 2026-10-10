@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions, ideas and shared meter readings
+    url: https://github.com/oleost/VisionState/discussions
+    about: Ask, suggest a feature, or share an export of readings (Quality tab → Export readings) to help improve reading.
+  - name: Security vulnerability
+    url: https://github.com/oleost/VisionState/security/advisories/new
+    about: Report it privately, not as an issue.
