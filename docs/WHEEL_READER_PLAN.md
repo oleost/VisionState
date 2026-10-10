@@ -1,6 +1,6 @@
 # Wheel reader: plan for better counter readings
 
-Status: **plan** (written 2026-10-09, after 0.7.1b4). Nothing here is built yet. This document is
+Status: **plan** (written 2026-10-09, after 0.7.1b4); B1 (the export) is built in 0.7.1b5. This document is
 the design for improving how VisionState reads **mechanical counters** (rolling digit wheels on
 water and gas meters). It applies to reading sensors with the *counter* display and the wheel reader
 (`counter_reader: "wheels"`). The general design is in [`SCOPE.md`](SCOPE.md), and the model and its
@@ -148,6 +148,11 @@ In the decoder the expectation can be tested, explained, set per sensor and used
 ## 5. Phase B — better data in
 
 ### B1. The export ("Export checked readings")
+
+**Built in 0.7.1b5**, with two changes to the table below: the light is recorded per reading
+automatically (greyscale picture, and whether VisionState had the sensor's light on) instead of a
+flag in the dialog, and frames are **not** deduplicated in the app — a reading of the same frame is
+still a reading; the training tools remove duplicate images (§B4).
 
 It already gives the region with a margin, the right value, the answer, the region each reading
 was made in and the CC0 licence. To add (format version `"format": 2` in `readings.json`, and

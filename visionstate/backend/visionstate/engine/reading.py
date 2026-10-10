@@ -15,7 +15,7 @@ from .. import imaging, readers
 from ..db import Prediction, ReadingStat
 from ..mqtt import rate_unit, topics
 from ..redact import redact
-from ..settings import READING
+from ..settings import READING, VERSION
 from .base import RuntimeBase
 from .logic import reading_verdict
 from .models import ModelsMixin
@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 
 class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
-    async def _run_reading(self, cfg: SensorConfig, image: Image.Image) -> None:
+    async def _run_reading(self, cfg: SensorConfig, image: Image.Image, lit: bool = False) -> None:
         """One check of a reading sensor: read the number, check it and publish it.
 
         A value is published after ``debounce`` equal readings in a row. Unsure, empty and
@@ -34,6 +34,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         counter read with another number of digits than it has wheels) are rejected:
         the last value stays and the rejected reading is kept in the history and sent to the
         review queue, every one of them. Every reading is counted per day (Quality tab).
+        ``lit``: the frame was taken with the sensor's light switched on (kept with the reading).
         """
         live = self.live_state(cfg.id)
         settings = cfg.reading
@@ -68,7 +69,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             if changed:
                 live.changes.append(now)
         await self._publish_reading(cfg, image, reader_jpeg, text, shown, reason, now)
-        await self._keep_reading(cfg, image, text, shown, reason, changed)
+        await self._keep_reading(cfg, image, text, shown, reason, changed, lit)
 
     async def _publish_reading(
         self,
@@ -112,16 +113,28 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         shown: str | None,
         reason: str | None,
         changed: bool,
+        lit: bool = False,
     ) -> None:
         """Count the reading for the day, and keep it in the history when the value changed, it was
-        rejected (it goes to review) or it was picked for a spot check."""
+        rejected (it goes to review) or it was picked for a spot check.
+
+        With it go what the reader told about it (which reader, the wheels) and the app version,
+        so an export says how each reading was made."""
         live = self.live_state(cfg.id)
         await asyncio.to_thread(self._count_reading, cfg.id, reason)
         spot = reason is None and not changed and random.random() < float(cfg.reading["spot_rate"])
         if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
             # The region it was read in: the frame is whole, and the region may be moved later.
-            details = {"text": text.text, "value": shown, "reason": reason, "roi": cfg.roi}
+            details = {
+                "text": text.text,
+                "value": shown,
+                "reason": reason,
+                "roi": cfg.roi,
+                **(text.details or {}),
+                "app": VERSION,
+                "lamp": lit,
+            }
             review = "rejected" if reason is not None else "spot_check" if spot else None
             await asyncio.to_thread(
                 self._record_reading, cfg.id, image, published, text.score, details, changed, review

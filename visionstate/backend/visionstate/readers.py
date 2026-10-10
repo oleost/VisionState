@@ -163,6 +163,9 @@ def counter_line(image: Image.Image, digits: int) -> Image.Image:
 class Text:
     text: str
     score: float  # mean probability of the read characters (0 when nothing was read)
+    # What the reader can tell about the read beyond the text (kept with the reading, exported):
+    # its id, and for the wheel reader each wheel's position (WheelReader.read_counter).
+    details: dict | None = None
 
 
 class Reader:
@@ -324,6 +327,12 @@ def wheel_value(logp: np.ndarray) -> tuple[float, float]:
     value whose wheel positions are most likely together. Returns the value in steps of the
     last wheel, with its fraction (0089949.8 = last wheel at 9.8), and its log probability.
     """
+    value, score, _ = wheel_decode(logp)
+    return value, score
+
+
+def wheel_decode(logp: np.ndarray) -> tuple[float, float, list[int]]:
+    """``wheel_value`` plus the bin every wheel stands at in that value (left to right)."""
     wheels, bins = logp.shape
     tenth = bins // 10
     best = logp[-1].copy()  # best score of the wheels to the right, by this wheel's bin
@@ -337,14 +346,36 @@ def wheel_value(logp: np.ndarray) -> tuple[float, float]:
         back.append(np.tile(lead_bin, 10))
     b = int(best.argmax())
     score = float(best[b])
-    digits = [b // tenth]
+    at = [b]
     for arg in reversed(back):
         b = int(arg[b])
-        digits.append(b // tenth)
+        at.append(b)
     value = 0.0
-    for d in digits[:-1]:
-        value = value * 10 + d
-    return value * 10 + b / tenth, score
+    for a in at[:-1]:
+        value = value * 10 + a // tenth
+    return value * 10 + at[-1] / tenth, score, at
+
+
+def wheel_details(probs: np.ndarray, logp: np.ndarray, value: float, score: float, at: list[int], shift: int) -> dict:
+    """How a wheel reading was found, in positions (0.0-9.9): per wheel where the value puts it
+    as seen in the image (``at``, with the common ``shift``), the probability the decoder used
+    there (``p``, a little slack included) and the model's most likely positions (``top``);
+    the value in steps of the last wheel with its fraction, and its log probability."""
+    bins = probs.shape[1]
+    tenth = bins // 10
+    top = READING["export_wheel_top"]
+    wheels = []
+    for k, b in enumerate(at):
+        seen = (b + shift) % bins
+        order = np.argsort(probs[k])[::-1][:top]
+        wheels.append(
+            {
+                "at": round(seen / tenth, 1),
+                "p": round(float(np.exp(logp[k, seen])), 4),
+                "top": [[round(int(i) / tenth, 1), round(float(probs[k, i]), 4)] for i in order],
+            }
+        )
+    return {"value": round(value, 1), "shift": round(shift / tenth, 1), "log_p": round(score, 3), "per_wheel": wheels}
 
 
 class WheelReader:
@@ -356,36 +387,50 @@ class WheelReader:
         self.input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 
-    def positions(self, image: Image.Image, digits: int) -> np.ndarray:
-        """Log probabilities of every wheel's position (wheels x bins)."""
+    def probabilities(self, image: Image.Image, digits: int) -> np.ndarray:
+        """The model's probability of every wheel's position (wheels x bins)."""
         cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
         with self._lock:
             logits = np.asarray(self.session.run(None, {self.input_name: cells[:, None]})[0], dtype=np.float64)
         logits -= logits.max(axis=1, keepdims=True)
         probs = np.exp(logits)
-        probs /= probs.sum(axis=1, keepdims=True)
-        # A wheel at rest may sit a little off its digit.
+        return probs / probs.sum(axis=1, keepdims=True)
+
+    @staticmethod
+    def with_slack(probs: np.ndarray) -> np.ndarray:
+        """Log probabilities for decoding: a wheel at rest may sit a little off its digit."""
         slack = READING["wheel_slack_bins"]
-        probs = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
-        return np.log(np.maximum(probs, 1e-12))
+        near = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
+        return np.log(np.maximum(near, 1e-12))
+
+    def positions(self, image: Image.Image, digits: int) -> np.ndarray:
+        """Log probabilities of every wheel's position (wheels x bins), as decoded."""
+        return self.with_slack(self.probabilities(image, digits))
 
     def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
         """Read ``digits`` wheels; returns the read (all digits, last wheel rounded) and the cells used.
 
         A region drawn a little above or below the digits shifts every wheel alike, so a few
         common shifts are tried (each costs a little) and the most likely reading wins. The
-        confidence is the mean probability per wheel of the positions read.
+        confidence is the mean probability per wheel of the positions read. ``details`` keeps
+        how the value was found (``wheel_details``), so it can be checked without the model.
         """
-        logp = self.positions(image, digits)
-        best: tuple[float, float] | None = None
+        probs = self.probabilities(image, digits)
+        logp = self.with_slack(probs)
+        best: tuple[float, float, list[int], int] | None = None
         for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
-            value, score = wheel_value(np.roll(logp, -shift, axis=1))
+            value, score, at = wheel_decode(np.roll(logp, -shift, axis=1))
             score -= READING["wheel_shift_penalty"] * abs(shift)
             if best is None or score > best[1]:
-                best = (value, score)
+                best = (value, score, at, shift)
         assert best is not None
-        number = math.floor(best[0] + 0.5) % 10**digits
-        text = Text(f"{number:0{digits}d}", math.exp(best[1] / max(1, digits)))
+        value, score, at, shift = best
+        number = math.floor(value + 0.5) % 10**digits
+        text = Text(
+            f"{number:0{digits}d}",
+            math.exp(score / max(1, digits)),
+            {"wheels": wheel_details(probs, logp, value, score, at, shift)},
+        )
         return text, self.cells_image(image, digits)
 
     def cells_image(self, image: Image.Image, digits: int) -> Image.Image:

@@ -122,6 +122,10 @@ export interface ReadingQuality {
     misread_accepted: number;
     right_accepted: number;
     waiting: number;
+    /** Accepted readings nobody checked whose frame is kept (export, spot checks). */
+    unchecked_accepted: number;
+    /** ... of those, never in the review queue (what a spot check can send there). */
+    never_asked: number;
   };
   items: Prediction[];
 }
@@ -380,6 +384,11 @@ export interface AppConfig {
   reading_counter_cell_share: number;
   /** At most this many checked readings go into "Export checked readings". */
   reading_export_limit: number;
+  /** ... and at most this many accepted readings nobody checked, when asked for. */
+  reading_export_unchecked_limit: number;
+  reading_export_meter_max_chars: number;
+  /** "Spot-check accepted readings" sends this many of the newest to the review queue. */
+  reading_spot_check_count: number;
   storage_defaults: { history_max_gb: number };
   storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
   /** Browsing the history: page sizes, time windows offered (hours) and how often it looks for new rows. */

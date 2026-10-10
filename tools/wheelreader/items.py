@@ -34,8 +34,8 @@ def pedromfa(folder: str, only: set[int] | None = None):
         i = int(r["file"][-8:-4])
         if only and i not in only:
             continue
-        if r["answer"] == "misread" and not r["right_value"]:
-            continue
+        if r["answer"] == "unchecked" or (r["answer"] == "misread" and not r["right_value"]):
+            continue  # only answers given by a person are labels
         v = float(r["right_value"] or r["value"])
         if v > 10000:
             v /= 1000

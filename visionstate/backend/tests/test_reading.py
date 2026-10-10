@@ -16,7 +16,7 @@ from visionstate.db import Database, Prediction, Sensor, keep_text_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
-from visionstate.settings import KIND_READING, merge_reading
+from visionstate.settings import KIND_READING, VERSION, merge_reading
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, counter_positions, render, render_counter
@@ -310,6 +310,14 @@ def test_wheel_reader_reads_a_real_meter(asset, expected):
     reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
     result, _ = reader.read_counter(Image.open(ASSETS / asset).convert("RGB"), 7)
     assert result.text == expected and result.score > 0.8
+    # How it was read, kept with the reading for exports: every wheel's position and probability.
+    assert result.details is not None
+    wheels = result.details["wheels"]
+    assert round(wheels["value"]) == int(expected) and wheels["log_p"] < 0 and abs(wheels["shift"]) <= 0.2
+    assert len(wheels["per_wheel"]) == 7
+    for wheel in wheels["per_wheel"]:
+        assert 0.0 <= wheel["at"] <= 9.9 and 0.0 < wheel["p"] <= 1.0
+        assert len(wheel["top"]) == 3 and wheel["top"][0][1] >= wheel["top"][1][1] >= wheel["top"][2][1]
 
 
 def test_counters_made_before_the_wheel_reader_keep_the_text_reader(tmp_path):
@@ -725,17 +733,52 @@ def test_wheel_counter_sensor_flow(settings):
         got = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
         assert got["text"] == "0090100" and got["value"] == "90.100" and got["wrong_digit_count"] is False
 
-        # Shared exports name the wheel reader.
+        # Shared exports name the wheel reader, per reading too, with what it saw of every wheel.
         client.post(f"/api/v1/sensors/{sid}/classify")
         assert wait_for(lambda: view()["reading"]["value"] == "90.100", timeout=30)
+        assert wait_for(lambda: len(client.get("/api/v1/history", params={"sensor": sid}).json()["items"]) == 2)
         with client.app.state.runtime.db.session() as s:
             row = s.scalars(select(Prediction).where(Prediction.sensor_id == sid)).first()
             assert row is not None
             row.read_ok = True
-        with zipfile.ZipFile(io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export").content)) as archive:
-            manifest = json.loads(archive.read("readings.json"))
+
+        def export(**params) -> dict:
+            got = client.get(f"/api/v1/sensors/{sid}/reading-export", params=params)
+            with zipfile.ZipFile(io.BytesIO(got.content)) as archive:
+                manifest = json.loads(archive.read("readings.json"))
+                assert len({r["file"] for r in manifest["readings"]}) == len(manifest["readings"])
+                assert all(r["file"] in archive.namelist() for r in manifest["readings"])
+                return manifest
+
+        manifest = export()
+        assert manifest["format"] == 2 and manifest["meter"] is None
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
+        [entry] = manifest["readings"]
+        assert entry["reader"] == readers.DEFAULT_WHEEL_READER and entry["app"] == VERSION
+        assert entry["answer"] == "read correctly" and entry["seconds"] == 0
+        assert entry["lamp"] is False and entry["greyscale"] is False
+        assert round(entry["wheels"]["value"]) == 89950 and len(entry["wheels"]["per_wheel"]) == 7
+
+        # The accepted readings nobody checked come along when asked for, marked as such, and
+        # what the user says the meter is.
+        manifest = export(unchecked="true", meter="  Gas meter, white on black  ")
+        assert manifest["meter"] == "Gas meter, white on black"
+        newest, oldest = manifest["readings"]
+        assert (newest["answer"], newest["value"], oldest["answer"]) == ("unchecked", "90.100", "read correctly")
+        assert newest["seconds"] >= oldest["seconds"] == 0 and newest["file"] != oldest["file"]
+        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
+        assert verified["unchecked_accepted"] == verified["never_asked"] == 1
+
+        # "Spot-check accepted readings" sends the ones never asked about to the review queue, once.
+        assert client.post(f"/api/v1/sensors/{sid}/reading-spot-check").json() == {"queued": 1}
+        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
+        assert (verified["unchecked_accepted"], verified["never_asked"]) == (1, 0)
+        [item] = client.get("/api/v1/review").json()["items"]
+        assert item["review_reason"] == "spot_check" and item["published_key"] == "90.100"
+        assert client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"] == 1
+        assert client.post(f"/api/v1/sensors/{sid}/reading-spot-check").json() == {"queued": 0}
+        assert client.post("/api/v1/sensors/9999/reading-spot-check").status_code == 404
 
         # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
         exported = client.get(f"/api/v1/sensors/{sid}/export").content

@@ -90,10 +90,10 @@ READING_DEFAULTS = {
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
-    "max_step": 0.0,
+    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
-    "spot_rate": 0.0,  # largest plausible change between two readings (0 = no limit)
+    "spot_rate": 0.0,
     # Counters: the rate entity (off by default in Home Assistant) is the change over about this
     # many minutes — long enough not to jump with every step of the counter, short enough to see a leak.
     "rate_window_min": 15.0,
@@ -142,6 +142,12 @@ READING = {
     # only the region plus this share of its size around it — not the whole picture.
     "export_limit": 300,
     "export_margin": 0.15,
+    # Optionally also the newest accepted readings nobody checked (marked "unchecked"), at most this many.
+    "export_unchecked_limit": 300,
+    "export_meter_max_chars": 300,  # the optional "What meter is this?" text
+    "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
+    # "Spot-check accepted readings" on the Quality tab sends this many of the newest to review.
+    "spot_check_count": 10,
 }
 
 DETECTION = {

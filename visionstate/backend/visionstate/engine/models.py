@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
@@ -127,15 +128,21 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     async def read_number(
         self, image: Image.Image, roi: dict | None, reading: dict
     ) -> tuple[readers.Text, Image.Image]:
-        """Read the region of ``image``; returns the text and the image the reader used."""
+        """Read the region of ``image``; returns the text and the image the reader used.
+
+        The text's ``details`` name the reader that read it (``reader``)."""
         region = imaging.crop_box(image, imaging.region_box(roi))
         if reading["display"] == "counter" and reading["counter_reader"] == "wheels":
             wheels = await self.ensure_wheel_reader()
             async with self._sem:
-                return await asyncio.to_thread(wheels.read_counter, region, int(reading["digits"]))
+                text, used = await asyncio.to_thread(wheels.read_counter, region, int(reading["digits"]))
+            return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
         reader = await self.ensure_reader()
         async with self._sem:
-            return await asyncio.to_thread(reader.read_display, region, reading["display"], int(reading["digits"]))
+            text, used = await asyncio.to_thread(
+                reader.read_display, region, reading["display"], int(reading["digits"])
+            )
+        return replace(text, details={"reader": reader.spec.id, **(text.details or {})}), used
 
     async def detect_objects(
         self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False

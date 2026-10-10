@@ -482,10 +482,19 @@ automatically.
   `READING["export_limit"]`, newest first), each only the region it was read in plus
   `export_margin` (the region is kept with every stored reading since 0.7.1b2, `probs["roi"]`;
   older ones are cut with today's region, `"region": "current"`), with
-  `readings.json` (read text, value, rejection reason, confidence, answer, right value, day only),
-  the reading settings without anything that tells where the sensor is (no source, name or
-  region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.
-  The reader itself does not learn from the answers.
+  `readings.json` (`"format": 2` since 0.7.1b5: read text, value, rejection reason, confidence,
+  answer, right value, day only and seconds since the oldest reading; per reading the reader id
+  and app version (kept with every stored reading since 0.7.1b5, null before), whether the picture
+  was greyscale (IR) and whether the sensor's light was on; for the wheel reader each wheel's
+  position, probability and most likely positions, the common shift and the value with the last
+  wheel's fraction), the reading settings without anything that tells where the sensor is (no
+  source, name or region), the user's optional "What meter is this?" text, a README and a CC0
+  LICENSE — shared images may then be used in tests and evaluations. Optionally also the newest
+  accepted readings nobody checked (`?unchecked=true`, at most `export_unchecked_limit`,
+  `"answer": "unchecked"`; never used as labels). *Check N accepted readings*
+  (`POST /sensors/{id}/reading-spot-check`) sends the newest accepted readings never asked about
+  to the review queue first. The same frame read several times is exported each time (duplicates
+  are removed by the training tools). The reader itself does not learn from the answers.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
   `manifest.json` is capped (`UPLOAD_LIMITS["max_manifest_mb"]`); an unreadable image in a bundle
   is skipped and counted (the response's `skipped`), so an import never stops halfway.

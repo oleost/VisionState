@@ -222,8 +222,17 @@ export const api = {
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
   readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
-  /** ZIP of the readings checked by hand (only the region of each), to share. */
-  readingExportUrl: (id: number) => `${BASE}sensors/${id}/reading-export`,
+  /** ZIP of the readings checked by hand (only the region of each), to share; optionally with
+   * what the meter is and the accepted readings nobody checked. */
+  readingExportUrl: (id: number, opts: { meter?: string; unchecked?: boolean } = {}) => {
+    const query = new URLSearchParams();
+    if (opts.meter?.trim()) query.set('meter', opts.meter.trim());
+    if (opts.unchecked) query.set('unchecked', 'true');
+    const q = query.toString();
+    return `${BASE}sensors/${id}/reading-export${q ? `?${q}` : ''}`;
+  },
+  /** Send the newest accepted readings never asked about to the review queue. */
+  readingSpotCheck: (id: number) => request<{ queued: number }>(`sensors/${id}/reading-spot-check`, send('POST')),
 
   /** Object sensors: what was taught, and teaching one box (or forgetting it). */
   taught: (id: number) => request<Taught>(`sensors/${id}/taught`),

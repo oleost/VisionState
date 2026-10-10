@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.1b5
+
+### Changed
+
+- **Export checked readings tells more** (Quality tab of a reading sensor), so a shared export
+  helps improve reading more:
+  - every reading says which reader read it and with which VisionState version (readings from
+    now on), whether the picture was greyscale (infrared at night) and
+    whether VisionState had the sensor's light on;
+  - for the wheel reader: where it saw each wheel, how sure it was, and the value with the last
+    wheel's fraction;
+  - an optional **What meter is this?** text goes into the export, so it is not forgotten in the post;
+  - optionally the **accepted readings nobody checked**, marked as unchecked;
+  - **Check 10 accepted readings** sends the newest accepted readings to the review queue, so the
+    export is not only the readings that were rejected.
+
 ## 0.7.1b4
 
 ### Changed

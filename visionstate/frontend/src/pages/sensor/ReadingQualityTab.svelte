@@ -56,6 +56,39 @@
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
   const exportLimit = $derived(app.config?.reading_export_limit ?? verifiedTotal);
+  const unchecked = $derived(v?.unchecked_accepted ?? 0);
+
+  // The export: what the meter is (optional) and, when chosen, the accepted readings nobody checked.
+  let meter = $state('');
+  let withUnchecked = $state(false);
+  const exportChecked = $derived(Math.min(verifiedTotal, exportLimit));
+  const exportUnchecked = $derived(
+    withUnchecked ? Math.min(unchecked, app.config?.reading_export_unchecked_limit ?? unchecked) : 0,
+  );
+  const exportWhat = $derived(
+    [
+      exportChecked === 1 ? 'the reading you checked' : exportChecked ? `the ${exportChecked} readings you checked` : '',
+      exportUnchecked ? `${exportUnchecked} unchecked` : '',
+    ]
+      .filter(Boolean)
+      .join(' and ') || 'the readings you check',
+  );
+  const spotCount = $derived(Math.min(v?.never_asked ?? 0, app.config?.reading_spot_check_count ?? 10));
+
+  let spotting = $state(false);
+  async function spotCheck() {
+    spotting = true;
+    try {
+      const { queued } = await api.readingSpotCheck(sensor.id);
+      toast(queued ? `${queued} accepted ${queued === 1 ? 'reading' : 'readings'} to check below` : 'Nothing left to check');
+      refreshStatus();
+      await load();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      spotting = false;
+    }
+  }
 
   let dismissing = $state(false);
   async function dismissAll() {
@@ -193,20 +226,46 @@
         reliable the reading is. Spot checks of accepted readings can be switched on under Settings → Sensor output.
       </p>
     </div>
-    {#if verifiedTotal}
-      <div class="card pad row wrap share">
-        <span class="col" style="gap:2px;flex:1 1 280px;min-width:0">
+    {#if verifiedTotal || unchecked}
+      <div class="card pad col share">
+        <div class="col" style="gap:2px;min-width:0">
           <strong class="small">Help improve reading</strong>
           <span class="xsmall muted">
-            A ZIP with {Math.min(verifiedTotal, exportLimit) === 1
-              ? 'the reading you checked'
-              : `the ${Math.min(verifiedTotal, exportLimit)} readings you checked`}: only the region, not the whole picture,
-            with what was read and what was right. Share it in
+            A ZIP with {exportWhat}: only the region, not the whole picture, with what was read, which reader read it and what was right.
+            Share it in
             <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>
             — shared, the images are public domain (CC0, see the README inside).
           </span>
-        </span>
-        <a class="btn sm" href={api.readingExportUrl(sensor.id)} download><Icon name="download" size={14} /> Export checked readings</a>
+        </div>
+        <label class="field small">
+          <span>What meter is this? <span class="hint">optional — make, type, camera, light</span></span>
+          <input
+            class="input sm"
+            bind:value={meter}
+            maxlength={app.config?.reading_export_meter_max_chars}
+            placeholder="e.g. water meter with red wheels, ESP32 camera with flash"
+          />
+        </label>
+        {#if unchecked}
+          <label class="check small">
+            <input type="checkbox" bind:checked={withUnchecked} />
+            <span>Also the accepted readings nobody checked ({unchecked}), marked as unchecked</span>
+          </label>
+        {/if}
+        <div class="row wrap actions">
+          {#if spotCount}
+            <button class="btn sm" disabled={spotting} onclick={spotCheck}>
+              <Icon name="check" size={14} /> Check {spotCount} accepted {spotCount === 1 ? 'reading' : 'readings'}
+            </button>
+          {/if}
+          {#if exportChecked + exportUnchecked}
+            <a class="btn sm" href={api.readingExportUrl(sensor.id, { meter, unchecked: withUnchecked })} download>
+              <Icon name="download" size={14} /> Export checked readings
+            </a>
+          {:else}
+            <button class="btn sm" disabled><Icon name="download" size={14} /> Export checked readings</button>
+          {/if}
+        </div>
       </div>
     {/if}
     {#if v?.waiting}
@@ -383,7 +442,13 @@
   }
   .share {
     gap: var(--space-3);
-    align-items: center;
+  }
+  .share .field {
+    max-width: 520px;
+  }
+  .share .actions {
+    gap: var(--space-2);
+    justify-content: flex-end;
   }
   .head {
     gap: var(--space-3);

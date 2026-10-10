@@ -221,11 +221,15 @@ First choose **what it looks like**:
   which setting to change.
 - **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
   readings you checked — only the region of each, not the whole picture — with what was read and
-  what was right. Each image is cut with the region the reading was made in, so moving the region
-  later does not spoil the readings from before. Look through it, then share it in
-  [GitHub Discussions](https://github.com/oleost/VisionState/discussions) and say what the display
-  or meter is: that shows what goes wrong where. Shared, the images are public domain (CC0; the
-  README and LICENSE inside the ZIP say so).
+  what was right, which reader read it and (for the wheel reader) where it saw each wheel. Each
+  image is cut with the region the reading was made in, so moving the region later does not spoil
+  the readings from before. Write what the meter is in *What meter is this?* (make, type, camera,
+  light). Most checked readings are rejected ones; for a fairer picture, press **Check 10 accepted
+  readings** to answer a few accepted ones first, or tick *Also the accepted readings nobody
+  checked* (they are marked as unchecked). Look through the ZIP, then share it in
+  [GitHub Discussions](https://github.com/oleost/VisionState/discussions): that shows what goes
+  wrong where. Shared, the images are public domain (CC0; the README and LICENSE inside the ZIP
+  say so). Nothing leaves your Home Assistant unless you share the file yourself.
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
