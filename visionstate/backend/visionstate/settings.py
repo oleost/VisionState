@@ -77,6 +77,9 @@ READING_MODES = ("counter", "value", "time_left")
 # counter with rolling digit wheels: the region is split into ``digits`` equal cells and only the
 # middle of each cell is read, so the dividers between the wheels are never read as digits.
 READING_DISPLAYS = ("auto", "led", "lcd", "counter")
+# What reads a "counter" display: "wheels" gives each wheel's position (readers.WheelReader, a wheel
+# half way between two digits is read as such); "ocr" reads the wheels as text with the number reader.
+COUNTER_READERS = ("wheels", "ocr")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
 READING_DEFAULTS = {
@@ -86,10 +89,11 @@ READING_DEFAULTS = {
     "device_class": "",
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
-    "max_step": 0.0,
+    "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
+    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
-    "spot_rate": 0.0,  # largest plausible change between two readings (0 = no limit)
+    "spot_rate": 0.0,
     # Counters: the rate entity (off by default in Home Assistant) is the change over about this
     # many minutes — long enough not to jump with every step of the counter, short enough to see a leak.
     "rate_window_min": 15.0,
@@ -126,12 +130,22 @@ READING = {
     "counter_band_tops": (0.0, 0.08, 0.16, 0.24),
     "counter_band_bottoms": (1.0, 0.92, 0.84, 0.76, 0.68, 0.6),
     "counter_band_min_height": 0.5,
+    # Wheel reader: how many position bins (0.1 of a digit each) a wheel at rest may sit off its
+    # digit, how far all wheels may appear shifted together (a region drawn a little above or
+    # below the digits) and what each bin of such a shift costs (log probability).
+    "wheel_slack_bins": 1,
+    "wheel_max_shift_bins": 2,
+    "wheel_shift_penalty": 0.3,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
-    # "Export verified readings" (to share, e.g. on GitHub): at most this many, newest first, each
-    # only the region plus this share of its size around it — not the whole picture.
-    "export_limit": 300,
+    # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones
+    # nobody checked whose frame is kept, each only the region plus this share of its size around
+    # it — not the whole picture. One ZIP of at most this size (GitHub takes 25 MB per file; about
+    # 1,000 readings).
     "export_margin": 0.15,
+    "export_max_mb": 24,
+    "export_meter_max_chars": 300,  # the optional "What meter is this?" text
+    "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
 }
 
 DETECTION = {
@@ -271,6 +285,30 @@ REVIEW_LIMITS = {
     "spot_rate": (0.0, 0.5),
 }
 
+# A reminder of a forgotten review queue: a notification in Home Assistant (and, if chosen, a push
+# to a phone) once the oldest frame has waited `after_days` and at least `min_items` frames are
+# waiting — never when a frame arrives. It goes away by itself when the queue is handled. Global
+# (Settings → Review reminder), stored in the database.
+REMINDER_DEFAULTS = {
+    "enabled": True,
+    "after_days": 7,
+    "min_items": 1,
+    "repeat": False,  # remind again every repeat_days while the frames still wait
+    "repeat_days": 7,
+    "notify_service": "",  # also push with this notify service ("notify.mobile_app_…"); "" = no push
+}
+REMINDER_LIMITS = {
+    "after_days": (1, 90),
+    "min_items": (1, 1000),
+    "repeat_days": (1, 90),
+}
+REMINDER = {
+    "check_interval_s": 3600,  # how often the queue's age is looked at (and right after it changes)
+    "notification_id": f"{APP_SLUG}_review",  # one notification, replaced instead of piling up
+    "test_notification_id": f"{APP_SLUG}_review_test",
+    "title": "VisionState",
+}
+
 # --- Uploads ----------------------------------------------------------------
 
 UPLOAD_LIMITS = {
@@ -377,6 +415,11 @@ def merge_review(global_rules: dict | None, sensor_overrides: dict | None) -> di
     merged = {**REVIEW_DEFAULTS, **(global_rules or {})}
     merged.update({k: v for k, v in (sensor_overrides or {}).items() if v is not None and k in REVIEW_DEFAULTS})
     return merged
+
+
+def merge_reminder(stored: dict | None) -> dict:
+    """The review reminder: stored values on top of REMINDER_DEFAULTS."""
+    return {**REMINDER_DEFAULTS, **{k: v for k, v in (stored or {}).items() if k in REMINDER_DEFAULTS}}
 
 
 def merge_objects(stored: dict | None) -> dict:

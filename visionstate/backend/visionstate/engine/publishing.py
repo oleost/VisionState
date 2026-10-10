@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
@@ -53,21 +54,27 @@ class PublishingMixin(RuntimeBase):
             # Re-send the last state so it is not lost when discovery is (re)published.
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)
 
-    def _review_counts(self) -> tuple[int, dict[str, int]]:
+    def _review_counts(self) -> tuple[int, dict[str, int], datetime | None]:
+        """Frames waiting for review: in all, per sensor, and when the oldest of them came (UTC)."""
         with self.db.session() as s:
             rows = s.execute(
-                select(Sensor.name, func.count(Prediction.id))
+                select(Sensor.name, func.count(Prediction.id), func.min(Prediction.created_at))
                 .join(Prediction, Prediction.sensor_id == Sensor.id)
                 .where(Prediction.reviewed.is_(False))
                 .group_by(Sensor.name)
             ).all()
-        per_sensor = {name: count for name, count in rows}
-        return sum(per_sensor.values()), per_sensor
+        per_sensor = {name: count for name, count, _ in rows}
+        oldest = min((first for _, _, first in rows), default=None)
+        if oldest is not None and oldest.tzinfo is None:
+            oldest = oldest.replace(tzinfo=UTC)
+        return sum(per_sensor.values()), per_sensor, oldest
 
     async def publish_review_count(self) -> None:
-        total, per_sensor = await asyncio.to_thread(self._review_counts)
+        total, per_sensor, oldest = await asyncio.to_thread(self._review_counts)
         await self.mqtt.publish(REVIEW_TOPICS["count"], str(total), retain=True)
-        await self.mqtt.publish(REVIEW_TOPICS["attributes"], {"per_sensor": per_sensor}, retain=True)
+        attributes = {"per_sensor": per_sensor, "oldest_waiting_since": oldest.isoformat() if oldest else None}
+        await self.mqtt.publish(REVIEW_TOPICS["attributes"], attributes, retain=True)
+        self._reminder_wanted.set()  # the queue changed: the reminder may be due, or may go away
 
     async def _on_mqtt_connect(self) -> None:
         await self.mqtt.publish_hub_discovery()

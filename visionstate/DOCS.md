@@ -58,7 +58,8 @@ Sensors made before 0.6.3b6 keep the IDs they have (`sensor.visionstate_<name>`,
 when exported and imported — nothing changes for them.
 
 In addition, the **VisionState** device has `sensor.visionstate_review_queue`: the number of
-frames waiting for review (with a per-sensor breakdown as attribute).
+frames waiting for review, with a per-sensor breakdown and `oldest_waiting_since` (when the
+oldest of them came) as attributes.
 
 The state entity also has a `probabilities` attribute with the score of every state and a
 `last_trigger` attribute telling what caused the last check.
@@ -168,9 +169,14 @@ First choose **what it looks like**:
   meters. Draw the region from the first wheel to the last and set the **number of digits**
   (every wheel inside the region, coloured ones too). The region is split into that many equal
   fields, shown on the image: each field should hold one wheel. A little room above and below
-  is fine; a region that cuts the digits is not. Only the middle of each field is read, so the
-  dividers between the wheels are never mistaken for digits, and a reading with another number
-  of digits than the counter has is rejected.
+  is fine; a region that cuts the digits is not. **Read with** chooses what reads the wheels:
+  - *Wheel reader* (default) — a small model made for VisionState that reads how far each wheel
+    has turned, so a wheel half way between two digits is read as such. It reads the wheels
+    together, the way they turn: a wheel only moves on while the wheel to its right goes from 9
+    to 0, so a reading where they do not fit together is never chosen.
+  - *Text reader* — reads the wheels as text with the number reader (Settings → AI model). Only
+    the middle of each field is read, so the dividers between the wheels are never mistaken for
+    digits, and a reading with another number of digits than the counter has is rejected.
 
 | Mode | For | In Home Assistant |
 |---|---|---|
@@ -185,13 +191,17 @@ First choose **what it looks like**:
   dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
   as 8.
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
-  five black and three red wheels has 8 digits and 3 digits after the decimal point. While a
-  wheel is turning its digit can be misread; a counter that reads lower than before is
-  rejected, and a limit on how much the value may change (Settings → Sensor output) catches a
-  misread that is too high. A reading exactly one step of the last digit below the value is the
+  five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
+  wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
+  a limit on how much the value may change (Settings → Sensor output) catches a misread that is
+  too high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
+  On a real water meter with red wheels (an ESP32 camera with its flash) the wheel reader read
+  all 17 checked images right; the text reader read 15 with PP-OCRv6 small and 8 with the
+  included tiny reader. New counters use the wheel reader; counters set up before it came keep the
+  text reader until you choose *Wheel reader* on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, or the value changes more than the
@@ -209,12 +219,16 @@ First choose **what it looks like**:
   on the Review page) takes them out of the queue. Answers already given and the counts stay.
   The reader does **not** learn from these answers: they show how reliable the reading is and
   which setting to change.
-- **Help improve reading:** **Export checked readings** (Quality tab) downloads a ZIP of the
-  readings you checked — only the region of each, not the whole picture — with what was read and
-  what was right. Look through it, then share it in
-  [GitHub Discussions](https://github.com/oleost/VisionState/discussions) and say what the display
-  or meter is: that shows what goes wrong where. Shared, the images are public domain (CC0; the
-  README and LICENSE inside the ZIP say so).
+- **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
+  checked and the accepted ones nobody checked (marked as unchecked) — only the region of each,
+  not the whole picture — with what was read and what was right, which reader read it and (for
+  the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
+  made in, so moving the region later does not spoil the readings from before. Write what the
+  meter is in *What meter is this?* (make, type, camera, light) first. The ZIP stays under 24 MB
+  so GitHub takes it (about 1,000 readings, newest first). Look through the ZIP, then share it in
+  [GitHub Discussions](https://github.com/oleost/VisionState/discussions): that shows what goes
+  wrong where. Shared, the images are public domain (CC0; the README and LICENSE inside the ZIP
+  say so). Nothing leaves your Home Assistant unless you share the file yourself.
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
@@ -230,10 +244,10 @@ First choose **what it looks like**:
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
   | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
-- Works best on LCD and LED displays and printed signs. **Mechanical counters** are new and
-  have so far only been tried on one type of water meter: they read well while the wheels stand
-  still and less reliably in the moment a wheel turns. Small pointer dials (the red hands on
-  some water meters) are not read.
+- Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
+  has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
+  other meters may need a tighter region. Small pointer dials (the red hands on some water
+  meters) are not read.
 - Reading sensors are **new** and have hardly been tried on real cameras yet. Feedback helps a
   lot: what the display or meter is, whether it read correctly, and a screenshot of *What the reader
   sees* — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions) or as an
@@ -257,6 +271,16 @@ First choose **what it looks like**:
   Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
   again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
   it is not added a second time.
+- **Review reminder** (**Settings → Review reminder**, on by default): when frames have waited a
+  long time, a notification appears in Home Assistant (the bell in the sidebar) — *There are 11
+  frames waiting for review in VisionState, the oldest for 8 days* — with a link to the app. It
+  never comes just because a frame arrived: only once the oldest frame has waited 7 days (and at
+  least 1 frame waits; both can be changed). It goes away by itself once those frames are
+  reviewed. **Remind again** (off by default) repeats it every few days while they still wait.
+  **Also push to a phone** (off by default) sends it to a notify service as well, such as the
+  Companion app (`notify.mobile_app_…`); tapping it opens VisionState. **Send a test** shows what
+  it looks like. Frames waiting for review are removed after twice the history days (Storage), so
+  the reminder must come before that — the card warns when it would not.
 - **History tab**: every state change with its frame (tap it to see the whole frame). If one
   was wrong, add it to the dataset with the correct state. Filter it by state or event to find
   the frames you are looking for (see [History](#history)).
@@ -377,7 +401,10 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
   first use, 15 MB). The detector is only loaded while at least one object sensor exists.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
-  PP-OCRv6 small is larger and can help with unusual fonts (downloaded on first use, 21 MB).
+  PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
+  21 MB). Mechanical counters are read by the included **VisionState wheel reader** (2 MB, a few
+  milliseconds per reading, listed under *Reading sensors: mechanical counters*) unless a sensor
+  is set to the text reader. There is one wheel reader so far, so there is nothing to choose.
   Only loaded while at least one reading sensor exists.
 
 A choice you made stays when a later version recommends another model.

@@ -5,7 +5,7 @@
   import { app } from '../app.svelte';
   import { decimalsSeen, readingType } from '../reading';
   import type { ReadingMode, ReadingSettings, ReadingType } from '../types';
-  import { READING_DISPLAY_INFO, READING_MODE_INFO, READING_TYPE_INFO, READING_TYPE_MODES, UNIT_DEVICE_CLASS } from '../ui';
+  import { COUNTER_READER_INFO, READING_DISPLAY_INFO, READING_MODE_INFO, READING_TYPE_INFO, READING_TYPE_MODES, UNIT_DEVICE_CLASS } from '../ui';
 
   // seen: the text the reader last saw (a test read), to suggest the number of decimals.
   let { value = $bindable(), seen = null }: { value: ReadingSettings; seen?: string | null } = $props();
@@ -16,6 +16,7 @@
   // The display details of a digital display; a mechanical counter is chosen as the type above.
   const displays = $derived((app.config?.reading_displays ?? []).filter((d) => d !== 'counter'));
   const digitLimits = $derived(app.config?.reading_limits.digits ?? [1, 12]);
+  const counterReaders = $derived(app.config?.counter_readers ?? []);
   const deviceClasses = $derived(app.config?.reading_device_classes ?? []);
   const decimals = $derived(app.config?.reading_limits.decimals ?? [0, 4]);
   const suggested = $derived.by(() => {
@@ -134,9 +135,20 @@
       <span class="hint">Pick LED or LCD if faint, unlit segments are read as digits (a 3 read as 8).</span>
     </label>
   {:else}
+    <label class="field" style="max-width:360px">
+      Read with
+      <select class="input" bind:value={value.counter_reader}>
+        {#each counterReaders as r (r)}<option value={r}>{COUNTER_READER_INFO[r]}</option>{/each}
+      </select>
+      <span class="hint"
+        >{value.counter_reader === 'wheels'
+          ? 'Reads how far each wheel has turned, so a wheel between two digits is read right.'
+          : 'Reads the wheels as text; a turning wheel can be misread.'}</span
+      >
+    </label>
     <p class="small muted">
-      While a wheel is turning its digit can be misread. A counter that reads lower than before is rejected; under
-      <em>Sensor output</em> you can also limit how much it may change at once.
+      A counter that reads lower than before is rejected; under <em>Sensor output</em> you can also limit how much it
+      may change at once.
     </p>
   {/if}
 </div>

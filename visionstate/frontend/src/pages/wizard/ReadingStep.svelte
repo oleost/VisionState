@@ -83,7 +83,7 @@
     <div class="read-images">
       <div class="col" style="gap:6px">
         <RoiEditor src={result.image} bind:roi editable>
-          {#if reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} />{/if}
+          {#if reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
         </RoiEditor>
         <span class="xsmall faint">
           {#if reading.display === 'counter'}
@@ -95,7 +95,11 @@
         </span>
       </div>
       <div class="col" style="gap:6px">
-        <span class="xsmall faint">What the reader sees{reading.display === 'counter' ? ' — the wheels without their dividers' : ''}</span>
+        <span class="xsmall faint">What the reader sees{reading.display === 'counter'
+            ? reading.counter_reader === 'wheels'
+              ? ' — one field per wheel'
+              : ' — the wheels without their dividers'
+            : ''}</span>
         <img class="seen" src={result.read_image} alt="The region as the number reader saw it" />
       </div>
     </div>

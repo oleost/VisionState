@@ -43,9 +43,9 @@ without writing code or leaving Home Assistant:
 - 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
   count and an on/off sensor for each. Pick them, done. Wrong about your garden statue? Tap the
   box: *not a person*. Want *our car* apart from any car? Give it its own label.
-- 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters, prices, the
-  minutes left on the washing machine. Counters
-  only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
+- 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters (read wheel by
+  wheel, also while a wheel is half way between two digits), prices, the minutes left on the
+  washing machine. Counters only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
   Quality tab shows how reliably your meter is read.
 - 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
   the AI ignores everything else.
@@ -59,7 +59,8 @@ without writing code or leaving Home Assistant:
 - 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
   doesn't drag the sensor down.
 - 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
-  one click turns them into training data.
+  one click turns them into training data. Forgot about it? A reminder shows up in Home Assistant
+  (or on your phone) after a week — never a ping for every frame.
 - 🕓 **Everything in one history** — every state change, object that came and went and reading,
   with its frame; filter by sensor, by what was seen, by event and by time, and bookmark the view.
 - 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
@@ -180,7 +181,10 @@ teach it your camera: later boxes that clearly look like one you taught get your
 
 Reading sensors read the digits in the region with a small text recognizer
 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,
-then check the value (a counter never goes down) before publishing it.
+then check the value (a counter never goes down) before publishing it. Mechanical counters are
+read by a small model made for VisionState that tells how far each wheel has turned; the wheels
+are read together, the way they turn ([`tools/wheelreader`](tools/wheelreader), trained on
+public-domain meter photos and drawn wheels).
 
 Everything stays on your machine: images live in `/media/visionstate`, models and settings in
 the app's data folder (included in Home Assistant backups).
@@ -251,7 +255,7 @@ Issues and ideas are welcome in [GitHub Issues](https://github.com/oleost/Vision
 
 ## Licence
 
-[Apache-2.0](LICENSE). The bundled models are Apache-2.0 as well: DINOv2 (Meta), D-FINE and
-PaddleOCR PP-OCRv6.
+[Apache-2.0](LICENSE). The bundled models are Apache-2.0 as well: DINOv2 (Meta), D-FINE,
+PaddleOCR PP-OCRv6 and the VisionState wheel reader.
 
 If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕

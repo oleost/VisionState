@@ -472,6 +472,8 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
             "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
             "waiting": count(Prediction.reviewed.is_(False)),
+            # accepted, nobody checked, the frame kept: they go into the export too
+            "unchecked_accepted": count(~rejected, Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
         }
         items = s.scalars(
             select(Prediction)
@@ -488,8 +490,12 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
 
 
 @router.get("/{sensor_id}/reading-export")
-async def reading_export(sensor_id: int, request: Request, background: BackgroundTasks) -> FileResponse:
-    """A ZIP of the readings checked by hand: only the region of each, what was read, the answer."""
+async def reading_export(
+    sensor_id: int, request: Request, background: BackgroundTasks, meter: str = ""
+) -> FileResponse:
+    """A ZIP of the readings to share (checked ones, then accepted ones nobody checked), under
+    GitHub's file size: only the region of each, what was read, the answer.
+    ``meter``: what the user says the meter is."""
     rt = runtime(request)
     with rt.db.session() as s:
         get_sensor(s, sensor_id, KIND_READING)
@@ -498,7 +504,7 @@ async def reading_export(sensor_id: int, request: Request, background: Backgroun
     os.close(fd)
     tmp = Path(name)
     try:
-        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader)
+        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader, meter)
     except LookupError as err:
         tmp.unlink(missing_ok=True)
         raise HTTPException(404, str(err)) from err

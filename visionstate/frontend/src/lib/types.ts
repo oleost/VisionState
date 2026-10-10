@@ -41,6 +41,25 @@ export interface ReviewRules {
   spot_rate: number;
 }
 
+/** A reminder in Home Assistant when frames have waited for review a long time (Settings). */
+export interface ReminderRules {
+  enabled: boolean;
+  /** Remind when the oldest frame has waited this many days … */
+  after_days: number;
+  /** … and at least this many frames wait. */
+  min_items: number;
+  /** Remind again every repeat_days while they still wait. */
+  repeat: boolean;
+  repeat_days: number;
+  /** Also push with this notify service ('notify.mobile_app_…'); '' = only the notification in Home Assistant. */
+  notify_service: string;
+}
+
+/** The reminder and when the one that is up now was sent (null: none is up). */
+export interface ReminderInfo extends ReminderRules {
+  sent_at: string | null;
+}
+
 /** Per-sensor overrides: null = use the global value. */
 export type ReviewOverrides = { [K in keyof ReviewRules]: ReviewRules[K] | null };
 
@@ -63,6 +82,8 @@ export type ReadingMode = 'counter' | 'value' | 'time_left';
 export type ReadingDisplay = 'auto' | 'led' | 'lcd' | 'counter';
 /** What is being read, as chosen first in the reading editor ('display' covers auto, led and lcd). */
 export type ReadingType = 'display' | 'counter';
+/** What reads a mechanical counter: each wheel's position, or the wheels as text (OCR). */
+export type CounterReader = 'wheels' | 'ocr';
 
 export interface ReadingSettings {
   mode: ReadingMode;
@@ -72,6 +93,8 @@ export interface ReadingSettings {
   display: ReadingDisplay;
   /** Mechanical counters only: the number of wheels inside the region. */
   digits: number;
+  /** Mechanical counters only: what reads the wheels. */
+  counter_reader: CounterReader;
   max_step: number;
   /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
   spot_rate: number;
@@ -99,6 +122,8 @@ export interface ReadingQuality {
     misread_accepted: number;
     right_accepted: number;
     waiting: number;
+    /** Accepted readings nobody checked whose frame is kept (they go into the export too). */
+    unchecked_accepted: number;
   };
   items: Prediction[];
 }
@@ -335,6 +360,8 @@ export interface AppConfig {
   review_defaults: ReviewRules;
   roi_max_points: number;
   review_limits: Record<Exclude<keyof ReviewRules, 'enabled'>, [number, number]>;
+  reminder_defaults: ReminderRules;
+  reminder_limits: Record<'after_days' | 'min_items' | 'repeat_days', [number, number]>;
   sensor_kinds: SensorKind[];
   object_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   object_defaults: ObjectSettings;
@@ -349,11 +376,12 @@ export interface AppConfig {
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
+  counter_readers: CounterReader[];
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
-  /** At most this many checked readings go into "Export checked readings". */
-  reading_export_limit: number;
+  /** Longest "What meter is this?" text of a readings export. */
+  reading_export_meter_max_chars: number;
   storage_defaults: { history_max_gb: number };
   storage_limits: Record<'history_days' | 'history_max_gb', [number, number]>;
   /** Browsing the history: page sizes, time windows offered (hours) and how often it looks for new rows. */
@@ -375,6 +403,10 @@ export interface Status {
   reader: string | null;
   reader_name: string | null;
   reader_error: string;
+  /** Mechanical counters read wheel by wheel; loaded on first use. */
+  wheel_reader: string | null;
+  wheel_reader_name: string | null;
+  wheel_reader_error: string;
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -522,6 +554,9 @@ export interface SettingsInfo {
   detectors: DetectorInfo[];
   reader: string;
   readers: DetectorInfo[];
+  /** The wheel reader for mechanical counters (one model for now, nothing to choose). */
+  wheel_reader: string;
+  wheel_readers: DetectorInfo[];
   options: Record<string, string | number>;
 }
 

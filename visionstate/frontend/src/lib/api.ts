@@ -12,6 +12,8 @@ import type {
   ReadPreview,
   ReadingQuality,
   ReadingSettings,
+  ReminderInfo,
+  ReminderRules,
   ReviewRules,
   Roi,
   ReviewItem,
@@ -202,6 +204,11 @@ export const api = {
 
   reviewRules: () => request<ReviewRules>('review-rules'),
   saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
+  reviewReminder: () => request<ReminderInfo>('review-reminder'),
+  saveReviewReminder: (rules: ReminderRules) => request<ReminderInfo>('review-reminder', send('PUT', rules)),
+  /** Sends a reminder now with these settings (saved or not); push_error: '' = pushed or no push chosen. */
+  testReviewReminder: (rules: ReminderRules) => request<{ push_error: string }>('review-reminder/test', send('POST', rules)),
+  notifyServices: () => request<string[]>('notify-services'),
   review: () =>
     request<{ total: number; items: ReviewItem[]; sensors: { id: number; name: string; count: number }[] }>('review'),
   /** Take every waiting item of one sensor out of the queue (as if each was skipped). */
@@ -215,8 +222,10 @@ export const api = {
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
   readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
-  /** ZIP of the readings checked by hand (only the region of each), to share. */
-  readingExportUrl: (id: number) => `${BASE}sensors/${id}/reading-export`,
+  /** ZIP of the readings to share (checked, then accepted ones nobody checked; only the region of
+   * each), small enough for GitHub; `meter` = what the user says the meter is. */
+  readingExportUrl: (id: number, meter = '') =>
+    `${BASE}sensors/${id}/reading-export${meter.trim() ? `?${new URLSearchParams({ meter: meter.trim() })}` : ''}`,
 
   /** Object sensors: what was taught, and teaching one box (or forgetting it). */
   taught: (id: number) => request<Taught>(`sensors/${id}/taught`),

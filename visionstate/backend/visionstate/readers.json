@@ -27,5 +27,23 @@
       "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
       "bundled": false
     }
+  },
+  "wheel_readers": {
+    "default": "wheels-v1",
+    "readers": {
+      "wheels-v1": {
+        "name": "VisionState wheel reader v1",
+        "description": "Reads how far each wheel of a mechanical counter has turned; trained for VisionState (tools/wheelreader).",
+        "url": "https://huggingface.co/oleost/visionstate-wheel-reader/resolve/42f32402973b3bd3de0258766404232b11e8216f/wheels-v1.onnx",
+        "sha256": "37912f885b061a7b12298872fbdfa1b73ca0664363b293a55617b1d3680a98ac",
+        "size": 2264691,
+        "cell_width": 32,
+        "cell_height": 48,
+        "bins": 100,
+        "license": "Apache-2.0",
+        "source": "https://huggingface.co/oleost/visionstate-wheel-reader",
+        "bundled": true
+      }
+    }
   }
 }

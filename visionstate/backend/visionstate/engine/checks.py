@@ -255,7 +255,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             await self._run_objects(cfg, image)
             return
         if cfg.is_reading:
-            await self._run_reading(cfg, image)
+            await self._run_reading(cfg, image, lit)
             return
         await self._run_states(cfg, image)
 

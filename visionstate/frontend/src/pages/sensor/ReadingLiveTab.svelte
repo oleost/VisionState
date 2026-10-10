@@ -52,14 +52,21 @@
       </div>
     </section>
 
+    {#if reading.display === 'counter' && reading.counter_reader === 'ocr'}
+      <div class="notice small" data-testid="try-wheel-reader">
+        New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is read
+        right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.
+      </div>
+    {/if}
+
     {#if reading.has_image && last}
       <section class="card pad col">
         <div class="card-title"><h3>What the reader sees</h3><span class="xsmall faint">the region after display processing</span></div>
         <img class="seen" src={api.readingImageUrl(sensor.id, last.at)} alt="The region as the number reader saw it" />
         <p class="xsmall muted">
           {#if reading.display === 'counter'}
-            One wheel per field, without the dividers between them. If a digit is cut off or sits in two fields, adjust
-            the region or the number of digits on the Settings tab.
+            One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}. If a
+            digit is cut off or sits in two fields, adjust the region or the number of digits on the Settings tab.
           {:else}
             If digits are cut off or faint segments show up here, draw the region tighter around the number or pick the
             display type on the Settings tab.

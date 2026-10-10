@@ -1,5 +1,5 @@
 // Helpers for reading sensors: how a value and its unit are shown.
-import type { Prediction, ReadingSettings, ReadingType, Sensor } from './types';
+import type { Prediction, ReadingSettings, ReadingType, Roi, Sensor } from './types';
 
 /** The unit shown next to a value ("min" for time left). */
 export function readingUnit(settings: Pick<ReadingSettings, 'mode' | 'unit'>): string {
@@ -41,9 +41,18 @@ export function decimalsSeen(text: string | null | undefined): number | null {
 
 export const isReadingSensor = (sensor: Pick<Sensor, 'kind'>) => sensor.kind === 'reading';
 
-/** What a stored reading holds: the text read, its value and why it was rejected (null = accepted). */
+/**
+ * What a stored reading holds: the text read, its value, why it was rejected (null = accepted) and
+ * the region it was read in (null = the whole frame; missing in readings from before 0.7.1b2).
+ */
 export const readingDetail = (p: Prediction) =>
-  p.probs as unknown as { text?: string; value?: string | null; reason?: string | null };
+  p.probs as unknown as { text?: string; value?: string | null; reason?: string | null; roi?: Roi | null };
+
+/** The region a stored reading was read in, or the sensor's region for readings that did not keep it. */
+export function readingRoi(p: Prediction, sensor: Pick<Sensor, 'roi'>): Roi | null {
+  const detail = readingDetail(p);
+  return detail.roi !== undefined ? detail.roi : sensor.roi;
+}
 
 /**
  * What a value typed as the right one is saved as, or null when it is not a number. Mirrors

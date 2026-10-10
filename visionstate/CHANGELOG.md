@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.8.0
+
+### New
+
+- **Wheel reader for mechanical counters.** Water and gas meters are now read wheel by wheel
+  with a small model made for VisionState: it sees how far each wheel has turned, so a wheel
+  half way between two digits no longer turns into a wrong digit. The wheels are read together,
+  the way they turn (a wheel only moves on while the one to its right goes from 9 to 0), so a
+  reading where they do not fit together is never chosen. On the shared images of a water meter
+  with red wheels (thanks, @pedromfa — issue #40) it read all 17 right; PP-OCRv6 small read 15
+  and the included tiny reader 8. It is included (2 MB, a few milliseconds per reading) and is
+  used by every new mechanical counter. Counters you already have keep the text reader until you
+  choose *Read with → Wheel reader* on their Settings tab; their Live tab points to it. **Settings
+  → AI model** shows the wheel reader with its licence and source, and whether it is loaded. The
+  model, its training code and where its data comes from are in `tools/wheelreader`.
+- **Review reminder**: when frames have waited for review a long time, a notification shows up in
+  Home Assistant — *There are 11 frames waiting for review in VisionState, the oldest for 8 days*
+  — with a link to the app. It never comes just because a frame arrived: by default once the
+  oldest frame has waited 7 days, and it goes away by itself once they are reviewed. Set it under
+  **Settings → Review reminder**: after how many days, from how many frames, whether to remind
+  again every few days (off by default) and whether to push it to a phone as well (off by
+  default; any notify service, such as the Companion app). **Send a test** shows what it looks
+  like. The review queue entity has a new attribute, `oldest_waiting_since`, for automations of
+  your own.
+
+### Better
+
+- **Mechanical counters with coloured wheels** read more reliably with the text reader too. The
+  red decimal wheels of a water meter were seen as light grey, and a red "9" was read as a "5";
+  they are now read as dark as the black ones.
+- **Export readings** (Quality tab of a reading sensor, was *Export checked readings*) gives more
+  to help improve reading:
+  - the accepted readings nobody checked come along too, marked as unchecked, so an export is no
+    longer mostly the readings that were rejected;
+  - as many readings as fit in 24 MB (about 1,000), so GitHub takes the file: the checked ones
+    first, then the newest unchecked ones;
+  - an optional **What meter is this?** text goes into the export, so it is not forgotten;
+  - every reading says which reader read it and with which VisionState version, whether the
+    picture was greyscale (infrared at night) and whether VisionState had the sensor's light on;
+    for the wheel reader also where it saw each wheel and how sure it was.
+
+### Fixed
+
+- **Export readings** cut every image with the sensor's region as it is now, so after moving the
+  camera or the region the older images showed the wrong part of the picture. Every reading now
+  keeps the region it was read in, and the export, the review queue, the History and the Quality
+  tab use it. Readings from before this version still use the current region (the export marks
+  them `"region": "current"`).
+- On a phone, a rejected reading in the History with a long reason (*not the number of digits
+  the counter has*) made the page scroll sideways; the reason now wraps.
+
 ## 0.7.0
 
 A release about looking back: everything your sensors recorded in one place, and the images

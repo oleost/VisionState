@@ -2,6 +2,7 @@
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReminderCard from '../lib/components/ReminderCard.svelte';
   import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
   import StorageCard from '../lib/components/StorageCard.svelte';
   import { mb } from '../lib/format';
@@ -48,6 +49,7 @@
   const selected = $derived(info?.backbones.find((b) => b.id === backbone));
   const selectedDetector = $derived(info?.detectors.find((d) => d.id === detector));
   const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
+  const wheelReader = $derived(info?.wheel_readers.find((r) => r.id === info?.wheel_reader));
   const retrains = $derived(info !== null && backbone !== info.backbone);
   const changed = $derived(info !== null && (retrains || detector !== info.detector || reader !== info.reader));
 
@@ -112,8 +114,13 @@
           },
           {
             label: 'Number reader',
-            value: app.status.reader_error || app.status.reader_name || 'loaded when a reading sensor exists',
+            value: app.status.reader_error || app.status.reader_name || 'loaded when a display, or a counter read as text, is read',
             ok: !app.status.reader_error,
+          },
+          {
+            label: 'Wheel reader',
+            value: app.status.wheel_reader_error || app.status.wheel_reader_name || 'loaded when a mechanical counter is read',
+            ok: !app.status.wheel_reader_error,
           },
         ]
       : [],
@@ -161,7 +168,7 @@
           {/if}
         </label>
         <label class="field">
-          Reading sensors
+          Reading sensors: displays
           <select class="input" bind:value={reader}>
             {#each info.readers as r (r.id)}
               <option value={r.id}>{r.name}{r.installed ? '' : ` · download ${mb(r.size)}`}</option>
@@ -170,10 +177,22 @@
           {#if selectedReader}
             <span class="hint"
               >{selectedReader.description} PaddleOCR ({selectedReader.license}),
-              <a href={selectedReader.source} target="_blank" rel="noreferrer">source</a>.</span
+              <a href={selectedReader.source} target="_blank" rel="noreferrer">source</a>. Also reads mechanical counters set to
+              <em>Read with → Text reader</em>.</span
             >
           {/if}
         </label>
+        {#if wheelReader}
+          <div class="field" data-testid="wheel-reader">
+            Reading sensors: mechanical counters
+            <span class="model">{wheelReader.name} · included</span>
+            <span class="hint"
+              >{wheelReader.description} {wheelReader.license},
+              <a href={wheelReader.source} target="_blank" rel="noreferrer">source</a>. Used by counters set to
+              <em>Read with → Wheel reader</em> (the default).</span
+            >
+          </div>
+        {/if}
         <div class="row">
           <button class="btn primary" disabled={!changed || saving} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}
@@ -193,6 +212,8 @@
         </button>
       {/if}
     </section>
+
+    <ReminderCard />
 
     <StorageCard />
 
@@ -214,3 +235,10 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .model {
+    font: 400 var(--fs-lg) var(--font-body);
+    color: var(--c-text);
+  }
+</style>

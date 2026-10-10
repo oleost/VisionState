@@ -7,7 +7,7 @@
   import ReadingVerdict from '../../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../../lib/format';
-  import { REJECT_REASONS, rate, readingDetail as detail, readingUnit } from '../../lib/reading';
+  import { REJECT_REASONS, rate, readingDetail as detail, readingRoi, readingUnit } from '../../lib/reading';
   import { href, paths } from '../../lib/router.svelte';
   import type { ReadingQuality, Sensor } from '../../lib/types';
 
@@ -55,7 +55,9 @@
   const shownDay = $derived(quality ? quality.daily[hover ?? quality.daily.length - 1] : null);
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
-  const exportLimit = $derived(app.config?.reading_export_limit ?? verifiedTotal);
+  const unchecked = $derived(v?.unchecked_accepted ?? 0);
+
+  let meter = $state(''); // the export's optional "What meter is this?"
 
   let dismissing = $state(false);
   async function dismissAll() {
@@ -193,20 +195,30 @@
         reliable the reading is. Spot checks of accepted readings can be switched on under Settings → Sensor output.
       </p>
     </div>
-    {#if verifiedTotal}
-      <div class="card pad row wrap share">
-        <span class="col" style="gap:2px;flex:1 1 280px;min-width:0">
+    {#if verifiedTotal || unchecked}
+      <div class="card pad col share">
+        <div class="col" style="gap:2px;min-width:0">
           <strong class="small">Help improve reading</strong>
           <span class="xsmall muted">
-            A ZIP with {Math.min(verifiedTotal, exportLimit) === 1
-              ? 'the reading you checked'
-              : `the ${Math.min(verifiedTotal, exportLimit)} readings you checked`}: only the region, not the whole picture,
-            with what was read and what was right. Share it in
-            <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>
-            — shared, the images are public domain (CC0, see the README inside).
+            A ZIP of the readings — only the region — to share in
+            <a href="https://github.com/oleost/VisionState/discussions" target="_blank" rel="noopener">GitHub Discussions</a>.
+            Shared, the images are public domain (CC0).
           </span>
-        </span>
-        <a class="btn sm" href={api.readingExportUrl(sensor.id)} download><Icon name="download" size={14} /> Export checked readings</a>
+        </div>
+        <label class="field small">
+          <span>What meter is this? <span class="hint">optional</span></span>
+          <input
+            class="input sm"
+            bind:value={meter}
+            maxlength={app.config?.reading_export_meter_max_chars}
+            placeholder="e.g. water meter with red wheels, ESP32 camera with flash"
+          />
+        </label>
+        <div class="row wrap actions">
+          <a class="btn sm" href={api.readingExportUrl(sensor.id, meter)} download>
+            <Icon name="download" size={14} /> Export readings
+          </a>
+        </div>
       </div>
     {/if}
     {#if v?.waiting}
@@ -259,7 +271,7 @@
           />
         </div>
         {#if open === p.id && p.has_frame}
-          <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={sensor.roi} /></div>
+          <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={readingRoi(p, sensor)} /></div>
         {/if}
       </div>
     {/each}
@@ -383,7 +395,13 @@
   }
   .share {
     gap: var(--space-3);
-    align-items: center;
+  }
+  .share .field {
+    max-width: 520px;
+  }
+  .share .actions {
+    gap: var(--space-2);
+    justify-content: flex-end;
   }
   .head {
     gap: var(--space-3);

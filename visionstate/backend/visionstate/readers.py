@@ -6,6 +6,10 @@ Bundled readers are downloaded together with the backbones (``python -m visionst
 
 A reader is a text recognition model with CTC output (PP-OCR). Decoding is limited to the
 characters in ``settings.READING["chars"]``, so a reading can never contain a letter.
+
+Mechanical counters are read by default with a wheel reader (``wheel_readers`` in the same
+file): a small model trained for VisionState (``tools/wheelreader``) that gives each wheel's
+position, so a wheel half way between two digits is read as such.
 """
 
 from __future__ import annotations
@@ -126,6 +130,16 @@ def plain(image: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(image.convert("L"), cutoff=1).convert("RGB")
 
 
+def darkest(image: Image.Image) -> Image.Image:
+    """Grey from each pixel's darkest colour channel: coloured digits turn as dark as black ones.
+
+    The red decimal wheels of a water meter are only mid-grey in a plain grey image, and the
+    reader then takes a "9" for a "5". Black digits on white wheels look as before.
+    """
+    grey = Image.fromarray(np.asarray(image.convert("RGB")).min(axis=2))
+    return ImageOps.autocontrast(grey, cutoff=1).convert("RGB")
+
+
 def counter_line(image: Image.Image, digits: int) -> Image.Image:
     """The wheels of a mechanical counter side by side, without the dividers between them.
 
@@ -149,6 +163,9 @@ def counter_line(image: Image.Image, digits: int) -> Image.Image:
 class Text:
     text: str
     score: float  # mean probability of the read characters (0 when nothing was read)
+    # What the reader can tell about the read beyond the text (kept with the reading, exported):
+    # its id, and for the wheel reader each wheel's position (WheelReader.read_counter).
+    details: dict | None = None
 
 
 class Reader:
@@ -179,11 +196,12 @@ class Reader:
     def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
         """Read a mechanical counter with ``digits`` wheels; returns the read and the image used.
 
-        The wheels are pasted into one line without their dividers (``counter_line``). Several row
+        The wheels are pasted into one line without their dividers (``counter_line``) and turned
+        grey by their darkest colour channel, so coloured wheels read like black ones. Several row
         bands are read and the most confident read with ``digits`` digits wins; when none has
         that many, the read of the whole height is returned so the caller can say what was seen.
         """
-        line = plain(counter_line(image, digits))
+        line = darkest(counter_line(image, digits))
         best: tuple[Text, Image.Image] | None = None
         whole: tuple[Text, Image.Image] | None = None
         for top in READING["counter_band_tops"]:
@@ -233,6 +251,197 @@ def decode(probs: np.ndarray, chars: list[str]) -> Text:
             scores.append(float(p))
         previous = index
     return Text("".join(text), float(np.mean(scores)) if scores else 0.0)
+
+
+# --- wheel reader (mechanical counters) -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class WheelReaderSpec:
+    id: str
+    name: str
+    description: str
+    url: str
+    sha256: str
+    size: int
+    cell_width: int
+    cell_height: int
+    bins: int  # positions around a wheel: bin b is position b / (bins / 10)
+    license: str
+    source: str
+    bundled: bool
+
+    @property
+    def filename(self) -> str:
+        return f"{self.id}.onnx"
+
+
+def load_wheel_registry() -> tuple[str, dict[str, WheelReaderSpec]]:
+    """The default wheel reader's id and every wheel reader in ``readers.json``."""
+    raw = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))["wheel_readers"]
+    specs = {
+        key: WheelReaderSpec(
+            id=key,
+            name=v["name"],
+            description=v.get("description", ""),
+            url=v["url"],
+            sha256=v["sha256"],
+            size=int(v.get("size", 0)),
+            cell_width=int(v["cell_width"]),
+            cell_height=int(v["cell_height"]),
+            bins=int(v["bins"]),
+            license=v.get("license", ""),
+            source=v.get("source", ""),
+            bundled=bool(v.get("bundled", False)),
+        )
+        for key, v in raw["readers"].items()
+    }
+    return raw["default"], specs
+
+
+DEFAULT_WHEEL_READER, WHEEL_READERS = load_wheel_registry()
+
+
+def wheel_cells(image: Image.Image, digits: int, width: int, height: int) -> np.ndarray:
+    """The region split into ``digits`` equal cells, each as the wheel model sees it.
+
+    Grey from the darkest colour channel (coloured wheels look like black ones), scaled to
+    ``width`` x ``height`` and stretched to full contrast; float32 in 0..1, cells x height x width.
+    """
+    grey = Image.fromarray(np.asarray(image.convert("RGB")).min(axis=2))
+    cell = grey.width / max(1, digits)
+    out = []
+    for i in range(max(1, digits)):
+        part = grey.crop((round(i * cell), 0, max(round(i * cell) + 1, round((i + 1) * cell)), grey.height))
+        part = ImageOps.autocontrast(part.resize((width, height), Image.Resampling.BILINEAR), cutoff=1)
+        out.append(np.asarray(part, dtype=np.float32) / 255.0)
+    return np.stack(out)
+
+
+def wheel_value(logp: np.ndarray) -> tuple[float, float]:
+    """The most likely counter value for per-wheel position log probabilities (wheels x 100 bins).
+
+    A mechanical counter's wheels are not independent: the last wheel turns freely and every
+    other wheel stands on its digit, turning only while the wheel to its right goes from 9 to 0
+    (by as much as that wheel is past 9). A dynamic programme from right to left finds the
+    value whose wheel positions are most likely together. Returns the value in steps of the
+    last wheel, with its fraction (0089949.8 = last wheel at 9.8), and its log probability.
+    """
+    value, score, _ = wheel_decode(logp)
+    return value, score
+
+
+def wheel_decode(logp: np.ndarray) -> tuple[float, float, list[int]]:
+    """``wheel_value`` plus the bin every wheel stands at in that value (left to right)."""
+    wheels, bins = logp.shape
+    tenth = bins // 10
+    best = logp[-1].copy()  # best score of the wheels to the right, by this wheel's bin
+    back = []
+    for k in range(wheels - 2, -1, -1):
+        # The right neighbour at bin b moves this wheel by f = max(0, b - 9 * tenth) bins.
+        rest = int(best[: 9 * tenth + 1].argmax())
+        lead = np.concatenate([[best[rest]], best[9 * tenth + 1 :]])  # best score per offset f
+        lead_bin = np.concatenate([[rest], np.arange(9 * tenth + 1, bins)])
+        best = (logp[k].reshape(10, tenth) + lead[None, :]).reshape(bins)
+        back.append(np.tile(lead_bin, 10))
+    b = int(best.argmax())
+    score = float(best[b])
+    at = [b]
+    for arg in reversed(back):
+        b = int(arg[b])
+        at.append(b)
+    value = 0.0
+    for a in at[:-1]:
+        value = value * 10 + a // tenth
+    return value * 10 + at[-1] / tenth, score, at
+
+
+def wheel_details(probs: np.ndarray, logp: np.ndarray, value: float, score: float, at: list[int], shift: int) -> dict:
+    """How a wheel reading was found, in positions (0.0-9.9): per wheel where the value puts it
+    as seen in the image (``at``, with the common ``shift``), the probability the decoder used
+    there (``p``, a little slack included) and the model's most likely positions (``top``);
+    the value in steps of the last wheel with its fraction, and its log probability."""
+    bins = probs.shape[1]
+    tenth = bins // 10
+    top = READING["export_wheel_top"]
+    wheels = []
+    for k, b in enumerate(at):
+        seen = (b + shift) % bins
+        order = np.argsort(probs[k])[::-1][:top]
+        wheels.append(
+            {
+                "at": round(seen / tenth, 1),
+                "p": round(float(np.exp(logp[k, seen])), 4),
+                "top": [[round(int(i) / tenth, 1), round(float(probs[k, i]), 4)] for i in order],
+            }
+        )
+    return {"value": round(value, 1), "shift": round(shift / tenth, 1), "log_p": round(score, 3), "per_wheel": wheels}
+
+
+class WheelReader:
+    """Reads a mechanical counter wheel by wheel: one small ONNX model gives each wheel's position."""
+
+    def __init__(self, spec: WheelReaderSpec, model_path: Path):
+        self.spec = spec
+        self.session = cpu_session(model_path)
+        self.input_name = self.session.get_inputs()[0].name
+        self._lock = threading.Lock()
+
+    def probabilities(self, image: Image.Image, digits: int) -> np.ndarray:
+        """The model's probability of every wheel's position (wheels x bins)."""
+        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+        with self._lock:
+            logits = np.asarray(self.session.run(None, {self.input_name: cells[:, None]})[0], dtype=np.float64)
+        logits -= logits.max(axis=1, keepdims=True)
+        probs = np.exp(logits)
+        return probs / probs.sum(axis=1, keepdims=True)
+
+    @staticmethod
+    def with_slack(probs: np.ndarray) -> np.ndarray:
+        """Log probabilities for decoding: a wheel at rest may sit a little off its digit."""
+        slack = READING["wheel_slack_bins"]
+        near = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
+        return np.log(np.maximum(near, 1e-12))
+
+    def positions(self, image: Image.Image, digits: int) -> np.ndarray:
+        """Log probabilities of every wheel's position (wheels x bins), as decoded."""
+        return self.with_slack(self.probabilities(image, digits))
+
+    def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
+        """Read ``digits`` wheels; returns the read (all digits, last wheel rounded) and the cells used.
+
+        A region drawn a little above or below the digits shifts every wheel alike, so a few
+        common shifts are tried (each costs a little) and the most likely reading wins. The
+        confidence is the mean probability per wheel of the positions read. ``details`` keeps
+        how the value was found (``wheel_details``), so it can be checked without the model.
+        """
+        probs = self.probabilities(image, digits)
+        logp = self.with_slack(probs)
+        best: tuple[float, float, list[int], int] | None = None
+        for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
+            value, score, at = wheel_decode(np.roll(logp, -shift, axis=1))
+            score -= READING["wheel_shift_penalty"] * abs(shift)
+            if best is None or score > best[1]:
+                best = (value, score, at, shift)
+        assert best is not None
+        value, score, at, shift = best
+        number = math.floor(value + 0.5) % 10**digits
+        text = Text(
+            f"{number:0{digits}d}",
+            math.exp(score / max(1, digits)),
+            {"wheels": wheel_details(probs, logp, value, score, at, shift)},
+        )
+        return text, self.cells_image(image, digits)
+
+    def cells_image(self, image: Image.Image, digits: int) -> Image.Image:
+        """The cells side by side as the model sees them (for the "what the reader saw" image)."""
+        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+        gap = 2
+        w, h = self.spec.cell_width, self.spec.cell_height
+        line = Image.new("L", (len(cells) * (w + gap) - gap, h), 255)
+        for i, cell in enumerate(cells):
+            line.paste(Image.fromarray((cell * 255).astype(np.uint8)), (i * (w + gap), 0))
+        return line.resize((line.width * 2, h * 2), Image.Resampling.NEAREST).convert("RGB")
 
 
 # --- interpretation -------------------------------------------------------------------------------

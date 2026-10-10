@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import json
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,9 +24,10 @@ from sqlalchemy import (
     inspect,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -47,6 +49,34 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
         ("sample", "score", "FLOAT"),
     ],
     11: [("prediction", "sample_id", "INTEGER")],
+}
+
+
+def keep_text_reader(reading: dict | None) -> dict | None:
+    """Reading settings of a counter made before the wheel reader, with its text reader kept.
+
+    A mechanical counter without a stored ``counter_reader`` was set up with the text reader;
+    it keeps it (switching is a choice on the Settings tab). Anything else is returned as it is.
+    """
+    if not isinstance(reading, dict) or reading.get("display") != "counter" or "counter_reader" in reading:
+        return reading
+    return {**reading, "counter_reader": "ocr"}
+
+
+def _keep_text_readers(conn: Connection) -> None:
+    for sensor_id, raw in conn.execute(text("SELECT id, reading FROM sensor WHERE reading IS NOT NULL")).all():
+        reading = json.loads(raw) if isinstance(raw, str) else raw
+        kept = keep_text_reader(reading)
+        if kept is not reading:
+            conn.execute(
+                text("UPDATE sensor SET reading = :r WHERE id = :id"), {"r": json.dumps(kept), "id": sensor_id}
+            )
+
+
+# Changes to the data of existing databases, keyed on the version they upgrade to (after the columns).
+DATA_MIGRATIONS: dict[int, Callable[[Connection], None]] = {
+    # Counters made before 0.7.1b3 keep the text reader; new ones get the wheel reader.
+    12: _keep_text_readers,
 }
 
 
@@ -157,7 +187,8 @@ class Prediction(Base):
     cleared ("off"), with state_key = the class and the frame's detections.
     Reading sensors store accepted new values (state_key "reading", published_key = the value),
     every rejected reading (published_key None, review_reason "rejected") and spot checks of
-    accepted ones; probs holds {"text", "value", "reason"}. ``read_ok`` is the user's verdict on
+    accepted ones; probs holds {"text", "value", "reason", "roi"} ("roi": the region it was read
+    in, None for the whole frame; missing in rows from before 0.7.1b2). ``read_ok`` is the user's verdict on
     what the reader read (``correct_value`` when it misread); verified readings are never removed
     automatically, as they may later teach the reader.
     """
@@ -243,6 +274,8 @@ class Database:
                         columns = {c["name"] for c in inspect(conn).get_columns(table)}
                         if column not in columns:
                             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+                for target in sorted(v for v in DATA_MIGRATIONS if v > version):
+                    DATA_MIGRATIONS[target](conn)
             # Indexes added later: create_all only makes those of new tables. Older versions ignore them.
             for table in Base.metadata.sorted_tables:
                 for index in table.indexes:

@@ -2,7 +2,7 @@
   // A history row of a reading sensor: a new value or a rejected reading, opening to its frame.
   import { api } from '../../api';
   import { dateTime, pct } from '../../format';
-  import { REJECT_REASONS, readingDetail, readingUnit } from '../../reading';
+  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit } from '../../reading';
   import type { Prediction, Sensor } from '../../types';
   import Icon from '../Icon.svelte';
   import RoiEditor from '../RoiEditor.svelte';
@@ -25,10 +25,10 @@
           <strong class="mono">{p.published_key}{unit ? ` ${unit}` : ''}</strong>
         {:else}
           <strong>Rejected</strong>
-          <span class="chip warn">{REJECT_REASONS[d.reason ?? ''] ?? d.reason}</span>
+          <span class="chip warn long">{REJECT_REASONS[d.reason ?? ''] ?? d.reason}</span>
         {/if}
         <span class="mono small muted">{pct(p.confidence)}</span>
-        {#if p.read_ok === false}<span class="chip danger">Misread{p.correct_value ? ` — was ${p.correct_value}` : ''}</span>
+        {#if p.read_ok === false}<span class="chip danger long">Misread{p.correct_value ? ` — was ${p.correct_value}` : ''}</span>
         {:else if p.read_ok}<span class="chip ok">Read correctly</span>{/if}
       </span>
       <span class="xsmall faint">{dateTime(p.created_at)}</span>
@@ -37,7 +37,7 @@
     <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
   </button>
   {#if open && p.has_frame}
-    <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={sensor.roi} /></div>
+    <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={readingRoi(p, sensor)} /></div>
   {/if}
 </div>
 
@@ -58,6 +58,14 @@
   }
   .sensor {
     overflow-wrap: anywhere;
+  }
+  /* A long reason ("not the number of digits the counter has") wraps instead of running out of
+     the card on a phone. */
+  .chip.long {
+    height: auto;
+    min-height: 26px;
+    padding-block: 3px;
+    white-space: normal;
   }
   img {
     width: 128px;

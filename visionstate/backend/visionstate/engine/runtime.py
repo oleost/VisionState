@@ -16,16 +16,17 @@ from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Setting
 from .checks import ChecksMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
+from .reminders import RemindersMixin
 
 log = logging.getLogger(__name__)
 
 
-class Runtime(ChecksMixin, HistoryMixin):
+class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
     """Runs every sensor, trains heads and publishes results; one instance per app.
 
     The parts live in mixins, one file each, on top of ``RuntimeBase`` (base.py: the shared state).
     Each part inherits the parts it uses, so ChecksMixin brings in objects, reading, teaching,
-    models, training and publishing; HistoryMixin the clean-up.
+    models, training and publishing; HistoryMixin the clean-up; RemindersMixin the review reminder.
     """
 
     def __init__(self, settings: Settings, db: Database):
@@ -39,6 +40,8 @@ class Runtime(ChecksMixin, HistoryMixin):
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_dict, "review")
         self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
+        self.reminder_rules = await asyncio.to_thread(self.db.get_dict, "reminder")
+        self.reminder_sent_at = await asyncio.to_thread(self.db.get_setting, "reminder_sent_at")
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
@@ -60,6 +63,7 @@ class Runtime(ChecksMixin, HistoryMixin):
         self.mqtt.start()
         self._spawn(self._cleanup_loop())
         self._spawn(self._light_sweep_loop())
+        self._spawn(self._reminder_loop())
         if self.ha_events.enabled:
             self._spawn(self._entity_registry_loop())
 

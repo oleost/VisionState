@@ -50,6 +50,7 @@ text recognizer. Neither needs training.
 | **Detector** | Pretrained object detector used by object sensors (registry `detectors.json`). |
 | **Class** | One object type an object sensor looks for (a COCO label, e.g. `person`). |
 | **Reader** | Text recognizer used by reading sensors (registry `readers.json`). |
+| **Wheel reader** | Model that reads how far each wheel of a mechanical counter has turned (registry `readers.json`, `wheel_readers`). |
 
 ## 4. Platform & deployment
 
@@ -167,8 +168,10 @@ knew). Instead a second step compares boxes with boxes the user taught:
    removing faint unlit segments) and keep the more confident read. *led* / *lcd* force that.
    Display *counter* (mechanical counter, rolling digit wheels): the crop is split into
    `digits` equal cells, the middle `READING["counter_cell_share"]` of each cell is pasted into
-   one line (no dividers), and several row bands of that line are read; the most confident read
-   with exactly `digits` digits wins.
+   one line (no dividers), turned grey by each pixel's darkest colour channel (`readers.darkest`:
+   red decimal wheels as dark as black ones), and several row bands of that line are read; the
+   most confident read with exactly `digits` digits wins. That is the *text reader*
+   (`counter_reader: "ocr"`); by default a counter is read by the **wheel reader** (below).
 2. Resize to height 48, BGR, scale to −1…1; greedy CTC decoding **limited to** `0-9 . , : -`
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
@@ -182,6 +185,33 @@ knew). Instead a second step compares boxes with boxes the user taught:
    with a point or comma, and digits only are placed with the configured decimals.
    The last published value is restored from the history after a restart.
 
+**Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
+`wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
+CPU thread): the crop is split into `digits` equal cells (whole cells, dividers included); each
+cell, grey by its darkest colour channel, 32×48, full contrast, goes through a small CNN that
+gives a distribution over 100 positions around the wheel (0.0–9.9). `readers.wheel_value` then
+finds the most likely *consistent* value by dynamic programming from right to left: the last
+wheel turns freely, every other wheel stands on its digit plus how far its right neighbour is
+past 9. Wheels at rest may sit one bin off (`READING["wheel_slack_bins"]`), and all wheels may
+appear shifted together by up to `wheel_max_shift_bins` (a region drawn a little above or below
+the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounded to the nearest
+digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
+the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
+the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
+(`db.keep_text_reader`). How it is to get better (benchmark, the last value as an expectation,
+calibrated confidence, self-calibration of the region, wheels-v2, learning per sensor):
+[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md). Training code and data sources: `tools/wheelreader`
+(synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
+the CC0 exports shared in issues #32/#40).
+
+- Evaluated for the wheel reader (2026-10-09; whole reading exact, last digit rounded): a
+  user's ESP32 water meter with red wheels, held out from training: 17/17 (PP-OCRv6 small 15,
+  tiny 8 with 5 too high); two water meters never seen in training (bolausson, test only): 30–33
+  of 35 and 15–18 of 18 with no value too high (small 30 with 2 too high, 15 with 1); the
+  Dryad test set (2,400 photos): 97.7 % when the photo is the right way up. Trained without the
+  user's images it read them just as well. The remaining misses are ±1 on a half-turned last
+  wheel. The decode score separates right from wrong reads only moderately, so it is not used
+  for more than the confidence.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
@@ -195,6 +225,14 @@ knew). Instead a second step compares boxes with boxes the user taught:
   from the meter's own labelled frames (DINOv2 + head, or matching against labelled wheels) was
   much worse and was dropped. Only one meter type was tested, and the settings were chosen on
   the same frames.
+- Evaluated for red decimal wheels (2026-10, issue #40: 120 checked readings of a user's water
+  meter with red-on-white decimals, from three exports): in a plain grey image a red "9" was
+  read as "5". The darkest colour channel raised exact reads with PP-OCRv6 small from 61 to 70
+  (17 images of the newest export: 13 → 15) and left the black-digit meters above as they were
+  (small 97 → 99, tiny 92 → 91 of 106; every wheel at rest still right). Tiny reads that meter
+  much worse than small (8/17) and its misreads go up, which passes the "went down" check, so
+  the docs recommend small for mechanical counters. Using the last value to pick among the
+  digits the reader hesitated between added only 4 more of 120 and was not built.
 - **Model choice is global per kind** (Settings), so at most three models are loaded. The
   detector and the reader are loaded on first use and released when the last sensor of their kind is deleted. The
   chosen backbone and detector are stored in the database at first start, so a later release
@@ -264,6 +302,17 @@ the pixels are decoded.
   **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
   waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
   up; given answers and the reading counts stay.
+  **Review reminder** (global, DB setting `reminder`, defaults in `settings.REMINDER_DEFAULTS`,
+  `engine/reminders.py`, decision in `logic.reminder_action`): when at least `min_items` (1)
+  frames wait and the oldest has waited `after_days` (7), a `persistent_notification` with a fixed
+  `notification_id` (`visionstate_review`, so it is replaced, never piled up) links to the app
+  (`/app/<slug>` from Home Assistant 2026.2, `/hassio/ingress/<slug>` before; the slug from the
+  Supervisor). Optionally also a `notify.<service>` push (off by default; `data.url`/`clickAction`
+  open the app). One reminder per round (`reminder_sent_at` in the DB, survives restarts); again
+  every `repeat_days` only with `repeat` (off by default). The round ends — and the notification is
+  dismissed — when it is no longer due. Looked at hourly and right after the queue changes. A
+  failed push is logged and not retried (no hourly notifications); a failed notification is tried
+  again. Not when a frame arrives: no nagging.
   An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
   two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
   relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
@@ -303,7 +352,8 @@ flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate 
 saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
-for review, per-sensor breakdown as attribute).
+for review; attributes: per-sensor breakdown, `oldest_waiting_since`). The review reminder (§7)
+uses Home Assistant's REST API (`persistent_notification`, `notify`), not MQTT.
 
 Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
 `last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
@@ -398,7 +448,7 @@ loads.
   value (or none when rejected), `probs` = text, value, reason.
 - Labels live in a separate `sample_label` table (many-to-many) → multi-label needs no schema change.
 - Extension points: backbone registry (`backbones.json`), detector registry (`detectors.json`),
-  reader registry (`readers.json`),
+  reader registry (`readers.json`, also the wheel readers),
   `sources.SOURCE_TYPES`, trigger settings.
 - Versioned REST API (`/api/v1`) used by the frontend; `GET /api/v1/config` exposes every
   default and limit so the UI never hard-codes them.
@@ -427,13 +477,24 @@ automatically.
   ROI, triggers, review overrides, all samples with labels (object sensors: taught boxes with
   their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
-- **Checked readings** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor), to
-  share so reading can be improved: the readings verified by hand (at most
-  `READING["export_limit"]`, newest first), each only the region plus `export_margin`, with
-  `readings.json` (read text, value, rejection reason, confidence, answer, right value, day only),
-  the reading settings without anything that tells where the sensor is (no source, name or
-  region), a README and a CC0 LICENSE — shared images may then be used in tests and evaluations.
-  The reader itself does not learn from the answers.
+- **Readings to share** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor),
+  so reading can be improved: the readings checked by hand (newest first), then the accepted ones
+  nobody checked (newest first, `"answer": "unchecked"`; never used as labels without a check,
+  see `docs/WHEEL_READER_PLAN.md`), whose frame is kept — each only the region it was read in
+  plus `export_margin` (the region is kept with every stored reading since 0.7.1b2,
+  `probs["roi"]`; older ones are cut with today's region, `"region": "current"`). One ZIP of at
+  most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 2` since
+  0.7.1b5: read text, value, rejection reason, confidence, answer, right value, day only and
+  seconds since the oldest reading; per reading the reader id and app version (kept with every
+  stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR) and whether
+  the sensor's light was on; for the wheel reader each wheel's position, probability and most
+  likely positions, the common shift and the value with the last wheel's fraction), the reading
+  settings without anything that tells where the sensor is (no source, name or region), the
+  user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
+  be used in tests and evaluations. Images are crops of the stored frames at their resolution.
+  The same frame read several times is exported each time (duplicates are removed by the
+  training tools). The reader itself does not learn from the answers.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
   `manifest.json` is capped (`UPLOAD_LIMITS["max_manifest_mb"]`); an unreadable image in a bundle
   is skipped and counted (the response's `skipped`), so an import never stops halfway.
@@ -492,14 +553,17 @@ sensor settings) lives in the UI.
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
-| **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
+| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
+| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | 0.8.0 (betas 0.7.1b3–b4) |
+| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | export v2 in 0.8.0 (betas 0.7.1b5–b6); the rest planned |
+| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
+| **Hardening** ✅ | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | 0.6.4 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; mechanical counters: adjustable cell borders for counters seen at an angle, using
-the wheel rule (a wheel only turns while the one to its right goes 9 → 0) to settle digits read
-mid-turn, pointer dials and gauges; several readings per sensor (a sign with four prices, a
+Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
+dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); issue templates; per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary

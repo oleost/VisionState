@@ -340,10 +340,16 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.getByLabel('Digits after the decimal point').fill('3');
   await page.getByLabel('Unit').fill('m³');
   await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
-  // Told there are eight wheels, the seven digits read are not accepted.
+  // Read by the wheel reader (the default), which reads every field; the text reader instead
+  // reads the digits it sees: told there are eight wheels, the seven digits it reads are not accepted.
+  const readWith = page.getByLabel('Read with');
+  await expect(readWith).toHaveValue('wheels');
+  await readWith.selectOption('ocr');
+  await expect(page.getByText(/a turning wheel can be misread/)).toBeVisible();
   await page.getByLabel('Number of digits').fill('8');
   await expect(page.getByText(/digits, not 8/)).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Number of digits').fill('7');
+  await readWith.selectOption('wheels');
   await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
   await expectNoHorizontalOverflow(page);
@@ -887,15 +893,19 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await press(page.getByRole('button', { name: 'Read correctly' }).first(), info);
     await expect(page.getByText(/correct reading was rejected\s+— is the change limit too low\?/)).toBeVisible();
 
-    // The checked readings can be exported to share: a ZIP with the region of each, and a licence.
+    // The readings can be exported to share (the checked ones and the accepted one nobody checked):
+    // a ZIP with the region of each and a licence, and what the meter is.
     await expect(page.getByText('The reader does not learn from your answers')).toBeVisible();
-    const exportLink = page.getByRole('link', { name: 'Export checked readings' });
-    await expect(exportLink).toBeVisible();
-    const zip = await request.get(`api/v1/sensors/${id}/reading-export`);
+    const exportLink = page.locator('.share').getByRole('link', { name: 'Export readings' });
+    await page.getByLabel(/What meter is this/).fill('Gas meter, white on black');
+    await expect(exportLink).toHaveAttribute('href', /meter=Gas\+meter%2C\+white\+on\+black/);
+    const zip = await request.get((await exportLink.getAttribute('href'))!);
     expect(zip.ok()).toBeTruthy();
     expect(zip.headers()['content-disposition']).toContain('visionstate-readings-gas_meter.zip');
     expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+    await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-export.png'), fullPage: true });
 
     // Dismiss all takes a sensor's waiting items out of the queue; answers already given stay.
     const waiting = async () =>
@@ -934,6 +944,84 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
   }
 });
 
+test('a rejected reading keeps the region it was read in', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const half = { ...COUNTER_BOX, w: COUNTER_BOX.w / 2 };
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Gas counter',
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(45730),
+      roi: half, // half the wheels: the text reader reads the wrong number of digits, so rejected
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', counter_reader: 'ocr' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading.last?.reason, { timeout: 60_000 }).toBe('wrong digit count');
+    // The history row is written after the rejection is published.
+    const rows = async () => (await (await request.get(`api/v1/history?sensor=${id}`)).json()).items as unknown[];
+    await expect.poll(async () => (await rows()).length, { timeout: 30_000 }).toBeGreaterThan(0);
+    await request.patch(`api/v1/sensors/${id}`, { data: { roi: COUNTER_BOX, enabled: false } });
+
+    await page.goto(`#/sensors/${id}/history`);
+    const row = page.locator('.item').filter({ hasText: 'not the number of digits the counter has' }).first();
+    await press(row.locator('button.head'), info);
+    const frame = row.locator('.full img');
+    await expect.poll(() => frame.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    // The outline is the half region the reading was made in, not the region the sensor has now.
+    const outline = await row.locator('.full polygon.outline').boundingBox();
+    const image = await frame.boundingBox();
+    expect(outline && image ? outline.width / image.width : 0).toBeCloseTo(half.w, 1);
+    // The long reason wraps instead of running out of the card on a phone.
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'history-reading-region.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
+test('the wheel reader shows in Settings and is offered to counters read as text', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  const wheels = page.getByTestId('wheel-reader');
+  await expect(wheels).toContainText('VisionState wheel reader v1');
+  await expect(wheels.getByRole('link', { name: 'source' })).toHaveAttribute('href', /huggingface\.co/);
+  await expect(page.getByText('Wheel reader', { exact: true })).toBeVisible(); // its status row
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.card');
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Old water meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(45730),
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', counter_reader: 'ocr' },
+      interval_s: 3600,
+    },
+  });
+  const id = (await created.json()).id;
+  try {
+    await page.goto(`#/sensors/${id}/live`);
+    const notice = page.getByTestId('try-wheel-reader');
+    await expect(notice).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await press(notice.getByRole('link'), info);
+    await expect(page.getByLabel('Read with')).toHaveValue('ocr');
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
 test('storage limits can be changed', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');
@@ -949,6 +1037,39 @@ test('storage limits can be changed', async ({ page }, info) => {
   await press(save, info);
   await expectNoHorizontalOverflow(page);
   errors.expectNone();
+});
+
+test('the review reminder can be set', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  try {
+    await page.goto('#/settings');
+    const card = page.locator('section', { has: page.getByRole('heading', { name: 'Review reminder' }) });
+    await expect(card.getByLabel('Remind me in Home Assistant')).toBeChecked(); // on by default
+    await expect(card.getByLabel('Remind again while they still wait')).not.toBeChecked();
+    await expect(card.getByRole('combobox')).toHaveValue(''); // no push by default
+    await expect(card.getByRole('button', { name: 'Send a test' })).toBeDisabled(); // no Home Assistant here
+    const save = card.getByRole('button', { name: 'Save reminder' });
+    await expect(save).toBeDisabled();
+
+    // Longer than frames waiting for review are kept (twice the 7 history days): it says so.
+    const days = card.getByText('When the oldest frame has waited').locator('xpath=..').locator('input');
+    await days.fill('20');
+    await expect(card.getByText('would never come')).toBeVisible();
+    await days.fill('3');
+    await expect(card.getByText('would never come')).toBeHidden();
+    await press(card.getByLabel('Remind again while they still wait'), info);
+    await card.getByText('Every').locator('xpath=..').locator('input').fill('2');
+    await expectNoHorizontalOverflow(page);
+    await press(save, info);
+    await expect(page.getByText('Reminder saved')).toBeVisible();
+    const saved = await (await request.get('api/v1/review-reminder')).json();
+    expect(saved).toMatchObject({ enabled: true, after_days: 3, repeat: true, repeat_days: 2, min_items: 1 });
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-reminder.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    const config = await (await request.get('api/v1/config')).json();
+    await request.put('api/v1/review-reminder', { data: config.reminder_defaults });
+  }
 });
 
 test('review queue can be answered', async ({ page }, info) => {

@@ -1,7 +1,7 @@
 """What every part of the runtime shares: its state (set up here) and the few methods all parts use.
 
 The parts (``checks``, ``objects``, ``reading``, ``teaching``, ``models``, ``training``,
-``publishing``, ``history``) are mixins of ``Runtime``. Each one inherits ``RuntimeBase`` and the
+``publishing``, ``history``, ``reminders``) are mixins of ``Runtime``. Each one inherits ``RuntimeBase`` and the
 parts it uses, so what a part depends on is written in its class line.
 """
 
@@ -46,6 +46,9 @@ class RuntimeBase:
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
         self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
+        self.reminder_rules: dict = {}  # the review reminder (DB setting "reminder"); see reminder_settings()
+        self.reminder_sent_at: float | None = None  # this round's last reminder (DB setting "reminder_sent_at")
+        self._reminder_wanted = asyncio.Event()  # the review queue changed: look at the reminder now
         self.embedder: backbones.Embedder | None = None
         self.embedder_error = ""
         self.detector: detectors.Detector | None = None  # loaded on first use by an object sensor
@@ -55,6 +58,9 @@ class RuntimeBase:
         self.reader: readers.Reader | None = None  # loaded on first use by a reading sensor
         self.reader_error = ""
         self._reader_lock = asyncio.Lock()
+        self.wheel_reader: readers.WheelReader | None = None  # loaded on first use by a counter
+        self.wheel_reader_error = ""
+        self._wheel_reader_lock = asyncio.Lock()
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
         self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes

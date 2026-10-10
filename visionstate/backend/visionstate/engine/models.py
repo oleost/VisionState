@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
@@ -105,14 +106,43 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         for sensor_id in reading_sensors:
             self.wake(sensor_id, force=True)
 
+    async def ensure_wheel_reader(self) -> readers.WheelReader:
+        """The wheel reader for mechanical counters, loaded on first use (it is bundled)."""
+        async with self._wheel_reader_lock:
+            if self.wheel_reader is not None:
+                return self.wheel_reader
+            spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+            try:
+                path = self.model_path(spec)
+                if path is None:
+                    path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
+                self.wheel_reader = await asyncio.to_thread(readers.WheelReader, spec, path)
+            except Exception as err:
+                self.wheel_reader_error = redact(str(err))
+                log.exception("Could not load wheel reader %s", spec.id)
+                raise
+            self.wheel_reader_error = ""
+            log.info("Wheel reader %s loaded", spec.id)
+            return self.wheel_reader
+
     async def read_number(
         self, image: Image.Image, roi: dict | None, reading: dict
     ) -> tuple[readers.Text, Image.Image]:
-        """Read the region of ``image``; returns the text and the image the reader used."""
-        reader = await self.ensure_reader()
+        """Read the region of ``image``; returns the text and the image the reader used.
+
+        The text's ``details`` name the reader that read it (``reader``)."""
         region = imaging.crop_box(image, imaging.region_box(roi))
+        if reading["display"] == "counter" and reading["counter_reader"] == "wheels":
+            wheels = await self.ensure_wheel_reader()
+            async with self._sem:
+                text, used = await asyncio.to_thread(wheels.read_counter, region, int(reading["digits"]))
+            return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
+        reader = await self.ensure_reader()
         async with self._sem:
-            return await asyncio.to_thread(reader.read_display, region, reading["display"], int(reading["digits"]))
+            text, used = await asyncio.to_thread(
+                reader.read_display, region, reading["display"], int(reading["digits"])
+            )
+        return replace(text, details={"reader": reader.spec.id, **(text.details or {})}), used
 
     async def detect_objects(
         self, image: Image.Image, roi: dict | None, objects: dict, threshold: float, all_classes: bool = False

@@ -16,6 +16,7 @@ from ..db import ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig
 from ..mqtt import main_entities
 from ..settings import (
+    COUNTER_READERS,
     KIND_OBJECTS,
     KIND_READING,
     LIGHT_DOMAINS,
@@ -217,6 +218,7 @@ class ReadingIn(BaseModel):
     device_class: str = READING_DEFAULTS["device_class"]
     display: str = READING_DEFAULTS["display"]
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
+    counter_reader: str = READING_DEFAULTS["counter_reader"]
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     spot_rate: float = Field(default=READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
     rate_window_min: float = Field(
@@ -235,6 +237,13 @@ class ReadingIn(BaseModel):
     def _display(cls, value: str) -> str:
         if value not in READING_DISPLAYS:
             raise ValueError(f"Unknown display {value!r}")
+        return value
+
+    @field_validator("counter_reader")
+    @classmethod
+    def _counter_reader(cls, value: str) -> str:
+        if value not in COUNTER_READERS:
+            raise ValueError(f"Unknown counter reader {value!r}")
         return value
 
     @field_validator("device_class")

@@ -8,7 +8,7 @@
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
   import { objectName } from '../lib/objects';
-  import { REJECT_REASONS, readingDetail, readingUnit } from '../lib/reading';
+  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit } from '../lib/reading';
   import type { ObjectQuestion, ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
@@ -241,7 +241,7 @@
         {@const d = readingDetail(current)}
         {@render header(current)}
         <div class="frame">
-          <RoiEditor src={api.historyImageUrl(current.id)} roi={current.sensor.roi} />
+          <RoiEditor src={api.historyImageUrl(current.id)} roi={readingRoi(current, current.sensor)} />
         </div>
         <div class="col center">
           <p class="question">
