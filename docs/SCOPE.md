@@ -554,10 +554,10 @@ sensor settings) lives in the UI.
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
 | **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
-| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | betas 0.7.1b3–b4 |
-| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
-| **Review reminder** | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | next beta |
-| **Hardening** | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | next beta |
+| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | 0.8.0 (betas 0.7.1b3–b4) |
+| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | export v2 in 0.8.0 (betas 0.7.1b5–b6); the rest planned |
+| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
+| **Hardening** ✅ | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | 0.6.4 |
 
 **Open ideas** (not scheduled): full export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);

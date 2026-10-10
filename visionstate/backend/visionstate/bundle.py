@@ -97,7 +97,7 @@ VisionState: "read correctly", "misread" (with the right value when it was enter
 The checked readings come first, newest first, then the unchecked ones, newest first.
 
 Per reading it also says which reader read it ("reader"; null for readings from before
-VisionState 0.7.1b5), the app version ("app"), whether the whole picture was greyscale (an
+VisionState 0.8.0, beta 0.7.1b5), the app version ("app"), whether the whole picture was greyscale (an
 infrared or night camera) and whether VisionState had switched the sensor's light on ("lamp").
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
 image), how sure it was, its most likely positions, the common shift of all wheels and the
@@ -116,7 +116,7 @@ readings.json ("meter"). Look through the images first; share only what you are 
 public. By sharing it you release the images and data as public domain (see LICENSE.txt).
 
 Each image is cut with the region the reading was made in ("region": "as read"). Readings
-from before VisionState 0.7.1b2 are cut with the region the sensor has now ("region":
+from before VisionState 0.8.0 (beta 0.7.1b2) are cut with the region the sensor has now ("region":
 "current"): if the region was moved since, those images may not show the display at all.
 """
 
