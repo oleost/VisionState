@@ -530,5 +530,6 @@ Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN
 dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
-it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
+it); zones and line crossing for object sensors; recognising people by their face on object sensors
+(research, models, privacy and a phased plan: [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md)); classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep").

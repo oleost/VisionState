@@ -27,6 +27,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | How to work: principles, checks, testing, pitfalls | this file |
 | The wheel reader model: data, licences, results, how to train it | [`tools/wheelreader/README.md`](tools/wheelreader/README.md) |
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
+| Face recognition: models, licences, privacy and the plan (not built) | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
 | Test image sources | `visionstate/backend/tests/assets/README.md` |
 
