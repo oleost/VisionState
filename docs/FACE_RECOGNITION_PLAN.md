@@ -122,25 +122,44 @@ Not legal advice; the points to design for, and to say plainly in DOCS.md.
   GDPR Art. 9. A private person's camera is only outside GDPR under the household exemption, and
   the CJEU (*Ryneš*, C-212/13, 2014) held that a home camera that also covers public space (a
   street, a neighbour's door) is not purely household use. Norway follows GDPR through the EEA.
-- **EU AI Act — the biggest open question of this plan.**
-  - A *user* is fine: the Act does not apply to the obligations of deployers who are natural
-    persons in a purely personal, non-professional activity (Art. 2(10)).
-  - The *software* may not be: a camera that names people without their active involvement, at a
-    distance, by comparing with stored faces fits the definition of a **remote biometric
-    identification system** (Art. 3(41), recital 17), and those are **high-risk** (Annex III,
-    point 1(a); only one-to-one *verification* — "is this the person they claim to be" — is
-    excluded). The exemption for free and open-source software (Art. 2(12)) does **not** cover
-    systems placed on the market or put into service as high-risk. Whether a free, non-monetised
-    GitHub project is "placed on the market" (a "commercial activity, whether for payment or free
-    of charge") is not settled.
+- **EU AI Act.** Read in the Act and in the Commission's *Guidelines on prohibited AI practices*
+  (C(2025) 884, 2025; non-binding but the Commission's reading):
+  - **The user is outside the Act.** It does not apply to the obligations of deployers who are
+    natural persons in a purely personal, non-professional activity (Art. 2(10)). The guidelines
+    give almost exactly our case as the example: *"an individual using a facial recognition system
+    at home (e.g. to control access and to monitor for safety the entrance to the home) would fall
+    under the exclusion"* (para. 34).
+  - **The software itself stays in scope** for whoever provides it (para. 35: a system used for
+    personal purposes "remains a high-risk AI system as classified in Article 6"). Recognising
+    household members on a general camera, who do not step "actively and consciously in front of
+    a camera installed in a way fostering active participation" (para. 306), fits *remote
+    biometric identification* (Art. 3(41)), which is high-risk (Annex III, point 1(a)). One-to-one
+    *verification* and access control to premises are not "remote" (para. 305) — a doorbell that
+    recognises the person ringing is closer to that, but VisionState does not limit itself to it.
+  - **But the Act binds providers who place a system on the market or put it into service**, and
+    "making available on the market" means supply "in the course of a commercial activity, whether
+    in return for payment or free of charge" (Art. 3(10)). Recital 103 says making components
+    available through open repositories is not in itself monetisation; the Commission's guidance
+    for the Cyber Resilience Act, built on the same product-law terms, says sharing free and open
+    source code on a public repository is not placing it on the market. VisionState is free, has no
+    paid tier, no paid support and no telemetry. On that reading it is not placed on the market at
+    all, so the high-risk duties do not reach it; the open-source exemption of Art. 2(12) is then
+    not even needed (it excludes high-risk systems).
+  - **What would change it:** monetising VisionState (a paid version, paid support, a company
+    selling it or bundling it in a product). Then face recognition would need the high-risk route
+    or must be left out.
   - Timing: the Annex III obligations apply from 2 December 2027 after the "Digital Omnibus"
-    (Regulation (EU) 2026/1744, per secondary sources — check the Official Journal).
+    (Regulation (EU) 2026/1744, per secondary sources). The Commission's draft guidelines on
+    high-risk classification (May 2026) are to be checked once final.
   - The Art. 5 prohibition on *untargeted* scraping of facial images from the internet or CCTV to
-    build or expand recognition databases applies to everyone: VisionState must never grow a gallery
-    of strangers by itself.
-  - **Consequence for the plan:** phases 0 and 1 (finding faces, no identities) identify nobody
-    and are not affected. **Phase 2 waits for a written legal assessment** of whether VisionState
-    would be a high-risk system and what that would mean (or a design that is clearly outside it).
+    build or expand recognition databases applies to everyone: VisionState must never grow a
+    gallery of strangers by itself.
+  - Others ship the same feature today (Frigate, commercial home cameras); that shows practice, not
+    what applies from December 2027 — Frigate's maker also sells a subscription, VisionState sells
+    nothing.
+  - **Verdict for the plan (not legal advice):** low risk for a free, non-monetised project;
+    building phases 0–2 is fine (the maintainer's decision, 2026-10-10). Before face recognition
+    reaches the stable channel, re-read the final high-risk guidelines.
 - **Norway:** Datatilsynet's guidance for private cameras: your own house and garden only, not
   public areas where people pass, and not a neighbour's property. The AI Act comes to Norway through
   the EEA.
@@ -178,7 +197,7 @@ Design rules that follow:
 |---|---|---|
 | **0. Spike** (local, `/VisionStateLocal/`) | Frames from real doorbell/driveway cameras of the household (with their consent), at the camera resolution Home Assistant actually delivers. Measure: how often a usable face is found in a person box per pass; detectors (YuNet, BlazeFace) on person crops; recognisers (SFace, EdgeFace-XS/S, AuraFace) against **DINOv2 on the box** as the baseline: true matches at a fixed false-match rate, the gap between same-person and other-person similarities, day vs IR. Time per face on a desktop CPU and a Raspberry Pi 4. Read the weights' and data's terms; ask the authors where unclear. | A detector and recogniser chosen with numbers, the minimum face size and thresholds proposed, and a written verdict on licences. Or a "not good enough at typical camera distances" verdict, which is a valid outcome. |
 | **1. Faces only** | A face registry (detectors and recognisers, pinned like the others), face search in person boxes, face boxes drawn in the Live tab, no identities. | Users can see whether their camera gives usable faces before teaching anything. |
-| **2. People** (after the legal assessment, §5) | Recognise faces on an object sensor; teach a face from the Live tab or history ("Who is this?" → a person, new or existing); matching, ask band, entities per person and *unknown person*; Forget person. | A person is recognised on a test with CC0 / public-domain photos (below) and on the spike data. |
+| **2. People** | Recognise faces on an object sensor; teach a face from the Live tab or history ("Who is this?" → a person, new or existing); matching, ask band, entities per person and *unknown person*; Forget person. | A person is recognised on a test with CC0 / public-domain photos (below) and on the spike data. |
 | **3. Quality and review** | Review questions ("Is this Kari?"), Quality tab per person (faces taught, similarity between people — look-alikes —, possibly mislabelled faces), history filter by person, import/export with the opt-in. | e2e tests on desktop, mobile and iPhone. |
 | **4. Later** | Teaching from uploaded photos of a person (face found in the photo); a Home Assistant *event* entity "person recognised" for automations; the face from several checks combined per visit. | — |
 
@@ -377,10 +396,6 @@ face from the Live tab, the review card, the People section and forgetting; and 
 width and ~390 px. The fake camera would need a frame with faces: public-domain photos (§6).
 
 ## 10. Open questions for the maintainer
-
-0. **The AI Act (§5).** Get a written legal assessment before phase 2: is VisionState with face
-   recognition a high-risk remote biometric identification system, is a free GitHub project
-   "placed on the market", and what would follow? Phases 0–1 do not depend on it.
 
 1. **Licence bar.** Ship only weights whose training data allows any use (today: AuraFace, and
    perhaps BlazeFace), or accept models like YuNet/SFace whose code licence is permissive but
