@@ -153,6 +153,10 @@ classifier), **objects** found by a pretrained detector (people, cars, animals) 
 - Documentation-only changes (README, DOCS.md, CLAUDE.md, images) may go to `main` through a PR
   without a beta; merge `main` back into `beta` afterwards.
 - **Beta release** (on `beta`, about 10 minutes, unattended after the tag):
+  0. **The maintainer says "go" first.** Before committing the change and releasing, start a local
+     instance for the maintainer to try (fake camera + backend with seeded sensors, see the UI
+     testing routine), give the URL of the changed screens, sum up what was done and show the
+     release notes (the new `CHANGELOG.md` entry). Commit, version and tag only after an explicit "go".
   1. `python scripts/channel.py beta X.Y.ZbN`, add a `## X.Y.ZbN` entry to `visionstate/CHANGELOG.md`
      (it becomes the release notes), commit. Do **not** push `beta`.
   2. `git tag vX.Y.ZbN && git push origin vX.Y.ZbN` (**tag only**). CI then publishes
