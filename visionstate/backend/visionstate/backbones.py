@@ -16,6 +16,7 @@ import logging
 import sys
 import threading
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -122,16 +123,22 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(spec: ModelFile, dest_dir: Path) -> Path:
+def download(spec: ModelFile, dest_dir: Path, progress: Callable[[int], None] | None = None) -> Path:
+    """Fetch a model into ``dest_dir`` (unless it is there already) and check its SHA-256;
+    ``progress`` is told the bytes fetched so far."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / spec.filename
     if target.exists() and sha256_file(target) == spec.sha256:
         return target
     tmp = target.with_suffix(".part")
     log.info("Downloading model %s from %s", spec.id, spec.url)
+    done = 0
     with urllib.request.urlopen(spec.url, timeout=60) as resp, tmp.open("wb") as out:  # noqa: S310
         while chunk := resp.read(1 << 20):
             out.write(chunk)
+            done += len(chunk)
+            if progress is not None:
+                progress(done)
     actual = sha256_file(tmp)
     if actual != spec.sha256:
         tmp.unlink(missing_ok=True)
@@ -211,14 +218,15 @@ class Embedder:
 
 
 if __name__ == "__main__":
-    from . import detectors, readers
+    from . import detectors, faces, readers
 
     logging.basicConfig(level=logging.INFO)
     args = [a for a in sys.argv[1:] if a != "--all"]
     destination = Path(args[0] if args else "models")
     # Every bundled model: backbones (states), detectors (objects), readers and wheel readers
-    # (readings); with --all also the ones downloaded on first use, for the tests of every model.
+    # (readings); with --all also the ones downloaded on first use (the face models are never
+    # bundled), for the tests of every model.
     specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
-    for spec in [*specs, *readers.WHEEL_READERS.values()]:
+    for spec in [*specs, *readers.WHEEL_READERS.values(), faces.DETECTOR, *faces.RECOGNISERS.values()]:
         if spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

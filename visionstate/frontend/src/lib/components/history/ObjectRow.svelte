@@ -1,7 +1,7 @@
 <script lang="ts">
   // A history row of an object sensor: an object appeared, cleared, was filtered away by what the
-  // sensor was taught, or the sensor asked about it. It opens to the frame with its boxes, which can
-  // be corrected there.
+  // sensor was taught, the sensor asked about it, or it saw a face nobody is named for. It opens to
+  // the frame with its boxes, which can be corrected (or a person named) there.
   import { api } from '../../api';
   import { dateTime, pct } from '../../format';
   import { objectColor, objectCount, objectKeys, objectName } from '../../objects';
@@ -29,7 +29,13 @@
     return [...counts].map(([key, n]) => objectCount(n, key, own)).join(', ');
   });
 
-  const WHAT: Record<string, string> = { on: 'detected', off: 'cleared', filtered: 'filtered away', ask: '? (asked in Review)' };
+  const WHAT: Record<string, string> = {
+    on: 'detected',
+    off: 'cleared',
+    filtered: 'filtered away',
+    ask: '? (asked in Review)',
+    face: '· face seen (tap the person to name them)',
+  };
 </script>
 
 <div class="card item">

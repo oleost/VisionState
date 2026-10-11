@@ -23,6 +23,10 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     def model_path(self, spec: backbones.ModelFile) -> Path | None:
         return backbones.locate(spec, [self.settings.bundled_models_dir, self.settings.models_dir])
 
+    def downloaded(self, spec: backbones.ModelFile) -> bool:
+        """Whether a model was downloaded (and can be deleted again), not included in the app."""
+        return (self.settings.models_dir / spec.filename).exists()
+
     async def load_embedder(self, backbone_id: str) -> None:
         spec = backbones.BACKBONES.get(backbone_id) or backbones.BACKBONES[backbones.DEFAULT_BACKBONE]
         path = self.model_path(spec)

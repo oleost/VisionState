@@ -11,13 +11,14 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from .. import detectors, imaging
-from ..db import Prediction, Sample
+from ..db import Person, Prediction, Sample
 from ..engine import Runtime
-from ..settings import KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
+from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 from .sensors import prediction_view
 
 router = APIRouter(prefix=f"{API_PREFIX}/sensors", tags=["teach"])
+RESERVED_KEYS = {NONE_LABEL, FACE_UNKNOWN_KEY}  # never the key of an own label
 
 
 class TeachIn(BaseModel):
@@ -41,8 +42,9 @@ class TeachIn(BaseModel):
         return [x1, y1, x2, y2]
 
 
-def _own_label(objects: dict, name: str, parent: str) -> dict:
-    """A new own label: its key never clashes with an object VisionState knows or another own label."""
+def own_label(objects: dict, name: str, parent: str, people: set[str]) -> dict:
+    """A new own label: its key never clashes with an object VisionState knows, another own label
+    or a person (``people``: their keys; they are entities of the sensor too)."""
     if parent not in objects["classes"]:
         raise HTTPException(400, "An own label belongs to one of the sensor's objects")
     if len(objects["custom"]) >= TEACH["max_labels"]:
@@ -50,7 +52,7 @@ def _own_label(objects: dict, name: str, parent: str) -> dict:
     name = name.strip()
     if any(label["name"].lower() == name.lower() for label in objects["custom"]):
         raise HTTPException(400, f"There is already a label called {name}")
-    taken = set(detectors.LABELS.by_key) | {label["key"] for label in objects["custom"]} | {NONE_LABEL}
+    taken = set(detectors.LABELS.by_key) | {label["key"] for label in objects["custom"]} | RESERVED_KEYS | people
     base = slugify(name, "label")
     key, n = base, 2
     while key in taken:
@@ -96,19 +98,21 @@ def taught(sensor_id: int, request: Request) -> dict:
         }
 
 
-async def _frame_image(rt: Runtime, sensor_id: int, body: TeachIn) -> tuple[Image.Image, str]:
-    """The frame the box was drawn on, and where it came from ("live" or "history")."""
-    if body.history_id is not None:
+async def frame_image(
+    rt: Runtime, sensor_id: int, frame_id: str | None, history_id: int | None
+) -> tuple[Image.Image, str]:
+    """The frame a box was drawn on, and where it came from ("live" or "history")."""
+    if history_id is not None:
         with rt.db.session() as s:
-            row = s.get(Prediction, body.history_id)
+            row = s.get(Prediction, history_id)
             if row is None or row.sensor_id != sensor_id or not row.frame:
                 raise HTTPException(404, "History frame not found")
             path = rt.storage.history_path(sensor_id, row.frame)
         if not path.exists():
             raise HTTPException(404, "History frame file missing")
         return await asyncio.to_thread(imaging.load, path), "history"
-    if body.frame_id:
-        data = rt.live_state(sensor_id).analysed_frame(body.frame_id)
+    if frame_id:
+        data = rt.live_state(sensor_id).analysed_frame(frame_id)
         if data is None:
             raise HTTPException(409, "That frame is no longer kept. Tap the box again on the newest frame.")
         return await asyncio.to_thread(imaging.decode, data), "live"
@@ -137,7 +141,9 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
             raise HTTPException(400, f"Unknown object {body.detected!r}")
         new = None
         if body.new_label:
-            new = _own_label(objects, body.new_label, body.parent or body.detected or "")
+            new = own_label(
+                objects, body.new_label, body.parent or body.detected or "", set(s.scalars(select(Person.key)))
+            )
             label = new["key"]
         else:
             active = {c["key"] for c in active_custom(objects)}
@@ -150,7 +156,7 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     x1, _, x2, y2 = body.box
     if not imaging.in_region((x1 + x2) / 2, y2, roi):
         raise HTTPException(400, "That box is outside the sensor's region, so it never counts")
-    image, origin = await _frame_image(rt, sensor_id, body)
+    image, origin = await frame_image(rt, sensor_id, body.frame_id, body.history_id)
     if new is not None:
         with rt.db.session() as s:
             row = get_sensor(s, sensor_id)
@@ -172,7 +178,7 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     return {"id": example_id, "label": label, "seen": seen}
 
 
-def _delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnElement[bool]]) -> int:
+def delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnElement[bool]]) -> int:
     """Delete the taught boxes of a sensor that match ``where`` (all with an empty list); returns how many."""
     rows = s.scalars(
         select(Sample).where(Sample.sensor_id == sensor_id, Sample.object_label.is_not(None), *where)
@@ -188,13 +194,13 @@ def forget_box(sensor_id: int, example_id: int, request: Request) -> Response:
     rt = runtime(request)
     with rt.db.session() as s:
         get_sensor(s, sensor_id, KIND_OBJECTS)
-        if not _delete_examples(rt, s, sensor_id, [Sample.id == example_id]):
+        if not delete_examples(rt, s, sensor_id, [Sample.id == example_id]):
             raise HTTPException(404, "Taught box not found")
     rt.taught_changed(sensor_id)
     return Response(status_code=204)
 
 
-async def _remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> None:
+async def remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> None:
     """Remove own labels (``None``: all of them, and every taught box) with their entities."""
     with rt.db.session() as s:
         sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
@@ -202,7 +208,7 @@ async def _remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> 
         gone = [c["key"] for c in objects["custom"] if keys is None or c["key"] in keys]
         if keys is not None and not gone:
             raise HTTPException(404, "Label not found")
-        _delete_examples(rt, s, sensor_id, [] if keys is None else [Sample.object_label.in_(gone)])
+        delete_examples(rt, s, sensor_id, [] if keys is None else [Sample.object_label.in_(gone)])
         sensor.objects = {**(sensor.objects or {}), "custom": [c for c in objects["custom"] if c["key"] not in gone]}
         slug = sensor.slug
     for key in gone:
@@ -214,31 +220,32 @@ async def _remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> 
 @router.delete("/{sensor_id}/taught", status_code=204)
 async def forget_all(sensor_id: int, request: Request) -> Response:
     """Forget everything an object sensor was taught: every box and every own label."""
-    await _remove_labels(runtime(request), sensor_id, None)
+    await remove_labels(runtime(request), sensor_id, None)
     return Response(status_code=204)
 
 
 @router.delete("/{sensor_id}/labels/{key}", status_code=204)
 async def remove_label(sensor_id: int, key: str, request: Request) -> Response:
     """Remove an own label, the boxes taught with it and its entities in Home Assistant."""
-    await _remove_labels(runtime(request), sensor_id, {key})
+    await remove_labels(runtime(request), sensor_id, {key})
     return Response(status_code=204)
 
 
 def import_custom(stored: object) -> list[dict]:
-    """Own labels from an exported sensor, checked like new ones."""
+    """Own labels from an exported sensor, checked like new ones (people come with their faces,
+    api/imports.py)."""
     labels: list[dict] = []
     for item in stored if isinstance(stored, list) else []:
         try:
             key, name, parent = str(item["key"]), str(item["name"]).strip(), str(item["parent"])
         except KeyError, TypeError:
             continue
-        taken = set(detectors.LABELS.by_key) | {label["key"] for label in labels} | {NONE_LABEL}
-        if slugify(key, "") != key or key in taken or not name or parent not in detectors.LABELS.by_key:
+        taken = set(detectors.LABELS.by_key) | {label["key"] for label in labels} | RESERVED_KEYS
+        if item.get("face") or slugify(key, "") != key or key in taken or not name:
+            continue
+        if parent not in detectors.LABELS.by_key or len(labels) >= TEACH["max_labels"]:
             continue
         labels.append({"key": key, "name": name[:64], "parent": parent})
-        if len(labels) >= TEACH["max_labels"]:
-            break
     return labels
 
 

@@ -4,11 +4,12 @@
   import { onMount, untrack } from 'svelte';
   import { api } from '../../lib/api';
   import DetectionBoxes from '../../lib/components/DetectionBoxes.svelte';
+  import FaceConsent from '../../lib/components/FaceConsent.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { haSlug } from '../../lib/format';
   import { objectCount } from '../../lib/objects';
-  import type { Detection, Roi } from '../../lib/types';
+  import type { Detection, FaceModelInfo, Roi } from '../../lib/types';
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
 
@@ -18,7 +19,23 @@
     name,
     roi = $bindable(),
     classes = $bindable(),
-  }: { sourceType: string; source: string; name: string; roi: Roi | null; classes: string[] } = $props();
+    faces = $bindable(),
+  }: {
+    sourceType: string;
+    source: string;
+    name: string;
+    roi: Roi | null;
+    classes: string[];
+    /** Recognise people by their face (asked first, with what is stored and downloaded). */
+    faces: boolean;
+  } = $props();
+
+  let faceModel = $state<FaceModelInfo | null>(null);
+  let askingFaces = $state(false);
+  api
+    .settings()
+    .then((s) => (faceModel = s.face_models.find((m) => m.id === s.face_model) ?? null))
+    .catch(() => {});
 
   let image = $state<string | null>(null);
   let detections = $state<Detection[]>([]);
@@ -64,6 +81,25 @@
 <div class="col" style="gap:var(--space-3)">
   <h3>Which objects?</h3>
   <ObjectPicker bind:selected={classes} />
+  {#if classes.includes('person')}
+    <label class="check" data-testid="wizard-faces">
+      <input
+        type="checkbox"
+        checked={faces}
+        onclick={(e) => {
+          if (faces) return (faces = false);
+          e.preventDefault(); // on only after the confirmation
+          askingFaces = true;
+        }}
+      />
+      <span class="col" style="gap:2px">
+        <strong class="small">Recognise people by their face</strong>
+        <span class="xsmall faint">
+          You name the people after it is made (tap a person on its Live tab); each gets an on/off sensor.
+        </span>
+      </span>
+    </label>
+  {/if}
 </div>
 <TestCard {busy} onretest={test}>
   {#snippet status()}
@@ -93,7 +129,25 @@
   {/each}
 </HaPreview>
 
+{#if askingFaces}
+  <FaceConsent
+    name={name.trim()}
+    model={faceModel}
+    onclose={() => (askingFaces = false)}
+    onconfirm={() => {
+      askingFaces = false;
+      faces = true;
+    }}
+  />
+{/if}
+
 <style>
+  .check {
+    align-items: flex-start;
+  }
+  .check input {
+    margin-top: 3px;
+  }
   .danger-text {
     color: var(--c-danger);
   }

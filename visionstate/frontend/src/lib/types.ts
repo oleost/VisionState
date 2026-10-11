@@ -175,15 +175,109 @@ export interface Detection {
   /** Kept its taught answer: the same object at the same place, a little less alike. */
   kept?: boolean;
   /** May be this own label, but not clearly: asked about in the review queue. */
-  ask?: { id: number; label: string; similarity: number };
+  ask?: { id: number | null; label: string; similarity: number; face?: boolean };
+  /** Person boxes of a sensor that recognises faces: what the face search found (see FaceInfo). */
+  face?: FaceInfo;
 }
 
-/** An object sensor's review question ("Is this Our car?"), in a history row's `probs.ask`. */
+/**
+ * The face search in one person box: `box` the face (normalised to the frame), `problem` why it
+ * cannot be used (null: usable) — 'none' no face, 'cut' by the frame's edge, 'small', 'turned',
+ * 'blurry', 'unsure'; `state` what a usable face is: 'match' (it is `label`), 'pending' (a second
+ * check must agree), 'ask' (maybe `candidate`), 'unknown', 'unclear' (matched nobody, but too small
+ * or turned to call a stranger).
+ */
+export interface FaceInfo {
+  box?: [number, number, number, number];
+  problem: FaceProblem | null;
+  face_px?: number; // the face's width in the frame, in pixels
+  state?: 'match' | 'pending' | 'ask' | 'unknown' | 'unclear';
+  label?: string;
+  candidate?: string | null;
+  similarity?: number;
+  kept?: boolean;
+}
+
+export type FaceProblem = 'none' | 'cut' | 'small' | 'turned' | 'blurry' | 'unsure';
+
+/** Recognising people by their face on an object sensor (defaults: config face_defaults), with its
+ * own face limits: an unset (or null) one follows the global value. */
+export interface FaceSettings extends FaceOverrides {
+  enabled: boolean;
+  /** Put faces nobody was taught for in the review queue ("Who is this?"). */
+  ask_unknown: boolean;
+}
+
+/** The tunable face limits: the smallest face (its width in pixels) and the similarities. */
+export type FaceKey = 'min_face_px' | 'match_similarity' | 'sure_similarity' | 'ask_similarity' | 'keep_similarity';
+export type FaceLimits = Record<FaceKey, number>;
+export type FaceOverrides = Partial<Record<FaceKey, number | null>>;
+
+/** GET /face-limits: the face model's defaults, what the user set and the result. */
+export interface FaceLimitsInfo {
+  model: string;
+  defaults: FaceLimits;
+  values: FaceOverrides;
+  effective: FaceLimits;
+}
+
+/** GET /people: the people (shared by every object sensor that recognises faces). */
+export interface People {
+  model: FaceStatus;
+  /** The sensors that recognise faces. */
+  sensors: number[];
+  people: Person[];
+  /** Pairs of people whose closest faces come near the match threshold. */
+  look_alikes: { a: string; b: string; similarity: number }[];
+}
+
+export interface Person {
+  key: string;
+  name: string;
+  /** Their own entity: the slug of the sensor that sees them now ('not_seen': none), and when and
+   * on which sensor they were last seen. */
+  seen: { now: string; at: number | null; sensor_id: number | null; sensor_name: string | null };
+  /** When the oldest taught face was taught. */
+  oldest: string | null;
+  /** `sensor_name`: the camera it was taught on (null once that sensor is deleted); `suspect`:
+   * the person a face is closer to than to its own (possibly the wrong name). */
+  faces: {
+    id: number;
+    origin: string;
+    is_night: boolean;
+    created_at: string;
+    sensor_id: number | null;
+    sensor_name: string | null;
+    suspect: string | null;
+  }[];
+}
+
+/** The face model: chosen, loaded, downloading (bytes) or why it failed. */
+export interface FaceStatus {
+  model: string;
+  loaded: boolean;
+  loading: boolean;
+  progress: { done: number; total: number } | null;
+  error: string;
+  downloaded: boolean;
+}
+
+export interface FaceModelInfo extends BackboneInfo {
+  /** What its makers say it was trained on. */
+  data: string;
+  detector: { name: string; license: string; data: string; source: string };
+}
+
+/** An object sensor's review question ("Is this Our car?"), in a history row's `probs.ask`. About a
+ * face ("Is this Kari?", "Who is this?" when label is the unknown key): `face` is the face's box. */
 export interface ObjectQuestion {
   label: string;
   similarity: number;
   box: [number, number, number, number];
   detected: string;
+  face?: [number, number, number, number];
+  /** About a face: the closest face taught as that person, to compare with. */
+  example?: number | null;
 }
 
 /** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
@@ -191,6 +285,8 @@ export interface OwnLabel {
   key: string;
   name: string;
   parent: string;
+  /** A person (shared by every sensor, GET /people): added by the backend while the sensor recognises faces. */
+  face?: boolean;
 }
 
 export interface ObjectSettings {
@@ -201,6 +297,7 @@ export interface ObjectSettings {
   use_taught: boolean;
   /** This sensor's own teaching limits; a missing one follows the global value. */
   teach?: TeachOverrides;
+  faces?: FaceSettings;
 }
 
 export type TeachKey = 'match_similarity' | 'keep_similarity' | 'ask_similarity' | 'rescue_similarity' | 'rescue_floor';
@@ -230,9 +327,19 @@ export interface SensorObjects extends ObjectSettings {
   custom: OwnLabel[];
   live: ObjectLive[];
   detections: Detection[];
-  /** Boxes taught so far, and the objects whose boxes are compared with them. */
+  /** Boxes taught so far, faces taught on this camera (the people are shared: GET /people), and the
+   * objects whose boxes are compared with the boxes. */
   taught: number;
+  taught_faces: number;
   taught_keys: string[];
+  /** Of the last person boxes looked at for a face, how many had a usable one, and why the others not. */
+  face_stats: {
+    looked: number;
+    usable: number;
+    problems: Partial<Record<FaceProblem, number>>;
+    frame: [number, number] | null; // width and height of the last frame looked at
+    min_face_px: number | null; // the smallest face it was looked at with
+  };
 }
 
 /** One taught box; label "none" = not what the detector said, detected null = a box it missed. */
@@ -386,6 +493,11 @@ export interface AppConfig {
   object_popular: string[];
   /** Teaching object sensors: the label of a box that is not what the detector said. */
   teach: { none_label: string; max_labels: number; tunable: TeachKey[]; limits: Record<TeachKey, [number, number]> };
+  face_defaults: FaceSettings;
+  face_limits: Record<FaceKey, [number, number]>;
+  /** The key (and entity) of a face nobody was taught for. */
+  face_unknown_key: string;
+  faces: { max_people: number; max_faces_per_person: number; suggest_faces: number; stats_window: number };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
@@ -422,6 +534,8 @@ export interface Status {
   wheel_reader: string | null;
   wheel_reader_name: string | null;
   wheel_reader_error: string;
+  /** The face model, and how many people and sensors that recognise faces there are. */
+  faces: FaceStatus & { people: number; sensors: number };
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -463,7 +577,8 @@ export interface Prediction {
   review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | null;
   reviewed: boolean;
   has_frame: boolean;
-  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask'. */
+  /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask' |
+   * 'face' (a face nobody is named for). */
   detections: Detection[] | null;
   /** Reading sensors: did the reader read the right number (null = not verified)? */
   read_ok: boolean | null;
@@ -541,6 +656,10 @@ export interface BackboneInfo {
   name: string;
   description: string;
   installed: boolean;
+  /** Downloaded (not included in the app): it can be deleted while not in use. */
+  downloaded: boolean;
+  /** Why it cannot be deleted now ("" if it can). */
+  in_use: string;
   size: number;
   license: string;
   source: string;
@@ -550,6 +669,9 @@ export interface BackboneInfo {
   /** Rank within its kind, 1-5. */
   accuracy: number;
 }
+
+/** The AI models a user chooses, by their list in GET /settings. */
+export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'readers';
 
 /** GET /storage: disk use and the history limits (whichever is reached first applies). */
 export interface StorageInfo {
@@ -576,6 +698,9 @@ export interface SettingsInfo {
   /** The wheel reader for mechanical counters (one model for now, nothing to choose). */
   wheel_reader: string;
   wheel_readers: DetectorInfo[];
+  /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
+  face_model: string;
+  face_models: FaceModelInfo[];
   options: Record<string, string | number>;
 }
 

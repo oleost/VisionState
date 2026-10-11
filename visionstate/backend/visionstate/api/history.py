@@ -30,6 +30,7 @@ EVENT_ROWS: dict[str, ColumnElement[bool]] = {
     "cleared": Prediction.published_key == "off",
     "filtered": Prediction.published_key == "filtered",
     "asked": Prediction.published_key == "ask",
+    "face_seen": Prediction.published_key == "face",
     "value": Prediction.published_key.is_not(None),
     "rejected": Prediction.published_key.is_(None),
     "verified": Prediction.read_ok.is_not(None),

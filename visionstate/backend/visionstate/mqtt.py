@@ -365,15 +365,49 @@ REVIEW_TOPICS = {
 }
 
 
-def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
-    """App-wide entities (not tied to one sensor), grouped under a "VisionState" device."""
-    device = {
+def _hub_device() -> dict:
+    return {
         "identifiers": [APP_SLUG],
         "name": "VisionState",
         "manufacturer": "VisionState",
         "model": "VisionState app",
         "sw_version": VERSION,
     }
+
+
+def person_topics(key: str) -> dict[str, str]:
+    """Topics of a person's own entity: on which sensor they are seen (never renamed once released)."""
+    base = f"{APP_SLUG}/people/{key}"
+    return {"state": f"{base}/state", "attributes": f"{base}/attributes"}
+
+
+def person_discovery_messages(prefix: str, people: list[tuple[str, str]]) -> list[tuple[str, dict]]:
+    """Each person's own entity on the "VisionState" device: Home Assistant names it
+    sensor.visionstate_<key>; its value is the slug of the sensor that sees them, or not_seen."""
+    messages = []
+    for key, name in people:
+        t = person_topics(key)
+        messages.append(
+            (
+                f"{prefix}/sensor/{APP_SLUG}/person_{key}/config",
+                {
+                    "unique_id": f"{APP_SLUG}_person_{key}",
+                    "default_entity_id": f"sensor.{APP_SLUG}_{key}",
+                    "name": name,
+                    "state_topic": t["state"],
+                    "json_attributes_topic": t["attributes"],
+                    "icon": "mdi:account-eye",
+                    "availability": [{"topic": BRIDGE_AVAILABILITY}],
+                    "device": _hub_device(),
+                },
+            )
+        )
+    return messages
+
+
+def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
+    """App-wide entities (not tied to one sensor), grouped under a "VisionState" device."""
+    device = _hub_device()
     return [
         (
             f"{prefix}/sensor/{APP_SLUG}/review_queue/config",
@@ -530,6 +564,16 @@ class MqttBridge:
     async def publish_hub_discovery(self) -> None:
         for topic, payload in hub_discovery_messages(self.settings.discovery_prefix):
             await self.publish(topic, payload, retain=True)
+
+    async def publish_people_discovery(self, people: list[tuple[str, str]]) -> None:
+        for topic, payload in person_discovery_messages(self.settings.discovery_prefix, people):
+            await self.publish(topic, payload, retain=True)
+
+    async def remove_person(self, key: str) -> None:
+        """Forget a person's own entity and its retained values."""
+        await self.publish(f"{self.settings.discovery_prefix}/sensor/{APP_SLUG}/person_{key}/config", "", retain=True)
+        for topic in person_topics(key).values():
+            await self.publish(topic, "", retain=True)
 
     async def remove_discovery(self, sensor: SensorDescriptor) -> None:
         for topic, _ in discovery_messages(self.settings.discovery_prefix, sensor):

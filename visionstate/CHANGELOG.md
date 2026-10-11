@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.8.1b3
+
+### New
+
+- **Recognise people by their face** on object sensors that look for Person. Off until you turn it
+  on, per sensor, after a sheet that says what is stored and what is downloaded (once, from Hugging
+  Face); it can also be turned on in the new sensor wizard. The faces never leave your Home
+  Assistant.
+  - **Name the people of your household** by tapping them on the Live tab, in a history frame or in
+    the review queue: *Who is this?* Only a usable face can be taught, so a back or a jacket never
+    becomes someone.
+  - **Shared by every camera:** a person named on one camera is known on all that recognise faces.
+    Each gets an on/off sensor and a count per camera, and their own sensor
+    (`sensor.visionstate_<name>`) that says which camera sees them now, or `not_seen`.
+  - **Unknown person** turns on for a face seen clearly that matches nobody you named; a face
+    further away or turned to the side can still be named, but never makes someone a stranger.
+  - **People** (in the menu) lists everyone with their faces and the camera each was taught on,
+    where they were last seen, people the AI finds alike and faces that may carry the wrong name;
+    rename, move or forget faces and people there.
+  - **Does my camera see faces well enough?** The Live tab draws each face and says why one cannot
+    be used (too small, turned away, cut off by the edge, blurry), and how many of the last people
+    had a usable face.
+  - A face nobody is named for keeps a frame in the history (*Face seen, not named*), so someone
+    who was only at the door for a moment can be named afterwards.
+  - **Limits** for faces (smallest face, how close a face must be to be named, asked about or kept)
+    under **Settings → Recognising faces** for all sensors, and per sensor.
+  - Two face models: **SFace** (small, fine on a Raspberry Pi 4) and **AuraFace** (for a fast PC).
+- **Compare and manage the models** (Settings → AI model): every model from the smallest to the
+  largest, with the face models next to the object detector; a downloaded model that is not in use
+  can be deleted there.
+- **The wizard warns about a small picture**: it may be the camera's low-resolution stream, while
+  the main stream is often hidden in Home Assistant.
+
 ## 0.8.1b2
 
 ### Fixed

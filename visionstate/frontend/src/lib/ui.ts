@@ -87,6 +87,41 @@ export const TEACH_FIELDS = [
   },
 ] as const;
 
+/** The wizard warns of a low-resolution stream: a picture whose longest side is below this, or a
+ * camera entity or URL whose name says so (Reolink "fluent", "sub" streams, "low"). */
+export const SMALL_FRAME_PX = 1280;
+export const LOW_STREAM_NAME = /(^|[^a-z])(fluent|sub|low|lowres)([^a-z]|$)/i;
+
+/** The faces' limits, on the Settings page and an object sensor's Faces card (in this order). */
+export const FACE_FIELDS = [
+  {
+    key: 'min_face_px',
+    label: 'Smallest face',
+    help: 'Its width in the picture. Smaller faces are not used: they are easily mistaken.',
+    unit: 'px',
+  },
+  {
+    key: 'match_similarity',
+    label: 'Recognised as a person from',
+    help: 'How close a face must be to the faces you taught; a second check must agree.',
+  },
+  {
+    key: 'sure_similarity',
+    label: 'Sure at once from',
+    help: 'Named in the first check, without waiting for a second one.',
+  },
+  {
+    key: 'ask_similarity',
+    label: 'Asks you in the review queue from',
+    help: 'Between this and the first similarity: "Is this Kari?"',
+  },
+  {
+    key: 'keep_similarity',
+    label: 'Keeps the name, while they stay, down to',
+    help: 'Someone who stays where they were keeps their name as their face turns.',
+  },
+] as const;
+
 /** The model comparison under Settings → AI model: one row per kind, in the order shown. */
 export const MODEL_KINDS = [
   {
@@ -98,6 +133,11 @@ export const MODEL_KINDS = [
     key: 'detectors',
     title: 'Object sensors',
     text: 'Finds people, vehicles and animals. Larger models find more small, far-off and partly hidden objects.',
+  },
+  {
+    key: 'face_models',
+    title: 'Faces (object sensors)',
+    text: 'Tells who a person is from their face; downloaded when a sensor recognises faces. Its size includes the face finder.',
   },
   { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
   { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
@@ -233,6 +273,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   cleared: 'Cleared',
   filtered: 'Filtered away',
   asked: 'Asked “is it yours?”',
+  face_seen: 'Face seen, not named',
   value: 'New value',
   rejected: 'Rejected reading',
   verified: 'Checked by hand',

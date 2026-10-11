@@ -14,8 +14,9 @@ from .. import detectors, imaging, teach
 from ..db import Prediction
 from ..mqtt import object_topics, topics
 from ..redact import redact
-from ..settings import DETECTION, TEACH
+from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, TEACH
 from .base import RuntimeBase
+from .faces import FacesMixin
 from .logic import update_tracks
 from .publishing import PublishingMixin
 from .state import SensorConfig
@@ -25,7 +26,7 @@ log = logging.getLogger(__name__)
 OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an object sensor
 
 
-class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
+class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase):
     async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
         """One check of an object sensor: detect, compare with what was taught, update and publish."""
         live = self.live_state(cfg.id)
@@ -45,6 +46,8 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
         if index is not None:
             found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
+        if cfg.faces_on:
+            found = await self.apply_faces(cfg, image, found, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.detections = found
@@ -56,6 +59,8 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
         # Something that was there is missing: look again soon instead of at the next interval.
         missing = any(t.on and 0 < t.misses < DETECTION["clear_misses"] for t in live.tracks.values())
         live.recheck_at = now + DETECTION["recheck_s"] if missing else 0.0
+        if cfg.faces_on:
+            await self.update_people(cfg)  # each person's own entity: where they are seen
 
         for key in keys:
             track = live.tracks[key]
@@ -73,6 +78,7 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             await self._send(cfg, ot["attributes"], attributes, retain=True)
         names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
         names.update({c["key"]: c["name"] for c in cfg.custom_labels})
+        names[FACE_UNKNOWN_KEY] = "Unknown person"
         drawn = [{**d, "key": d.get("label") or d["key"]} for d in counted]
         annotated = await asyncio.to_thread(
             lambda: imaging.crop_box(
@@ -86,7 +92,33 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             published = "on" if track.on else "off"
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, published, track.score, found)
         await self._record_filtered(cfg, image, found, now)
+        if cfg.faces_on:
+            await self._record_face(cfg, image, found, now)
         await self._ask_unsure(cfg, image, found, now)
+
+    async def _record_face(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
+        """Keep a frame in the history when a usable face nobody is named for is seen, so the user
+        can name them there later: at most one per FACES["record_cooldown_s"], unless the face came
+        FACES["record_closer"] times closer since (the best look at someone at a doorbell)."""
+        live = self.live_state(cfg.id)
+        unnamed = [
+            d
+            for d in found
+            if (face := d.get("face"))
+            and face.get("problem") is None
+            and face.get("box")
+            and face.get("state") != "match"
+        ]
+        if not unnamed:
+            return
+        best = max(unnamed, key=lambda d: d["face"].get("face_px", 0))
+        width = float(best["face"].get("face_px", 0))
+        at, logged_width = live.face_logged
+        if now - at < FACES["record_cooldown_s"] and width < logged_width * FACES["record_closer"]:
+            return
+        live.face_logged = (now, width)
+        key = best.get("label") or best["key"]
+        await asyncio.to_thread(self._record_detection, cfg.id, image, key, "face", best["score"], found)
 
     async def _ask_unsure(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Put a box that may be an own label, but not clearly, in the review queue ("Is this Our
@@ -123,6 +155,9 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             return False
         frame = self.storage.save_history(sensor_id, image)
         question = {"label": label, "similarity": box["ask"]["similarity"], "box": box["box"], "detected": box["key"]}
+        if box["ask"].get("face") and (box.get("face") or {}).get("box"):
+            question["face"] = box["face"]["box"]  # "Is this Kari?" / "Who is this?" about a face
+            question["example"] = box["ask"].get("id")  # the closest taught face, to compare with
         with self.db.session() as s:
             s.add(
                 Prediction(
@@ -155,7 +190,8 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
     def _record_detection(
         self, sensor_id: int, image: Image.Image, key: str, published: str, score: float, found: list[dict]
     ) -> None:
-        """A history row of an object sensor: a class or own label went "on" or "off", or was "filtered"."""
+        """A history row of an object sensor: a class or own label went "on" or "off", was
+        "filtered", or a face nobody is named for was seen ("face")."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(
@@ -166,7 +202,7 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
                     confidence=score,
                     probs={},
                     frame=frame,
-                    is_change=True,
+                    is_change=published != "face",  # a face seen is not a change of what is there
                     reviewed=True,  # nothing to review: the detector is not trained here
                     detections=found,
                 )

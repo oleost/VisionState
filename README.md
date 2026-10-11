@@ -43,6 +43,10 @@ without writing code or leaving Home Assistant:
 - 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
   count and an on/off sensor for each. Pick them, done. Wrong about your garden statue? Tap the
   box: *not a person*. Want *our car* apart from any car? Give it its own label.
+- 🙂 **Know who is there** — name the people of your household once, by tapping them in the live
+  image, and every camera knows them: an on/off sensor per person and camera, and one per person
+  that says which camera sees them now. *Unknown person* turns on for a face it was not taught.
+  Off until you turn it on, and the faces never leave your Home Assistant.
 - 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters (read wheel by
   wheel, also while a wheel is half way between two digits), prices, the minutes left on the
   washing machine. Counters only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
@@ -171,6 +175,13 @@ Apache-2.0, trained on the COCO objects). It finds every object in the region; e
 picked is reported with a count and cleared a while after it was last seen. Boxes you corrected
 teach it your camera: later boxes that clearly look like one you taught get your answer.
 
+Object sensors that recognise faces look for a face in the upper part of each person
+([YuNet](https://github.com/opencv/opencv_zoo), MIT), skip faces that are too small, turned away,
+cut off or blurry, and compare the rest with the faces you named
+([SFace](https://github.com/opencv/opencv_zoo), Apache-2.0, or for a fast PC
+[AuraFace](https://huggingface.co/fal/AuraFace-v1), Apache-2.0). Only a face seen clearly can make
+an unknown person, so someone walking past side-on is not reported as a stranger.
+
 Reading sensors read the digits in the region with a small text recognizer
 ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,
 then check the value (a counter never goes down) before publishing it. Mechanical counters are
@@ -186,6 +197,8 @@ the app's data folder (included in Home Assistant backups).
 - 100 % local — no cloud services, no telemetry.
 - Only reachable through Home Assistant Ingress (requires a Home Assistant login).
 - Camera passwords are hidden in logs and removed from exported sensor bundles.
+- Face recognition is off until you turn it on for a camera. The faces you teach stay in the app's
+  own storage (not the media folder); an export includes them only if you tick it.
 
 ## Development
 
@@ -207,6 +220,7 @@ Issues and ideas are welcome in [GitHub Issues](https://github.com/oleost/Vision
 ## Licence
 
 [Apache-2.0](LICENSE). The bundled models are Apache-2.0 as well: DINOv2 (Meta), D-FINE,
-PaddleOCR PP-OCRv6 and the VisionState wheel reader.
+PaddleOCR PP-OCRv6 and the VisionState wheel reader. The face models are downloaded only when a
+sensor recognises faces: YuNet (MIT) with SFace or AuraFace (Apache-2.0).
 
 If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕

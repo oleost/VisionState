@@ -20,6 +20,9 @@ export function dateTime(input: string): string {
 
 export const mb = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 
+/** AI models from the smallest to the largest (their download size). */
+export const bySize = <T extends { size: number }>(models: readonly T[]): T[] => [...models].sort((a, b) => a.size - b.size);
+
 /** "12 kB", "820 MB", "1.4 GB" (binary units, like the backend's size limit). */
 export function size(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;

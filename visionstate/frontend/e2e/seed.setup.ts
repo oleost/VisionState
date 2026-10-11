@@ -6,6 +6,7 @@ import {
   COUNTER_SENSOR_NAME,
   COUNTER_URL,
   DISPLAY_URL,
+  FACE_SENSOR_NAME,
   OBJECT_SENSOR_NAME,
   PHOTO_URL,
   READING_SENSOR_NAME,
@@ -109,4 +110,40 @@ setup('seed a mechanical counter sensor', async ({ request }) => {
   await expect
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
     .toBe('89.939');
+});
+
+setup('seed a sensor that recognises faces', async ({ request }) => {
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: FACE_SENSOR_NAME,
+      kind: 'objects',
+      source_type: 'http',
+      source: PHOTO_URL('face_crew'),
+      objects: { classes: ['person'], faces: { enabled: true, ask_unknown: false } },
+      interval_s: 5,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const sensor = await created.json();
+  type Box = { key: string; score: number; box: number[]; face?: { box?: number[]; problem: string | null } };
+  // The face model loads in the background (it is in the bundled models folder, as in CI: no download).
+  let frameId = '';
+  let people: Box[] = [];
+  await expect
+    .poll(
+      async () => {
+        const view = await (await request.get(`api/v1/sensors/${sensor.id}`)).json();
+        frameId = view.live.frame_id;
+        people = (view.objects.detections as Box[]).filter((d) => d.key === 'person' && d.face?.box && !d.face.problem);
+        return people.length;
+      },
+      { timeout: 120_000 },
+    )
+    .toBe(2);
+  // Suni Williams stands on the left; the test teaches the other one by hand.
+  const left = people.sort((a, b) => a.box[0] - b.box[0])[0];
+  const taught = await request.post(`api/v1/sensors/${sensor.id}/faces`, {
+    data: { frame_id: frameId, box: left.box, score: left.score, new_person: 'Suni' },
+  });
+  expect(taught.ok(), await taught.text()).toBeTruthy();
 });

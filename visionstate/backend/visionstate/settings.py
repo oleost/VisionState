@@ -55,6 +55,7 @@ OBJECT_DEFAULTS = {
     # "Our car" under "car". Each gets the same two entities as a class. Made by teaching a box.
     "custom": [],
     "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
+    "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
@@ -217,6 +218,80 @@ TEACH_TUNABLE_LIMITS = {
 TEACH_BY_BACKBONE: dict[str, dict[str, float]] = {
     "dinov2-base": {"match_similarity": 0.9, "rescue_similarity": 0.92},
 }
+
+# Recognising people by their face (object sensors that look for "person"; off by default, see
+# docs/FACE_RECOGNITION_PLAN.md). The faces of each person box are looked for in its upper part,
+# checked (a face that fails is "no face", never someone unknown), aligned and compared with the
+# faces the user taught. Similarity thresholds belong to the face model (faces.json).
+FACE_DEFAULTS = {
+    "enabled": False,
+    # Smallest usable face: the width of the face in the camera's frame, in pixels (not the
+    # distance between the eyes, which shrinks as a head turns). On a 480x640 living room camera
+    # and the test photos scaled down, SFace still told the person (0.53-0.60) from a stranger
+    # (<=0.31) at a face 28-31 px wide (about 13 px between the eyes); at 21 px it fell to 0.45.
+    "min_face_px": 30.0,
+    "ask_unknown": False,  # put faces nobody was taught for in the review queue ("Who is this?")
+}
+# What the user can tune, for all sensors (Settings) and per sensor (its Faces card): a sensor's
+# unset value follows the global one, which follows the default (min_face_px above; the
+# similarities: the face model's, faces.json).
+FACE_TUNABLE = ("min_face_px", "match_similarity", "sure_similarity", "ask_similarity", "keep_similarity")
+FACE_LIMITS = {
+    "min_face_px": (16.0, 240.0),
+    "match_similarity": (0.2, 0.95),
+    "sure_similarity": (0.2, 0.95),
+    "ask_similarity": (0.1, 0.95),
+    "keep_similarity": (0.1, 0.95),
+}
+FACES = {
+    "stats_window": 40,  # "a usable face in 9 of the last 40 person boxes looked at"
+    "max_faces": 4,  # person boxes searched for a face per check (most certain first): one detector run
+    # A person box that keeps a sure name is searched again only every this many checks.
+    "recheck_every": 3,
+    # The upper part of a person box where the face is looked for: its height, in box widths
+    # (a standing person is about 3 widths tall), and a margin on every side, in box widths.
+    "region_height": 1.3,
+    "region_margin": 0.1,
+    "detect_score": 0.6,  # a face the face detector finds at all
+    "nms_iou": 0.3,
+    # Quality gate. The face detector's score, how far the face is turned sideways (see faces.turn:
+    # 0 straight, ~0.35 about 30 degrees, ~0.6 about 45) and the sharpness of the aligned face
+    # (variance of the Laplacian at 112 px: sharp faces 32+ down to 13 px between the eyes, the
+    # same faces blurred by 2 px at most 19). A profile has its eyes close together for its width:
+    # 0.41-0.50 of it looking at the camera, a profile 0.08; below turned_eye_share it is turned.
+    "min_score": 0.75,
+    "max_turn": 0.55,
+    "min_sharpness": 25.0,
+    "turned_eye_share": 0.3,
+    # A face that matched nobody counts towards Unknown person only when it is clearly seen: this
+    # many times the smallest face, turned at most this far, and found with at least this detector
+    # score. A smaller or more turned face can be named (a person's own face still looks like them
+    # a bit turned, 0.66-0.78 at 0.26-0.35), but not matching anyone may only mean the angle: "not
+    # sure who", never a stranger. On a phone camera real faces scored 0.86-0.94 and things taken
+    # for a face (a wall, a second face on a profile with the eyes in the wrong place) 0.60-0.79.
+    "unknown_size": 1.5,
+    "unknown_max_turn": 0.35,
+    "unknown_min_score": 0.85,
+    "top_k": 3,  # a person's score: the mean similarity to their this many closest taught faces
+    "margin": 0.05,  # a match must beat the next person by this much
+    # Unknown person: a person box whose usable face matched nobody in this many checks in a row
+    # (the same box: it overlaps the last check's by keep_iou in TEACH) and that never had a name.
+    "unknown_after": 2,
+    "crop_margin": 0.5,  # what is stored of a taught face: the face box plus this share of its size around it
+    "max_faces_per_person": 50,
+    "max_people": 10,  # people VisionState knows (shared; two entities on each sensor that recognises faces, and one of their own)
+    "suggest_faces": 5,  # a person with fewer taught faces gets "teach a few more"
+    "look_alike": 0.9,  # two people whose closest faces are this share of the match threshold apart look alike
+    # A usable face nobody is named for keeps its frame in the history, to name them there later
+    # (someone at a doorbell is gone before the Live tab can be tapped): at most one per this many
+    # seconds per sensor, unless the face came this many times closer (wider) since the last one.
+    "record_cooldown_s": 60,
+    "record_closer": 1.5,
+}
+FACE_UNKNOWN_KEY = "unknown_person"  # the key (and entity) of a face nobody was taught for
+# A person's own entity (sensor.visionstate_<key>) says on which sensor they are seen: its slug,
+# the one that saw them last when several do, or this when none sees them now.
+PERSON_NOT_SEEN = "not_seen"
 
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
@@ -393,7 +468,8 @@ HISTORY = {
 # kinds). api/history.py says which rows each one matches, the UI how it is named.
 HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     KIND_STATES: ("change", "flagged"),  # a published change; a frame put in the review queue
-    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked"),  # "asked": "Is this Our car?"
+    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
+    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
 }
 
@@ -461,7 +537,22 @@ def merge_objects(stored: dict | None) -> dict:
     merged["classes"] = list(merged.get("classes") or [])
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     merged["teach"] = {k: v for k, v in (merged.get("teach") or {}).items() if k in TEACH_TUNABLE and v is not None}
+    merged["faces"] = merge_faces(merged.get("faces"))
     return merged
+
+
+def merge_faces(stored: dict | None) -> dict:
+    """Face settings of an object sensor: whether it is on and asks (stored on top of
+    FACE_DEFAULTS), and its own values of FACE_TUNABLE (only the ones it set; see faces.merge_limits)."""
+    stored = stored or {}
+    merged = {k: stored.get(k, FACE_DEFAULTS[k]) for k in ("enabled", "ask_unknown")}
+    merged.update({k: float(stored[k]) for k in FACE_TUNABLE if stored.get(k) is not None})
+    return merged
+
+
+def faces_on(objects: dict) -> bool:
+    """Whether an object sensor recognises faces: switched on, and it looks for people."""
+    return bool(objects["faces"]["enabled"]) and "person" in objects["classes"]
 
 
 def active_custom(objects: dict) -> list[dict]:
@@ -517,6 +608,12 @@ class Settings:
         return self.data_dir / "models"
 
     @property
+    def faces_dir(self) -> Path:
+        """Faces taught to object sensors: in the app's own storage, never in the media folder
+        (Home Assistant's media browser shows that to every user)."""
+        return self.data_dir / "faces"
+
+    @property
     def heads_dir(self) -> Path:
         return self.data_dir / "heads"
 
@@ -545,6 +642,7 @@ class Settings:
             self.data_dir,
             self.models_dir,
             self.heads_dir,
+            self.faces_dir,
             self.samples_dir,
             self.history_dir,
             self.thumbs_dir,

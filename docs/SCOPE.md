@@ -85,7 +85,7 @@ so retraining only runs the backbone on new or changed samples.
 | `dinov2-small` | DINOv2 ViT-S/14, fp32 (downloaded on demand, SHA-256 checked) | Optional, slightly more accurate |
 | `dinov2-base` | DINOv2 ViT-B/14, fp32 (downloaded on demand, 347 MB) | Fast PCs; separates objects best |
 
-- Each registry entry carries a rough footprint for **Compare the models** in Settings
+- Each registry entry carries a rough footprint for **Compare and manage the models** in Settings
   (`backbones.Footprint`: extra memory, time per check on 4 threads of a desktop CPU, an accuracy
   rank within its kind), measured when the model was added. Texts and footprint may be updated in a
   released entry; its file and inputs never change.
@@ -176,6 +176,60 @@ knew). Instead a second step compares boxes with boxes the user taught:
   `settings.merge_teach`: the backbone's defaults (`TEACH`, with `TEACH_BY_BACKBONE` on top) <
   global < sensor. Asking and keeping must not start above a match (refused by the API). A user's
   value stays when the backbone changes; the UI says to look at it again.
+
+**Recognising people by their face** (`faces.py`, `engine/faces.py`, `api/faces.py`; registry
+`faces.json`, tunables `settings.FACES`, per sensor `objects["faces"]` with `settings.FACE_DEFAULTS`;
+the user's limits `settings.FACE_TUNABLE`).
+Why it is a part of object sensors and not a kind, the research, the privacy rules and what is
+left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
+
+- Off by default; on only for a sensor that looks for `person` (its Settings tab, or the wizard),
+  after a confirmation that names what is stored and downloaded. The face models are never
+  bundled: the first sensor that turns it on downloads them (`backbones.download` with progress)
+  and loads them in the background — the sensor runs without faces meanwhile; a failed download waits for **Try again**. The last sensor
+  turning it off lets the model go; its files can then be deleted (like any downloaded model not
+  in use: `DELETE /api/v1/models/{kind}/{id}`, *Compare and manage the models*).
+- The user's limits (`settings.FACE_TUNABLE`: the smallest face and the four similarities) work
+  like the teaching limits: defaults (`FACE_DEFAULTS`, the similarities from the face model) <
+  global (Settings, DB setting `faces`) < the sensor's own (`objects["faces"]`); an unset value
+  inherits.
+- Each check: person boxes (at most `FACES["max_faces"]`, new boxes first, then the ones searched
+  longest ago) are cropped from the full frame in their upper part and tiled
+  four to one YuNet run (640 × 640). One face counts for one person box. The quality gate (not
+  cut by the frame's edge — the detector then guesses the eyes —, the face's width `min_face_px` —
+  not the distance between the eyes, which shrinks as a head turns —, detector score, how far it
+  is turned, sharpness) makes a bad face *no face*, never *unknown*. A usable face is aligned on
+  its five points (Umeyama + Pillow, no OpenCV) and embedded.
+- A person's score is the mean similarity to their `top_k` closest taught faces. Thresholds belong
+  to the recogniser's registry entry (cosine values of one model mean nothing for another): a
+  match needs `match_similarity` and `FACES["margin"]` over the next person, and is published at
+  once from `sure_similarity`, else when a second check of the same box agrees; between
+  `ask_similarity` and a match the box is `ask` (review: "Is this Kari?"); a box that stays keeps
+  its name while no usable face is seen or the face is above `keep_similarity`. A sure name is
+  carried for `recheck_every` checks without searching again. A box whose usable face matched
+  nobody `unknown_after` checks in a row and never had a name counts for `unknown_person`
+  (`settings.FACE_UNKNOWN_KEY`, its own entities). Only faces seen clearly count:
+  `FACES["unknown_size"]` times the smallest face, turned at most `FACES["unknown_max_turn"]`,
+  detector score at least `FACES["unknown_min_score"]`; a smaller, more turned or less certain face
+  can be named but is otherwise *not sure who*, as not looking like anyone may only be the angle.
+  Measured on the NASA test photos: the same person 0.64–0.95 (SFace) and 0.59–0.93 (AuraFace),
+  different people at most 0.30 and 0.22.
+- The people are shared by every sensor (a household, not a camera): `person` rows, each with
+  `face` rows (`db.Face`: {box, points, score} in the crop, and the sensor it was taught on, null
+  once that sensor is deleted — the face stays). The crop (the face with a margin, not aligned, so
+  another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
+  embeddings are cached per face model (`face_embedding`), deleted with the face, never exported.
+  A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
+  stored on the sensor): its entities, and a name its faces can get. One index of all taught
+  faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
+- Each person also has their own entity on the app's device, `sensor.visionstate_<key>`
+  (`mqtt.person_discovery_messages`): the slug of the sensor that sees them now — the one that saw
+  them last when several do — or `settings.PERSON_NOT_SEEN`; when and where they were last seen
+  are attributes. Kept in memory: after a restart everyone is `not_seen` until seen again.
+- `GET /people` and `/faces/{id}` (`api/faces.py`) list, rename, move and forget for all sensors;
+  teaching stays on a sensor (`/sensors/{id}/faces`). Export carries the faces taught on that
+  sensor, with their people's keys and names, only with `?faces=true`; import adds them to the
+  person with that key or name (or a new one) and turns face recognition off.
 
 - Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
@@ -420,9 +474,9 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     object class or own label — the row's `state_key`; never a reading), event, time window and
     *waiting for review*, newest or oldest first. Each filter takes several values (any of them
     matches); filters combine with *and*. Events are a registry per kind
-    (`settings.HISTORY_EVENTS`: `change`, `flagged`; `appeared`, `cleared`, `filtered`, `asked`;
-    `value`, `rejected`, `verified`), sent to the UI in `/config`; `api/history.py` says which rows
-    each matches. One function (`history_query`) turns a filter into SQL for the list
+    (`settings.HISTORY_EVENTS`: `change`, `flagged`; `appeared`, `cleared`, `filtered`, `asked`,
+    `face_seen`; `value`, `rejected`, `verified`), sent to the UI in `/config`; `api/history.py`
+    says which rows each matches. One function (`history_query`) turns a filter into SQL for the list
     (`GET /history`, paged by a cursor on `(created_at, id)` so rows arriving at the top never
     repeat a row), its count and the facets (`GET /history/facets`: rows per sensor, key and event,
     each counted without its own filter so other choices stay offered). The filter lives in the
@@ -479,6 +533,7 @@ loads.
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
 | Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
+| The people's taught faces (crops, shared by every sensor) | `/data/faces/` — not in the media folder, which every Home Assistant user can browse | Yes |
 | History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
@@ -549,6 +604,7 @@ is part of backups and needs no restart.
 | **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right; export v2 of readings | 0.8.0 (betas 0.7.1b3–b6) |
 | **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
 | **Larger models, tunable teaching** ✅ | D-FINE M and L, DINOv2 base, a model comparison in Settings, teaching limits globally and per sensor | beta 0.8.1b1 |
+| **Recognising faces** | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md) | in development |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
@@ -560,6 +616,5 @@ Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN
 dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
-it); zones and line crossing for object sensors; recognising people by their face on object sensors
-(research, models, privacy and a phased plan: [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md)); classes outside COCO (an open-vocabulary
+it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep").

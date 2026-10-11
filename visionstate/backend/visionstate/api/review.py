@@ -11,15 +11,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import CursorResult, delete, func, select, update
 
 from .. import imaging, readers
-from ..db import Prediction, Sample, SampleLabel, Sensor
-from ..engine import Runtime
-from ..settings import KIND_OBJECTS, KIND_READING, merge_objects, merge_reading
+from ..db import Face, Prediction, Sample, SampleLabel, Sensor
+from ..engine import Runtime, with_people
+from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, KIND_READING, merge_objects, merge_reading
 from .common import (
     API_PREFIX,
     get_sensor,
     runtime,
     state_id_for,
 )
+from .faces import FaceTeachIn, teach_face
 from .history import prediction_view
 from .teach import TeachIn, teach_box
 
@@ -29,10 +30,12 @@ router = APIRouter(prefix=API_PREFIX, tags=["review"])
 
 class ReviewIn(BaseModel):
     # State sensors: confirm | label (state_key) | skip. Reading sensors: read_ok | misread
-    # (optionally the value that was right) | skip. Object sensors ("Is this Our car?"): yes | no | skip.
+    # (optionally the value that was right) | skip. Object sensors ("Is this Our car?"): yes | no | skip;
+    # about a face ("Is this Kari?", "Who is this?") also person (state_key: who it is) and new
+    # (value: the new person's name).
     action: str
     state_key: str | None = None
-    value: str | None = Field(None, max_length=32)
+    value: str | None = Field(None, max_length=64)
 
 
 @router.get("/review")
@@ -65,8 +68,10 @@ def review_queue(request: Request, limit: int = 50) -> dict:
                         "roi": sensor.roi,
                         "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
                         "reading": merge_reading(sensor.reading) if sensor.kind == KIND_READING else None,
-                        # object sensors: the own labels a question can be about
-                        "labels": merge_objects(sensor.objects)["custom"] if sensor.kind == KIND_OBJECTS else [],
+                        # object sensors: the own labels (and people) a question can be about
+                        "labels": with_people(merge_objects(sensor.objects), s)["custom"]
+                        if sensor.kind == KIND_OBJECTS
+                        else [],
                     },
                 }
             )
@@ -106,7 +111,7 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
         sensor = get_sensor(s, row.sensor_id)
         kind = sensor.kind
     if kind == KIND_OBJECTS:
-        return await _answer_object(rt, request, prediction_id, body.action)
+        return await _answer_object(rt, request, prediction_id, body)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
         if row is None:
@@ -166,11 +171,19 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
     return {"ok": True}
 
 
-async def _answer_object(rt: Runtime, request: Request, prediction_id: int, action: str) -> dict:
+async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body: ReviewIn) -> dict:
     """ "Is this Our car?" — yes teaches the box as the own label, no as its plain class (both in
     the light of that frame, so later boxes like it are told apart); skip only takes it out of the
-    queue. Answering again replaces the box the first answer taught."""
-    if action not in ("yes", "no", "skip"):
+    queue. Answering again replaces the box the first answer taught.
+
+    About a face: yes teaches the face as that person, person as the person named in
+    ``state_key``, new as a new person called ``value``; no and skip teach nothing (a face is
+    never taught as "not someone")."""
+    action = body.action
+    with rt.db.session() as s:
+        row = s.get(Prediction, prediction_id)
+        is_face = bool(row is not None and ((row.probs or {}).get("ask") or {}).get("face"))
+    if action not in (("yes", "no", "skip", "person", "new") if is_face else ("yes", "no", "skip")):
         raise HTTPException(400, "Answer yes, no or skip")
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
@@ -182,19 +195,49 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, acti
         sensor_id, score, taught = row.sensor_id, row.confidence, row.sample_id
         row.reviewed = True
         row.sample_id = None
-        if taught is not None and (sample := s.get(Sample, taught)) is not None:
+        if taught is not None and is_face and (face := s.get(Face, taught)) is not None:
+            rt.storage.delete_face(face.filename)  # the face the first answer taught
+            s.delete(face)
+        elif taught is not None and not is_face and (sample := s.get(Sample, taught)) is not None:
             rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
             s.delete(sample)
     if taught is not None:
-        rt.taught_changed(sensor_id)
-    if action != "skip":
+        if is_face:
+            rt.faces_changed()
+        else:
+            rt.taught_changed(sensor_id)
+    if is_face:
+        await _answer_face(rt, request, prediction_id, sensor_id, question, score, body)
+    elif action != "skip":
         label = question["label"] if action == "yes" else question["detected"]
-        body = TeachIn(
+        taught_box = TeachIn(
             history_id=prediction_id, box=question["box"], label=label, detected=question["detected"], score=score
         )
-        result = await teach_box(sensor_id, body, request)
+        result = await teach_box(sensor_id, taught_box, request)
         with rt.db.session() as s:
             if (answered := s.get(Prediction, prediction_id)) is not None:
                 answered.sample_id = result["id"]
     await rt.publish_review_count()
     return {"ok": True}
+
+
+async def _answer_face(
+    rt: Runtime, request: Request, prediction_id: int, sensor_id: int, question: dict, score: float, body: ReviewIn
+) -> None:
+    """Teach the face of a question when the answer says who it is (see _answer_object)."""
+    person, new_person = None, None
+    if body.action == "yes" and question["label"] != FACE_UNKNOWN_KEY:
+        person = question["label"]
+    elif body.action == "person":
+        person = body.state_key
+    elif body.action == "new":
+        new_person = (body.value or "").strip() or None
+        if new_person is None:
+            raise HTTPException(400, "Give the new person a name")
+    if person is None and new_person is None:
+        return
+    face = FaceTeachIn(history_id=prediction_id, box=question["box"], score=score, person=person, new_person=new_person)
+    result = await teach_face(sensor_id, face, request)
+    with rt.db.session() as s:
+        if (answered := s.get(Prediction, prediction_id)) is not None:
+            answered.sample_id = result["id"]

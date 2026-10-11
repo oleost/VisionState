@@ -8,6 +8,7 @@
   import Dashboard from './pages/Dashboard.svelte';
   import History from './pages/History.svelte';
   import NewSensor from './pages/NewSensor.svelte';
+  import People from './pages/People.svelte';
   import Review from './pages/Review.svelte';
   import SensorPage from './pages/SensorPage.svelte';
   import Settings from './pages/Settings.svelte';
@@ -39,6 +40,8 @@
     <Review />
   {:else if section === 'history'}
     <History />
+  {:else if section === 'people'}
+    <People />
   {:else if section === 'settings'}
     <Settings />
   {:else}

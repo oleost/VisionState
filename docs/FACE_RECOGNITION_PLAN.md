@@ -1,10 +1,10 @@
 # Face recognition: research and plan
 
-A plan, not yet built: recognising **who** a person is (`Ole`, `Kari`, *someone unknown*) when an
-object sensor sees a person. It applies to the `objects` sensor kind only. The general design is in
-[`SCOPE.md`](SCOPE.md), the code map in [`ARCHITECTURE.md`](ARCHITECTURE.md). Research done
-2026-10-10; licence statements were read from the model pages that day and must be checked again
-before a model is chosen (§4).
+Recognising **who** a person is (`Ole`, `Kari`, *someone unknown*) when an object sensor sees a
+person. It applies to the `objects` sensor kind only. Phases 1–3 are built (§12 says what was
+decided and where the build differs from this plan); how it works now is in [`SCOPE.md`](SCOPE.md)
+§5, the code map in [`ARCHITECTURE.md`](ARCHITECTURE.md). Research done 2026-10-10; licence
+statements were read from the model pages that day and again on 2026-10-11 (§4).
 
 ## 1. The idea in one paragraph
 
@@ -443,3 +443,56 @@ Collected from the research, from how others built it, and from VisionState's ow
 - **Polling while a face model loads.** A large model loaded in the event loop would freeze the
   UI; load it in a worker thread like the others, and never let a failed download stop the
   sensor's loop (CLAUDE.md: long-running loops survive any exception).
+
+## 12. Decisions and the build
+
+The maintainer's answers to §10 (2026-10-11):
+
+1. **Licence bar:** both, the user chooses. **SFace** (default, small) and **AuraFace v1** (the
+   only one whose makers say its data allows commercial use; for a fast PC) are recognisers in
+   `faces.json`; **YuNet** finds the faces for both (the AuraFace repository's SCRFD detector is
+   not covered by its licence). None is bundled; the confirmation sheet and Settings → AI model
+   state each one's licence and training data. BlazeFace (a detector with Google's own data)
+   needs an ONNX conversion checked on real photos — not done.
+2. **Raspberry Pi 4 is the target** for the default: SFace with YuNet, at most
+   `FACES["max_faces"]` faces per check in one detector run.
+3. **Phase 0 was skipped**: no household frames yet. Thresholds were set from the NASA test photos
+   (`tests/assets`, both recognisers: same person 0.59–0.95, different people at most 0.30) and the
+   minimum face from the recognisers' input (the eyes are about 35 px apart in a 112 px aligned
+   face, so a default of 20 px). They are tried on real cameras on the dev app and adjusted there.
+   The first try (a phone as a 480 × 640 RTSP camera in a living room) changed three things: the
+   smallest face is the width of the face box (`min_face_px`), as the eyes come together when a
+   head turns and a turned face was called too small; faces a bit more turned may be named
+   (`FACES["max_turn"]`), while only a clearly seen face can make an *unknown person*; and the
+   sharpness limit was lowered, as at 112 px it also rejected sharp faces about 14 px between the
+   eyes, where the recogniser still told the person from a stranger. A second try (the phone
+   moved around, someone leaning into it) added *cut*: a face cut by the frame's edge got eyes
+   guessed outside the picture and looked like nobody (0.15), which could have made the user an
+   unknown person.
+4. **Unknown person** is an entity; "Who is this?" is a review item only with **Ask me about faces
+   I do not know** on (off by default).
+5. **Only on the sensor's Settings tab**, after the confirmation; the wizard only says it exists
+   (changed later: the wizard can turn it on too, after the same confirmation — see below).
+6. Built as phases 1–3 together.
+
+Where the build differs from §3–§9:
+
+- YuNet's ONNX file has a fixed 640 × 640 input: four head regions are tiled into one run.
+- A face found from two overlapping person boxes counts for the first one only.
+- The face close-up in the teach sheet and the review card is cut from the frame by the UI; a
+  taught face's crop is not linked back to the frame it came from (§9.5 "tap one to see the
+  frame" is not built), and a history row of a person shows the frame, not the face.
+- History has no extra filter for people: people are own labels, so the *What* filter already
+  lists them, and *Unknown person* with them.
+- Separate day and night faces per person (§11) and phase 4 are not built.
+- After the first tries the maintainer asked for: the faces' limits (smallest face and the four
+  similarities) set for all sensors under **Settings → Recognising faces** and per sensor, like the
+  teaching limits (§9.6 had only *Smallest face*, per sensor); turning faces on in the wizard too
+  (§5 had it on the Settings tab only); and the face model listed right after the object detector,
+  its file deleted like any other downloaded model under *Compare and manage the models* (§9.7's
+  own *Delete downloaded file* button is gone).
+- **The people are shared** by every sensor (the maintainer, after the first doorbell test): a
+  person taught on one camera is known on all that recognise faces, listed on a **People** page
+  (renamed and forgotten there, and on each sensor's Quality tab), and has their own entity saying
+  which sensor sees them now. Deleting a sensor keeps the faces taught on it. §9's per-sensor
+  people and *Forget all faces* on the Faces card are replaced by this.

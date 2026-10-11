@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from visionstate import backbones, detectors, readers
+from visionstate import backbones, detectors, faces, readers
 
 MODEL_DIR = Path(os.environ.get("VISIONSTATE_TEST_MODELS", Path(__file__).parent.parent / "models"))
 ASSETS = Path(__file__).parent / "assets"  # real photos (CC0), see assets/README.md
@@ -47,3 +47,11 @@ def _close_databases(monkeypatch):
     yield
     for db in opened:
         db.engine.dispose()
+
+
+_sface = faces.RECOGNISERS[faces.DEFAULT_RECOGNISER]
+# Face models are never bundled: on disk after `python -m visionstate.backbones models --all` (as in CI).
+requires_faces = pytest.mark.skipif(
+    not all((MODEL_DIR / spec.filename).exists() for spec in (_default, _detector, faces.DETECTOR, _sface)),
+    reason=f"Face models not downloaded; run `python -m visionstate.backbones {MODEL_DIR} --all`",
+)

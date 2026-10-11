@@ -8,7 +8,7 @@ import time
 
 from sqlalchemy import select
 
-from .. import backbones, detectors, readers
+from .. import backbones, detectors, faces, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, fetch_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
@@ -31,7 +31,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
 
     def __init__(self, settings: Settings, db: Database):
         super().__init__(settings, db)
-        self.mqtt = MqttBridge(settings, self._on_command, self._on_mqtt_connect)
+        self.mqtt = MqttBridge(settings, self._on_command, self._on_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
 
     async def start(self) -> None:
@@ -40,6 +40,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_dict, "review")
         self.global_teach = await asyncio.to_thread(self.db.get_dict, "teach")
+        self.global_faces = await asyncio.to_thread(self.db.get_dict, "faces")
         self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
         self.reminder_rules = await asyncio.to_thread(self.db.get_dict, "reminder")
         self.reminder_sent_at = await asyncio.to_thread(self.db.get_setting, "reminder_sent_at")
@@ -47,6 +48,9 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
         await asyncio.to_thread(self._pin_setting, "reader", readers.DEFAULT_READER)
+        self.face_choice = await asyncio.to_thread(self.db.get_text, "face_model", faces.DEFAULT_RECOGNISER)
+        if self.face_choice not in faces.RECOGNISERS:
+            self.face_choice = faces.DEFAULT_RECOGNISER
         backbone_id = self.db.get_text("backbone", backbones.DEFAULT_BACKBONE)
         try:
             await self.load_embedder(backbone_id)
@@ -59,6 +63,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
                 self.schedule_retrain(sensor_id, delay=0)
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
+        await self.faces_settled()  # sensors that recognise faces: load the face model in the background
         await self.refresh_trigger_entities()
         self.ha_events.start()
         self.mqtt.start()
@@ -67,6 +72,11 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self._spawn(self._reminder_loop())
         if self.ha_events.enabled:
             self._spawn(self._entity_registry_loop())
+
+    async def _on_connect(self) -> None:
+        """MQTT (re)connected: every sensor's entities, then each person's own entity."""
+        await self._on_mqtt_connect()
+        await self.publish_people()
 
     async def stop(self) -> None:
         for handle in self._retrain_handles.values():
@@ -110,6 +120,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await self.publish_discovery(cfg)
         self._start_loop(sensor_id)
         await self.refresh_trigger_entities()
+        if cfg and cfg.is_objects:
+            await self.faces_settled()  # made with face recognition on (the wizard)
 
     async def sensor_updated(self, sensor_id: int, retrain: bool) -> None:
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
@@ -121,6 +133,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.taught.pop(sensor_id, None)  # own labels or classes may have changed
         self.live_state(sensor_id).signature = None  # the region may have moved
         await self.refresh_trigger_entities()
+        if cfg.is_objects:
+            await self.faces_settled()
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
@@ -132,6 +146,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.live.pop(sensor_id, None)
         self.heads.pop(sensor_id, None)
         self.taught.pop(sensor_id, None)
+        self._person_last = {k: v for k, v in self._person_last.items() if v[1] != sensor_id}
         self._published_classes.pop(sensor_id, None)
         (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
@@ -140,6 +155,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if descriptor.kind == KIND_OBJECTS and not await asyncio.to_thread(self._sensor_ids, KIND_OBJECTS):
             self.detector = None  # the last object sensor is gone: free the memory
+        if descriptor.kind == KIND_OBJECTS:
+            await self.faces_settled()
         if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
             self.reader = None
         await asyncio.to_thread(backbones.release_memory)
@@ -152,6 +169,11 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         """The user's teaching limits for all sensors; only the ones set (not None) are kept."""
         self.global_teach = {k: v for k, v in limits.items() if v is not None}
         self.db.set_setting("teach", self.global_teach)
+
+    def set_global_faces(self, limits: dict) -> None:
+        """The user's face limits for all sensors; only the ones set (not None) are kept."""
+        self.global_faces = {k: v for k, v in limits.items() if v is not None}
+        self.db.set_setting("faces", self.global_faces)
 
     def _trigger_index(self) -> dict[str, set[int]]:
         index: dict[str, set[int]] = {}

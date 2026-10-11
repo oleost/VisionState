@@ -27,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -49,6 +49,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
         ("sample", "score", "FLOAT"),
     ],
     11: [("prediction", "sample_id", "INTEGER")],
+    # 13: the people and their faces (new tables: person, face, face_embedding).
 }
 
 
@@ -241,6 +242,47 @@ class ModelInfo(Base):
     # Samples whose cross-validated prediction disagrees with their label.
     suspects: Mapped[list | None] = mapped_column(JSON, nullable=True)
     train_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class Person(Base):
+    """Someone taught by their face, known to every object sensor that recognises faces. ``key``
+    is the entity key on those sensors (``binary_sensor.<sensor>_<key>``) and of their own
+    sensor (``sensor.visionstate_<key>``): never changed once made."""
+
+    __tablename__ = "person"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Face(Base):
+    """A taught face: the face with a margin, not aligned, in <data>/faces
+    (storage.Storage.face_path), the face in that crop's pixels {box, points, score} (see
+    faces.face_to_dict), and the camera it was taught on (null once that sensor is deleted: the
+    face stays with the person)."""
+
+    __tablename__ = "face"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("person.id", ondelete="CASCADE"), index=True)
+    sensor_id: Mapped[int | None] = mapped_column(ForeignKey("sensor.id", ondelete="SET NULL"), nullable=True)
+    filename: Mapped[str] = mapped_column(String(256))
+    origin: Mapped[str] = mapped_column(String(32))  # live | history | review | import
+    is_night: Mapped[bool] = mapped_column(Boolean, default=False)
+    face: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FaceEmbedding(Base):
+    """A taught face's embedding by one face model (made again when the model changes)."""
+
+    __tablename__ = "face_embedding"
+
+    face_id: Mapped[int] = mapped_column(ForeignKey("face.id", ondelete="CASCADE"), primary_key=True)
+    model: Mapped[str] = mapped_column(String(64), primary_key=True)
+    vector: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Setting(Base):

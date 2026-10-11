@@ -10,6 +10,7 @@
   import PublishSwitch from '../../lib/components/PublishSwitch.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
+  import FacesCard from '../../lib/components/FacesCard.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
@@ -48,8 +49,9 @@
   let teachLimits = $state<TeachOverrides>({ ...(initial.objects?.teach ?? {}) });
   let globalTeach = $state<TeachLimitsInfo | null>(null);
   if (objectSensor) api.teachLimits().then((t) => (globalTeach = t)).catch(toastError);
-  const taughtCount = $derived(sensor.objects?.taught ?? 0);
-  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.length > 0));
+  // Boxes taught by their look; faces are counted on the Faces card.
+  const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
+  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -168,6 +170,7 @@
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <ObjectPicker bind:selected={classes} />
       </section>
+      <FacesCard {sensor} {onchange} />
       {#if taughtSomething}
         <section class="card pad col">
           <h3>What you taught</h3>
@@ -189,7 +192,7 @@
             <ConfirmButton class="btn sm danger" onconfirm={forgetTaught} confirmLabel="Tap again to forget everything taught">
               <Icon name="trash" size={14} /> Forget all
             </ConfirmButton>
-            <span class="xsmall faint">Every taught box and own label, with its entities.</span>
+            <span class="xsmall faint">Every taught box, own label and person, with their entities.</span>
           </div>
           {#if globalTeach}
             <div class="col teach-limits" data-testid="sensor-teach-limits">

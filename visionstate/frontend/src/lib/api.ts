@@ -1,6 +1,13 @@
 // Typed client for the backend. Every URL the UI uses is built here.
 import type {
   AppConfig,
+  ObjectSettings,
+  FaceLimitsInfo,
+  FaceOverrides,
+  FaceProblem,
+  FaceStatus,
+  ModelKind,
+  People,
   Camera,
   Detection,
   HaEntity,
@@ -91,6 +98,13 @@ export interface HistoryPageOptions {
   newerThan?: string | null;
 }
 
+/** A person box on the frame a check analysed, or on a history frame. */
+export interface FaceBoxInput {
+  frame_id?: string;
+  history_id?: number;
+  box: [number, number, number, number];
+}
+
 export interface Frame {
   frameId: string | null;
   url: string; // object URL; caller revokes it
@@ -112,7 +126,7 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
-  saveSettings: (body: { backbone: string; detector?: string; reader?: string }) =>
+  saveSettings: (body: { backbone: string; detector?: string; reader?: string; face_model?: string }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
   storage: () => request<StorageInfo>('storage'),
   saveStorage: (body: { history_days: number; history_max_gb: number }) =>
@@ -134,7 +148,11 @@ export const api = {
   sensors: () => request<Sensor[]>('sensors'),
   sensor: (id: number) => request<Sensor>(`sensors/${id}`),
   createSensor: (body: SensorInput) => request<Sensor>('sensors', send('POST', body)),
-  updateSensor: (id: number, body: Partial<SensorInput> & { clear_roi?: boolean }) =>
+  /** `objects` is merged into what the sensor has: only the fields sent change. */
+  updateSensor: (
+    id: number,
+    body: Partial<Omit<SensorInput, 'objects'>> & { objects?: Partial<ObjectSettings>; clear_roi?: boolean },
+  ) =>
     request<Sensor>(`sensors/${id}`, send('PATCH', body)),
   deleteSensor: (id: number) => request<void>(`sensors/${id}`, send('DELETE')),
   classify: (id: number) => request(`sensors/${id}/classify`, send('POST')),
@@ -202,7 +220,7 @@ export const api = {
   historyFacets: (filter: HistoryFilter) => request<HistoryFacets>(`history/facets?${listQs({ ...filter })}`),
   historyImageUrl: (predictionId: number, size: 'thumb' | 'full' = 'full') =>
     `${BASE}history/${predictionId}/image?size=${size}`,
-  exportUrl: (id: number) => `${BASE}sensors/${id}/export`,
+  exportUrl: (id: number, faces = false) => `${BASE}sensors/${id}/export${faces ? '?faces=true' : ''}`,
 
   teachLimits: () => request<TeachLimitsInfo>('teach-limits'),
   saveTeachLimits: (values: TeachOverrides) => request<TeachLimitsInfo>('teach-limits', send('PUT', values)),
@@ -222,6 +240,9 @@ export const api = {
   /** An object sensor's question: is this box the own label it asks about? The answer is taught. */
   answerQuestion: (predictionId: number, action: 'yes' | 'no' | 'skip') =>
     request(`review/${predictionId}`, send('POST', { action })),
+  /** A question about a face: yes, it is another person (`person`), a new person (`name`), or no/skip. */
+  answerFace: (predictionId: number, action: 'yes' | 'no' | 'skip' | 'person' | 'new', person?: string, name?: string) =>
+    request(`review/${predictionId}`, send('POST', { action, state_key: person ?? null, value: name ?? null })),
   /** A reading: did the reader read the right number? `value` = the right one, when it misread. */
   verifyReading: (predictionId: number, action: 'read_ok' | 'misread' | 'skip', value?: string) =>
     request(`review/${predictionId}`, send('POST', { action, value: value || null })),
@@ -239,6 +260,30 @@ export const api = {
   /** Every taught box and every own label of the sensor. */
   forgetAll: (id: number) => request<void>(`sensors/${id}/taught`, send('DELETE')),
   removeLabel: (id: number, key: string) => request<void>(`sensors/${id}/labels/${encodeURIComponent(key)}`, send('DELETE')),
+
+  /** Faces: taught on a sensor; the people (shared by every sensor), renamed, moved and forgotten. */
+  people: () => request<People>('people'),
+  checkFace: (id: number, body: FaceBoxInput) =>
+    request<{ face: [number, number, number, number] | null; problem: FaceProblem | null; message: string }>(
+      `sensors/${id}/faces/check`,
+      send('POST', body),
+    ),
+  teachFace: (id: number, body: FaceBoxInput & { score?: number | null; person?: string; new_person?: string }) =>
+    request<{ id: number; label: string; name: string; faces: number }>(`sensors/${id}/faces`, send('POST', body)),
+  faceImageUrl: (faceId: number) => `${BASE}faces/${faceId}/image`,
+  moveFace: (faceId: number, person: string) => request(`faces/${faceId}`, send('PATCH', { person })),
+  forgetFace: (faceId: number) => request<void>(`faces/${faceId}`, send('DELETE')),
+  renamePerson: (key: string, name: string) =>
+    request<{ key: string; name: string }>(`people/${encodeURIComponent(key)}`, send('PATCH', { name })),
+  /** A person (or, without a key, everyone) with their faces and entities on every sensor. */
+  forgetPerson: (key: string) => request<void>(`people/${encodeURIComponent(key)}`, send('DELETE')),
+  forgetPeople: () => request<void>('people', send('DELETE')),
+  retryFaces: () => request<FaceStatus>('faces/retry', send('POST')),
+  faceLimits: () => request<FaceLimitsInfo>('face-limits'),
+  saveFaceLimits: (values: FaceOverrides) => request<FaceLimitsInfo>('face-limits', send('PUT', values)),
+  /** Delete a downloaded AI model that is not in use; `kind` is its list in GET /settings. */
+  deleteModel: (kind: ModelKind, id: string) =>
+    request<SettingsInfo>(`models/${kind}/${encodeURIComponent(id)}`, send('DELETE')),
 
   importBundle(file: File) {
     const form = new FormData();

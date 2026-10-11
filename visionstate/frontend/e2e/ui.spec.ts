@@ -14,6 +14,7 @@ import {
   isTouch,
   press,
   seededCounterSensorId,
+  seededFaceSensorId,
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
@@ -33,6 +34,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
   const objectId = await seededObjectSensorId(request);
   const readingId = await seededReadingSensorId(request);
   const counterId = await seededCounterSensorId(request);
+  const faceId = await seededFaceSensorId(request);
   return [
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
@@ -50,6 +52,10 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
     ['reading-quality', `sensors/${readingId}/quality`, 'Readings per day'],
     ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
+    ['faces-live', `sensors/${faceId}/live`, 'Unknown person'],
+    ['faces-settings', `sensors/${faceId}/settings`, 'Ask me about faces I do not know'],
+    ['faces-quality', `sensors/${faceId}/quality`, 'Shared by every camera that recognises faces'],
+    ['people', 'people', 'The people you named by their face'],
     ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['history-all', 'history', 'What every sensor recorded'],
@@ -58,6 +64,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
 }
 
 test('every page renders without errors and fits the screen', async ({ page, request }, info) => {
+  test.setTimeout(180_000); // every page, with a full-page screenshot each
   const pages = await allPages(request);
   // Native parts of controls are drawn dark (Safari shows light select menus with light text otherwise).
   await page.goto('#/');
@@ -94,6 +101,7 @@ const expectCalm = (counts: Record<string, number>) =>
   expect.soft(Object.entries(counts).filter(([, n]) => n > MAX_PER_PATH), JSON.stringify(counts)).toEqual([]);
 
 test('no page asks the server more often than it polls', async ({ page, request }) => {
+  test.setTimeout(180_000); // every page, 4 s each
   for (const [name, route, ready] of await allPages(request)) {
     await test.step(name, async () => {
       await page.goto(`#/${route}`);
@@ -210,6 +218,7 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
 
   const image = page.locator('.roi img');
   await expect(image).toBeVisible();
+  await expect(page.getByTestId('low-stream')).toHaveCount(0); // 1280 × 720: no warning
   const box = (await image.boundingBox())!;
   await drag(page, info, { x: box.x + box.width * 0.2, y: box.y + box.height * 0.2 }, { x: box.x + box.width * 0.8, y: box.y + box.height * 0.9 });
   await expect(page.locator('.handle.corner')).toHaveCount(4);
@@ -246,6 +255,9 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await page.getByLabel('Source URL').fill(PHOTO_URL('driveway'));
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.locator('.roi img')).toBeVisible();
+  // A small picture: maybe the camera's low-resolution stream.
+  await expect(page.getByTestId('low-stream')).toContainText('640×421');
+  await expectNoClipping(page, '.notice');
   await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
 
   await press(page.getByRole('radio', { name: /Objects/ }), info);
@@ -258,6 +270,17 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await page.getByPlaceholder(/Search \d+ objects/).fill('bicy');
   await expect(page.getByRole('button', { name: 'Bicycle' })).toHaveCount(1);
   await expect(page.getByText('binary_sensor.driveway_test_car')).toBeVisible();
+  // With Person: recognising faces can be turned on here, after the same confirmation.
+  const faces = page.getByTestId('wizard-faces').getByRole('checkbox');
+  await expect(faces).not.toBeChecked();
+  await pressCentered(faces, info);
+  const sheet = page.getByRole('dialog', { name: 'Recognise faces' });
+  await expect(sheet.getByText(/It is not a lock/)).toBeVisible();
+  await press(sheet.getByRole('button', { name: 'Cancel' }), info);
+  await expect(faces).not.toBeChecked();
+  await pressCentered(faces, info);
+  await press(sheet.getByRole('button', { name: /^(Turn on|Download and turn on)$/ }), info);
+  await expect(faces).toBeChecked();
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-objects.png'), fullPage: true });
   await expectNoClipping(page, '.btn, .chip-btn, .kind, .card');
@@ -268,6 +291,8 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await expect(page.getByText('Right now')).toBeVisible();
   await expect(page.locator('.count.on').first()).toBeVisible({ timeout: 60_000 });
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  const made = await (await request.get(`api/v1/sensors/${sensorId}`)).json();
+  expect(made.objects.faces).toEqual({ enabled: true, ask_unknown: false });
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);
@@ -1052,15 +1077,20 @@ test('the wheel reader shows in Settings and is offered to counters read as text
   }
 });
 
-test('the AI models can be compared, and the teaching limits set for all object sensors', async ({ page, request }, info) => {
+test('the AI models can be compared, and the teaching and face limits set for all object sensors', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   try {
     await page.goto('#/settings');
-    await press(page.getByRole('button', { name: 'Compare the models' }), info);
+    await press(page.getByRole('button', { name: 'Compare and manage the models' }), info);
     const compare = page.getByTestId('model-compare');
     await expect(compare.getByText('D-FINE L (most accurate)')).toBeVisible();
     await expect(compare.getByText('DINOv2 base · fp32 (most accurate)')).toBeVisible();
-    await expect(compare.getByText('in use')).toHaveCount(4); // one per kind
+    await expect(compare.getByText('AuraFace v1 (accurate)')).toBeVisible();
+    await expect(compare.getByText(/· in use$/)).toHaveCount(5); // one per kind
+    // From the smallest to the largest, in every kind.
+    const settings = await (await request.get('api/v1/settings')).json();
+    const smallest = [...settings.detectors].sort((a, b) => a.size - b.size)[0].name;
+    await expect(compare.locator('.kind').nth(1).locator('.name').first()).toContainText(smallest);
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
 
@@ -1084,9 +1114,24 @@ test('the AI models can be compared, and the teaching limits set for all object 
     await expect(ask).toHaveValue('');
     await pressCentered(save, info);
     await expect.poll(async () => (await (await request.get('api/v1/teach-limits')).json()).values.ask_similarity).toBeNull();
+
+    // Faces: the face model's defaults, a smallest face for every sensor, nonsense refused.
+    const faces = page.getByTestId('face-limits');
+    const smallestFace = faces.getByRole('spinbutton', { name: 'Smallest face' });
+    const faceView = await (await request.get('api/v1/face-limits')).json();
+    await expect(smallestFace).toHaveAttribute('placeholder', String(faceView.defaults.min_face_px));
+    await faces.getByRole('spinbutton', { name: 'Asks you in the review queue from' }).fill('95');
+    await expect(faces.getByText(/must not be above “Recognised as a person”/)).toBeVisible();
+    await faces.getByRole('spinbutton', { name: 'Asks you in the review queue from' }).fill('');
+    await smallestFace.fill('40');
+    await pressCentered(faces.getByRole('button', { name: 'Save face limits' }), info);
+    await expect(page.getByText('Face limits saved')).toBeVisible();
+    expect((await (await request.get('api/v1/face-limits')).json()).values.min_face_px).toBe(40);
+    await expectNoHorizontalOverflow(page);
     errors.expectNone();
   } finally {
     await request.put('api/v1/teach-limits', { data: {} });
+    await request.put('api/v1/face-limits', { data: {} });
   }
 });
 
@@ -1243,5 +1288,79 @@ test('an answer in the review queue can be changed from the list', async ({ page
   await expect.poll(async () => (await reviewSamples()).length).toBe(before + 1);
   expect((await reviewSamples())[0].labels).toEqual([corrected.toLowerCase()]);
   await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
+test('faces: turned on with a confirmation, a person taught from the Live tab, shown under Quality', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const faceId = await seededFaceSensorId(request);
+  // Each device runs this against the same backend: start without the person it teaches.
+  const del = await request.delete('api/v1/people/butch');
+  expect([204, 404]).toContain(del.status());
+
+  // Turning it on asks first, and says what is stored and downloaded.
+  const beach = await seededObjectSensorId(request);
+  await page.goto(`#/sensors/${beach}/settings`);
+  const card = page.getByTestId('faces-card');
+  await expect(card.getByText('Recognise people by their face')).toBeVisible();
+  await pressCentered(card.getByRole('button', { name: 'Turn on…' }), info);
+  const sheet = page.getByRole('dialog', { name: 'Recognise faces' });
+  await expect(sheet.getByText(/not the media folder/)).toBeVisible();
+  await expect(sheet.getByText(/It is not a lock/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(sheet.getByRole('button', { name: /^(Turn on|Download and turn on)$/ }), info);
+  await expect(card.getByText('Ask me about faces I do not know')).toBeVisible();
+  // Its own limits follow the global ones until set.
+  const own = card.getByTestId('sensor-face-limits').getByRole('spinbutton', { name: 'Smallest face' });
+  await expect(own).toHaveValue('');
+  const global = await (await request.get('api/v1/face-limits')).json();
+  await expect(own).toHaveAttribute('placeholder', String(global.effective.min_face_px));
+  await expectNoClipping(page, '.btn, .card');
+  await pressCentered(card.getByRole('checkbox', { name: /Recognise faces/ }), info);
+  await expect(card.getByRole('button', { name: 'Turn on…' })).toBeVisible();
+  // Its toast sits at the bottom of a phone's screen, where the teach sheet's buttons come below.
+  await expect(page.getByText('Face recognition is off')).toHaveCount(0, { timeout: 15_000 });
+
+  // The Live tab: faces drawn in the person boxes, the known one named, the other unknown.
+  await page.goto(`#/sensors/${faceId}/live`);
+  await expect(page.locator('.roi .face').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Person · Suni').first()).toBeVisible({ timeout: 30_000 });
+  // Tap the person nobody named (an unknown person after two checks): "Who is this?" with a new person.
+  await pressCentered(page.locator('button.found', { hasText: /Unknown person|^\s*Person/ }).first(), info);
+  const teach = page.getByRole('dialog', { name: 'Teach this box' });
+  await expect(teach.getByText('Who is this?')).toBeVisible();
+  await press(teach.getByRole('button', { name: 'New person…' }), info);
+  await teach.getByPlaceholder('Name').fill('Butch');
+  await press(teach.getByRole('button', { name: 'Add person' }), info);
+  await expect(page.getByText(/Got it: this is Butch \(1 face\)/)).toBeVisible();
+  await expect(page.getByText('Person · Butch').first()).toBeVisible({ timeout: 30_000 });
+
+  // Quality: one card per person, with their faces.
+  await page.goto(`#/sensors/${faceId}/quality`);
+  const people = page.getByTestId('people');
+  await expect(people).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Butch/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'A face of Butch' })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .butch');
+
+  // People: shared by every camera, renamed there (the entity IDs stay).
+  await press(page.getByRole('link', { name: 'People' }), info);
+  await expect(page).toHaveURL(/#\/people$/);
+  const butch = page.locator('section.person', { has: page.getByRole('heading', { name: /^Butch/ }) });
+  await expect(butch.getByText(/Seen now on Crew|Last seen .* on Crew/)).toBeVisible({ timeout: 30_000 });
+  await expect(butch.getByText(/· Crew/).first()).toBeVisible(); // the camera each face was taught on
+  const rename = page.locator('form.rename'); // the heading becomes the name field
+  await expect(async () => {
+    await pressCentered(butch.getByRole('button', { name: 'Rename' }), info); // a tap after scrolling can be lost
+    await expect(rename).toBeVisible({ timeout: 2_000 });
+  }).toPass();
+  await rename.getByLabel('Name').fill('Butch W');
+  await press(rename.getByRole('button', { name: 'Save' }), info);
+  await expect(page.getByText('Butch is now Butch W')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Butch W/ })).toBeVisible();
+  expect((await (await request.get('api/v1/people')).json()).people.map((p: { key: string }) => p.key)).toContain('butch');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .butch');
   errors.expectNone();
 });

@@ -13,11 +13,16 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from .. import backbones, detectors, readers
-from ..db import Prediction, Sensor
+from .. import backbones, detectors, faces, readers
+from ..db import Person, Prediction, Sensor
 from ..redact import redact
 from ..settings import (
     COUNTER_READERS,
+    FACE_DEFAULTS,
+    FACE_LIMITS,
+    FACE_TUNABLE,
+    FACE_UNKNOWN_KEY,
+    FACES,
     HISTORY,
     HISTORY_EVENTS,
     LIGHT_DOMAINS,
@@ -64,8 +69,10 @@ from ..settings import (
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
+    FaceLimits,
     ReviewRules,
     TeachLimits,
+    check_faces,
     check_teach,
     iso,
     runtime,
@@ -112,6 +119,10 @@ def ui_config() -> dict:
             "tunable": list(TEACH_TUNABLE),
             "limits": TEACH_TUNABLE_LIMITS,
         },
+        "face_defaults": {k: FACE_DEFAULTS[k] for k in ("enabled", "ask_unknown")},  # the limits: face-limits
+        "face_limits": FACE_LIMITS,
+        "face_unknown_key": FACE_UNKNOWN_KEY,
+        "faces": {k: FACES[k] for k in ("max_people", "max_faces_per_person", "suggest_faces", "stats_window")},
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
         "reading_defaults": READING_DEFAULTS,
         "reading_limits": READING_LIMITS,
@@ -138,9 +149,11 @@ async def status(request: Request) -> dict:
             return (
                 s.scalar(select(func.count()).select_from(Sensor)) or 0,
                 s.scalar(select(func.count()).select_from(Prediction).where(Prediction.reviewed.is_(False))) or 0,
+                s.scalar(select(func.count()).select_from(Person)) or 0,
             )
 
-    sensors, review = await asyncio.to_thread(counts)
+    sensors, review, people = await asyncio.to_thread(counts)
+    face_sensors = await asyncio.to_thread(rt.face_sensor_ids)
     mqtt = rt.mqtt
     return {
         "version": VERSION,
@@ -158,6 +171,8 @@ async def status(request: Request) -> dict:
         "wheel_reader": rt.wheel_reader.spec.id if rt.wheel_reader else None,
         "wheel_reader_name": rt.wheel_reader.spec.name if rt.wheel_reader else None,
         "wheel_reader_error": rt.wheel_reader_error,
+        # The face model, the people and how many sensors recognise them (the People page).
+        "faces": {**rt.face_status(), "people": people, "sensors": len(face_sensors)},
         "mqtt": {
             "connected": mqtt.connected,
             "host": mqtt.config.host if mqtt.config else None,
@@ -178,19 +193,46 @@ class SettingsIn(BaseModel):
     backbone: str
     detector: str | None = None  # object sensors; None keeps the current one
     reader: str | None = None  # reading sensors; None keeps the current one
+    face_model: str | None = None  # face recognition on object sensors; None keeps the current one
+
+
+# The models a user chooses, per kind (the keys of their lists in GET /settings).
+MODELS = {
+    "backbones": backbones.BACKBONES,
+    "detectors": detectors.DETECTORS,
+    "readers": readers.READERS,
+    "face_models": faces.RECOGNISERS,
+}
+
+
+def _in_use(rt, kind: str, model_id: str, face_sensors: bool) -> str:
+    """Why a model cannot be deleted now ("" if it can)."""
+    if kind == "backbones" and model_id == rt.backbone_id:
+        return "It is the state model in use. Choose another one first."
+    if kind == "detectors" and model_id == rt.db.get_text("detector", detectors.DEFAULT_DETECTOR):
+        return "It is the object model in use. Choose another one first."
+    if kind == "readers" and model_id == rt.db.get_text("reader", readers.DEFAULT_READER):
+        return "It is the display reader in use. Choose another one first."
+    if kind == "face_models" and model_id == rt.face_choice and face_sensors:
+        return "A sensor recognises faces with it. Turn that off there first, or choose another face model."
+    return ""
 
 
 @router.get("/settings")
 def get_settings(request: Request) -> dict:
-    """The chosen AI models and every model that can be chosen."""
+    """The chosen AI models and every model that can be chosen, with whether each was downloaded
+    and can be deleted again (``in_use`` says why not)."""
     rt = runtime(request)
+    face_sensors = bool(rt.face_sensor_ids())
 
-    def model(spec) -> dict:
+    def model(spec, kind: str = "") -> dict:
         return {
             "id": spec.id,
             "name": spec.name,
             "description": spec.description,
             "installed": rt.model_path(spec) is not None,
+            "downloaded": rt.downloaded(spec),
+            "in_use": _in_use(rt, kind, spec.id, face_sensors),
             "size": spec.size,
             "license": spec.license,
             "source": spec.source,
@@ -199,14 +241,32 @@ def get_settings(request: Request) -> dict:
 
     return {
         "backbone": rt.embedder.spec.id if rt.embedder else backbones.DEFAULT_BACKBONE,
-        "backbones": [model(spec) for spec in backbones.BACKBONES.values()],
+        "backbones": [model(spec, "backbones") for spec in backbones.BACKBONES.values()],
         "detector": rt.db.get_text("detector", detectors.DEFAULT_DETECTOR),
-        "detectors": [model(spec) for spec in detectors.DETECTORS.values()],
+        "detectors": [model(spec, "detectors") for spec in detectors.DETECTORS.values()],
         "reader": rt.db.get_text("reader", readers.DEFAULT_READER),
-        "readers": [model(spec) for spec in readers.READERS.values()],
+        "readers": [model(spec, "readers") for spec in readers.READERS.values()],
         # Mechanical counters set to the wheel reader; one model for now, so nothing to choose.
         "wheel_reader": readers.DEFAULT_WHEEL_READER,
         "wheel_readers": [model(spec) for spec in readers.WHEEL_READERS.values()],
+        # Faces: the recogniser to choose (one face detector goes with every one); downloaded when
+        # a sensor turns face recognition on. "size" and "installed" count the detector too.
+        "face_model": rt.face_choice,
+        "face_models": [
+            {
+                **model(spec, "face_models"),
+                "size": spec.size + (0 if rt.model_path(faces.DETECTOR) else faces.DETECTOR.size),
+                "installed": rt.face_files_present(spec.id),
+                "data": spec.data,
+                "detector": {
+                    "name": faces.DETECTOR.name,
+                    "license": faces.DETECTOR.license,
+                    "data": faces.DETECTOR.data,
+                    "source": faces.DETECTOR.source,
+                },
+            }
+            for spec in faces.RECOGNISERS.values()
+        ],
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,
             "mqtt_host": rt.settings.mqtt_host or "(from Home Assistant)",
@@ -224,6 +284,8 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown detector")
     if body.reader is not None and body.reader not in readers.READERS:
         raise HTTPException(400, "Unknown reader")
+    if body.face_model is not None and body.face_model not in faces.RECOGNISERS:
+        raise HTTPException(400, "Unknown face model")
     current = get_settings(request)
     # Only reload what changed: a new backbone retrains every state sensor.
     if body.backbone != current["backbone"]:
@@ -241,7 +303,39 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
             await rt.set_reader(body.reader)
         except Exception as err:  # noqa: BLE001
             raise HTTPException(500, f"Could not load reader: {redact(str(err))}") from err
+    if body.face_model is not None and body.face_model != current["face_model"]:
+        await rt.set_face_model(body.face_model)  # loads in the background when a sensor uses faces
     return get_settings(request)
+
+
+@router.post("/faces/retry")
+async def faces_retry(request: Request) -> dict:
+    """Try to download and load the face model again after it failed."""
+    rt = runtime(request)
+    rt.retry_faces()
+    return rt.face_status()
+
+
+@router.delete("/models/{kind}/{model_id}")
+async def delete_model(kind: str, model_id: str, request: Request) -> dict:
+    """Delete a downloaded AI model that is not in use (it is downloaded again when chosen)."""
+    rt = runtime(request)
+    spec = MODELS.get(kind, {}).get(model_id)
+    if spec is None:
+        raise HTTPException(404, "Unknown model")
+    face_sensors = bool(await asyncio.to_thread(rt.face_sensor_ids))
+    reason = await asyncio.to_thread(_in_use, rt, kind, model_id, face_sensors)
+    if reason:
+        raise HTTPException(409, reason)
+    if not rt.downloaded(spec):
+        raise HTTPException(404, "This model is included in the app or not downloaded")
+    if kind == "face_models":
+        if rt.face_model is not None:
+            await rt.faces_settled()  # let the unused face model go before its file
+        await asyncio.to_thread(rt.delete_face_files, model_id)
+    else:
+        await asyncio.to_thread((rt.settings.models_dir / spec.filename).unlink, missing_ok=True)
+    return await asyncio.to_thread(get_settings, request)
 
 
 # --- storage ----------------------------------------------------------------------
@@ -311,6 +405,33 @@ async def put_teach_limits(body: TeachLimits, request: Request) -> dict:
     check_teach(merge_teach(rt.backbone_id, body.stored(), None))
     await asyncio.to_thread(rt.set_global_teach, body.stored())
     return _teach_view(rt)
+
+
+# --- face limits --------------------------------------------------------------
+
+
+def _faces_view(rt) -> dict:
+    """The global face limits: the face model's defaults, what the user set (None: the default)
+    and the result, which each object sensor inherits unless it has its own value."""
+    return {
+        "model": rt.face_choice,
+        "defaults": faces.tunable_defaults(rt.face_choice),
+        "values": {key: rt.global_faces.get(key) for key in FACE_TUNABLE},
+        "effective": faces.merge_limits(rt.face_choice, rt.global_faces, None),
+    }
+
+
+@router.get("/face-limits")
+def get_face_limits(request: Request) -> dict:
+    return _faces_view(runtime(request))
+
+
+@router.put("/face-limits")
+async def put_face_limits(body: FaceLimits, request: Request) -> dict:
+    rt = runtime(request)
+    check_faces(faces.merge_limits(rt.face_choice, body.stored(), None))
+    await asyncio.to_thread(rt.set_global_faces, body.stored())
+    return _faces_view(rt)
 
 
 # --- review reminder ----------------------------------------------------------

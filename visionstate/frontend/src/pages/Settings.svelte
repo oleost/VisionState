@@ -1,20 +1,30 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
+  import FaceLimitsEditor from '../lib/components/FaceLimitsEditor.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ModelCompare from '../lib/components/ModelCompare.svelte';
   import ReminderCard from '../lib/components/ReminderCard.svelte';
   import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
   import StorageCard from '../lib/components/StorageCard.svelte';
   import TeachLimitsEditor from '../lib/components/TeachLimitsEditor.svelte';
-  import { mb } from '../lib/format';
+  import { bySize, mb, size } from '../lib/format';
   import { go, paths } from '../lib/router.svelte';
-  import type { ReviewRules, SettingsInfo, TeachLimitsInfo, TeachOverrides } from '../lib/types';
+  import type {
+    FaceLimitsInfo,
+    FaceOverrides,
+    FaceStatus,
+    ReviewRules,
+    SettingsInfo,
+    TeachLimitsInfo,
+    TeachOverrides,
+  } from '../lib/types';
 
   let info = $state<SettingsInfo | null>(null);
   let backbone = $state('');
   let detector = $state('');
   let reader = $state('');
+  let faceModel = $state('');
   let saving = $state(false);
   let importInput: HTMLInputElement;
   let reviewRules = $state<ReviewRules | null>(null);
@@ -24,6 +34,34 @@
   let savingTeach = $state(false);
   const setOnly = (v: TeachOverrides) => JSON.stringify(Object.entries(v).filter(([, x]) => x !== null && x !== undefined).sort());
   const teachChanged = $derived(teach !== null && setOnly(teachValues) !== setOnly(teach.values));
+  let faceLimits = $state<FaceLimitsInfo | null>(null);
+  let faceValues = $state<FaceOverrides>({});
+  let savingFaces = $state(false);
+  const facesChanged = $derived(faceLimits !== null && setOnly(faceValues) !== setOnly(faceLimits.values));
+
+  function loadFaceLimits() {
+    api
+      .faceLimits()
+      .then((f) => {
+        faceLimits = f;
+        faceValues = { ...f.values };
+      })
+      .catch(toastError);
+  }
+  loadFaceLimits();
+
+  async function saveFaceLimits() {
+    savingFaces = true;
+    try {
+      faceLimits = await api.saveFaceLimits(faceValues);
+      faceValues = { ...faceLimits.values };
+      toast('Face limits saved');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      savingFaces = false;
+    }
+  }
 
   function loadTeach() {
     api
@@ -74,6 +112,7 @@
       backbone = s.backbone;
       detector = s.detector;
       reader = s.reader;
+      faceModel = s.face_model;
     })
     .catch(toastError);
 
@@ -81,17 +120,21 @@
   const selectedDetector = $derived(info?.detectors.find((d) => d.id === detector));
   const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
   const wheelReader = $derived(info?.wheel_readers.find((r) => r.id === info?.wheel_reader));
+  const selectedFace = $derived(info?.face_models.find((m) => m.id === faceModel));
   const retrains = $derived(info !== null && backbone !== info.backbone);
-  const changed = $derived(info !== null && (retrains || detector !== info.detector || reader !== info.reader));
+  const changed = $derived(
+    info !== null && (retrains || detector !== info.detector || reader !== info.reader || faceModel !== info.face_model),
+  );
 
   async function save() {
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, detector, reader });
+      info = await api.saveSettings({ backbone, detector, reader, face_model: faceModel });
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
       if (retrained) loadTeach(); // the defaults depend on the state model
+      loadFaceLimits(); // and the face limits' on the face model
     } catch (err) {
       toastError(err);
     } finally {
@@ -111,6 +154,14 @@
     } finally {
       importInput.value = '';
     }
+  }
+
+  function faceStatus(f: FaceStatus): string {
+    if (f.error) return f.error;
+    if (f.progress) return `downloading… ${size(f.progress.done)} of ${size(f.progress.total)}`;
+    if (f.loaded) return info?.face_models.find((m) => m.id === f.model)?.name ?? f.model;
+    if (f.loading) return 'loading…';
+    return 'loaded when a sensor recognises faces';
   }
 
   const statusRows = $derived(
@@ -154,6 +205,11 @@
             value: app.status.wheel_reader_error || app.status.wheel_reader_name || 'loaded when a mechanical counter is read',
             ok: !app.status.wheel_reader_error,
           },
+          {
+            label: 'Face model',
+            value: faceStatus(app.status.faces),
+            ok: !app.status.faces.error,
+          },
         ]
       : [],
   );
@@ -179,7 +235,7 @@
         <label class="field">
           State sensors (learned)
           <select class="input" bind:value={backbone}>
-            {#each info.backbones as b (b.id)}
+            {#each bySize(info.backbones) as b (b.id)}
               <option value={b.id}>{b.name}{b.installed ? '' : ` · download ${mb(b.size)}`}</option>
             {/each}
           </select>
@@ -188,7 +244,7 @@
         <label class="field">
           Object sensors
           <select class="input" bind:value={detector}>
-            {#each info.detectors as d (d.id)}
+            {#each bySize(info.detectors) as d (d.id)}
               <option value={d.id}>{d.name}{d.installed ? '' : ` · download ${mb(d.size)}`}</option>
             {/each}
           </select>
@@ -200,9 +256,25 @@
           {/if}
         </label>
         <label class="field">
+          Faces (object sensors)
+          <select class="input" bind:value={faceModel}>
+            {#each bySize(info.face_models) as m (m.id)}
+              <option value={m.id}>{m.name}{m.installed ? '' : ` · download ${mb(m.size)}`}</option>
+            {/each}
+          </select>
+          {#if selectedFace}
+            <span class="hint"
+              >{selectedFace.description} {selectedFace.license}, <a href={selectedFace.source} target="_blank" rel="noreferrer">source</a>;
+              {selectedFace.data} Faces are found with {selectedFace.detector.name} ({selectedFace.detector.license},
+              <a href={selectedFace.detector.source} target="_blank" rel="noreferrer">source</a>). Downloaded when a sensor turns
+              face recognition on; changing it compares every taught face again (the people are kept).</span
+            >
+          {/if}
+        </label>
+        <label class="field">
           Reading sensors: displays
           <select class="input" bind:value={reader}>
-            {#each info.readers as r (r.id)}
+            {#each bySize(info.readers) as r (r.id)}
               <option value={r.id}>{r.name}{r.installed ? '' : ` · download ${mb(r.size)}`}</option>
             {/each}
           </select>
@@ -231,7 +303,7 @@
           </button>
           <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object and reading sensors need no training.</span>
         </div>
-        <ModelCompare {info} />
+        <ModelCompare {info} ondeleted={(next) => (info = next)} />
       {/if}
     </section>
 
@@ -264,6 +336,27 @@
         </p>
         <button class="btn primary" style="align-self:flex-start" disabled={!teachChanged || savingTeach} onclick={saveTeach}>
           {savingTeach ? 'Saving…' : 'Save teaching limits'}
+        </button>
+      {/if}
+    </section>
+
+    <section class="card pad col" data-testid="face-limits">
+      <h3>Recognising faces</h3>
+      <p class="small muted">
+        For object sensors that recognise faces. Each sensor can override these on its Settings tab (Faces).
+      </p>
+      {#if faceLimits}
+        <FaceLimitsEditor
+          bind:value={faceValues}
+          inherited={faceLimits.defaults}
+          inheritedFrom={`the default of ${info?.face_models.find((m) => m.id === faceLimits?.model)?.name ?? 'the face model'}`}
+        />
+        <p class="xsmall faint">
+          The similarities' defaults follow the face model. Values you set yourself stay when you switch it; check them
+          afterwards.
+        </p>
+        <button class="btn primary" style="align-self:flex-start" disabled={!facesChanged || savingFaces} onclick={saveFaceLimits}>
+          {savingFaces ? 'Saving…' : 'Save face limits'}
         </button>
       {/if}
     </section>

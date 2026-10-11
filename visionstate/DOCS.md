@@ -29,7 +29,9 @@ number** from a display, without any training. Everything runs on this machine; 
       inside the box, which makes it far more accurate. For an object that sits at an angle,
       shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
       double-click / double-tap (or press and hold) a corner to remove it. Everything outside
-      the shape is ignored. **Reset to rectangle** goes back to a plain box.
+      the shape is ignored. **Reset to rectangle** goes back to a plain box. A small picture
+      gets a warning: it may be the camera's low-resolution stream, and its main stream is often
+      hidden in Home Assistant.
    3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
       This can not be changed later.
@@ -161,6 +163,90 @@ waiting, and no more often than the review cooldown (**Settings → Review queue
 - A box drawn where the AI sees nothing at all (not even unsure) cannot be found by itself; you
   get a note when that is the case.
 - Export and import take what you taught along.
+
+### Recognising people by their face
+
+An object sensor that looks for **Person** can tell *who* it is: the people you name each get an
+on/off sensor and a count in Home Assistant, like own labels, and **Unknown person** turns on for
+someone it has not been taught. It is **off** until you turn it on. The people are **shared**:
+every camera that recognises faces knows everyone you named on any of them, and each person also
+gets their own sensor (for Kari: `sensor.visionstate_kari`) whose value is the sensor that sees
+them now — the one that saw them last, when several do — or `not_seen`, with when and where they
+were last seen as attributes (after a restart of the app: `not_seen` until they are seen again).
+
+**Before you turn it on.** Faces are biometric data. VisionState keeps them on your Home
+Assistant only — no face ever leaves it, as nothing else does — but the people you teach should
+know about it, children included. A camera that sees a street, a path others use or a
+neighbour's door may need their consent where you live (in Norway, Datatilsynet's rules for
+private cameras: your own house and garden only). It is **not a lock**: a photo of a face looks
+like that face, so never unlock a door or disarm an alarm on it alone. Recognition is weaker for
+children (their faces change quickly: add recent faces now and then), in infrared night images,
+with masks, hats or sunglasses, and — as for every public face model — not equally good for
+everyone.
+
+- **Turn it on** under the sensor's **Settings → Faces → Turn on…**, or when you make the sensor
+  (**Recognise people by their face** under the objects, once Person is picked). A sheet says
+  what is stored and which face model is downloaded (once, from Hugging Face), and nothing
+  happens until you confirm. While it downloads the sensor keeps working without faces; the card
+  shows the progress, and **Try again** if it failed. Without internet, put the file the message
+  names in the app's `models` folder by hand.
+- **Does my camera see faces well enough?** The **Live** tab draws a small rounded box around
+  each face it finds in a person, and says for each person what it saw: a name, *face too small*,
+  *face turned away*, *face cut off by the edge*, *face blurry* or *no face seen*, and how many of
+  the last people it looked at had a usable face. A face it cannot use counts as no face, never as
+  an unknown person. When faces are rarely usable, the card says the likely reason (for faces too
+  small, also the size of the camera's pictures).
+- **Limits** — **Settings → Recognising faces** sets them for all sensors; a sensor's **Faces →
+  Limits for this sensor** can set its own (an empty field follows the global value, shown in
+  grey). **Smallest face** (its width in pixels) sets how small a face may be; lower it only if
+  the names stay right, as small faces are easily mistaken. The similarities (in percent) say how
+  close a face must be to the faces you taught to be named, to be named at once without a second
+  check, to be asked about in the review queue, and to keep a name while the person stays. Their
+  defaults belong to the face model; values you set yourself stay when you switch it.
+- **Which camera works?** What counts is how many pixels a face gets, not the camera's megapixels
+  on the box. Use the camera's **main stream** over RTSP: many cameras and doorbells give Home
+  Assistant a small sub-stream or snapshot (640×480), where a face is only usable within a few
+  metres. Roughly, at the default *Smallest face*, for a sharp picture in good light:
+  - a camera of 640×480 with a normal lens (an ESP32 camera, a sub-stream): up to about 2–3 m;
+  - 1920×1080: about 5–8 m (less with a wider lens);
+  - a doorbell (very wide angle) on its main stream: about 1–1.5 m — enough for someone at the
+    door, but faces at the edge of the picture are stretched, and a doorbell sees people from below.
+  *Unknown person* needs a bigger face than a name (about two thirds of these distances).
+  A camera where people walk towards it at head height sees the most faces; one high up or from
+  the side mostly sees the tops and sides of heads.
+- **Teach a person**: tap a person on the **Live** tab or in a history frame. *Who is this?* comes
+  first, with a close-up of the face: tap a name, or **New person…**. Only a usable face can be
+  taught, so a back or a jacket never becomes someone. A few faces per person, in other light, from
+  other angles and on each camera, make it reliable; the message after teaching says how many a
+  person has. Someone who was only there for a moment (at a doorbell) can be named afterwards: a
+  face nobody is named for keeps a frame in the history (*Face seen, not named*; at most one a
+  minute, or a closer one).
+- **How it decides**: each face is compared with the faces you taught for each person. A clear
+  match names the person; a less certain one needs a second check that agrees. A person who stays
+  where they were keeps the name while their face is turned away. Close to someone, but not
+  clearly, it asks in the review queue: *Is this Kari?* — **Yes**, another person, a new person or
+  *No, someone I do not know*. A face seen clearly (close enough, and nearly straight at the
+  camera) that matched nobody in two checks in a row turns **Unknown person** on. A face further
+  away or more turned can still be named, but if it looks like nobody it is only *not sure who*:
+  a face seen from the side often does not look like the faces you taught. **Ask me about faces I
+  do not know** (off by default) also asks *Who is this?* about strangers; that keeps frames of
+  strangers in the history longer.
+- It never learns by itself: only faces you name are taught.
+- **People** (in the menu, once there are people or a sensor recognises faces) shows every person
+  with their faces and the camera each was taught on (× forgets one), where they were last seen,
+  people the AI finds alike (*teach both in more light and from more angles*) and faces that look
+  more like someone else than the person they were taught as (**move** gives them that name).
+  **Rename** changes the name (the entity IDs stay), **Remove person** removes their faces and
+  their entities on every camera, **Forget everyone** all of it. A sensor's **Quality** tab shows
+  the same people.
+- **Off** (the switch on the Faces card) removes the people's entities from that sensor; the people
+  stay. Deleting a sensor keeps the faces taught on it. Turned off on every sensor, the face model
+  is let go from memory; **Settings → AI model → Compare and manage the models** can then delete
+  its file.
+- **Where faces are kept**: in the app's own storage, not in the media folder (which Home
+  Assistant's media browser shows to every user) — so they are in Home Assistant backups: keep
+  those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
+  person; an export never contains them.
 
 ## Reading sensors
 
@@ -352,7 +438,8 @@ automations.
 ## History
 
 **History** at the top lists what every sensor recorded: state changes, objects that appeared,
-cleared or were filtered away, new values and rejected readings, and frames sent to review. Each
+cleared or were filtered away, faces nobody is named for, new values and rejected readings, and
+frames sent to review. Each
 sensor's **History** tab is the same list for that sensor alone; **Open in all history** there
 takes its filter to the History page.
 
@@ -384,6 +471,9 @@ How long history is kept is set under **Settings → Storage** (below).
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
   reading settings, triggers, review overrides) and all its images with labels — for an object
   sensor, the boxes it was taught and its own labels. Camera passwords are removed from the file.
+  For a sensor where faces were taught it asks first whether to **include the faces** taught on it
+  (unticked by default), with their people's names. An import adds them to the people of the same
+  name (or makes them), but face recognition stays off until you turn it on there.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
@@ -398,7 +488,7 @@ two apps at a time (both publish the same entities).
 
 ## AI models
 
-Three models, chosen under **Settings → AI model** for all sensors of a kind:
+The models, chosen under **Settings → AI model** for all sensors of a kind (smallest first):
 
 - **State sensors:** DINOv2 small, 8-bit — included, runs on any CPU including a Raspberry
   Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB), and
@@ -411,6 +501,15 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   first use, 15 MB). For a fast PC, **D-FINE M** (79 MB) and **D-FINE L** (125 MB) find more
   small, far-off and partly hidden objects, at about three and four times the time of S. The
   detector is only loaded while at least one object sensor exists.
+- **Faces** (object sensors that recognise faces): never included — downloaded when a sensor
+  first turns face recognition on. Faces are found with **YuNet** (OpenCV Zoo, MIT) and told
+  apart by **SFace** (Apache-2.0, 39 MB with YuNet, about 10 ms per face; fine on a Raspberry Pi 4)
+  or, for a fast PC, **AuraFace v1** (Apache-2.0, 261 MB, about 600 MB of memory, about six
+  times as slow per face), which tells faces apart better in poor light and at an angle. YuNet
+  was trained on a research data set and SFace's paper names research data sets too (their
+  terms are not commercial); AuraFace's makers say its data allows commercial use. Switching
+  compares every taught face again with the new model; the people are kept. Only loaded while a
+  sensor recognises faces.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
   21 MB). Mechanical counters are read by the included **VisionState wheel reader** (2 MB, a few
@@ -418,8 +517,11 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   is set to the text reader. There is one wheel reader so far, so there is nothing to choose.
   Only loaded while at least one reading sensor exists.
 
-**Compare the models** (under the choices) lists every model with its rough memory use, time
-per check and how accurate it is compared with the others. A choice you made stays when a later
+**Compare and manage the models** (under the choices) lists every model, from the smallest to
+the largest, with its rough memory use, time per check, how accurate it is compared with the
+others and whether it is included, downloaded or still to download. A downloaded model that is
+not in use can be deleted there to free the disk (it is downloaded again when chosen); a face
+model only while no sensor recognises faces with it. A choice you made stays when a later
 version recommends another model.
 
 ## App options

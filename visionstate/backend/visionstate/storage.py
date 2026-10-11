@@ -18,6 +18,10 @@ class Storage:
     def sample_path(self, sensor_id: int, filename: str) -> Path:
         return self.settings.samples_dir / str(sensor_id) / filename
 
+    def face_path(self, filename: str) -> Path:
+        """A taught face (db.Face): shared by every sensor, so not in a sensor's folder."""
+        return self.settings.faces_dir / filename
+
     def history_path(self, sensor_id: int, filename: str) -> Path:
         return self.settings.history_dir / str(sensor_id) / filename
 
@@ -36,6 +40,14 @@ class Storage:
         filename = self.new_filename()
         self._write(self.sample_path(sensor_id, filename), image)
         return filename
+
+    def save_face(self, image: Image.Image) -> str:
+        filename = self.new_filename()
+        self._write(self.face_path(filename), image)
+        return filename
+
+    def delete_face(self, filename: str) -> None:
+        self.face_path(filename).unlink(missing_ok=True)
 
     def save_history(self, sensor_id: int, image: Image.Image) -> str:
         filename = self.new_filename()
@@ -67,11 +79,18 @@ class Storage:
         return self._folder_bytes(self.settings.history_dir) + self._folder_bytes(self.settings.thumbs_dir / "history")
 
     def samples_bytes(self) -> int:
-        """Training images and their thumbnails on disk."""
-        return self._folder_bytes(self.settings.samples_dir) + self._folder_bytes(self.settings.thumbs_dir / "sample")
+        """Training images (and taught faces) and their thumbnails on disk."""
+        return (
+            self._folder_bytes(self.settings.samples_dir)
+            + self._folder_bytes(self.settings.faces_dir)
+            + self._folder_bytes(self.settings.thumbs_dir / "sample")
+        )
 
     def delete_sensor(self, sensor_id: int) -> None:
         import shutil
 
-        for directory in (self.settings.samples_dir / str(sensor_id), self.settings.history_dir / str(sensor_id)):
+        for directory in (
+            self.settings.samples_dir / str(sensor_id),
+            self.settings.history_dir / str(sensor_id),
+        ):
             shutil.rmtree(directory, ignore_errors=True)

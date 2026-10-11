@@ -15,7 +15,7 @@
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
   import type { ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
-  import { SENSOR_KIND_INFO } from '../lib/ui';
+  import { LOW_STREAM_NAME, SENSOR_KIND_INFO, SMALL_FRAME_PX } from '../lib/ui';
   import ObjectsStep from './wizard/ObjectsStep.svelte';
   import ReadingStep from './wizard/ReadingStep.svelte';
   import StatesStep from './wizard/StatesStep.svelte';
@@ -35,8 +35,12 @@
   let kind = $state<SensorKind>('single_state');
   let states = $state<{ name: string; color?: string }[]>([{ name: 'Open' }, { name: 'Closed' }]);
   let classes = $state<string[]>([...(app.config?.object_defaults.classes ?? [])]);
+  let faces = $state(false); // recognise people by their face (objects with Person)
   let reading = $state<ReadingSettings>({ ...app.config!.reading_defaults });
   let previewUrl = $state<string | null>(null);
+  let previewSize = $state<[number, number] | null>(null);
+  // A small picture, or a source named like a sub-stream: maybe the camera's low-resolution stream.
+  const lowStream = $derived(previewSize !== null && (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)));
   let previewError = $state('');
   let saving = $state(false);
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
@@ -88,9 +92,13 @@
   function loadPreview() {
     previewError = '';
     previewUrl = null;
+    previewSize = null;
     const url = api.previewUrl(sourceType, source);
     const img = new Image();
-    img.onload = () => (previewUrl = url);
+    img.onload = () => {
+      previewUrl = url;
+      previewSize = [img.naturalWidth, img.naturalHeight];
+    };
     img.onerror = () => (previewError = 'Could not get a frame from this source. Check the camera or URL.');
     img.src = url;
   }
@@ -111,7 +119,15 @@
         source: source.trim(),
         roi,
         states: learned ? states.map((s) => ({ name: s.name.trim(), color: s.color })) : [],
-        ...(kind === 'objects' ? { objects: { ...app.config!.object_defaults, classes } } : {}),
+        ...(kind === 'objects'
+          ? {
+              objects: {
+                ...app.config!.object_defaults,
+                classes,
+                faces: { ...app.config!.face_defaults, enabled: faces && classes.includes('person') },
+              },
+            }
+          : {}),
         ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
@@ -182,6 +198,16 @@
         {#if previewError}
           <div class="notice danger"><Icon name="alert" />{previewError}</div>
         {:else}
+          {#if lowStream && previewSize}
+            <div class="notice warn small" data-testid="low-stream">
+              <Icon name="alert" />
+              <span>
+                This picture is {previewSize[0]}×{previewSize[1]}. If the camera has a higher resolution, this may be its
+                low-resolution stream: pick its main stream instead, which Home Assistant often hides (a disabled camera
+                entity of the same device).
+              </span>
+            </div>
+          {/if}
           <div class="frame">
             <RoiEditor src={previewUrl} bind:roi editable />
           </div>
@@ -215,7 +241,7 @@
         {#if kind === 'reading'}
           <ReadingStep bind:this={detectStep} {sourceType} {source} {entity} bind:roi bind:reading />
         {:else if kind === 'objects'}
-          <ObjectsStep bind:this={detectStep} {sourceType} {source} {name} bind:roi bind:classes />
+          <ObjectsStep bind:this={detectStep} {sourceType} {source} {name} bind:roi bind:classes bind:faces />
         {:else}
           <StatesStep {entity} {stateKeys} bind:states />
         {/if}

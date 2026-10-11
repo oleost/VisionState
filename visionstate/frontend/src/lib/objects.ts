@@ -1,12 +1,13 @@
 // Helpers for object sensors: display names and colours of object classes and own labels.
 import { app } from './app.svelte';
-import type { Detection, OwnLabel, Sensor } from './types';
+import type { Detection, FaceProblem, OwnLabel, Sensor } from './types';
 
 /**
  * Display name of an object class ("traffic_light" → "Traffic light"), from the backend label
  * list, or of one of a sensor's own labels ("Our car") when `own` is given.
  */
 export function objectName(key: string, own: OwnLabel[] = []): string {
+  if (key === app.config?.face_unknown_key) return 'Unknown person';
   return (
     own.find((l) => l.key === key)?.name ??
     app.config?.object_labels.find((l) => l.key === key)?.name ??
@@ -14,11 +15,46 @@ export function objectName(key: string, own: OwnLabel[] = []): string {
   );
 }
 
-/** What a sensor reports, in order: its classes, then its own labels in use. */
+/** What a sensor reports, in order: its classes, then its own labels in use (and, recognising
+ * faces, the unknown person). */
 export function objectKeys(sensor: Pick<Sensor, 'objects'>): string[] {
   const objects = sensor.objects;
   if (!objects) return [];
-  return [...objects.classes, ...activeLabels(sensor).map((l) => l.key)];
+  const unknown = facesOn(sensor) && app.config ? [app.config.face_unknown_key] : [];
+  return [...objects.classes, ...activeLabels(sensor).map((l) => l.key), ...unknown];
+}
+
+/** Whether an object sensor recognises people by their face (switched on, and it looks for people). */
+export const facesOn = (sensor: Pick<Sensor, 'objects'>) =>
+  !!sensor.objects?.faces?.enabled && sensor.objects.classes.includes('person');
+
+/** The people (shared by every sensor) among an object sensor's labels while it recognises faces. */
+export const peopleOf = (sensor: Pick<Sensor, 'objects'>): OwnLabel[] =>
+  (sensor.objects?.custom ?? []).filter((l) => l.face);
+
+/** Why the face of a person box cannot be used, in a few words. */
+export const FACE_PROBLEMS: Record<FaceProblem, string> = {
+  none: 'no face seen',
+  cut: 'face cut off by the edge',
+  small: 'face too small',
+  turned: 'face turned away',
+  blurry: 'face blurry',
+  unsure: 'face unclear',
+};
+
+/** What the face search says about a person box, in a few words ("" when nothing was looked at). */
+export function faceNote(d: Detection, own: OwnLabel[] = []): string {
+  const face = d.face;
+  if (!face) return '';
+  if (face.problem) {
+    const kept = face.kept && face.label ? `${objectName(face.label, own)} · ` : '';
+    return `${kept}${FACE_PROBLEMS[face.problem]}`;
+  }
+  if (face.state === 'match' && face.label) return `${objectName(face.label, own)}${face.kept ? ' (still here)' : ''}`;
+  if (face.state === 'pending') return 'checking who it is';
+  if (face.state === 'unclear') return 'not sure who';
+  if (face.state === 'ask' && face.candidate) return `maybe ${objectName(face.candidate, own)}`;
+  return own.some((l) => l.face) ? 'someone you have not named' : 'face seen';
 }
 
 /** Own labels whose object is still selected (the others are kept but not used). */
@@ -47,6 +83,7 @@ export function objectCount(n: number, key: string, own: OwnLabel[] = []): strin
   const label = own.find((l) => l.key === key);
   const name = label ? label.name : objectName(key).toLowerCase();
   if (n === 1 || label) return `${n} ${name}`;
+  if (name.endsWith('person')) return `${n} ${name.slice(0, -'person'.length)}people`; // "unknown people"
   let many = IRREGULAR_PLURALS[key];
   if (!many) {
     if (/(s|sh|ch|x)$/.test(name)) many = `${name}es`;
@@ -67,6 +104,10 @@ export function objectSummary(sensor: Sensor): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** Whether a box's label comes from its face: a person taught by face, or the unknown person. */
+export const byFace = (label: string, own: OwnLabel[] = []) =>
+  label === app.config?.face_unknown_key || own.some((l) => l.key === label && l.face);
+
 /** The taught label of a box that is not what the detector said (from the backend config). */
 export const noneLabel = () => app.config?.teach.none_label ?? 'none';
 
@@ -75,6 +116,11 @@ export const boxName = (d: Detection, own: OwnLabel[] = []) => objectName(d.labe
 
 /** Why a box was changed by what the sensor was taught, in a few words ("" when it was not). */
 export function boxReason(d: Detection, own: OwnLabel[] = []): string {
+  if (d.label && byFace(d.label, own)) {
+    return d.label === app.config?.face_unknown_key
+      ? 'A face this sensor does not know'
+      : `Recognised by the face as ${objectName(d.label, own)}${d.face?.kept ? ' (still here, face not seen now)' : ''}`;
+  }
   if (d.filtered) {
     const taughtAs = d.match?.label;
     return taughtAs && taughtAs !== noneLabel()

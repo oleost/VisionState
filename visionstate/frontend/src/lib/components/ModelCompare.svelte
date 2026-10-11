@@ -1,16 +1,38 @@
 <script lang="ts">
-  // The AI models side by side, per kind: what they are for, rough memory and time, and how
-  // accurate they are compared with each other. Numbers come from the registries (GET /settings).
-  import { mb } from '../format';
-  import type { BackboneInfo, SettingsInfo } from '../types';
+  // The AI models side by side, per kind and from the smallest to the largest: what they are for,
+  // rough memory and time, how accurate they are compared with each other, and whether they are
+  // on disk — a downloaded model not in use can be deleted here (it is downloaded again when
+  // chosen). Numbers come from the registries (GET /settings).
+  import { api } from '../api';
+  import { toast, toastError } from '../app.svelte';
+  import { bySize, mb } from '../format';
+  import type { BackboneInfo, ModelKind, SettingsInfo } from '../types';
   import { MODEL_COMPARE_NOTE, MODEL_KINDS } from '../ui';
+  import ConfirmButton from './ConfirmButton.svelte';
   import Icon from './Icon.svelte';
 
-  let { info }: { info: SettingsInfo } = $props();
+  let { info, ondeleted }: { info: SettingsInfo; ondeleted: (info: SettingsInfo) => void } = $props();
   let open = $state(false);
 
-  const chosen = (kind: (typeof MODEL_KINDS)[number]['key']) =>
-    ({ backbones: info.backbone, detectors: info.detector, readers: info.reader, wheel_readers: info.wheel_reader })[kind];
+  type Kind = (typeof MODEL_KINDS)[number]['key'];
+  const chosen = (kind: Kind) =>
+    ({
+      backbones: info.backbone,
+      detectors: info.detector,
+      face_models: info.face_model,
+      readers: info.reader,
+      wheel_readers: info.wheel_reader,
+    })[kind];
+  const deletable = (kind: Kind): kind is ModelKind => kind !== 'wheel_readers';
+
+  async function remove(kind: ModelKind, m: BackboneInfo) {
+    try {
+      ondeleted(await api.deleteModel(kind, m.id));
+      toast(`${m.name} deleted`);
+    } catch (err) {
+      toastError(err);
+    }
+  }
   const time = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
   const ram = (m: BackboneInfo) => (m.ram_mb >= 1000 ? `${(m.ram_mb / 1000).toFixed(1)} GB` : `${m.ram_mb} MB`);
 </script>
@@ -18,7 +40,7 @@
 <div class="col compare">
   <button class="btn sm ghost toggle" onclick={() => (open = !open)} aria-expanded={open}>
     <Icon name="chevron" size={14} />
-    Compare the models
+    Compare and manage the models
   </button>
   {#if open}
     <div class="col kinds" data-testid="model-compare">
@@ -26,7 +48,7 @@
         <div class="col kind">
           <strong class="small">{kind.title}</strong>
           <span class="xsmall faint">{kind.text}</span>
-          {#each info[kind.key] as m (m.id)}
+          {#each bySize(info[kind.key] as BackboneInfo[]) as m (m.id)}
             <div class="model" class:current={m.id === chosen(kind.key)}>
               <span class="name small">
                 {m.name}{#if m.id === chosen(kind.key)}<span class="xsmall muted"> · in use</span>{/if}
@@ -34,11 +56,21 @@
               <span class="facts xsmall muted">
                 <span>~{ram(m)} RAM</span>
                 <span>~{time(m.time_ms)} per check</span>
-                <span>{m.installed ? 'on disk' : `download ${mb(m.size)}`}</span>
+                <span>{!m.installed ? `download ${mb(m.size)}` : m.downloaded ? `downloaded, ${mb(m.size)}` : 'included'}</span>
                 <span class="accuracy" aria-label={`Accuracy ${m.accuracy} of 5`} title="Accuracy compared with the others">
                   {#each [1, 2, 3, 4, 5] as n (n)}<span class="pip" class:on={n <= m.accuracy}></span>{/each}
                 </span>
               </span>
+              {#if m.downloaded && deletable(kind.key)}
+                {#if m.in_use}
+                  <span class="xsmall faint">{m.in_use}</span>
+                {:else}
+                  {@const k = kind.key}
+                  <ConfirmButton class="btn sm ghost delete" onconfirm={() => remove(k, m)} confirmLabel="Tap again to delete">
+                    <Icon name="trash" size={14} /> Delete
+                  </ConfirmButton>
+                {/if}
+              {/if}
             </div>
           {/each}
         </div>
@@ -82,6 +114,9 @@
   }
   .name {
     color: var(--c-text);
+  }
+  .model :global(.delete) {
+    align-self: flex-start;
   }
   .facts {
     display: flex;

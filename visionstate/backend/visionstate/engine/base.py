@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, readers, teach
+from .. import backbones, classifier, detectors, faces, readers, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
@@ -45,6 +45,7 @@ class RuntimeBase:
         self._registry_wanted = asyncio.Event()  # discovery was published: read the registry again
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.global_teach: dict = {}  # the user's teaching limits for all sensors (DB setting "teach")
+        self.global_faces: dict = {}  # the user's face limits for all sensors (DB setting "faces")
         self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
         self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
         self.reminder_rules: dict = {}  # the review reminder (DB setting "reminder"); see reminder_settings()
@@ -62,6 +63,20 @@ class RuntimeBase:
         self.wheel_reader: readers.WheelReader | None = None  # loaded on first use by a counter
         self.wheel_reader_error = ""
         self._wheel_reader_lock = asyncio.Lock()
+        # Faces (object sensors): the face model, loaded in the background when a sensor turns face
+        # recognition on (engine/faces.py); the chosen recogniser (DB setting "face_model").
+        self.face_model: faces.FaceModel | None = None
+        self.face_choice = faces.DEFAULT_RECOGNISER
+        self.face_error = ""
+        self.face_progress: dict | None = None  # {"done", "total"} bytes while it downloads
+        self._face_lock = asyncio.Lock()
+        self._face_task: asyncio.Task | None = None
+        self.face_index: faces.FaceIndex | None = None  # the people's taught faces; built on use
+        self._face_generation = 0
+        # Where each person is seen (their own entity, sensor.visionstate_<key>): what was last
+        # published, and when and on which sensor they were last seen.
+        self._person_where: dict[str, str] = {}
+        self._person_last: dict[str, tuple[float, int]] = {}
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
         self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes
@@ -134,3 +149,8 @@ class RuntimeBase:
     def teach_limits(self, cfg: SensorConfig) -> dict:
         """An object sensor's teaching limits: the backbone's defaults < global < the sensor's own."""
         return merge_teach(self.backbone_id, self.global_teach, cfg.objects.get("teach"))
+
+    def face_limits(self, cfg: SensorConfig | None) -> dict[str, float]:
+        """An object sensor's face limits: the face model's defaults < global < the sensor's own
+        (``None``: the global ones)."""
+        return faces.merge_limits(self.face_choice, self.global_faces, cfg.objects.get("faces") if cfg else None)
