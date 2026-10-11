@@ -363,7 +363,8 @@ def test_the_frame_on_screen_changes_together_with_its_boxes(settings):
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime
         rt.grabber = PhotoCamera("beach")
-        sid = create(client, objects={"classes": ["dog"]}, interval_s=3600).json()["id"]
+        # Paused: only the check run here looks at the camera.
+        sid = create(client, objects={"classes": ["dog"]}, interval_s=3600, enabled=False).json()["id"]
         live = rt.live_state(sid)
         live.frame_id, live.detections = "before", [{"key": "dog", "score": 0.9, "box": [0, 0, 0.1, 0.1]}]
         seen_during: list = []

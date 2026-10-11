@@ -8,6 +8,8 @@
   objects and faces, the Live tab could show its new frame with the boxes of the check before — a
   person (and their face) drawn where nobody stood any more. A new frame now appears together with
   what was found in it.
+- **The face model is let go when face recognition is turned off** while a check was still busy:
+  that check could load it again, and it then stayed in memory until a restart.
 
 ## 0.8.1b4
 

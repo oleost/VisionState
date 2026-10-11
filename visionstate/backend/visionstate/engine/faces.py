@@ -125,7 +125,12 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             log.info("Face model %s loaded", spec.id)
         if replaced is not None:
             await asyncio.to_thread(backbones.release_memory)
-        for sensor_id in await asyncio.to_thread(self.face_sensor_ids):
+        sensor_ids = await asyncio.to_thread(self.face_sensor_ids)
+        if not sensor_ids:
+            # Turned off while it loaded (a check in flight asked for it): let it go again.
+            await self.faces_settled()
+            return
+        for sensor_id in sensor_ids:
             self.wake(sensor_id, force=True)
 
     def face_sensor_ids(self) -> list[int]:
