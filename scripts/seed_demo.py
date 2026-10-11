@@ -30,13 +30,7 @@ import httpx
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
-ASSETS = (
-    Path(__file__).resolve().parent.parent
-    / "visionstate"
-    / "backend"
-    / "tests"
-    / "assets"
-)
+ASSETS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "tests" / "assets"
 GITHUB = "https://raw.githubusercontent.com/oleost/VisionState/beta/visionstate/backend/tests/assets"
 
 # The garage door in demo_garage.jpg (pixels) and the sensor's region around it.
@@ -61,16 +55,9 @@ def garage_frames(per_state: int = 12) -> dict[str, list[bytes]]:
         )
         mask = Image.new("L", (w, h), 0)
         ImageDraw.Draw(mask).polygon([top_l, top_r, DOOR["br"], DOOR["bl"]], fill=255)
-        m = (
-            np.asarray(mask.filter(ImageFilter.GaussianBlur(2)), dtype=np.float32)[
-                :, :, None
-            ]
-            / 255
-        )
+        m = np.asarray(mask.filter(ImageFilter.GaussianBlur(2)), dtype=np.float32)[:, :, None] / 255
         outside = np.clip(
-            235
-            - 70 * np.linspace(0, 1, h)[:, None]
-            + np.random.default_rng(1).normal(0, 6, (h, w)),
+            235 - 70 * np.linspace(0, 1, h)[:, None] + np.random.default_rng(1).normal(0, 6, (h, w)),
             0,
             255,
         )
@@ -78,9 +65,7 @@ def garage_frames(per_state: int = 12) -> dict[str, list[bytes]]:
         img = Image.fromarray(np.clip(out, 0, 255).astype("uint8"))
         ImageDraw.Draw(img).line([top_l, top_r], fill=(70, 70, 70), width=6)
         glow = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(glow).polygon(
-            [DOOR["bl"], DOOR["br"], (w, h), (0, h)], fill=int(90 * frac)
-        )
+        ImageDraw.Draw(glow).polygon([DOOR["bl"], DOOR["br"], (w, h), (0, h)], fill=int(90 * frac))
         return Image.composite(
             Image.new("RGB", (w, h), (255, 255, 255)),
             img,
@@ -97,16 +82,10 @@ def garage_frames(per_state: int = 12) -> dict[str, list[bytes]]:
             (1, 0, dx, 0, 1, dy),
             fillcolor=(40, 40, 40),
         )
-        noise = np.random.default_rng(rnd.randint(0, 1 << 30)).normal(
-            0, rnd.uniform(2, 7), (h, w, 3)
-        )
-        img = Image.fromarray(
-            np.clip(np.asarray(img, dtype=np.float32) + noise, 0, 255).astype("uint8")
-        )
+        noise = np.random.default_rng(rnd.randint(0, 1 << 30)).normal(0, rnd.uniform(2, 7), (h, w, 3))
+        img = Image.fromarray(np.clip(np.asarray(img, dtype=np.float32) + noise, 0, 255).astype("uint8"))
         buf = io.BytesIO()
-        img.filter(ImageFilter.GaussianBlur(rnd.uniform(0, 1.2))).save(
-            buf, format="JPEG", quality=88
-        )
+        img.filter(ImageFilter.GaussianBlur(rnd.uniform(0, 1.2))).save(buf, format="JPEG", quality=88)
         return buf.getvalue()
 
     make = {
@@ -121,9 +100,7 @@ class Api:
     """The app's API, directly (``--url``) or through Home Assistant Ingress (``--app``)."""
 
     def __init__(self, base: str, cookies: dict | None = None):
-        self.client = httpx.Client(
-            base_url=base.rstrip("/") + "/api/v1", cookies=cookies, timeout=180
-        )
+        self.client = httpx.Client(base_url=base.rstrip("/") + "/api/v1", cookies=cookies, timeout=180)
 
     def call(self, method: str, path: str, **kwargs):
         r = self.client.request(method, path, **kwargs)
@@ -176,14 +153,10 @@ def wait(what: str, check, timeout: float = 180):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--url", help="the app's address, e.g. http://127.0.0.1:8099")
-    target.add_argument(
-        "--app", help="slug of an installed app, reached through Ingress"
-    )
+    target.add_argument("--app", help="slug of an installed app, reached through Ingress")
     parser.add_argument(
         "--images",
         default=GITHUB,
@@ -214,10 +187,7 @@ def main() -> None:
     )
     if garage:
         for key, frames in garage_frames().items():
-            files = [
-                ("files", (f"{key}_{i:02d}.jpg", data, "image/jpeg"))
-                for i, data in enumerate(frames)
-            ]
+            files = [("files", (f"{key}_{i:02d}.jpg", data, "image/jpeg")) for i, data in enumerate(frames)]
             api.call(
                 "POST",
                 f"/sensors/{garage['id']}/uploads",
@@ -264,13 +234,13 @@ def main() -> None:
             for n in ("demo_emma_car", "demo_emma_guitar")
         ]
         for _ in range(60):
-            r = api.client.post(
-                "/people/photos", files=files, data={"new_person": "Emma"}
-            )
+            r = api.client.post("/people/photos", files=files, data={"new_person": "Emma"})
             if r.status_code != 409:
                 break
             time.sleep(3)
-        print("Emma:", r.status_code, r.json().get("added"), "faces")
+        if r.status_code >= 400:
+            sys.exit(f"Emma: {r.status_code} {r.text[:300]} (an app older than 0.8.1b4 cannot teach faces from photos)")
+        print(f"Emma: {r.json()['added']} faces taught")
     if driveway:
 
         def car():
