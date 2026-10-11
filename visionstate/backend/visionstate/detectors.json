@@ -507,7 +507,10 @@
       "label_set": "coco",
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-small-coco",
-      "bundled": true
+      "bundled": true,
+      "ram_mb": 230,
+      "time_ms": 100,
+      "accuracy": 3
     },
     "dfine-n-coco": {
       "name": "D-FINE N (fast)",
@@ -519,7 +522,40 @@
       "label_set": "coco",
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-nano-coco",
-      "bundled": false
+      "bundled": false,
+      "ram_mb": 100,
+      "time_ms": 40,
+      "accuracy": 2
+    },
+    "dfine-m-coco": {
+      "name": "D-FINE M (accurate)",
+      "description": "Finds more small, far-off and partly hidden objects than D-FINE S, but is about three times as slow. For a fast PC. Downloaded on first use (79 MB).",
+      "url": "https://huggingface.co/onnx-community/dfine_m_coco-ONNX/resolve/489756db2825cb068a588fe930af239a656d1fe1/onnx/model.onnx",
+      "sha256": "70aaa837978a06ba44ad17398c7079ae5a1a7b1a9032b5d7053981e1ada02d6b",
+      "size": 78624257,
+      "input_size": 640,
+      "label_set": "coco",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/ustc-community/dfine-medium-coco",
+      "bundled": false,
+      "ram_mb": 300,
+      "time_ms": 290,
+      "accuracy": 4
+    },
+    "dfine-l-coco": {
+      "name": "D-FINE L (most accurate)",
+      "description": "The most accurate, about four times as slow as D-FINE S. For a fast PC. Downloaded on first use (125 MB).",
+      "url": "https://huggingface.co/onnx-community/dfine_l_coco-ONNX/resolve/e09b218185400510b68d067bbd0c9379d905ffcd/onnx/model.onnx",
+      "sha256": "d678f3baebfb909d3a20f21d1d807544d0172ed47fa1ab88e7fcdec7e365b236",
+      "size": 125348332,
+      "input_size": 640,
+      "label_set": "coco",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/ustc-community/dfine-large-coco",
+      "bundled": false,
+      "ram_mb": 350,
+      "time_ms": 420,
+      "accuracy": 5
     }
   }
 }

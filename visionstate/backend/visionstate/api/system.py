@@ -1,5 +1,5 @@
-"""App-wide endpoints: the UI config, status, the AI models, history storage limits, review rules
-and the review reminder.
+"""App-wide endpoints: the UI config, status, the AI models, history storage limits, review rules,
+the review reminder and the teaching limits.
 
 Cameras and previews are in cameras.py, the review queue in review.py, import in imports.py."""
 
@@ -49,6 +49,8 @@ from ..settings import (
     STORAGE_DEFAULTS,
     STORAGE_LIMITS,
     TEACH,
+    TEACH_TUNABLE,
+    TEACH_TUNABLE_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
@@ -56,11 +58,15 @@ from ..settings import (
     VERSION,
     VIDEO,
     merge_review,
+    merge_teach,
+    teach_defaults,
 )
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
     API_PREFIX,
     ReviewRules,
+    TeachLimits,
+    check_teach,
     iso,
     runtime,
 )
@@ -100,7 +106,12 @@ def ui_config() -> dict:
         "object_max_classes": OBJECT_MAX_CLASSES,
         "object_labels": [{"key": x.key, "name": x.name, "group": x.group} for x in detectors.LABELS.labels],
         "object_popular": list(detectors.LABELS.popular),
-        "teach": {"none_label": NONE_LABEL, "max_labels": TEACH["max_labels"]},
+        "teach": {
+            "none_label": NONE_LABEL,
+            "max_labels": TEACH["max_labels"],
+            "tunable": list(TEACH_TUNABLE),
+            "limits": TEACH_TUNABLE_LIMITS,
+        },
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
         "reading_defaults": READING_DEFAULTS,
         "reading_limits": READING_LIMITS,
@@ -173,58 +184,29 @@ class SettingsIn(BaseModel):
 def get_settings(request: Request) -> dict:
     """The chosen AI models and every model that can be chosen."""
     rt = runtime(request)
+
+    def model(spec) -> dict:
+        return {
+            "id": spec.id,
+            "name": spec.name,
+            "description": spec.description,
+            "installed": rt.model_path(spec) is not None,
+            "size": spec.size,
+            "license": spec.license,
+            "source": spec.source,
+            **spec.footprint.as_dict(),
+        }
+
     return {
         "backbone": rt.embedder.spec.id if rt.embedder else backbones.DEFAULT_BACKBONE,
-        "backbones": [
-            {
-                "id": spec.id,
-                "name": spec.name,
-                "description": spec.description,
-                "installed": rt.model_path(spec) is not None,
-                "size": spec.size,
-            }
-            for spec in backbones.BACKBONES.values()
-        ],
+        "backbones": [model(spec) for spec in backbones.BACKBONES.values()],
         "detector": rt.db.get_text("detector", detectors.DEFAULT_DETECTOR),
-        "detectors": [
-            {
-                "id": spec.id,
-                "name": spec.name,
-                "description": spec.description,
-                "installed": rt.model_path(spec) is not None,
-                "size": spec.size,
-                "license": spec.license,
-                "source": spec.source,
-            }
-            for spec in detectors.DETECTORS.values()
-        ],
+        "detectors": [model(spec) for spec in detectors.DETECTORS.values()],
         "reader": rt.db.get_text("reader", readers.DEFAULT_READER),
-        "readers": [
-            {
-                "id": spec.id,
-                "name": spec.name,
-                "description": spec.description,
-                "installed": rt.model_path(spec) is not None,
-                "size": spec.size,
-                "license": spec.license,
-                "source": spec.source,
-            }
-            for spec in readers.READERS.values()
-        ],
+        "readers": [model(spec) for spec in readers.READERS.values()],
         # Mechanical counters set to the wheel reader; one model for now, so nothing to choose.
         "wheel_reader": readers.DEFAULT_WHEEL_READER,
-        "wheel_readers": [
-            {
-                "id": spec.id,
-                "name": spec.name,
-                "description": spec.description,
-                "installed": rt.model_path(spec) is not None,
-                "size": spec.size,
-                "license": spec.license,
-                "source": spec.source,
-            }
-            for spec in readers.WHEEL_READERS.values()
-        ],
+        "wheel_readers": [model(spec) for spec in readers.WHEEL_READERS.values()],
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,
             "mqtt_host": rt.settings.mqtt_host or "(from Home Assistant)",
@@ -301,6 +283,34 @@ async def put_review_rules(body: ReviewRules, request: Request) -> dict:
     rt = runtime(request)
     await asyncio.to_thread(rt.set_global_review, body.model_dump())
     return merge_review(rt.global_review, None)
+
+
+# --- teaching limits ----------------------------------------------------------
+
+
+def _teach_view(rt) -> dict:
+    """The global teaching limits: the backbone's defaults, what the user set (None: the default)
+    and the result, which each object sensor inherits unless it has its own value."""
+    backbone = rt.backbone_id
+    return {
+        "backbone": backbone,
+        "defaults": teach_defaults(backbone),
+        "values": {key: rt.global_teach.get(key) for key in TEACH_TUNABLE},
+        "effective": {key: merge_teach(backbone, rt.global_teach, None)[key] for key in TEACH_TUNABLE},
+    }
+
+
+@router.get("/teach-limits")
+def get_teach_limits(request: Request) -> dict:
+    return _teach_view(runtime(request))
+
+
+@router.put("/teach-limits")
+async def put_teach_limits(body: TeachLimits, request: Request) -> dict:
+    rt = runtime(request)
+    check_teach(merge_teach(rt.backbone_id, body.stored(), None))
+    await asyncio.to_thread(rt.set_global_teach, body.stored())
+    return _teach_view(rt)
 
 
 # --- review reminder ----------------------------------------------------------

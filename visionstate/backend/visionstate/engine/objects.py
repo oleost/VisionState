@@ -33,7 +33,7 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
         index = await self.taught_index(cfg)
         rescue = bool(index and index.rescue)
         # Once a box the detector missed was taught, its unsure boxes are looked at too.
-        floor = min(cfg.threshold, TEACH["rescue_floor"]) if rescue else cfg.threshold
+        floor = min(cfg.threshold, self.teach_limits(cfg)["rescue_floor"]) if rescue else cfg.threshold
         try:
             found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
         except Exception as err:  # noqa: BLE001 - detector missing or failed to load

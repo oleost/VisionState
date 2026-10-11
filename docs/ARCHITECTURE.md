@@ -51,7 +51,7 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules, review reminder), `common.py` (input models and views shared by them) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules, review reminder, teaching limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
@@ -169,8 +169,10 @@ in `lib/api.ts`, its type in `lib/types.ts`.
 `EVENT_ROWS` (`api/history.py`; every filter becomes SQL in `history_query`, nowhere else), its
 label in `HISTORY_EVENTS` in `lib/ui.ts`.
 
-**A new AI model**: a new entry in the registry JSON (never change a released one), checked
-against real inputs in the tests.
+**A new AI model**: a new entry in the registry JSON (never change a released one's file or
+inputs), with its measured footprint (`ram_mb`, `time_ms`, `accuracy`; see `backbones.Footprint`).
+`tests/test_models.py` checks every entry against real inputs once it is downloaded
+(`python -m visionstate.backbones models --all`, as CI does).
 
 **A new page or tab**: the route in `router.svelte.ts` (tab: `TABS_BY_KIND` in `ui.ts`), the page
 in `pages/`, and an e2e test in `e2e/ui.spec.ts` on all three devices.

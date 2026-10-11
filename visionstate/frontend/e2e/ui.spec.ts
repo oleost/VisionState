@@ -1,5 +1,5 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import path from 'node:path';
 import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
 import {
@@ -20,6 +20,12 @@ import {
   setVisibility,
   watchErrors,
 } from './helpers';
+
+/** Scrolls to the middle of the screen first, so a tap never lands under the sticky top bar. */
+async function pressCentered(locator: Locator, info: TestInfo) {
+  await locator.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await press(locator, info);
+}
 
 /** Every page: [screenshot name, route, text that shows it is ready]. */
 async function allPages(request: APIRequestContext): Promise<[string, string, RegExp | string][]> {
@@ -658,12 +664,36 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-quality.png'), fullPage: true });
 
-    // Settings: turn it off or forget it all; then the Quality tab goes away again.
+    // Settings: its own teaching limits. Until set, a field shows the global value in grey.
     await page.goto(`#/sensors/${id}/settings`);
     await expect(page.getByText('Use what you taught')).toBeVisible();
     // The region's camera frame loads above: wait for it, or the page moves under the tap.
     await expect(page.locator('.roi img')).toBeVisible();
     await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+    const global = await (await request.get('api/v1/teach-limits')).json();
+    const limits = page.getByTestId('sensor-teach-limits');
+    const match = limits.getByRole('spinbutton', { name: 'Recognised as a box you taught from' });
+    await expect(match).toHaveValue('');
+    await expect(match).toHaveAttribute('placeholder', String(Math.round(global.effective.match_similarity * 100)));
+    await expect(limits.getByRole('button', { name: /^Use the global value/ }).first()).toBeHidden();
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await match.fill('80');
+    // The toast from teaching the missed box still covers the bottom of a phone screen: let it go.
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toHaveCount(0, { timeout: 20_000 });
+    await pressCentered(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    expect((await (await request.get(`api/v1/sensors/${id}`)).json()).objects.teach).toEqual({ match_similarity: 0.8 });
+    await page.reload();
+    await expect(match).toHaveValue('80');
+    await match.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-limits.png'), fullPage: true });
+    await pressCentered(limits.getByRole('button', { name: /^Use the global value/ }), info);
+    await expect(match).toHaveValue('');
+    await pressCentered(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.teach).toEqual({});
+
+    // Turn it off or forget it all; then the Quality tab goes away again.
     await press(page.getByRole('button', { name: 'Forget all' }), info);
     await press(page.getByRole('button', { name: 'Tap again to forget everything taught' }), info);
     await expect(page.getByText('Everything taught is forgotten')).toBeVisible();
@@ -1019,6 +1049,44 @@ test('the wheel reader shows in Settings and is offered to counters read as text
   } finally {
     await page.goto('about:blank');
     await request.delete(`api/v1/sensors/${id}`);
+  }
+});
+
+test('the AI models can be compared, and the teaching limits set for all object sensors', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  try {
+    await page.goto('#/settings');
+    await press(page.getByRole('button', { name: 'Compare the models' }), info);
+    const compare = page.getByTestId('model-compare');
+    await expect(compare.getByText('D-FINE L (most accurate)')).toBeVisible();
+    await expect(compare.getByText('DINOv2 base · fp32 (most accurate)')).toBeVisible();
+    await expect(compare.getByText('in use')).toHaveCount(4); // one per kind
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+
+    const view = await (await request.get('api/v1/teach-limits')).json();
+    const card = page.getByTestId('teach-limits');
+    const ask = card.getByRole('spinbutton', { name: 'Asks you in the review queue from' });
+    await expect(ask).toHaveValue('');
+    await expect(ask).toHaveAttribute('placeholder', String(Math.round(view.defaults.ask_similarity * 100)));
+    const save = card.getByRole('button', { name: 'Save teaching limits' });
+    await expect(save).toBeDisabled(); // nothing changed yet
+    await ask.fill('95'); // above "Recognised as…": not allowed
+    await expect(card.getByText('must not be above the first')).toBeVisible();
+    await ask.fill('70');
+    await expect(card.getByText('must not be above the first')).toBeHidden();
+    await pressCentered(save, info);
+    await expect(page.getByText('Teaching limits saved')).toBeVisible();
+    expect((await (await request.get('api/v1/teach-limits')).json()).values.ask_similarity).toBe(0.7);
+    await card.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-models.png'), fullPage: true });
+    await pressCentered(card.getByRole('button', { name: /^Use the default of/ }), info);
+    await expect(ask).toHaveValue('');
+    await pressCentered(save, info);
+    await expect.poll(async () => (await (await request.get('api/v1/teach-limits')).json()).values.ask_similarity).toBeNull();
+    errors.expectNone();
+  } finally {
+    await request.put('api/v1/teach-limits', { data: {} });
   }
 });
 

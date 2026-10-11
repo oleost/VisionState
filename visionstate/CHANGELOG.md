@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.1b1
+
+### New
+
+- **Larger AI models for fast PCs**, downloaded on first use under **Settings → AI model**:
+  - **D-FINE M** (79 MB) and **D-FINE L** (125 MB) for object sensors find more small, far-off and
+    partly hidden objects than the included D-FINE S, at about three and four times its time per
+    check.
+  - **DINOv2 base** (347 MB, about 400 MB of memory) for state sensors tells similar states and
+    taught objects apart best, at about three times the time of DINOv2 small.
+- **Compare the models**: under the model choices, every model with its rough memory use, time per
+  check, download size and how accurate it is compared with the others.
+- **Teaching limits you can tune.** How close a box must be to the boxes you taught an object sensor
+  — to take their answer, to keep it while it stays in place, to ask you in the review queue, to
+  find a missed object again — can now be set under **Settings → Teaching object sensors** for all
+  object sensors, and per sensor under its **Settings → What you taught**. An empty field shows in
+  grey the value it uses (the default, or on a sensor the global value) until you set your own.
+  The defaults follow the state model: with DINOv2 base a box must be a little closer to count.
+  A sensor's own values come along in its export.
+
 ## 0.8.0
 
 ### New

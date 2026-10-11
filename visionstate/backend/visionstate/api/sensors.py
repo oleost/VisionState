@@ -30,6 +30,8 @@ from ..settings import (
     SENSOR_LIMITS,
     SENSOR_PUBLISH_DEFAULT,
     STATE_PALETTE,
+    merge_objects,
+    merge_teach,
 )
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
@@ -40,6 +42,7 @@ from .common import (
     Roi,
     StateIn,
     Triggers,
+    check_teach,
     get_sensor,
     runtime,
     sample_counts,
@@ -115,7 +118,7 @@ class SensorIn(BaseModel):
             publish=self.publish,
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
-            objects=self.objects.model_dump() if self.objects else None,
+            objects=self.objects.stored() if self.objects else None,
             reading=self.reading.model_dump() if self.reading else None,
         )
         _apply_states(sensor, self.states)
@@ -223,7 +226,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             _apply_states(sensor, body.states)
         if body.objects is not None:
             # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
-            sensor.objects = {**(sensor.objects or {}), **body.objects.model_dump(exclude_unset=True)}
+            sensor.objects = {**(sensor.objects or {}), **body.objects.stored(exclude_unset=True)}
+            check_teach(merge_teach(rt.backbone_id, rt.global_teach, merge_objects(sensor.objects)["teach"]))
         if body.reading is not None:
             sensor.reading = body.reading.model_dump()
         s.flush()

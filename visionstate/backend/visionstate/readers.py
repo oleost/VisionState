@@ -19,13 +19,13 @@ import math
 import re
 import threading
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
-from .backbones import cpu_session
+from .backbones import Footprint, cpu_session
 from .settings import READING
 
 REGISTRY_FILE = Path(__file__).with_name("readers.json")
@@ -46,6 +46,7 @@ class ReaderSpec:
     license: str
     source: str
     bundled: bool
+    footprint: Footprint = field(default_factory=lambda: Footprint())
 
     @property
     def filename(self) -> str:
@@ -69,6 +70,7 @@ def load_registry() -> tuple[str, dict[str, ReaderSpec]]:
             license=v.get("license", ""),
             source=v.get("source", ""),
             bundled=bool(v.get("bundled", False)),
+            footprint=Footprint.of(v),
         )
         for key, v in raw["readers"].items()
     }
@@ -270,6 +272,7 @@ class WheelReaderSpec:
     license: str
     source: str
     bundled: bool
+    footprint: Footprint = field(default_factory=lambda: Footprint())
 
     @property
     def filename(self) -> str:
@@ -293,6 +296,7 @@ def load_wheel_registry() -> tuple[str, dict[str, WheelReaderSpec]]:
             license=v.get("license", ""),
             source=v.get("source", ""),
             bundled=bool(v.get("bundled", False)),
+            footprint=Footprint.of(v),
         )
         for key, v in raw["readers"].items()
     }

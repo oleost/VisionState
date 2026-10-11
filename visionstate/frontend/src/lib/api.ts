@@ -24,6 +24,8 @@ import type {
   Status,
   StorageInfo,
   Taught,
+  TeachLimitsInfo,
+  TeachOverrides,
   TeachInput,
 } from './types';
 
@@ -202,6 +204,8 @@ export const api = {
     `${BASE}history/${predictionId}/image?size=${size}`,
   exportUrl: (id: number) => `${BASE}sensors/${id}/export`,
 
+  teachLimits: () => request<TeachLimitsInfo>('teach-limits'),
+  saveTeachLimits: (values: TeachOverrides) => request<TeachLimitsInfo>('teach-limits', send('PUT', values)),
   reviewRules: () => request<ReviewRules>('review-rules'),
   saveReviewRules: (rules: ReviewRules) => request<ReviewRules>('review-rules', send('PUT', rules)),
   reviewReminder: () => request<ReminderInfo>('review-reminder'),

@@ -19,7 +19,7 @@ from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
 from ..mqtt import MqttBridge
-from ..settings import RUNTIME, Settings, merge_review
+from ..settings import RUNTIME, Settings, merge_review, merge_teach
 from ..sources import FrameGrabber, HomeAssistant
 from ..storage import Storage
 from .state import LiveState, SensorConfig
@@ -44,6 +44,7 @@ class RuntimeBase:
         self.ha_entity_ids: dict[str, str] = {}
         self._registry_wanted = asyncio.Event()  # discovery was published: read the registry again
         self.global_review: dict = {}  # global review rules (DB setting "review")
+        self.global_teach: dict = {}  # the user's teaching limits for all sensors (DB setting "teach")
         self.storage_rules: dict = {}  # history limits (DB setting "storage"); see storage_limits()
         self.history_trimmed = False  # frames were removed to stay under the size limit (until limits change)
         self.reminder_rules: dict = {}  # the review reminder (DB setting "reminder"); see reminder_settings()
@@ -124,3 +125,12 @@ class RuntimeBase:
 
     def review_rules(self, cfg: SensorConfig) -> dict:
         return merge_review(self.global_review, cfg.review)
+
+    @property
+    def backbone_id(self) -> str:
+        """The backbone in use (or chosen, while it loads)."""
+        return self.embedder.spec.id if self.embedder else self.db.get_text("backbone", backbones.DEFAULT_BACKBONE)
+
+    def teach_limits(self, cfg: SensorConfig) -> dict:
+        """An object sensor's teaching limits: the backbone's defaults < global < the sensor's own."""
+        return merge_teach(self.backbone_id, self.global_teach, cfg.objects.get("teach"))

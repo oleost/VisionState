@@ -16,12 +16,13 @@
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
+  import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
-  import type { ReviewRules, Roi, Sensor } from '../../lib/types';
+  import type { ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -44,6 +45,9 @@
   let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
   let minSize = $state(initial.objects?.min_size ?? 0);
   let useTaught = $state(initial.objects?.use_taught ?? true);
+  let teachLimits = $state<TeachOverrides>({ ...(initial.objects?.teach ?? {}) });
+  let globalTeach = $state<TeachLimitsInfo | null>(null);
+  if (objectSensor) api.teachLimits().then((t) => (globalTeach = t)).catch(toastError);
   const taughtCount = $derived(sensor.objects?.taught ?? 0);
   const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.length > 0));
   const readingSensor = isReadingSensor(initial);
@@ -62,7 +66,7 @@
         source,
         ...(roi ? { roi } : { clear_roi: true }),
         ...(objectSensor
-          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught } }
+          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
           : readingSensor
             ? { reading }
             : { states, review }),
@@ -187,6 +191,12 @@
             </ConfirmButton>
             <span class="xsmall faint">Every taught box and own label, with its entities.</span>
           </div>
+          {#if globalTeach}
+            <div class="col teach-limits" data-testid="sensor-teach-limits">
+              <strong class="small">Limits for this sensor</strong>
+              <TeachLimitsEditor bind:value={teachLimits} inherited={globalTeach.effective} inheritedFrom="the global value" />
+            </div>
+          {/if}
         </section>
       {/if}
     {:else}
@@ -243,6 +253,11 @@
 <style>
   .taught {
     align-items: flex-start;
+  }
+  .teach-limits {
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
   }
   .taught input {
     margin-top: 3px;

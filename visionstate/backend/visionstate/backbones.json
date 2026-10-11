@@ -11,11 +11,14 @@
       "mean": [0.485, 0.456, 0.406],
       "std": [0.229, 0.224, 0.225],
       "pooling": "cls_mean",
-      "bundled": true
+      "bundled": true,
+      "ram_mb": 60,
+      "time_ms": 70,
+      "accuracy": 3
     },
     "dinov2-small": {
       "name": "DINOv2 small · fp32 (accurate)",
-      "description": "Full precision. Slightly more accurate, about 3x slower. Downloaded on first use (89 MB).",
+      "description": "Full precision. Slightly more accurate and slower, most of all on small CPUs such as a Raspberry Pi. Downloaded on first use (89 MB).",
       "url": "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model.onnx",
       "sha256": "f22797eabf810a75e41de68d378541ebea372122b25c4ce3ef25ff618250c20a",
       "size": 88532934,
@@ -23,7 +26,27 @@
       "mean": [0.485, 0.456, 0.406],
       "std": [0.229, 0.224, 0.225],
       "pooling": "cls_mean",
-      "bundled": false
+      "bundled": false,
+      "ram_mb": 120,
+      "time_ms": 85,
+      "accuracy": 4
+    },
+    "dinov2-base": {
+      "name": "DINOv2 base · fp32 (most accurate)",
+      "description": "A larger model: tells similar states and objects apart best, but about three times as slow as DINOv2 small and needs about 400 MB of memory. For a fast PC. Downloaded on first use (347 MB).",
+      "url": "https://huggingface.co/onnx-community/dinov2-base/resolve/31ef06cac16d5d301c5930d147002a058c85a5e4/onnx/model.onnx",
+      "sha256": "320d1012a6fc65b101fc85ca30ee7a47b2e4f6a2e8bd78fb9d7036def0e30cb0",
+      "size": 346627111,
+      "input_size": 224,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "pooling": "cls_mean",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/facebook/dinov2-base",
+      "bundled": false,
+      "ram_mb": 390,
+      "time_ms": 245,
+      "accuracy": 5
     }
   }
 }

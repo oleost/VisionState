@@ -149,6 +149,15 @@ waiting, and no more often than the review cooldown (**Settings → Review queue
   away lately — check now and then that nothing real is filtered away.
 - **Settings → What you taught**: **Use what you taught** off lets the AI alone decide again (what
   you taught is kept); **Forget all** removes every taught box and own label.
+- **How close is close enough** can be tuned, in percent of likeness (100% = the very same
+  picture): when a box takes a taught answer, how long it keeps it while it stays in place, from
+  when it asks in the review queue, when a missed object is found again, and how unsure an AI box
+  may be to be looked at for one. **Settings → Teaching object sensors** sets them for all object
+  sensors; a sensor's **Settings → What you taught → Limits for this sensor** can set its own.
+  An empty field inherits and shows in grey what it uses: the default (which depends on the state
+  model, see below), or on a sensor the global value. Values you set yourself stay when you switch
+  the state model — look at them again after a switch. Recognised too eagerly? Raise the first
+  value; a known object not recognised in other light? Lower it a little, or teach it in that light.
 - A box drawn where the AI sees nothing at all (not even unsure) cannot be found by itself; you
   get a note when that is the case.
 - Export and import take what you taught along.
@@ -392,12 +401,16 @@ two apps at a time (both publish the same entities).
 Three models, chosen under **Settings → AI model** for all sensors of a kind:
 
 - **State sensors:** DINOv2 small, 8-bit — included, runs on any CPU including a Raspberry
-  Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB).
-  Switching retrains every state sensor from its stored images. It is always loaded: object
-  sensors that were taught use it too, to compare boxes with the ones you taught.
+  Pi 4. A slightly more accurate full-precision version is downloaded on first use (89 MB), and
+  for a fast PC **DINOv2 base** (347 MB, about 400 MB of memory, about three times as slow), which
+  tells similar states and taught objects apart best. Switching retrains every state sensor from
+  its stored images. It is always loaded: object sensors that were taught use it too, to compare
+  boxes with the ones you taught (with DINOv2 base a box must be a little closer to count).
 - **Object sensors:** D-FINE S — included, about 0.1 s per check on a modern PC and a few
   seconds on a Raspberry Pi 4. D-FINE N is faster and lighter but misses more (downloaded on
-  first use, 15 MB). The detector is only loaded while at least one object sensor exists.
+  first use, 15 MB). For a fast PC, **D-FINE M** (79 MB) and **D-FINE L** (125 MB) find more
+  small, far-off and partly hidden objects, at about three and four times the time of S. The
+  detector is only loaded while at least one object sensor exists.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
   21 MB). Mechanical counters are read by the included **VisionState wheel reader** (2 MB, a few
@@ -405,7 +418,9 @@ Three models, chosen under **Settings → AI model** for all sensors of a kind:
   is set to the text reader. There is one wheel reader so far, so there is nothing to choose.
   Only loaded while at least one reading sensor exists.
 
-A choice you made stays when a later version recommends another model.
+**Compare the models** (under the choices) lists every model with its rough memory use, time
+per check and how accurate it is compared with the others. A choice you made stays when a later
+version recommends another model.
 
 ## App options
 

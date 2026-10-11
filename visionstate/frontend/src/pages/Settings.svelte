@@ -2,12 +2,14 @@
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ModelCompare from '../lib/components/ModelCompare.svelte';
   import ReminderCard from '../lib/components/ReminderCard.svelte';
   import ReviewRulesEditor from '../lib/components/ReviewRulesEditor.svelte';
   import StorageCard from '../lib/components/StorageCard.svelte';
+  import TeachLimitsEditor from '../lib/components/TeachLimitsEditor.svelte';
   import { mb } from '../lib/format';
   import { go, paths } from '../lib/router.svelte';
-  import type { ReviewRules, SettingsInfo } from '../lib/types';
+  import type { ReviewRules, SettingsInfo, TeachLimitsInfo, TeachOverrides } from '../lib/types';
 
   let info = $state<SettingsInfo | null>(null);
   let backbone = $state('');
@@ -17,6 +19,35 @@
   let importInput: HTMLInputElement;
   let reviewRules = $state<ReviewRules | null>(null);
   let savingReview = $state(false);
+  let teach = $state<TeachLimitsInfo | null>(null);
+  let teachValues = $state<TeachOverrides>({});
+  let savingTeach = $state(false);
+  const setOnly = (v: TeachOverrides) => JSON.stringify(Object.entries(v).filter(([, x]) => x !== null && x !== undefined).sort());
+  const teachChanged = $derived(teach !== null && setOnly(teachValues) !== setOnly(teach.values));
+
+  function loadTeach() {
+    api
+      .teachLimits()
+      .then((t) => {
+        teach = t;
+        teachValues = { ...t.values };
+      })
+      .catch(toastError);
+  }
+  loadTeach();
+
+  async function saveTeach() {
+    savingTeach = true;
+    try {
+      teach = await api.saveTeachLimits(teachValues);
+      teachValues = { ...teach.values };
+      toast('Teaching limits saved');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      savingTeach = false;
+    }
+  }
 
   api
     .reviewRules()
@@ -60,6 +91,7 @@
       info = await api.saveSettings({ backbone, detector, reader });
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
+      if (retrained) loadTeach(); // the defaults depend on the state model
     } catch (err) {
       toastError(err);
     } finally {
@@ -199,6 +231,7 @@
           </button>
           <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object and reading sensors need no training.</span>
         </div>
+        <ModelCompare {info} />
       {/if}
     </section>
 
@@ -209,6 +242,28 @@
         <ReviewRulesEditor bind:value={reviewRules} />
         <button class="btn primary" style="align-self:flex-start" disabled={savingReview} onclick={saveReview}>
           {savingReview ? 'Saving…' : 'Save review rules'}
+        </button>
+      {/if}
+    </section>
+
+    <section class="card pad col" data-testid="teach-limits">
+      <h3>Teaching object sensors</h3>
+      <p class="small muted">
+        How closely a box must resemble the boxes you taught an object sensor. Each sensor can override these on its Settings
+        tab.
+      </p>
+      {#if teach}
+        <TeachLimitsEditor
+          bind:value={teachValues}
+          inherited={teach.defaults}
+          inheritedFrom={`the default of ${info?.backbones.find((b) => b.id === teach?.backbone)?.name ?? 'the state model'}`}
+        />
+        <p class="xsmall faint">
+          The state model also compares the taught boxes, so the defaults follow it. Values you set yourself stay when you
+          switch the state model; check them afterwards.
+        </p>
+        <button class="btn primary" style="align-self:flex-start" disabled={!teachChanged || savingTeach} onclick={saveTeach}>
+          {savingTeach ? 'Saving…' : 'Save teaching limits'}
         </button>
       {/if}
     </section>

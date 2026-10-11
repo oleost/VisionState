@@ -81,8 +81,21 @@ so retraining only runs the backbone on new or changed samples.
 
 | ID | Model | Use |
 |---|---|---|
-| `dinov2-small-q8` | DINOv2 ViT-S/14, 8-bit quantised (bundled) | Default everywhere, ~25 ms per frame on a desktop CPU |
+| `dinov2-small-q8` | DINOv2 ViT-S/14, 8-bit quantised (bundled) | Default everywhere |
 | `dinov2-small` | DINOv2 ViT-S/14, fp32 (downloaded on demand, SHA-256 checked) | Optional, slightly more accurate |
+| `dinov2-base` | DINOv2 ViT-B/14, fp32 (downloaded on demand, 347 MB) | Fast PCs; separates objects best |
+
+- Each registry entry carries a rough footprint for **Compare the models** in Settings
+  (`backbones.Footprint`: extra memory, time per check on 4 threads of a desktop CPU, an accuracy
+  rank within its kind), measured when the model was added. Texts and footprint may be updated in a
+  released entry; its file and inputs never change.
+- DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
+  also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
+  object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base
+  fp32, 0.08 for small fp32, 0.06 for small 8-bit — and 0.04 for base 8-bit, whose quantisation
+  squeezes everything together (other objects of a kind around 0.82), so base is offered in fp32
+  only; fp16 saved disk but used more memory on CPU. Base needs slightly stricter teaching limits
+  (`settings.TEACH_BY_BACKBONE`).
 
 - MobileNet was dropped: the available ONNX exports only expose classification logits.
 - Switching backbone retrains every sensor from its stored samples.
@@ -101,8 +114,14 @@ with the 80 COCO labels, their keys, groups and the popular ones):
 
 | ID | Model | Use |
 |---|---|---|
-| `dfine-s-coco` | D-FINE S, COCO, fp32 ONNX (bundled, 42 MB) | Default; ~0.1 s per check on a desktop CPU |
+| `dfine-s-coco` | D-FINE S, COCO, fp32 ONNX (bundled, 42 MB) | Default |
 | `dfine-n-coco` | D-FINE N, COCO, fp32 ONNX (downloaded on demand, 15 MB) | Faster, misses more |
+| `dfine-m-coco` | D-FINE M, COCO, fp32 ONNX (downloaded on demand, 79 MB) | Fast PCs; finds more small and hidden objects |
+| `dfine-l-coco` | D-FINE L, COCO, fp32 ONNX (downloaded on demand, 125 MB) | Fast PCs; the most accurate |
+
+D-FINE X (251 MB) was left out: twice the size of L for little more. At the default 60 % threshold
+M and L find the same objects in the test photos as S, with fewer weak false boxes, so the
+threshold is the same for every detector.
 
 1. Crop the ROI's bounding box plus a margin (`DETECTION["context_margin"]`) so edge objects are
    seen whole; stretch to 640×640 (no letterbox), scale to 0–1.
@@ -151,17 +170,27 @@ knew). Instead a second step compares boxes with boxes the user taught:
 - Nothing changes for a sensor until something is taught; **Use what you taught** off skips it.
   The analysed frames of the last checks are kept (`frames_kept`) so a box can be taught a while
   after it was shown. Export/import carries taught boxes and own labels.
+- **Tunable** (`settings.TEACH_TUNABLE`): `match_similarity`, `keep_similarity`, `ask_similarity`,
+  `rescue_similarity` and `rescue_floor` can be set by the user, globally (DB setting `teach`,
+  `GET/PUT /api/v1/teach-limits`) and per sensor (`objects["teach"]`); unset values inherit.
+  `settings.merge_teach`: the backbone's defaults (`TEACH`, with `TEACH_BY_BACKBONE` on top) <
+  global < sensor. Asking and keeping must not start above a match (refused by the API). A user's
+  value stays when the backbone changes; the UI says to look at it again.
 
 - Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
-  (`tests/assets`) now guard every model file. 8-bit variants were slower and worse on CPU.
+  (`tests/assets`, `tests/test_models.py`) now guard every model file. 8-bit variants were slower and worse on CPU.
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
 | ID | Model | Use |
 |---|---|---|
-| `ppocrv6-tiny` | PP-OCRv6 tiny rec, ONNX (bundled, 4.5 MB) | Default; ~2 ms per read on a desktop CPU |
+| `ppocrv6-tiny` | PP-OCRv6 tiny rec, ONNX (bundled, 4.5 MB) | Default |
 | `ppocrv6-small` | PP-OCRv6 small rec, ONNX (downloaded on demand, 21 MB) | Unusual fonts |
+
+PP-OCRv6 medium (77 MB) was evaluated and left out (2026-10-11): on 280 drawn LCD/LED displays
+(clean, blurred, low resolution, low contrast, noisy, tilted, heavy JPEG) and 49 drawn counters
+it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-segment digits.
 
 1. Crop the ROI's bounding box (no margin, no mask). Display *auto*: autocontrast greyscale;
    when the read is unsure (< `READING["segments_fallback_below"]`) also try the digits' own
@@ -519,6 +548,7 @@ is part of backups and needs no restart.
 | **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
 | **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right; export v2 of readings | 0.8.0 (betas 0.7.1b3–b6) |
 | **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
+| **Larger models, tunable teaching** ✅ | D-FINE M and L, DINOv2 base, a model comparison in Settings, teaching limits globally and per sensor | beta 0.8.1b1 |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

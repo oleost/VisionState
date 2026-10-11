@@ -107,7 +107,16 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
             vectors = await asyncio.to_thread(teach.embed, embedder, crops)
         n = len(checked)
         return teach.apply(
-            found, checked, vectors[:n], rescue, vectors[n:], index, cfg.objects["classes"], cfg.parents, previous
+            found,
+            checked,
+            vectors[:n],
+            rescue,
+            vectors[n:],
+            index,
+            cfg.objects["classes"],
+            cfg.parents,
+            previous,
+            self.teach_limits(cfg),
         )
 
     def taught_changed(self, sensor_id: int) -> None:

@@ -32,6 +32,7 @@ from ..settings import (
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
+    TEACH_TUNABLE_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
@@ -180,6 +181,30 @@ class Triggers(BaseModel):
 
 _olo = {k: v[0] for k, v in OBJECT_LIMITS.items()}
 _ohi = {k: v[1] for k, v in OBJECT_LIMITS.items()}
+_tlo = {k: v[0] for k, v in TEACH_TUNABLE_LIMITS.items()}
+_thi = {k: v[1] for k, v in TEACH_TUNABLE_LIMITS.items()}
+
+
+class TeachLimits(BaseModel):
+    """The tunable teaching limits (settings.TEACH_TUNABLE). None = inherit: globally the
+    backbone's default, on a sensor the global value."""
+
+    match_similarity: float | None = Field(None, ge=_tlo["match_similarity"], le=_thi["match_similarity"])
+    keep_similarity: float | None = Field(None, ge=_tlo["keep_similarity"], le=_thi["keep_similarity"])
+    ask_similarity: float | None = Field(None, ge=_tlo["ask_similarity"], le=_thi["ask_similarity"])
+    rescue_similarity: float | None = Field(None, ge=_tlo["rescue_similarity"], le=_thi["rescue_similarity"])
+    rescue_floor: float | None = Field(None, ge=_tlo["rescue_floor"], le=_thi["rescue_floor"])
+
+    def stored(self) -> dict:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+def check_teach(limits: dict) -> None:
+    """Effective teaching limits must make sense together: asking and keeping start below a match."""
+    if limits["ask_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Asks you in the review queue” must not be above “Recognised as a box you taught”")
+    if limits["keep_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Keeps that answer” must not be above “Recognised as a box you taught”")
 
 
 class ObjectsIn(BaseModel):
@@ -191,7 +216,14 @@ class ObjectsIn(BaseModel):
         default=OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"]
     )
     use_taught: bool = OBJECT_DEFAULTS["use_taught"]
+    teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
     # Own labels ("custom") are made by teaching a box (api/teach.py), never set here.
+
+    def stored(self, exclude_unset: bool = False) -> dict:
+        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach"})
+        if self.teach is not None or not exclude_unset:
+            data["teach"] = self.teach.stored() if self.teach else {}
+        return data
 
     @field_validator("classes")
     @classmethod

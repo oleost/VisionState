@@ -199,6 +199,21 @@ export interface ObjectSettings {
   clear_after_s: number;
   /** Compare boxes with what was taught; off = the detector alone. */
   use_taught: boolean;
+  /** This sensor's own teaching limits; a missing one follows the global value. */
+  teach?: TeachOverrides;
+}
+
+export type TeachKey = 'match_similarity' | 'keep_similarity' | 'ask_similarity' | 'rescue_similarity' | 'rescue_floor';
+export type TeachLimits = Record<TeachKey, number>;
+/** Teaching limits that may be unset (null): globally the state model's default, on a sensor the global value. */
+export type TeachOverrides = Partial<Record<TeachKey, number | null>>;
+
+/** GET /teach-limits: the global teaching limits. */
+export interface TeachLimitsInfo {
+  backbone: string;
+  defaults: TeachLimits;
+  values: TeachOverrides;
+  effective: TeachLimits;
 }
 
 export interface ObjectLive {
@@ -370,7 +385,7 @@ export interface AppConfig {
   object_labels: ObjectLabel[];
   object_popular: string[];
   /** Teaching object sensors: the label of a box that is not what the detector said. */
-  teach: { none_label: string; max_labels: number };
+  teach: { none_label: string; max_labels: number; tunable: TeachKey[]; limits: Record<TeachKey, [number, number]> };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
@@ -527,6 +542,13 @@ export interface BackboneInfo {
   description: string;
   installed: boolean;
   size: number;
+  license: string;
+  source: string;
+  /** Rough extra memory once loaded, and the time of one check (4 threads of a desktop CPU). */
+  ram_mb: number;
+  time_ms: number;
+  /** Rank within its kind, 1-5. */
+  accuracy: number;
 }
 
 /** GET /storage: disk use and the history limits (whichever is reached first applies). */
@@ -542,10 +564,7 @@ export interface StorageInfo {
   history_max_gb: number;
 }
 
-export interface DetectorInfo extends BackboneInfo {
-  license: string;
-  source: string;
-}
+export type DetectorInfo = BackboneInfo;
 
 export interface SettingsInfo {
   backbone: string;

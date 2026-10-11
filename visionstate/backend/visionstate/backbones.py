@@ -3,7 +3,7 @@
 Available backbones are declared in ``backbones.json``; adding a model is a new entry there.
 Entries are never changed or removed once released, so a stored choice keeps working.
 Run ``python -m visionstate.backbones <dest>`` to download all bundled models (backbones,
-detectors, readers) for the Dockerfile and CI. ``download``/``locate`` work for every kind of spec.
+detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloaded on first use. ``download``/``locate`` work for every kind of spec.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import logging
 import sys
 import threading
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -42,6 +42,27 @@ class ModelFile(Protocol):
 
 
 @dataclass(frozen=True)
+class Footprint:
+    """What a model costs and gives, roughly, for the model comparison in Settings.
+
+    Measured with ONNX Runtime on 4 threads of a desktop CPU (the extra memory once loaded and
+    run, the time of one check); ``accuracy`` ranks the models of one kind from 1 to 5. Texts and
+    these numbers may be updated in a released entry; its file and inputs never change.
+    """
+
+    ram_mb: int = 0
+    time_ms: int = 0
+    accuracy: int = 0
+
+    @classmethod
+    def of(cls, entry: dict) -> Footprint:
+        return cls(int(entry.get("ram_mb", 0)), int(entry.get("time_ms", 0)), int(entry.get("accuracy", 0)))
+
+    def as_dict(self) -> dict:
+        return {"ram_mb": self.ram_mb, "time_ms": self.time_ms, "accuracy": self.accuracy}
+
+
+@dataclass(frozen=True)
 class BackboneSpec:
     id: str
     name: str
@@ -54,6 +75,9 @@ class BackboneSpec:
     std: tuple[float, float, float]
     pooling: str
     bundled: bool
+    license: str = ""
+    source: str = ""
+    footprint: Footprint = field(default_factory=lambda: Footprint())
 
     @property
     def filename(self) -> str:
@@ -76,6 +100,9 @@ def load_registry() -> tuple[str, dict[str, BackboneSpec]]:
             std=tuple(v["std"]),
             pooling=v.get("pooling", "cls_mean"),
             bundled=bool(v.get("bundled", False)),
+            license=v.get("license", ""),
+            source=v.get("source", ""),
+            footprint=Footprint.of(v),
         )
         for key, v in raw["backbones"].items()
     }
@@ -172,9 +199,11 @@ if __name__ == "__main__":
     from . import detectors, readers
 
     logging.basicConfig(level=logging.INFO)
-    destination = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
-    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers (readings).
+    args = [a for a in sys.argv[1:] if a != "--all"]
+    destination = Path(args[0] if args else "models")
+    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers
+    # (readings); with --all also the ones downloaded on first use, for the tests of every model.
     specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
     for spec in [*specs, *readers.WHEEL_READERS.values()]:
-        if spec.bundled:
+        if spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

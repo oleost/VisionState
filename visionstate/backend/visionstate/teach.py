@@ -177,6 +177,7 @@ def apply(
     classes: list[str],
     parents: dict[str, str],
     previous: list[dict] | None = None,
+    limits: dict | None = None,
 ) -> list[dict]:
     """The boxes of a check after comparing them with the taught ones.
 
@@ -186,16 +187,18 @@ def apply(
     ``previous`` (the boxes of the last check) lets an object that stayed where it was keep its
     answer at a lower similarity (``kept``, see TEACH["keep_similarity"]). A box that may be an
     own label, but not clearly, gets ``ask`` ({id, label, similarity}; see TEACH["ask_similarity"]).
+    ``limits``: the sensor's teaching limits (settings.merge_teach); TEACH when not given.
     """
+    limits = limits or TEACH
     result = [dict(d) for d in found]
     for i, vector in zip(checked, checked_vectors, strict=True):
-        match = nearest(index, vector, TEACH["match_similarity"])
+        match = nearest(index, vector, limits["match_similarity"])
         if match is None:
-            match = _kept(index, vector, result[i]["box"], previous or [])
+            match = _kept(index, vector, result[i]["box"], previous or [], limits["keep_similarity"])
             if match is not None:
                 result[i]["kept"] = True
         if match is None:
-            if ask := _unsure(index, vector, result[i]["key"], parents):
+            if ask := _unsure(index, vector, result[i]["key"], parents, limits["ask_similarity"]):
                 result[i]["ask"] = ask
             continue
         det = result[i]
@@ -211,7 +214,7 @@ def apply(
         if label:
             det["label"] = label
     for cand, vector in zip(rescue, rescue_vectors, strict=True):
-        match = nearest(index, vector, TEACH["rescue_similarity"])
+        match = nearest(index, vector, limits["rescue_similarity"])
         if match is None:
             continue
         key, label = resolve(match.label, parents)
@@ -229,7 +232,9 @@ def apply(
     return result
 
 
-def _kept(index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous: list[dict]) -> Match | None:
+def _kept(
+    index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous: list[dict], keep_similarity: float
+) -> Match | None:
     """The answer a box got in the last check, when it is the same object at the same place and
     still close to that taught label (just below match_similarity, e.g. in other light)."""
     before = [
@@ -237,13 +242,15 @@ def _kept(index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous
         for d in previous
         if d.get("match") and not d.get("rescued") and _iou(d["box"], box) >= TEACH["keep_iou"]
     ]
-    match = nearest(index, vector, TEACH["keep_similarity"]) if before else None
+    match = nearest(index, vector, keep_similarity) if before else None
     return match if match is not None and match.label in before else None
 
 
-def _unsure(index: TaughtIndex, vector: np.ndarray, key: str, parents: dict[str, str]) -> dict | None:
+def _unsure(
+    index: TaughtIndex, vector: np.ndarray, key: str, parents: dict[str, str], ask_similarity: float
+) -> dict | None:
     """The own label (of the box's class) a box is close to but not clearly, to ask about."""
-    near = nearest(index, vector, TEACH["ask_similarity"])
+    near = nearest(index, vector, ask_similarity)
     if near is None:
         return None
     parent, label = resolve(near.label, parents)

@@ -61,7 +61,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
   exception (log it once, try again) — only `CancelledError` may end it.
 - Model registries (`backbones.json`, `detectors.json`, `readers.json`): entries are never changed
-  or removed once released; a new model gets a new id, pinned by Hugging Face revision and SHA-256,
+  or removed once released (their texts and measured footprint may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
   broken and only a test with real photos showed it).
 - Frontend: colours/type/spacing only in `tokens.css`, UI constants in `ui.ts`, API URLs only in
@@ -78,7 +78,8 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - Backend: `cd visionstate/backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check visionstate tests && .venv/Scripts/ruff format visionstate tests`
   and the types `.venv/Scripts/pyright --pythonpath .venv/Scripts/python.exe` (0 errors; on Linux and
   macOS the venv's programs are in `.venv/bin/`). Tests need
-  the bundled models once: `python -m visionstate.backbones models`. CI fails below 88 % coverage;
+  the bundled models once: `python -m visionstate.backbones models` (`--all` adds the downloadable
+  ones, so `tests/test_models.py` checks every model). CI fails below 88 % coverage;
   `--cov=visionstate --cov-report=term-missing:skip-covered` shows what is not tested.
 - Frontend: `cd visionstate/frontend && npm run check && npm run build`.
 - UI: see the routine below — every UI change, and before every beta release.

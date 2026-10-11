@@ -39,6 +39,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         MQTT, the Home Assistant event stream and the housekeeping loops."""
         self._loop = asyncio.get_running_loop()
         self.global_review = await asyncio.to_thread(self.db.get_dict, "review")
+        self.global_teach = await asyncio.to_thread(self.db.get_dict, "teach")
         self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
         self.reminder_rules = await asyncio.to_thread(self.db.get_dict, "reminder")
         self.reminder_sent_at = await asyncio.to_thread(self.db.get_setting, "reminder_sent_at")
@@ -145,6 +146,11 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
     def set_global_review(self, rules: dict) -> None:
         self.global_review = dict(rules)
         self.db.set_setting("review", self.global_review)
+
+    def set_global_teach(self, limits: dict) -> None:
+        """The user's teaching limits for all sensors; only the ones set (not None) are kept."""
+        self.global_teach = {k: v for k, v in limits.items() if v is not None}
+        self.db.set_setting("teach", self.global_teach)
 
     def _trigger_index(self) -> dict[str, set[int]]:
         index: dict[str, set[int]] = {}

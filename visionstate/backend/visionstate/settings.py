@@ -54,6 +54,7 @@ OBJECT_DEFAULTS = {
     # The user's own labels, each a kind of one of the classes: [{"key", "name", "parent"}], e.g.
     # "Our car" under "car". Each gets the same two entities as a class. Made by teaching a box.
     "custom": [],
+    "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
@@ -197,6 +198,25 @@ TEACH = {
     "list_limit": 50,  # filtered-away boxes listed on the Quality tab
 }
 NONE_LABEL = "none"  # taught label of a box that is not what the detector said
+
+# The limits of TEACH a user can change: globally (Settings → Teaching object sensors, DB setting
+# "teach") and per sensor (objects["teach"]); empty = inherit. Effective: merge_teach.
+TEACH_TUNABLE = ("match_similarity", "keep_similarity", "ask_similarity", "rescue_similarity", "rescue_floor")
+TEACH_TUNABLE_LIMITS = {
+    "match_similarity": (0.5, 0.99),
+    "keep_similarity": (0.5, 0.99),
+    "ask_similarity": (0.5, 0.99),
+    "rescue_similarity": (0.5, 0.99),
+    "rescue_floor": (0.05, 0.6),
+}
+# Defaults of a backbone whose similarities spread differently from DINOv2 small's (TEACH was
+# measured on that). DINOv2 base, on the CC0 test photos (14 objects; the same object with other
+# light, framing, blur, JPEG or night colours vs other objects of its kind): at 0.88 one pair of
+# different dogs counted as the same (0.891); at 0.90 none did, and 93 % of the changed copies
+# of an object were still recognised, as with DINOv2 small 8-bit at 0.88.
+TEACH_BY_BACKBONE: dict[str, dict[str, float]] = {
+    "dinov2-base": {"match_similarity": 0.9, "rescue_similarity": 0.92},
+}
 
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
@@ -422,11 +442,25 @@ def merge_reminder(stored: dict | None) -> dict:
     return {**REMINDER_DEFAULTS, **{k: v for k, v in (stored or {}).items() if k in REMINDER_DEFAULTS}}
 
 
+def teach_defaults(backbone: str) -> dict:
+    """The tunable teaching limits as they are by default for ``backbone``."""
+    return {key: TEACH_BY_BACKBONE.get(backbone, {}).get(key, TEACH[key]) for key in TEACH_TUNABLE}
+
+
+def merge_teach(backbone: str, global_limits: dict | None, sensor_overrides: dict | None) -> dict:
+    """Effective teaching limits (all of TEACH): defaults of the backbone < global < sensor overrides."""
+    merged = {**TEACH, **teach_defaults(backbone)}
+    for overrides in (global_limits, sensor_overrides):
+        merged.update({k: v for k, v in (overrides or {}).items() if v is not None and k in TEACH_TUNABLE})
+    return merged
+
+
 def merge_objects(stored: dict | None) -> dict:
     """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
     merged = {**OBJECT_DEFAULTS, **(stored or {})}
     merged["classes"] = list(merged.get("classes") or [])
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
+    merged["teach"] = {k: v for k, v in (merged.get("teach") or {}).items() if k in TEACH_TUNABLE and v is not None}
     return merged
 
 

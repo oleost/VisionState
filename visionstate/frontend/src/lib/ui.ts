@@ -58,6 +58,53 @@ export const REVIEW_FIELDS = [
   { key: 'spot_rate', label: 'Random spot checks of confident frames', unit: '%', scale: 100, step: 0.5 },
 ] as const;
 
+/** The teaching limits a user can change (settings.TEACH_TUNABLE), in the order shown. */
+export const TEACH_FIELDS = [
+  {
+    key: 'match_similarity',
+    label: 'Recognised as a box you taught from',
+    help: 'How close a box must be to one you taught to take its answer.',
+  },
+  {
+    key: 'keep_similarity',
+    label: 'Keeps that answer, while it stays in place, down to',
+    help: 'A parked car stays "Our car" when the light changes a little.',
+  },
+  {
+    key: 'ask_similarity',
+    label: 'Asks you in the review queue from',
+    help: 'Between this and the first value, a box that may be one of your own labels is asked about.',
+  },
+  {
+    key: 'rescue_similarity',
+    label: 'Finds a missed object again from',
+    help: 'Once you drew a box the AI missed, unsure boxes this close to it count.',
+  },
+  {
+    key: 'rescue_floor',
+    label: 'Looks again at AI boxes down to',
+    help: 'The weakest AI confidence looked at for missed objects.',
+  },
+] as const;
+
+/** The model comparison under Settings → AI model: one row per kind, in the order shown. */
+export const MODEL_KINDS = [
+  {
+    key: 'backbones',
+    title: 'State sensors',
+    text: 'Turns the region into numbers that a small model per sensor learns your states from. A larger model tells similar states (and taught objects) apart better.',
+  },
+  {
+    key: 'detectors',
+    title: 'Object sensors',
+    text: 'Finds people, vehicles and animals. Larger models find more small, far-off and partly hidden objects.',
+  },
+  { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
+  { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
+] as const;
+export const MODEL_COMPARE_NOTE =
+  'Rough numbers: extra memory once loaded, and time per check on 4 cores of a desktop PC. A Raspberry Pi 4 takes about 20–40 times as long; a check only runs when it is due or something changed.';
+
 export const SAMPLE_ORIGINS: Record<string, string> = {
   snapshot: 'Snapshot',
   upload: 'Upload',

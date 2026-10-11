@@ -12,7 +12,10 @@
       "chars": {"0": 33, "1": 34, "2": 35, "3": 36, "4": 37, "5": 38, "6": 39, "7": 40, "8": 41, "9": 42, ".": 14, ",": 12, ":": 16, "-": 13},
       "license": "Apache-2.0",
       "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx",
-      "bundled": true
+      "bundled": true,
+      "ram_mb": 20,
+      "time_ms": 3,
+      "accuracy": 3
     },
     "ppocrv6-small": {
       "name": "PP-OCRv6 small",
@@ -25,7 +28,10 @@
       "chars": {"0": 33, "1": 34, "2": 35, "3": 36, "4": 37, "5": 38, "6": 39, "7": 40, "8": 41, "9": 42, ".": 14, ",": 12, ":": 16, "-": 13},
       "license": "Apache-2.0",
       "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx",
-      "bundled": false
+      "bundled": false,
+      "ram_mb": 40,
+      "time_ms": 8,
+      "accuracy": 4
     }
   },
   "wheel_readers": {
@@ -42,7 +48,10 @@
         "bins": 100,
         "license": "Apache-2.0",
         "source": "https://huggingface.co/oleost/visionstate-wheel-reader",
-        "bundled": true
+        "bundled": true,
+        "ram_mb": 12,
+        "time_ms": 5,
+        "accuracy": 3
       }
     }
   }

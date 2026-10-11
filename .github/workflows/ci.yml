@@ -25,12 +25,12 @@ jobs:
           cache: pip
           cache-dependency-path: visionstate/backend/requirements*.txt
       - run: pip install -r requirements-dev.txt
-      - name: Cache AI model
+      - name: Cache AI models (all of them, for tests/test_models.py)
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
-      - run: python -m visionstate.backbones models
+          key: models-all-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
+      - run: python -m visionstate.backbones models --all
       - run: ruff check visionstate tests
       - run: ruff format --check visionstate tests
       - name: Types (pyright)
