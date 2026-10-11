@@ -110,6 +110,15 @@ itself (`__main__.py`).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.
+- **On a real Home Assistant, without a release:** build the working copy as a *local app*. Copy the
+  `visionstate/` folder (without `node_modules`, `dist`, `.venv`, `models`) into the `local_apps`
+  folder of Home Assistant (older versions: `addons`; reach it with the Samba or Terminal & SSH app),
+  and in that copy's `config.yaml` delete `image:` and give it its own `name`, `slug`, `panel_title`
+  and `VISIONSTATE_MEDIA` folder. Home Assistant then builds the Dockerfile itself, the same image
+  as a release (*Local apps* in the app store; after a change: *Rebuild*). It shares MQTT topics and
+  unique IDs with an installed VisionState, so never run both at once; it has its own data (move
+  sensors with export/import). This is how changes are tried on Home Assistant during development;
+  a beta is released when the maintainer asks for one.
 
 ## UI testing routine
 
