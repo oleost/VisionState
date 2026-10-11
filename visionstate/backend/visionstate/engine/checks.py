@@ -248,12 +248,14 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             if live.signature is not None:
                 live.change_score = imaging.change_score(live.signature, signature)
             live.signature = signature
-        live.frame_id = frame_id
         await self._send(cfg, t["availability"], "online", retain=True)
         if cfg.is_objects:
             live.analysed.append((frame_id, data))
-            await self._run_objects(cfg, image)
+            # The frame on screen changes together with its boxes, once they are found (the UI
+            # draws the boxes of live.detections on live.frame_id).
+            await self._run_objects(cfg, image, frame_id)
             return
+        live.frame_id = frame_id
         if cfg.is_reading:
             await self._run_reading(cfg, image, lit)
             return

@@ -27,8 +27,9 @@ OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an ob
 
 
 class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase):
-    async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
-        """One check of an object sensor: detect, compare with what was taught, update and publish."""
+    async def _run_objects(self, cfg: SensorConfig, image: Image.Image, frame_id: str | None) -> None:
+        """One check of an object sensor: detect, compare with what was taught, update and publish.
+        ``frame_id`` (the frame analysed) is announced together with what was found in it."""
         live = self.live_state(cfg.id)
         classes = cfg.objects["classes"]
         index = await self.taught_index(cfg)
@@ -39,6 +40,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
         except Exception as err:  # noqa: BLE001 - detector missing or failed to load
             live.error = f"Object detector unavailable: {redact(str(err))}"
+            live.frame_id, live.detections = frame_id, []
             return
         candidates: list[dict] = []
         if rescue:
@@ -50,7 +52,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             found = await self.apply_faces(cfg, image, found, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
-        live.detections = found
+        live.frame_id, live.detections = frame_id, found  # together: the boxes belong to that frame
         best = max(counted, key=lambda d: d["score"], default=None)
         live.top, live.confidence = (best.get("label") or best["key"], best["score"]) if best else (None, 0.0)
         keys = cfg.object_keys

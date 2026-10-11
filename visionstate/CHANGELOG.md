@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1b5
+
+### Fixed
+
+- **Boxes on the Live tab now always match the picture.** While a check was still looking for
+  objects and faces, the Live tab could show its new frame with the boxes of the check before — a
+  person (and their face) drawn where nobody stood any more. A new frame now appears together with
+  what was found in it.
+
 ## 0.8.1b4
 
 ### New
