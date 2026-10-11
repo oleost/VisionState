@@ -10,7 +10,7 @@ it is in [`CLAUDE.md`](../CLAUDE.md).
 repository.yaml, README.md, CLAUDE.md, SECURITY.md
 visionstate/            the Home Assistant app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
   backend/              Python package `visionstate` + tests (the Dockerfile builds from visionstate/)
-  frontend/             Svelte app, Playwright tests in e2e/
+  frontend/             Svelte app, Playwright tests in e2e/ (and promo.mjs: the README screenshots)
 scripts/                channel.py (stable/beta config), fake_camera.py (test camera), seed_demo.py
                         (the demo sensors), CI helpers:
                         check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py

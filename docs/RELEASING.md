@@ -82,12 +82,14 @@ all of it and tell the maintainer what was checked and what was found.
    - open the app in Home Assistant at desktop width and on a phone (Ingress);
    - prepare the **update from the last stable release**: the stable app is installed there too. It
      shares MQTT topics and unique IDs with the beta app, so never run both: stop the beta app,
-     start the stable one, and give it one sensor of each kind (exports of the standing test sensors).
+     start the stable one, and give it one sensor of each kind (exports of the standing test sensors,
+     or `scripts/seed_demo.py --app <slug>` once the stable release can teach faces from photos).
 3. **What changed since the last stable release**: new or upgraded dependencies have a licence that
    fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
    visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest Home
    Assistant that works; the docs describe what is being released (the roadmap in `SCOPE.md` and
-   the status in `WHEEL_READER_PLAN.md` included).
+   the status in `WHEEL_READER_PLAN.md` included), and the README screenshots show today's app
+   (`docs/promo/`, how to take them in `CLAUDE.md`).
 
 ## Promote to stable
 
