@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1b2
+
+### Fixed
+
+- **Switching AI models gives the memory back.** After choosing another model under **Settings → AI
+  model**, the memory of the old one now goes back to the system instead of staying with the app
+  until a restart: switching between the included and the larger models back and forth made the app
+  a few hundred MB larger every time.
+
 ## 0.8.1b1
 
 ### New

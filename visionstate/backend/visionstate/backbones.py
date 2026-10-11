@@ -8,6 +8,8 @@ detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloade
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import hashlib
 import json
 import logging
@@ -157,6 +159,19 @@ def cpu_session(model_path: Path):
     options = ort.SessionOptions()
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
+
+
+def release_memory() -> None:
+    """Give the memory of models that are no longer used back to the system.
+
+    A dropped ONNX Runtime session is freed, but glibc keeps the freed memory for later use, so
+    switching models left the app hundreds of MB larger every time (until a restart).
+    ``malloc_trim`` returns it; on other C libraries (Windows, macOS) there is nothing to do."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError, AttributeError:
+        pass
 
 
 class Embedder:

@@ -142,6 +142,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             self.detector = None  # the last object sensor is gone: free the memory
         if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
             self.reader = None
+        await asyncio.to_thread(backbones.release_memory)
 
     def set_global_review(self, rules: dict) -> None:
         self.global_review = dict(rules)

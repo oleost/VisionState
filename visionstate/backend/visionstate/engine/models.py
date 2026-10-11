@@ -34,6 +34,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
 
     async def set_backbone(self, backbone_id: str) -> None:
         await self.load_embedder(backbone_id)
+        await asyncio.to_thread(backbones.release_memory)
         self.db.set_setting("backbone", backbone_id)
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             self.schedule_retrain(sensor_id, delay=0)
@@ -70,6 +71,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         if self.detector is not None or object_sensors:
             async with self._detector_lock:
                 await self.load_detector(detector_id)
+            await asyncio.to_thread(backbones.release_memory)
         await asyncio.to_thread(self.db.set_setting, "detector", detector_id)
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
@@ -102,6 +104,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         if self.reader is not None or reading_sensors:
             async with self._reader_lock:
                 await self.load_reader(reader_id)
+            await asyncio.to_thread(backbones.release_memory)
         await asyncio.to_thread(self.db.set_setting, "reader", reader_id)
         for sensor_id in reading_sensors:
             self.wake(sensor_id, force=True)
