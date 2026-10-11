@@ -1,6 +1,6 @@
 # VisionState
 
-![VisionState with a garage door, a driveway and a power meter sensor](https://raw.githubusercontent.com/oleost/VisionState/main/docs/promo/dashboard.png)
+![VisionState with a driveway, a garage door and a water meter sensor](https://raw.githubusercontent.com/oleost/VisionState/main/docs/promo/dashboard.png)
 
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal

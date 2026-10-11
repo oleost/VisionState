@@ -144,9 +144,15 @@ Many users run Home Assistant on phones and tablets.
 - Handy: only the phone `npx playwright test --project=mobile`; one test `-g "reading sensor"`;
   watch it `--headed` or step through it `--ui`; after a failure `npx playwright show-trace
   test-results/<test>/trace.zip`.
-- **Docs screenshots** (`docs/promo/`): Playwright at 1440 px wide with device scale 1.2, against the
-  fake camera and CC0 photos, with a local MQTT broker so the header shows *MQTT connected*. Keep
-  images in one row the same height, and show the maintainer before publishing.
+- **Demo sensors:** `python scripts/seed_demo.py --url <app> --images <camera>` seeds one sensor of
+  each kind (Driveway with Emma and "Our car", Garage door, Water meter) on any instance: locally
+  with `--images http://127.0.0.1:8765/photo` (the fake camera), or on an installed app with
+  `--app <slug>` (photos from GitHub). Running it twice changes nothing.
+- **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
+  broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
+  `visionstate/frontend` (1440 px wide, device scale 1.2, one row of the README the same height).
+  The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
+  maintainer before publishing.
 
 ## Test pitfalls found the hard way
 
