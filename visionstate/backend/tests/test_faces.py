@@ -261,7 +261,8 @@ def test_people_are_taught_recognised_forgotten_exported(settings):  # noqa: F81
         assert wait_for(lambda: person_with_face(client, sid), timeout=30)
         stats = view(client, sid)["objects"]["face_stats"]
         assert stats["looked"] >= 1 and stats["usable"] >= 1
-        assert stats["frame"] == list(Image.open(ASSETS / "face_williams_2006.jpg").size)
+        with Image.open(ASSETS / "face_williams_2006.jpg") as photo:
+            assert stats["frame"] == list(photo.size)
         # A face nobody is named for keeps its frame in the history (once, not every check).
         seen = {"sensor": sid, "event": "face_seen", "limit": 10}
         assert wait_for(lambda: client.get("/api/v1/history", params=seen).json()["total"] == 1, timeout=30)
@@ -487,3 +488,38 @@ def test_each_person_has_an_entity_saying_where_they_are():
     assert config["default_entity_id"] == "sensor.visionstate_ole" and config["name"] == "Ole"
     assert config["unique_id"] == "visionstate_person_ole" and config["device"]["identifiers"] == ["visionstate"]
     assert config["state_topic"] == person_topics("ole")["state"] == "visionstate/people/ole/state"
+
+
+@requires_faces
+def test_people_are_taught_from_photos(settings):  # noqa: F811
+    from visionstate.uploads import zip_bytes
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        photo = (ASSETS / "face_williams_2006.jpg").read_bytes()
+        files = [("files", ("suni.jpg", photo, "image/jpeg"))]
+        # Only once a sensor recognises faces (its confirmation fetches the face model).
+        assert client.post("/api/v1/people/photos", data={"new_person": "Suni"}, files=files).status_code == 400
+        create(client, objects=faces_patch(True)["objects"])
+        assert wait_for(lambda: rt.face_model is not None, timeout=60)
+        blank = io.BytesIO()
+        Image.new("RGB", (640, 480), (90, 90, 90)).save(blank, "JPEG")
+        files = [("files", ("suni.jpg", photo, "image/jpeg")), ("files", ("wall.jpg", blank.getvalue(), "image/jpeg"))]
+        made = client.post("/api/v1/people/photos", data={"new_person": "Suni"}, files=files)
+        assert made.status_code == 201, made.text
+        body = made.json()
+        assert body["label"] == "suni" and body["added"] == 1 and body["faces"] == 1
+        assert body["skipped"] == [{"file": "wall.jpg", "message": "No face found in this photo."}]
+        # More of an existing person, from a ZIP (as from a state sensor's upload).
+        archive = zip_bytes({"a.jpg": (ASSETS / "face_williams_2018.jpg").read_bytes()})
+        more = client.post(
+            "/api/v1/people/photos", data={"person": "suni"}, files=[("files", ("p.zip", archive, "application/zip"))]
+        )
+        assert more.status_code == 201 and more.json()["faces"] == 2
+        [suni] = client.get("/api/v1/people").json()["people"]
+        assert {f["origin"] for f in suni["faces"]} == {"upload"} and all(f["sensor_id"] is None for f in suni["faces"])
+        # No usable face: nobody is made.
+        empty = [("files", ("wall.jpg", blank.getvalue(), "image/jpeg"))]
+        nobody = client.post("/api/v1/people/photos", data={"new_person": "Nobody"}, files=empty).json()
+        assert nobody["added"] == 0 and len(client.get("/api/v1/people").json()["people"]) == 1
+        assert client.post("/api/v1/people/photos", files=empty).status_code == 400  # who is it?

@@ -8,6 +8,7 @@ import type {
   FaceStatus,
   ModelKind,
   People,
+  PhotoResult,
   Camera,
   Detection,
   HaEntity,
@@ -278,6 +279,14 @@ export const api = {
   /** A person (or, without a key, everyone) with their faces and entities on every sensor. */
   forgetPerson: (key: string) => request<void>(`people/${encodeURIComponent(key)}`, send('DELETE')),
   forgetPeople: () => request<void>('people', send('DELETE')),
+  /** Faces from photos or short videos (a phone's camera or gallery) for a person or a new one. */
+  addPhotos(who: { person: string } | { new_person: string }, files: File[]) {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f, f.name));
+    if ('person' in who) form.append('person', who.person);
+    else form.append('new_person', who.new_person);
+    return request<PhotoResult>('people/photos', { method: 'POST', body: form });
+  },
   retryFaces: () => request<FaceStatus>('faces/retry', send('POST')),
   faceLimits: () => request<FaceLimitsInfo>('face-limits'),
   saveFaceLimits: (values: FaceOverrides) => request<FaceLimitsInfo>('face-limits', send('PUT', values)),

@@ -227,7 +227,9 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   them last when several do — or `settings.PERSON_NOT_SEEN`; when and where they were last seen
   are attributes. Kept in memory: after a restart everyone is `not_seen` until seen again.
 - `GET /people` and `/faces/{id}` (`api/faces.py`) list, rename, move and forget for all sensors;
-  teaching stays on a sensor (`/sensors/{id}/faces`). Export carries the faces taught on that
+  teaching stays on a sensor (`/sensors/{id}/faces`), or comes from photos (`POST /people/photos`:
+  read like a state sensor's upload, `uploads.frames_from_file`; the best face of each picture
+  through the same gate, at most `FACES["max_photos"]`; origin `upload`, no sensor). Export carries the faces taught on that
   sensor, with their people's keys and names, only with `?faces=true`; import adds them to the
   person with that key or name (or a new one) and turns face recognition off.
 

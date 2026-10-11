@@ -1,6 +1,6 @@
 // Helpers for object sensors: display names and colours of object classes and own labels.
 import { app } from './app.svelte';
-import type { Detection, FaceProblem, OwnLabel, Sensor } from './types';
+import type { Detection, FaceProblem, OwnLabel, PhotoResult, Sensor } from './types';
 
 /**
  * Display name of an object class ("traffic_light" → "Traffic light"), from the backend label
@@ -31,6 +31,15 @@ export const facesOn = (sensor: Pick<Sensor, 'objects'>) =>
 /** The people (shared by every sensor) among an object sensor's labels while it recognises faces. */
 export const peopleOf = (sensor: Pick<Sensor, 'objects'>): OwnLabel[] =>
   (sensor.objects?.custom ?? []).filter((l) => l.face);
+
+/** What adding photos did, for a toast: "2 faces added to Kari", and why a file was skipped. */
+export function photoMessage(result: PhotoResult): string {
+  const added = result.added
+    ? `${result.added} ${result.added === 1 ? 'face' : 'faces'} added to ${result.name}`
+    : 'No face added';
+  const skipped = result.skipped.map((s) => (s.file ? `${s.file}: ${s.message}` : s.message));
+  return [added, ...skipped].join(' · ');
+}
 
 /** Why the face of a person box cannot be used, in a few words. */
 export const FACE_PROBLEMS: Record<FaceProblem, string> = {

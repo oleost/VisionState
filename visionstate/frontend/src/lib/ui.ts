@@ -92,6 +92,9 @@ export const TEACH_FIELDS = [
 export const SMALL_FRAME_PX = 1280;
 export const LOW_STREAM_NAME = /(^|[^a-z])(fluent|sub|low|lowres)([^a-z]|$)/i;
 
+/** Files a phone offers for faces: photos (its camera or gallery), short videos, ZIP archives. */
+export const PHOTO_ACCEPT = 'image/*,video/*,.zip';
+
 /** The faces' limits, on the Settings page and an object sensor's Faces card (in this order). */
 export const FACE_FIELDS = [
   {

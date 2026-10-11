@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.1b4
+
+### New
+
+- **Teach a face from your phone.** On the **People** page, **Add a person** or **Add photos** on a
+  person takes photos straight from the phone's camera or its gallery (also in the Home Assistant
+  app), a short video turning the head a little, or a ZIP of photos. Each goes through the same
+  check as a face on a camera, and the message says what was added and why a photo was skipped.
+  A quick start; faces taught on each camera still recognise people best.
+
 ## 0.8.1b3
 
 ### New

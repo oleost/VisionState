@@ -252,6 +252,15 @@ export interface Person {
   }[];
 }
 
+/** POST /people/photos: faces added from photos or videos, and the files that had none usable. */
+export interface PhotoResult {
+  label: string | null;
+  name: string | null;
+  added: number;
+  skipped: { file: string; message: string }[];
+  faces: number | null;
+}
+
 /** The face model: chosen, loaded, downloading (bytes) or why it failed. */
 export interface FaceStatus {
   model: string;

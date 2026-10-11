@@ -8,8 +8,10 @@
   import { api } from '../api';
   import { app, refreshStatus, toast, toastError } from '../app.svelte';
   import { ago, dateTime } from '../format';
+  import { photoMessage } from '../objects';
   import { href, paths } from '../router.svelte';
   import type { People, Person, Sensor } from '../types';
+  import { PHOTO_ACCEPT } from '../ui';
   import ConfirmButton from './ConfirmButton.svelte';
   import FaceStats from './FaceStats.svelte';
   import Icon from './Icon.svelte';
@@ -51,6 +53,24 @@
     renaming = null;
     if (name && name !== p.name) await act(() => api.renamePerson(p.key, name), `${p.name} is now ${name}`);
   }
+  let uploading = $state<string | null>(null);
+  async function addPhotos(e: Event, p: Person) {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    if (!files.length) return;
+    uploading = p.key;
+    try {
+      const result = await api.addPhotos({ person: p.key }, files);
+      toast(photoMessage(result));
+      load();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      uploading = null;
+    }
+  }
+
   function seen(p: Person): string {
     const where = p.seen.sensor_name ? ` on ${p.seen.sensor_name}` : '';
     if (p.seen.now !== 'not_seen') return `Seen now${where}`;
@@ -111,6 +131,18 @@
           </span>
         </div>
         <div class="row wrap actions">
+          <input
+            type="file"
+            accept={PHOTO_ACCEPT}
+            multiple
+            class="sr-only"
+            id={`photos-${p.key}`}
+            onchange={(e) => addPhotos(e, p)}
+            disabled={uploading !== null}
+          />
+          <label class="btn sm" for={`photos-${p.key}`} class:disabled={uploading !== null}>
+            <Icon name="camera" size={14} /> {uploading === p.key ? 'Adding…' : 'Add photos'}
+          </label>
           {#if renaming !== p.key}
             <button class="btn sm" onclick={() => startRename(p)}>Rename</button>
           {/if}
@@ -153,7 +185,7 @@
               </button>
             {/if}
             <figcaption class="xsmall faint" title={dateTime(f.created_at)}>
-              {ago(f.created_at)}{f.sensor_name ? ` · ${f.sensor_name}` : ''}
+              {ago(f.created_at)}{f.sensor_name ? ` · ${f.sensor_name}` : f.origin === 'upload' ? ' · photo' : ''}
             </figcaption>
           </figure>
         {/each}
@@ -170,6 +202,10 @@
   .actions {
     gap: var(--space-2);
     justify-content: flex-end;
+  }
+  label.disabled {
+    opacity: 0.5;
+    pointer-events: none;
   }
   .rename {
     gap: var(--space-2);

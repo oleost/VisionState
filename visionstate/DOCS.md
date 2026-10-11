@@ -221,6 +221,12 @@ everyone.
   person has. Someone who was only there for a moment (at a doorbell) can be named afterwards: a
   face nobody is named for keeps a frame in the history (*Face seen, not named*; at most one a
   minute, or a closer one).
+- **From photos**: on the **People** page, **Add a person** (a name, then **Add photos**) or
+  **Add photos** on a person takes photos from the phone — its camera or gallery — or a short video
+  turning the head a little (a frame every half second), or a ZIP of photos. The best face of each
+  goes through the same check; the message says how many were added and why a photo was skipped.
+  A quick start: faces taught on each camera still recognise people best, as a camera sees them
+  from another angle and in other light. Photos can be added once a sensor recognises faces.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
   match names the person; a less certain one needs a second check that agrees. A person who stays
   where they were keeps the name while their face is turned away. Close to someone, but not

@@ -287,6 +287,11 @@ FACES = {
     # seconds per sensor, unless the face came this many times closer (wider) since the last one.
     "record_cooldown_s": 60,
     "record_closer": 1.5,
+    # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
+    # images, ZIP archives and videos): at most this many faces are added from one upload, and a
+    # video gives a frame every this many seconds (turning the head gives several angles).
+    "max_photos": 10,
+    "photo_video_interval_s": 0.5,
 }
 FACE_UNKNOWN_KEY = "unknown_person"  # the key (and entity) of a face nobody was taught for
 # A person's own entity (sensor.visionstate_<key>) says on which sensor they are seen: its slug,

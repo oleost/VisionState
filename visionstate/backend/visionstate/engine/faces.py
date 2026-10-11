@@ -289,6 +289,16 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
     # --- One check ------------------------------------------------------------------------------
 
+    async def face_in_photo(
+        self, model: faces.FaceModel, image: Image.Image
+    ) -> tuple[faces.Face | None, Image.Image | None]:
+        """The best face in a whole photo (a selfie from a phone), with it aligned."""
+        async with self._sem:
+            [face] = await asyncio.to_thread(model.detector.detect, [image])
+        if face is None:
+            return None, None
+        return face, await asyncio.to_thread(faces.align, image, face, model.recogniser.spec.input_size)
+
     async def find_faces(
         self, model: faces.FaceModel, image: Image.Image, boxes: list[Sequence[float]]
     ) -> list[tuple[faces.Face | None, Image.Image | None]]:

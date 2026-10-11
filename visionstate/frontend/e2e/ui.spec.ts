@@ -1295,8 +1295,10 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
   const errors = watchErrors(page);
   const faceId = await seededFaceSensorId(request);
   // Each device runs this against the same backend: start without the person it teaches.
-  const del = await request.delete('api/v1/people/butch');
-  expect([204, 404]).toContain(del.status());
+  for (const key of ['butch', 'kari']) {
+    const del = await request.delete(`api/v1/people/${key}`);
+    expect([204, 404]).toContain(del.status());
+  }
 
   // Turning it on asks first, and says what is stored and downloaded.
   const beach = await seededObjectSensorId(request);
@@ -1360,6 +1362,17 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
   await expect(page.getByText('Butch is now Butch W')).toBeVisible();
   await expect(page.getByRole('heading', { name: /^Butch W/ })).toBeVisible();
   expect((await (await request.get('api/v1/people')).json()).people.map((p: { key: string }) => p.key)).toContain('butch');
+
+  // Photos from the phone: more of a person, and a new person (the photo picker is a file input).
+  const assets = path.join('..', 'backend', 'tests', 'assets');
+  await page.locator('#photos-butch').setInputFiles(path.join(assets, 'face_wilmore.jpg'));
+  await expect(page.getByText('1 face added to Butch W')).toBeVisible({ timeout: 30_000 });
+  await expect(butch.getByText(/· photo/)).toBeVisible();
+  const add = page.getByTestId('add-person');
+  await add.getByLabel('Name of the new person').fill('Kari');
+  await add.locator('input[type=file]').setInputFiles(path.join(assets, 'face_williams_2018.jpg'));
+  await expect(page.getByText('1 face added to Kari')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: /^Kari/ })).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .butch');
   errors.expectNone();

@@ -7,21 +7,25 @@ model is chosen in /settings."""
 from __future__ import annotations
 
 import asyncio
+import itertools
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import detectors, faces, imaging
+from .. import detectors, faces, imaging, uploads
 from ..db import Face, Person, Sensor
 from ..engine import Runtime, SensorConfig
-from ..settings import FACES, KIND_OBJECTS, TEACH, merge_objects
+from ..settings import FACES, KIND_OBJECTS, TEACH, UPLOAD_LIMITS, merge_objects
 from .common import API_PREFIX, iso, runtime, slugify
+from .samples import copy_limited
 from .teach import RESERVED_KEYS, frame_image
 
 router = APIRouter(prefix=f"{API_PREFIX}/sensors", tags=["faces"])
@@ -35,6 +39,17 @@ PROBLEMS = {
     "turned": "The face is turned away too far here. Pick a moment where they look towards the camera.",
     "blurry": "The face is blurry here. Pick a sharper moment.",
     "unsure": "This does not clearly look like a face. Pick another moment.",
+}
+
+
+# The same, about a photo from a phone (People page).
+PHOTO_PROBLEMS = {
+    "none": "No face found in this photo.",
+    "cut": "The edge of this photo cuts the face.",
+    "small": "The face is too small in this photo: take it closer.",
+    "turned": "The face is turned away in this photo: look at the camera.",
+    "blurry": "This photo is blurry.",
+    "unsure": "This does not clearly look like a face.",
 }
 
 
@@ -311,6 +326,91 @@ def _quality(index: faces.FaceIndex, limits: dict[str, float]) -> tuple[dict[int
     limit = limits["match_similarity"] * FACES["look_alike"]
     look_alikes = [{"a": a, "b": b, "similarity": round(v, 3)} for (a, b), v in pairs.items() if v >= limit]
     return suspects, look_alikes
+
+
+@people_router.post("/people/photos", status_code=201)
+async def add_photos(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    person: str | None = Form(default=None, max_length=64),
+    new_name: str | None = Form(default=None, alias="new_person", max_length=64),
+) -> dict:
+    """Teach faces from photos or short videos (taken with a phone or picked from its gallery;
+    read like a state sensor's upload: images, ZIP archives, videos) as one of the people, or as a
+    new person (made only when there is a usable face). The best face of each picture goes
+    through the same quality gate as on a camera; at most FACES["max_photos"] faces are added."""
+    rt = runtime(request)
+    if not person and not (new_name or "").strip():
+        raise HTTPException(400, "Say who it is: a person or a new person")
+    if not await asyncio.to_thread(rt.face_sensor_ids):  # the face model is only fetched after a sensor's confirmation
+        raise HTTPException(400, "Turn on face recognition on a sensor first (its Settings → Faces)")
+    with rt.db.session() as s:
+        if person:
+            person_by_key(s, person)
+        else:
+            if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
+                raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
+            _check_name(s, new_name or "")
+    model = await _face_model(rt)
+    min_px = rt.face_limits(None)["min_face_px"]
+    found: list[tuple[Image.Image, faces.Face]] = []
+    skipped: list[dict] = []
+    for upload_file in files:
+        if len(found) >= FACES["max_photos"]:
+            break
+        name = upload_file.filename or "photo"
+        try:
+            pictures = await asyncio.to_thread(_pictures, upload_file, name, FACES["max_photos"] * 3)
+        except (uploads.UploadError, OSError) as err:
+            skipped.append({"file": name, "message": str(err) or "Not an image this app can read."})
+            continue
+        problems: list[str] = []
+        for image in pictures:
+            face, aligned = await rt.face_in_photo(model, image)
+            problem = "none" if face is None or aligned is None else faces.problem(face, aligned, min_px, image.size)
+            if problem or face is None:
+                problems.append(problem or "none")
+                continue
+            found.append((image, face))
+            if len(found) >= FACES["max_photos"]:
+                break
+        if problems and len(problems) == len(pictures):  # nothing usable in this file
+            skipped.append({"file": name, "message": PHOTO_PROBLEMS.get(problems[0], PHOTO_PROBLEMS["none"])})
+    if not found:
+        return {"label": person, "name": None, "added": 0, "skipped": skipped, "faces": None}
+    with rt.db.session() as s:
+        who = person_by_key(s, person) if person else new_person(s, new_name or "")
+        count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == who.id)) or 0
+        added = 0
+        for image, face in found:
+            if count >= FACES["max_faces_per_person"]:
+                skipped.append({"file": "", "message": f"A person has at most {FACES['max_faces_per_person']} faces."})
+                break
+            crop, local = faces.face_crop(image, face)
+            filename = rt.storage.save_face(crop)
+            add_face_row(s, who.id, None, filename, crop, faces.face_to_dict(local), "upload")
+            count, added = count + 1, added + 1
+        result = {"label": who.key, "name": who.name, "added": added, "skipped": skipped, "faces": count}
+    if not person:
+        await rt.people_changed()
+    else:
+        await asyncio.to_thread(rt.faces_changed)
+    return result
+
+
+def _pictures(upload_file: UploadFile, name: str, limit: int) -> list[Image.Image]:
+    """The pictures in an uploaded file (an image, the images of a ZIP, frames of a video), at
+    most ``limit``; the file goes through a temporary file within the upload limit."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as tmp:
+        path = Path(tmp.name)
+        within = copy_limited(upload_file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
+    try:
+        if not within:
+            raise uploads.UploadError(f"Larger than {UPLOAD_LIMITS['max_file_mb']} MB.")
+        frames = uploads.frames_from_file(path, name, FACES["photo_video_interval_s"])
+        return [image for image, _origin in itertools.islice(frames, limit)]
+    finally:
+        path.unlink(missing_ok=True)
 
 
 @people_router.patch("/people/{key}")
