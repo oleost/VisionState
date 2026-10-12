@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0b1
+
+### Fixed
+
+- **A quiet log when faces are recognised.** Each time the SFace face model was loaded, the app's
+  log filled with 174 harmless warnings from ONNX Runtime about how the model file is stored. The
+  model works exactly as before; only errors from ONNX Runtime are logged now.
+
 ## 0.8.1b5
 
 ### Fixed
