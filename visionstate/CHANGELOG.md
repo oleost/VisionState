@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0b5
+
+### Fixed
+
+- **Opening the People page could fail right after a face was taught** (an error about
+  `face_embedding`), when a check was comparing faces at the same moment.
+
 ## 0.9.0b4
 
 ### Better
