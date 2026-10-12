@@ -16,9 +16,10 @@ from visionstate import imaging
 from visionstate.api.common import Triggers
 from visionstate.db import SCHEMA_VERSION, Database
 from visionstate.engine import LiveState, SensorConfig, entity_triggers, next_check_at
+from visionstate.engine.logic import steer_face_burst
 from visionstate.ha_events import HaEventListener, parse_trigger_event, trigger_subscription
 from visionstate.main import create_app
-from visionstate.settings import TRIGGER_DEFAULTS, Settings, merge_triggers
+from visionstate.settings import FACES, TRIGGER_DEFAULTS, Settings, merge_triggers
 
 from .conftest import requires_model, requires_reader
 from .displays import render
@@ -545,3 +546,51 @@ def test_a_camera_that_hands_out_an_older_picture_is_read_in_the_light(tmp_path,
             assert wait_for(lambda before=before: view()["reading"]["last"]["at"] != before, timeout=30)
             assert view()["reading"]["last"]["reason"] is None, view()["reading"]["last"]
         assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]["rejected"] == 0
+
+
+def person(height: float, face: dict | None = None) -> dict:
+    """A person box of that height (share of the frame) and what the face search found in it."""
+    return {"key": "person", "score": 0.9, "box": [0.4, 0.9 - height, 0.5, 0.9], **({"face": face} if face else {})}
+
+
+def test_a_face_burst_follows_a_person_walking_up_to_the_door():
+    """Someone walking up shows a usable face for a few seconds only: a person nobody is named for
+    starts checks every FACES["burst_interval_s"], kept up while they come closer or show a face,
+    over once they are named; not again until they have gone."""
+    live, t = LiveState(last_run=100), 100.0
+    fb = live.face_burst
+    assert steer_face_burst(fb, [], t) is None  # nobody there
+    assert steer_face_burst(fb, [person(0.1, {"problem": "none"})], t) == "start"  # far away, no face yet
+    assert next_check_at(config(), live, t + 0.1) == (100 + FACES["burst_interval_s"], "full")
+    for n in range(1, 10):  # coming closer: no face for longer than burst_idle_checks, but growing
+        assert steer_face_burst(fb, [person(0.1 * 1.15**n, {"problem": "small"})], t + n) is None
+    usable = {"problem": None, "box": [0.45, 0.2, 0.5, 0.25], "face_px": 60, "state": "ask"}
+    for n in range(10, 20):  # standing at the door with a face it is not sure of
+        assert steer_face_burst(fb, [person(0.5, usable)], t + n) is None
+    named = {**usable, "state": "match", "label": "kari"}
+    assert steer_face_burst(fb, [person(0.5, named)], t + 20) == "stop"  # named: done
+    assert next_check_at(config(), live, t + 20.5) == (160, "full")  # the regular interval again
+    # Still there: no second burst. Gone (burst_absent_checks), then back: a burst of its own.
+    assert steer_face_burst(fb, [person(0.5, {"problem": "turned"})], t + 30) is None
+    for n in range(FACES["burst_absent_checks"]):
+        assert steer_face_burst(fb, [], t + 40 + n) is None
+    assert steer_face_burst(fb, [person(0.2)], t + 50) == "start"
+
+
+def test_a_face_burst_ends_without_progress_and_after_its_time():
+    # Standing still with their back to the camera: over after burst_idle_checks checks.
+    fb = LiveState().face_burst
+    assert steer_face_burst(fb, [person(0.4, {"problem": "none"})], 0) == "start"
+    stops = [
+        steer_face_burst(fb, [person(0.4, {"problem": "none"})], n) for n in range(1, FACES["burst_idle_checks"] + 1)
+    ]
+    assert stops[-1] == "stop" and stops[:-1] == [None] * (FACES["burst_idle_checks"] - 1)
+    # A face it is never sure of keeps it going, but not beyond burst_max_s.
+    fb = LiveState().face_burst
+    unsure = {"problem": None, "box": [0.45, 0.2, 0.5, 0.25], "face_px": 60, "state": "unknown"}
+    assert steer_face_burst(fb, [person(0.4, unsure)], 0) == "start"
+    assert steer_face_burst(fb, [person(0.4, unsure)], FACES["burst_max_s"] - 1) is None
+    assert steer_face_burst(fb, [person(0.4, unsure)], FACES["burst_max_s"]) == "stop"
+    # A person filtered away (taught "not a person": a statue) never starts one.
+    statue = {**person(0.4), "filtered": True}
+    assert steer_face_burst(LiveState().face_burst, [statue], 0) is None

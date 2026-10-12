@@ -58,6 +58,96 @@ export const REVIEW_FIELDS = [
   { key: 'spot_rate', label: 'Random spot checks of confident frames', unit: '%', scale: 100, step: 0.5 },
 ] as const;
 
+/** The teaching limits a user can change (settings.TEACH_TUNABLE), in the order shown. */
+export const TEACH_FIELDS = [
+  {
+    key: 'match_similarity',
+    label: 'Recognised as a box you taught from',
+    help: 'How close a box must be to one you taught to take its answer.',
+  },
+  {
+    key: 'keep_similarity',
+    label: 'Keeps that answer, while it stays in place, down to',
+    help: 'A parked car stays "Our car" when the light changes a little.',
+  },
+  {
+    key: 'ask_similarity',
+    label: 'Asks you in the review queue from',
+    help: 'Between this and the first value, a box that may be one of your own labels is asked about.',
+  },
+  {
+    key: 'rescue_similarity',
+    label: 'Finds a missed object again from',
+    help: 'Once you drew a box the AI missed, unsure boxes this close to it count.',
+  },
+  {
+    key: 'rescue_floor',
+    label: 'Looks again at AI boxes down to',
+    help: 'The weakest AI confidence looked at for missed objects.',
+  },
+] as const;
+
+/** The wizard warns of a low-resolution stream: a picture whose longest side is below this, or a
+ * camera entity or URL whose name says so (Reolink "fluent", "sub" streams, "low"). */
+export const SMALL_FRAME_PX = 1280;
+export const LOW_STREAM_NAME = /(^|[^a-z])(fluent|sub|low|lowres)([^a-z]|$)/i;
+
+/** Files a phone offers for faces: photos (its camera or gallery), short videos, ZIP archives. */
+export const PHOTO_ACCEPT = 'image/*,video/*,.zip';
+
+/** The faces' limits, on the Settings page and an object sensor's Faces card (in this order). */
+export const FACE_FIELDS = [
+  {
+    key: 'min_face_px',
+    label: 'Smallest face',
+    help: 'Its width in the picture. Smaller faces are not used: they are easily mistaken.',
+    unit: 'px',
+  },
+  {
+    key: 'match_similarity',
+    label: 'Recognised as a person from',
+    help: 'How close a face must be to the faces you taught; a second check must agree.',
+  },
+  {
+    key: 'sure_similarity',
+    label: 'Sure at once from',
+    help: 'Named in the first check, without waiting for a second one.',
+  },
+  {
+    key: 'ask_similarity',
+    label: 'Asks you in the review queue from',
+    help: 'Between this and the first similarity: "Is this Kari?"',
+  },
+  {
+    key: 'keep_similarity',
+    label: 'Keeps the name, while they stay, down to',
+    help: 'Someone who stays where they were keeps their name as their face turns.',
+  },
+] as const;
+
+/** The model comparison under Settings → AI model: one row per kind, in the order shown. */
+export const MODEL_KINDS = [
+  {
+    key: 'backbones',
+    title: 'State sensors',
+    text: 'Turns the region into numbers that a small model per sensor learns your states from. A larger model tells similar states (and taught objects) apart better.',
+  },
+  {
+    key: 'detectors',
+    title: 'Object sensors',
+    text: 'Finds people, vehicles and animals. Larger models find more small, far-off and partly hidden objects.',
+  },
+  {
+    key: 'face_models',
+    title: 'Faces (object sensors)',
+    text: 'Tells who a person is from their face; downloaded when a sensor recognises faces. Its size includes the face finder.',
+  },
+  { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
+  { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
+] as const;
+export const MODEL_COMPARE_NOTE =
+  'Rough numbers: extra memory once loaded, and time per check on 4 cores of a desktop PC. A Raspberry Pi 4 takes about 20–40 times as long; a check only runs when it is due or something changed.';
+
 export const SAMPLE_ORIGINS: Record<string, string> = {
   snapshot: 'Snapshot',
   upload: 'Upload',
@@ -170,6 +260,7 @@ export const ENTITY_ID_PATTERN = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 export const TRIGGER_SOURCES: Record<string, string> = {
   entity: 'Entity changed',
   change: 'Image changed',
+  person: 'Person seen',
 };
 
 /** Placeholder the backend puts where credentials were removed from an exported URL (redact.MASK). */
@@ -186,6 +277,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   cleared: 'Cleared',
   filtered: 'Filtered away',
   asked: 'Asked “is it yours?”',
+  face_seen: 'Face seen, not named',
   value: 'New value',
   rejected: 'Rejected reading',
   verified: 'Checked by hand',

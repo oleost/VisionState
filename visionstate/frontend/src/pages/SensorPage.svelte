@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { api } from '../lib/api';
   import { shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import ExportButton from '../lib/components/ExportButton.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import HistoryView from '../lib/components/history/HistoryView.svelte';
   import ObjectChips from '../lib/components/ObjectChips.svelte';
@@ -95,7 +96,7 @@
         </div>
         <span class="spacer"></span>
         <div class="row actions">
-          <a class="btn sm" href={api.exportUrl(sensor.id)} download><Icon name="download" size={14} /> Export</a>
+          <ExportButton {sensor} />
           <button class="btn sm" onclick={togglePause}>
             <Icon name={sensor.enabled ? 'pause' : 'play'} size={14} />
             {sensor.enabled ? 'Pause' : 'Resume'}

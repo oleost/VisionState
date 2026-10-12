@@ -10,18 +10,20 @@
   import PublishSwitch from '../../lib/components/PublishSwitch.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
+  import FacesCard from '../../lib/components/FacesCard.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
+  import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
-  import type { ReviewRules, Roi, Sensor } from '../../lib/types';
+  import type { ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -44,8 +46,12 @@
   let clearAfter = $state(initial.objects?.clear_after_s ?? 0);
   let minSize = $state(initial.objects?.min_size ?? 0);
   let useTaught = $state(initial.objects?.use_taught ?? true);
-  const taughtCount = $derived(sensor.objects?.taught ?? 0);
-  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.length > 0));
+  let teachLimits = $state<TeachOverrides>({ ...(initial.objects?.teach ?? {}) });
+  let globalTeach = $state<TeachLimitsInfo | null>(null);
+  if (objectSensor) api.teachLimits().then((t) => (globalTeach = t)).catch(toastError);
+  // Boxes taught by their look; faces are counted on the Faces card.
+  const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
+  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -62,7 +68,7 @@
         source,
         ...(roi ? { roi } : { clear_roi: true }),
         ...(objectSensor
-          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught } }
+          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
           : readingSensor
             ? { reading }
             : { states, review }),
@@ -164,6 +170,7 @@
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <ObjectPicker bind:selected={classes} />
       </section>
+      <FacesCard {sensor} {onchange} />
       {#if taughtSomething}
         <section class="card pad col">
           <h3>What you taught</h3>
@@ -185,8 +192,14 @@
             <ConfirmButton class="btn sm danger" onconfirm={forgetTaught} confirmLabel="Tap again to forget everything taught">
               <Icon name="trash" size={14} /> Forget all
             </ConfirmButton>
-            <span class="xsmall faint">Every taught box and own label, with its entities.</span>
+            <span class="xsmall faint">Every taught box, own label and person, with their entities.</span>
           </div>
+          {#if globalTeach}
+            <div class="col teach-limits" data-testid="sensor-teach-limits">
+              <strong class="small">Limits for this sensor</strong>
+              <TeachLimitsEditor bind:value={teachLimits} inherited={globalTeach.effective} inheritedFrom="the global value" />
+            </div>
+          {/if}
         </section>
       {/if}
     {:else}
@@ -243,6 +256,11 @@
 <style>
   .taught {
     align-items: flex-start;
+  }
+  .teach-limits {
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
   }
   .taught input {
     margin-top: 3px;

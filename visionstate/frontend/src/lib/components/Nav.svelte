@@ -4,11 +4,16 @@
   import { BETA_VERSION_PATTERN } from '../ui';
   import Logo from './Logo.svelte';
 
-  const section = $derived(['review', 'history', 'settings'].includes(route.parts[0]) ? route.parts[0] : 'sensors');
+  const section = $derived(
+    ['review', 'history', 'people', 'settings'].includes(route.parts[0]) ? route.parts[0] : 'sensors',
+  );
+  // People: only once there are people, or a sensor that recognises faces.
+  const faces = $derived(app.status?.faces);
   const items = $derived([
     { id: 'sensors', label: 'Sensors', path: paths.dashboard(), badge: 0 },
     { id: 'review', label: 'Review', path: paths.review(), badge: app.status?.review_count ?? 0 },
     { id: 'history', label: 'History', path: paths.history(), badge: 0 },
+    ...(faces?.people || faces?.sensors ? [{ id: 'people', label: 'People', path: paths.people(), badge: 0 }] : []),
     { id: 'settings', label: 'Settings', path: paths.settings(), badge: 0 },
   ]);
 </script>

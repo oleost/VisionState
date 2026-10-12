@@ -1,8 +1,9 @@
 <script lang="ts">
   import { api } from '../lib/api';
-  import { refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import { app, refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
   import ConfirmButton from '../lib/components/ConfirmButton.svelte';
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
+  import FaceQuestion from '../lib/components/FaceQuestion.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
@@ -48,6 +49,7 @@
   /** Sidebar line: what was read, or the state the AI predicted. */
   const summary = (item: ReviewItem) => {
     const q = question(item);
+    if (q?.face && q.label === app.config?.face_unknown_key) return 'Who is this?';
     if (q) return `${labelName(item, q.label)}?`;
     return isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
   };
@@ -142,6 +144,7 @@
   function onkey(e: KeyboardEvent) {
     if (!current || isReading(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
     if (e.key === 'Escape') editing = null;
+    else if (question(current)?.face) return; // FaceQuestion has its own keys
     else if (question(current)) {
       if (e.key === 'Enter') answerQuestion('yes');
       else if (e.key.toLowerCase() === 'n') answerQuestion('no');
@@ -255,6 +258,19 @@
             <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}
         </div>
+      {:else if current && question(current)?.face}
+        {@render header(current)}
+        {#key current.id}
+          <FaceQuestion
+            item={current}
+            question={question(current)!}
+            given={current.id in given ? given[current.id] : undefined}
+            onanswer={(text, answer) => {
+              if (current) given[current.id] = answer;
+              answered(text);
+            }}
+          />
+        {/key}
       {:else if current && question(current)}
         {@const q = question(current)!}
         {@const name = labelName(current, q.label)}

@@ -54,6 +54,8 @@ OBJECT_DEFAULTS = {
     # The user's own labels, each a kind of one of the classes: [{"key", "name", "parent"}], e.g.
     # "Our car" under "car". Each gets the same two entities as a class. Made by teaching a box.
     "custom": [],
+    "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
+    "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
@@ -197,6 +199,121 @@ TEACH = {
     "list_limit": 50,  # filtered-away boxes listed on the Quality tab
 }
 NONE_LABEL = "none"  # taught label of a box that is not what the detector said
+
+# The limits of TEACH a user can change: globally (Settings → Teaching object sensors, DB setting
+# "teach") and per sensor (objects["teach"]); empty = inherit. Effective: merge_teach.
+TEACH_TUNABLE = ("match_similarity", "keep_similarity", "ask_similarity", "rescue_similarity", "rescue_floor")
+TEACH_TUNABLE_LIMITS = {
+    "match_similarity": (0.5, 0.99),
+    "keep_similarity": (0.5, 0.99),
+    "ask_similarity": (0.5, 0.99),
+    "rescue_similarity": (0.5, 0.99),
+    "rescue_floor": (0.05, 0.6),
+}
+# Defaults of a backbone whose similarities spread differently from DINOv2 small's (TEACH was
+# measured on that). DINOv2 base, on the CC0 test photos (14 objects; the same object with other
+# light, framing, blur, JPEG or night colours vs other objects of its kind): at 0.88 one pair of
+# different dogs counted as the same (0.891); at 0.90 none did, and 93 % of the changed copies
+# of an object were still recognised, as with DINOv2 small 8-bit at 0.88.
+TEACH_BY_BACKBONE: dict[str, dict[str, float]] = {
+    "dinov2-base": {"match_similarity": 0.9, "rescue_similarity": 0.92},
+}
+
+# Recognising people by their face (object sensors that look for "person"; off by default, see
+# docs/FACE_RECOGNITION_PLAN.md). The faces of each person box are looked for in its upper part,
+# checked (a face that fails is "no face", never someone unknown), aligned and compared with the
+# faces the user taught. Similarity thresholds belong to the face model (faces.json).
+FACE_DEFAULTS = {
+    "enabled": False,
+    # Smallest usable face: the width of the face in the camera's frame, in pixels (not the
+    # distance between the eyes, which shrinks as a head turns). On a 480x640 living room camera
+    # and the test photos scaled down, SFace still told the person (0.53-0.60) from a stranger
+    # (<=0.31) at a face 28-31 px wide (about 13 px between the eyes); at 21 px it fell to 0.45.
+    "min_face_px": 30.0,
+    "ask_unknown": False,  # put faces nobody was taught for in the review queue ("Who is this?")
+}
+# What the user can tune, for all sensors (Settings) and per sensor (its Faces card): a sensor's
+# unset value follows the global one, which follows the default (min_face_px above; the
+# similarities: the face model's, faces.json).
+FACE_TUNABLE = ("min_face_px", "match_similarity", "sure_similarity", "ask_similarity", "keep_similarity")
+FACE_LIMITS = {
+    "min_face_px": (16.0, 240.0),
+    "match_similarity": (0.2, 0.95),
+    "sure_similarity": (0.2, 0.95),
+    "ask_similarity": (0.1, 0.95),
+    "keep_similarity": (0.1, 0.95),
+}
+FACES = {
+    "stats_window": 40,  # "a usable face in 9 of the last 40 person boxes looked at"
+    "max_faces": 4,  # person boxes searched for a face per check (most certain first): one detector run
+    # A person box that keeps a sure name is searched again only every this many checks.
+    "recheck_every": 3,
+    # The upper part of a person box where the face is looked for: its height, in box widths
+    # (a standing person is about 3 widths tall), and a margin on every side, in box widths.
+    "region_height": 1.3,
+    "region_margin": 0.1,
+    "detect_score": 0.6,  # a face the face detector finds at all
+    "nms_iou": 0.3,
+    # Quality gate. The face detector's score, how far the face is turned sideways (see faces.turn:
+    # 0 straight, ~0.35 about 30 degrees, ~0.6 about 45) and the sharpness of the aligned face
+    # (variance of the Laplacian at 112 px: sharp faces 32+ down to 13 px between the eyes, the
+    # same faces blurred by 2 px at most 19). A profile has its eyes close together for its width:
+    # 0.41-0.50 of it looking at the camera, a profile 0.08; below turned_eye_share it is turned.
+    "min_score": 0.75,
+    "max_turn": 0.55,
+    "min_sharpness": 25.0,
+    "turned_eye_share": 0.3,
+    # A face that matched nobody counts towards Unknown person only when it is clearly seen: this
+    # many times the smallest face, turned at most this far, and found with at least this detector
+    # score. A smaller or more turned face can be named (a person's own face still looks like them
+    # a bit turned, 0.66-0.78 at 0.26-0.35), but not matching anyone may only mean the angle: "not
+    # sure who", never a stranger. On a phone camera real faces scored 0.86-0.94 and things taken
+    # for a face (a wall, a second face on a profile with the eyes in the wrong place) 0.60-0.79.
+    "unknown_size": 1.5,
+    "unknown_max_turn": 0.35,
+    "unknown_min_score": 0.85,
+    "top_k": 3,  # a person's score: the mean similarity to their this many closest taught faces
+    "margin": 0.05,  # a match must beat the next person by this much
+    # Unknown person: a person box whose usable face matched nobody in this many checks in a row
+    # (the same box: it overlaps the last check's by keep_iou in TEACH) and that never had a name.
+    "unknown_after": 2,
+    "crop_margin": 0.5,  # what is stored of a taught face: the face box plus this share of its size around it
+    "max_faces_per_person": 50,
+    "max_people": 10,  # people VisionState knows (shared; two entities on each sensor that recognises faces, and one of their own)
+    "suggest_faces": 5,  # a person with fewer taught faces gets "teach a few more"
+    "look_alike": 0.9,  # two people whose closest faces are this share of the match threshold apart look alike
+    # A usable face nobody is named for keeps its frame in the history, to name them there later
+    # (someone at a doorbell is gone before the Live tab can be tapped): at most one per this many
+    # seconds per sensor, unless the face came this many times closer (wider) since the last one.
+    "record_cooldown_s": 60,
+    "record_closer": 1.5,
+    # "Is this Kari?": a person moves, so each question shows another face to teach. Up to this many
+    # questions about one person per review cooldown (and waiting at once), at least this many
+    # seconds apart; an answer opens the next one right away. Own labels ask one at a time.
+    "ask_burst": 5,
+    "ask_gap_s": 3.0,
+    # Looking for a face while a person is there: someone walking up to a doorbell shows a usable
+    # face for a few seconds only, often between two regular checks. A check that finds a person
+    # nobody is named for checks again every burst_interval_s (or the sensor's burst pace if
+    # faster), until everyone in view is named, nobody was seen in burst_absent_checks checks in a
+    # row, burst_idle_checks checks in a row brought neither a usable face nor a person coming
+    # closer (a box or face burst_progress times larger than before), or after burst_max_s. Then not
+    # again until the person has gone: someone sitting on the steps gets one burst, not one an hour.
+    "burst_interval_s": 1.0,
+    "burst_max_s": 30.0,
+    "burst_idle_checks": 6,
+    "burst_absent_checks": 2,
+    "burst_progress": 1.1,
+    # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
+    # images, ZIP archives and videos): at most this many faces are added from one upload, and a
+    # video gives a frame every this many seconds (turning the head gives several angles).
+    "max_photos": 10,
+    "photo_video_interval_s": 0.5,
+}
+FACE_UNKNOWN_KEY = "unknown_person"  # the key (and entity) of a face nobody was taught for
+# A person's own entity (sensor.visionstate_<key>) says on which sensor they are seen: its slug,
+# the one that saw them last when several do, or this when none sees them now.
+PERSON_NOT_SEEN = "not_seen"
 
 # --- Triggers: when a sensor checks its camera ---------------------------------
 #
@@ -364,6 +481,9 @@ STORAGE_LIMITS = {
 
 HISTORY = {
     "page_size": 50,
+    # Rows of one sensor this close in time are the same moment (a face seen and the question about
+    # it): what is taught from one of them shows on the others too, where the box is the same.
+    "same_moment_s": 3.0,
     "max_page_size": 200,
     "max_filter_values": 50,  # values of one filter (sensors, keys, events) in one request
     "window_presets_h": (1, 24, 24 * 7, 24 * 30),  # time windows offered besides "any time"
@@ -373,7 +493,8 @@ HISTORY = {
 # kinds). api/history.py says which rows each one matches, the UI how it is named.
 HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     KIND_STATES: ("change", "flagged"),  # a published change; a frame put in the review queue
-    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked"),  # "asked": "Is this Our car?"
+    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
+    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
 }
 
@@ -422,12 +543,41 @@ def merge_reminder(stored: dict | None) -> dict:
     return {**REMINDER_DEFAULTS, **{k: v for k, v in (stored or {}).items() if k in REMINDER_DEFAULTS}}
 
 
+def teach_defaults(backbone: str) -> dict:
+    """The tunable teaching limits as they are by default for ``backbone``."""
+    return {key: TEACH_BY_BACKBONE.get(backbone, {}).get(key, TEACH[key]) for key in TEACH_TUNABLE}
+
+
+def merge_teach(backbone: str, global_limits: dict | None, sensor_overrides: dict | None) -> dict:
+    """Effective teaching limits (all of TEACH): defaults of the backbone < global < sensor overrides."""
+    merged = {**TEACH, **teach_defaults(backbone)}
+    for overrides in (global_limits, sensor_overrides):
+        merged.update({k: v for k, v in (overrides or {}).items() if v is not None and k in TEACH_TUNABLE})
+    return merged
+
+
 def merge_objects(stored: dict | None) -> dict:
     """Object settings of a sensor: stored values on top of OBJECT_DEFAULTS."""
     merged = {**OBJECT_DEFAULTS, **(stored or {})}
     merged["classes"] = list(merged.get("classes") or [])
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
+    merged["teach"] = {k: v for k, v in (merged.get("teach") or {}).items() if k in TEACH_TUNABLE and v is not None}
+    merged["faces"] = merge_faces(merged.get("faces"))
     return merged
+
+
+def merge_faces(stored: dict | None) -> dict:
+    """Face settings of an object sensor: whether it is on and asks (stored on top of
+    FACE_DEFAULTS), and its own values of FACE_TUNABLE (only the ones it set; see faces.merge_limits)."""
+    stored = stored or {}
+    merged = {k: stored.get(k, FACE_DEFAULTS[k]) for k in ("enabled", "ask_unknown")}
+    merged.update({k: float(stored[k]) for k in FACE_TUNABLE if stored.get(k) is not None})
+    return merged
+
+
+def faces_on(objects: dict) -> bool:
+    """Whether an object sensor recognises faces: switched on, and it looks for people."""
+    return bool(objects["faces"]["enabled"]) and "person" in objects["classes"]
 
 
 def active_custom(objects: dict) -> list[dict]:
@@ -483,6 +633,12 @@ class Settings:
         return self.data_dir / "models"
 
     @property
+    def faces_dir(self) -> Path:
+        """Faces taught to object sensors: in the app's own storage, never in the media folder
+        (Home Assistant's media browser shows that to every user)."""
+        return self.data_dir / "faces"
+
+    @property
     def heads_dir(self) -> Path:
         return self.data_dir / "heads"
 
@@ -511,6 +667,7 @@ class Settings:
             self.data_dir,
             self.models_dir,
             self.heads_dir,
+            self.faces_dir,
             self.samples_dir,
             self.history_dir,
             self.thumbs_dir,

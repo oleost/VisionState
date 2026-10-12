@@ -23,6 +23,10 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     def model_path(self, spec: backbones.ModelFile) -> Path | None:
         return backbones.locate(spec, [self.settings.bundled_models_dir, self.settings.models_dir])
 
+    def downloaded(self, spec: backbones.ModelFile) -> bool:
+        """Whether a model was downloaded (and can be deleted again), not included in the app."""
+        return (self.settings.models_dir / spec.filename).exists()
+
     async def load_embedder(self, backbone_id: str) -> None:
         spec = backbones.BACKBONES.get(backbone_id) or backbones.BACKBONES[backbones.DEFAULT_BACKBONE]
         path = self.model_path(spec)
@@ -34,6 +38,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
 
     async def set_backbone(self, backbone_id: str) -> None:
         await self.load_embedder(backbone_id)
+        await asyncio.to_thread(backbones.release_memory)
         self.db.set_setting("backbone", backbone_id)
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             self.schedule_retrain(sensor_id, delay=0)
@@ -70,6 +75,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         if self.detector is not None or object_sensors:
             async with self._detector_lock:
                 await self.load_detector(detector_id)
+            await asyncio.to_thread(backbones.release_memory)
         await asyncio.to_thread(self.db.set_setting, "detector", detector_id)
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
@@ -102,6 +108,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         if self.reader is not None or reading_sensors:
             async with self._reader_lock:
                 await self.load_reader(reader_id)
+            await asyncio.to_thread(backbones.release_memory)
         await asyncio.to_thread(self.db.set_setting, "reader", reader_id)
         for sensor_id in reading_sensors:
             self.wake(sensor_id, force=True)

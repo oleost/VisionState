@@ -3,7 +3,8 @@
   // positioned frame). Boxes are normalised to the whole frame. Labels never overlap: the most
   // certain object gets its label above the box, the next one inside the box if that is free,
   // and a label that fits nowhere is left out (the box stays). Boxes filtered away by what the
-  // sensor was taught are dashed and grey. With `onpick`, every box can be tapped.
+  // sensor was taught are dashed and grey. With `onpick`, every box can be tapped. A face found in a
+  // person box (a sensor that recognises faces) is drawn as a small rounded box inside it.
   import { pct } from '../format';
   import { boxName, objectColor } from '../objects';
   import type { Detection, OwnLabel } from '../types';
@@ -92,6 +93,19 @@
       </div>
     {/if}
   {/each}
+  {#each detections as d, i (i)}
+    {#if d.face?.box && !d.filtered}
+      <div
+        class="face"
+        class:unusable={!!d.face.problem}
+        style:left="{d.face.box[0] * 100}%"
+        style:top="{d.face.box[1] * 100}%"
+        style:width="{(d.face.box[2] - d.face.box[0]) * 100}%"
+        style:height="{(d.face.box[3] - d.face.box[1]) * 100}%"
+        style:--c={objectColor(classes, d.label ?? d.key)}
+      ></div>
+    {/if}
+  {/each}
 </div>
 
 <style>
@@ -136,6 +150,16 @@
     font-weight: 600;
     line-height: 15px;
     white-space: nowrap;
+  }
+  .face {
+    position: absolute;
+    border: 2px solid var(--c);
+    border-radius: 40%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+  .face.unusable {
+    border-style: dotted;
+    opacity: 0.7;
   }
   .tag.inside {
     bottom: auto;

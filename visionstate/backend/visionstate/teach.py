@@ -143,7 +143,7 @@ def nearest(index: TaughtIndex, vector: np.ndarray, min_similarity: float) -> Ma
     return Match(label, similarity, example_id)
 
 
-def _iou(a: Sequence[float], b: Sequence[float]) -> float:
+def box_iou(a: Sequence[float], b: Sequence[float]) -> float:
     """Intersection over union of two boxes (x1, y1, x2, y2)."""
     x1, y1 = max(a[0], b[0]), max(a[1], b[1])
     x2, y2 = min(a[2], b[2]), min(a[3], b[3])
@@ -159,7 +159,7 @@ def plan(found: list[dict], candidates: list[dict], index: TaughtIndex) -> tuple
     rescue = []
     if index.rescue:
         for cand in sorted(candidates, key=lambda d: -d["score"]):
-            if any(_iou(cand["box"], d["box"]) >= TEACH["rescue_overlap_iou"] for d in found):
+            if any(box_iou(cand["box"], d["box"]) >= TEACH["rescue_overlap_iou"] for d in found):
                 continue  # the same object as a counted box (e.g. a car also seen as a truck)
             rescue.append(cand)
             if len(rescue) >= TEACH["max_rescue"]:
@@ -177,6 +177,7 @@ def apply(
     classes: list[str],
     parents: dict[str, str],
     previous: list[dict] | None = None,
+    limits: dict | None = None,
 ) -> list[dict]:
     """The boxes of a check after comparing them with the taught ones.
 
@@ -186,16 +187,18 @@ def apply(
     ``previous`` (the boxes of the last check) lets an object that stayed where it was keep its
     answer at a lower similarity (``kept``, see TEACH["keep_similarity"]). A box that may be an
     own label, but not clearly, gets ``ask`` ({id, label, similarity}; see TEACH["ask_similarity"]).
+    ``limits``: the sensor's teaching limits (settings.merge_teach); TEACH when not given.
     """
+    limits = limits or TEACH
     result = [dict(d) for d in found]
     for i, vector in zip(checked, checked_vectors, strict=True):
-        match = nearest(index, vector, TEACH["match_similarity"])
+        match = nearest(index, vector, limits["match_similarity"])
         if match is None:
-            match = _kept(index, vector, result[i]["box"], previous or [])
+            match = _kept(index, vector, result[i]["box"], previous or [], limits["keep_similarity"])
             if match is not None:
                 result[i]["kept"] = True
         if match is None:
-            if ask := _unsure(index, vector, result[i]["key"], parents):
+            if ask := _unsure(index, vector, result[i]["key"], parents, limits["ask_similarity"]):
                 result[i]["ask"] = ask
             continue
         det = result[i]
@@ -211,13 +214,13 @@ def apply(
         if label:
             det["label"] = label
     for cand, vector in zip(rescue, rescue_vectors, strict=True):
-        match = nearest(index, vector, TEACH["rescue_similarity"])
+        match = nearest(index, vector, limits["rescue_similarity"])
         if match is None:
             continue
         key, label = resolve(match.label, parents)
         if key is None or key not in classes:
             continue
-        if any(_iou(cand["box"], d["box"]) >= TEACH["rescue_overlap_iou"] for d in result if not d.get("filtered")):
+        if any(box_iou(cand["box"], d["box"]) >= TEACH["rescue_overlap_iou"] for d in result if not d.get("filtered")):
             continue  # already counted (another unsure box of the same object was rescued)
         det = {**cand, "key": key, "rescued": True}
         det["match"] = {"id": match.example_id, "label": match.label, "similarity": round(match.similarity, 3)}
@@ -229,21 +232,25 @@ def apply(
     return result
 
 
-def _kept(index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous: list[dict]) -> Match | None:
+def _kept(
+    index: TaughtIndex, vector: np.ndarray, box: Sequence[float], previous: list[dict], keep_similarity: float
+) -> Match | None:
     """The answer a box got in the last check, when it is the same object at the same place and
     still close to that taught label (just below match_similarity, e.g. in other light)."""
     before = [
         d["match"]["label"]
         for d in previous
-        if d.get("match") and not d.get("rescued") and _iou(d["box"], box) >= TEACH["keep_iou"]
+        if d.get("match") and not d.get("rescued") and box_iou(d["box"], box) >= TEACH["keep_iou"]
     ]
-    match = nearest(index, vector, TEACH["keep_similarity"]) if before else None
+    match = nearest(index, vector, keep_similarity) if before else None
     return match if match is not None and match.label in before else None
 
 
-def _unsure(index: TaughtIndex, vector: np.ndarray, key: str, parents: dict[str, str]) -> dict | None:
+def _unsure(
+    index: TaughtIndex, vector: np.ndarray, key: str, parents: dict[str, str], ask_similarity: float
+) -> dict | None:
     """The own label (of the box's class) a box is close to but not clearly, to ask about."""
-    near = nearest(index, vector, TEACH["ask_similarity"])
+    near = nearest(index, vector, ask_similarity)
     if near is None:
         return None
     parent, label = resolve(near.label, parents)
@@ -264,4 +271,4 @@ def counts_for(detection: dict, key: str) -> bool:
 
 def seen_faintly(candidates: list[dict], box: Sequence[float]) -> bool:
     """Whether any of the detector's boxes (however unsure) overlaps a drawn box."""
-    return any(_iou(c["box"], box) >= TEACH["seen_iou"] for c in candidates)
+    return any(box_iou(c["box"], box) >= TEACH["seen_iou"] for c in candidates)

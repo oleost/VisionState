@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import bundle, readers
+from .. import bundle, faces, readers
 from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
 from ..redact import redact
 from ..settings import (
@@ -30,6 +30,8 @@ from ..settings import (
     SENSOR_LIMITS,
     SENSOR_PUBLISH_DEFAULT,
     STATE_PALETTE,
+    merge_objects,
+    merge_teach,
 )
 from ..sources import SOURCE_TYPES, SourceError
 from .common import (
@@ -40,6 +42,8 @@ from .common import (
     Roi,
     StateIn,
     Triggers,
+    check_faces,
+    check_teach,
     get_sensor,
     runtime,
     sample_counts,
@@ -115,7 +119,7 @@ class SensorIn(BaseModel):
             publish=self.publish,
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
-            objects=self.objects.model_dump() if self.objects else None,
+            objects=self.objects.stored() if self.objects else None,
             reading=self.reading.model_dump() if self.reading else None,
         )
         _apply_states(sensor, self.states)
@@ -223,7 +227,10 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             _apply_states(sensor, body.states)
         if body.objects is not None:
             # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
-            sensor.objects = {**(sensor.objects or {}), **body.objects.model_dump(exclude_unset=True)}
+            sensor.objects = {**(sensor.objects or {}), **body.objects.stored(exclude_unset=True)}
+            merged = merge_objects(sensor.objects)
+            check_teach(merge_teach(rt.backbone_id, rt.global_teach, merged["teach"]))
+            check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
         if body.reading is not None:
             sensor.reading = body.reading.model_dump()
         s.flush()
@@ -513,13 +520,14 @@ async def reading_export(
 
 
 @router.get("/{sensor_id}/export")
-async def export(sensor_id: int, request: Request, background: BackgroundTasks) -> FileResponse:
+async def export(sensor_id: int, request: Request, background: BackgroundTasks, faces: bool = False) -> FileResponse:
+    """A sensor as a bundle to import elsewhere; ``faces``: with the faces taught on it."""
     rt = runtime(request)
     fd, name = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
     tmp = Path(name)
     try:
-        filename = await asyncio.to_thread(bundle.export_sensor, rt.db, rt.storage, sensor_id, tmp)
+        filename = await asyncio.to_thread(bundle.export_sensor, rt.db, rt.storage, sensor_id, tmp, faces)
     except KeyError as err:
         tmp.unlink(missing_ok=True)
         raise HTTPException(404, "Sensor not found") from err

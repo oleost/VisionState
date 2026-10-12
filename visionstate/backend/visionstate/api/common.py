@@ -12,11 +12,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import detectors, imaging, teach
-from ..db import ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig
+from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
 from ..mqtt import main_entities
 from ..settings import (
     COUNTER_READERS,
+    FACE_DEFAULTS,
+    FACE_LIMITS,
+    FACE_UNKNOWN_KEY,
+    FACES,
     KIND_OBJECTS,
     KIND_READING,
     LIGHT_DOMAINS,
@@ -32,12 +36,14 @@ from ..settings import (
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
+    TEACH_TUNABLE_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
     TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
     active_custom,
+    faces_on,
     merge_objects,
     merge_reading,
     merge_review,
@@ -180,6 +186,67 @@ class Triggers(BaseModel):
 
 _olo = {k: v[0] for k, v in OBJECT_LIMITS.items()}
 _ohi = {k: v[1] for k, v in OBJECT_LIMITS.items()}
+_tlo = {k: v[0] for k, v in TEACH_TUNABLE_LIMITS.items()}
+_thi = {k: v[1] for k, v in TEACH_TUNABLE_LIMITS.items()}
+
+
+class TeachLimits(BaseModel):
+    """The tunable teaching limits (settings.TEACH_TUNABLE). None = inherit: globally the
+    backbone's default, on a sensor the global value."""
+
+    match_similarity: float | None = Field(None, ge=_tlo["match_similarity"], le=_thi["match_similarity"])
+    keep_similarity: float | None = Field(None, ge=_tlo["keep_similarity"], le=_thi["keep_similarity"])
+    ask_similarity: float | None = Field(None, ge=_tlo["ask_similarity"], le=_thi["ask_similarity"])
+    rescue_similarity: float | None = Field(None, ge=_tlo["rescue_similarity"], le=_thi["rescue_similarity"])
+    rescue_floor: float | None = Field(None, ge=_tlo["rescue_floor"], le=_thi["rescue_floor"])
+
+    def stored(self) -> dict:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+def check_teach(limits: dict) -> None:
+    """Effective teaching limits must make sense together: asking and keeping start below a match."""
+    if limits["ask_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Asks you in the review queue” must not be above “Recognised as a box you taught”")
+    if limits["keep_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Keeps that answer” must not be above “Recognised as a box you taught”")
+
+
+_flo = {k: v[0] for k, v in FACE_LIMITS.items()}
+_fhi = {k: v[1] for k, v in FACE_LIMITS.items()}
+
+
+class FaceLimits(BaseModel):
+    """The tunable face limits (settings.FACE_TUNABLE). None = inherit: globally the default (the
+    face model's similarities), on a sensor the global value."""
+
+    min_face_px: float | None = Field(None, ge=_flo["min_face_px"], le=_fhi["min_face_px"])
+    match_similarity: float | None = Field(None, ge=_flo["match_similarity"], le=_fhi["match_similarity"])
+    sure_similarity: float | None = Field(None, ge=_flo["sure_similarity"], le=_fhi["sure_similarity"])
+    ask_similarity: float | None = Field(None, ge=_flo["ask_similarity"], le=_fhi["ask_similarity"])
+    keep_similarity: float | None = Field(None, ge=_flo["keep_similarity"], le=_fhi["keep_similarity"])
+
+    def stored(self) -> dict:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+def check_faces(limits: dict) -> None:
+    """Effective face limits must make sense together: asking and keeping below a match, a match
+    not above being sure at once."""
+    if limits["ask_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Asks you in the review queue” must not be above “Recognised”")
+    if limits["keep_similarity"] > limits["match_similarity"]:
+        raise HTTPException(400, "“Keeps the name” must not be above “Recognised”")
+    if limits["match_similarity"] > limits["sure_similarity"]:
+        raise HTTPException(400, "“Recognised” must not be above “Sure at once”")
+
+
+class FacesIn(FaceLimits):
+    """Recognising people by their face on an object sensor: on or off, asking about strangers,
+    and its own face limits (unset ones follow the global ones). Defaults: settings.FACE_*."""
+
+    enabled: bool = FACE_DEFAULTS["enabled"]
+    ask_unknown: bool = FACE_DEFAULTS["ask_unknown"]
 
 
 class ObjectsIn(BaseModel):
@@ -191,7 +258,17 @@ class ObjectsIn(BaseModel):
         default=OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"]
     )
     use_taught: bool = OBJECT_DEFAULTS["use_taught"]
-    # Own labels ("custom") are made by teaching a box (api/teach.py), never set here.
+    teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
+    faces: FacesIn | None = None  # recognising people by their face; unset keeps what the sensor has
+    # Own labels ("custom") are made by teaching a box (api/teach.py) or a face (api/faces.py), never set here.
+
+    def stored(self, exclude_unset: bool = False) -> dict:
+        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach", "faces"})
+        if self.teach is not None or not exclude_unset:
+            data["teach"] = self.teach.stored() if self.teach else {}
+        if self.faces is not None:
+            data["faces"] = self.faces.model_dump(exclude_none=True)
+        return data
 
     @field_validator("classes")
     @classmethod
@@ -340,14 +417,16 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
 
 
 def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
-    """An object sensor's part of its view: each class and own label, live, and what was taught."""
+    """An object sensor's part of its view: each class and own label (with the people while it
+    recognises faces), live, and what was taught."""
     if sensor.kind != KIND_OBJECTS:
         return None
-    settings = merge_objects(sensor.objects)
+    settings = with_people(merge_objects(sensor.objects), session)
     parents = {label["key"]: label["parent"] for label in active_custom(settings)}
     tracks = live.tracks if live else {}
     per_class = []
-    for key in [*settings["classes"], *parents]:
+    unknown = [FACE_UNKNOWN_KEY] if faces_on(settings) else []  # recognising faces: "unknown person"
+    for key in [*settings["classes"], *parents, *unknown]:
         track = tracks.get(key) or ObjectTrack()
         per_class.append(
             {
@@ -365,12 +444,23 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
         )
     ).all()
     usable = [(label, detected) for label, detected in taught if label is not None and teach.usable(label, parents)]
+    taught_faces = session.scalar(select(func.count()).select_from(Face).where(Face.sensor_id == sensor.id)) or 0
+    stats = list(live.face_stats) if live else []
     return {
         **settings,
         "live": per_class,
         "detections": live.detections if live else [],
         "taught": len(taught),  # boxes taught (Quality tab, first-time question)
+        "taught_faces": taught_faces,  # faces taught on this camera (export)
         "taught_keys": sorted(teach.compared_keys(usable, parents)),  # classes compared with them
+        # Faces: of the last person boxes looked at, how many had a usable face, and why not.
+        "face_stats": {
+            "looked": len(stats),
+            "usable": stats.count("ok"),
+            "problems": {p: stats.count(p) for p in sorted(set(stats) - {"ok"})},
+            "frame": list(live.face_frame) if live and live.face_frame else None,  # width, height
+            "min_face_px": live.face_min_px if live else None,  # the smallest face it was looked at with
+        },
     }
 
 
@@ -405,6 +495,11 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     else:
         status = "ok"
     ids = entity_ids(rt, sensor)
+    now = time.time()
+    paces = [merge_triggers(sensor.triggers)["burst_interval_s"]] if live and live.burst_until > now else []
+    if live and live.face_burst.until > now:
+        paces.append(FACES["burst_interval_s"])
+    pace = min(paces) if paces else None
     return {
         "id": sensor.id,
         "slug": sensor.slug,
@@ -437,7 +532,9 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "confidence": live.confidence if live else 0.0,
             "probs": live.probs if live else {},
             "last_run": live.last_run if live else None,
-            "in_burst": bool(live and live.burst_until > time.time()),
+            # A burst of checks (a trigger's, or looking for a face while a person is there) and its pace.
+            "in_burst": pace is not None,
+            "burst_interval_s": pace,
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
             "light_error": live.light_error if live else "",

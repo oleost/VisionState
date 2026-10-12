@@ -8,17 +8,22 @@ from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
+from sqlalchemy import select
+from sqlalchemy.orm import Session, object_session
 
 from .. import detectors
-from ..db import Sensor
+from ..db import Person, Sensor
 from ..mqtt import SensorDescriptor
 from ..settings import (
+    FACE_UNKNOWN_KEY,
+    FACES,
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
     RUNTIME,
     TEACH,
     active_custom,
+    faces_on,
     merge_objects,
     merge_reading,
     merge_triggers,
@@ -71,9 +76,16 @@ class SensorConfig:
         return {label["key"]: label["parent"] for label in self.custom_labels}
 
     @property
+    def faces_on(self) -> bool:
+        """An object sensor that recognises people by their face."""
+        return self.is_objects and faces_on(self.objects)
+
+    @property
     def object_keys(self) -> list[str]:
-        """What an object sensor reports: its classes, then its own labels."""
-        return [*self.objects["classes"], *(label["key"] for label in self.custom_labels)]
+        """What an object sensor reports: its classes, then its own labels (and, recognising
+        faces, the unknown person)."""
+        unknown = [FACE_UNKNOWN_KEY] if self.faces_on else []
+        return [*self.objects["classes"], *(label["key"] for label in self.custom_labels), *unknown]
 
     @property
     def descriptor(self) -> SensorDescriptor:
@@ -81,6 +93,7 @@ class SensorConfig:
         objects = (
             [(k, names[k].name, names[k].icon) for k in self.objects["classes"] if k in names]
             + [(c["key"], c["name"], names[c["parent"]].icon) for c in self.custom_labels if c["parent"] in names]
+            + ([(FACE_UNKNOWN_KEY, "Unknown person", "mdi:account-question")] if self.faces_on else [])
             if self.is_objects
             else []
         )
@@ -105,11 +118,24 @@ class SensorConfig:
             triggers=merge_triggers(row.triggers),
             review=dict(row.review or {}),
             kind=row.kind or KIND_STATES,
-            objects=merge_objects(row.objects),
+            objects=with_people(merge_objects(row.objects), object_session(row)),
             reading=merge_reading(row.reading),
             entity_prefix=bool(row.entity_prefix),
             publish=bool(row.publish),
         )
+
+
+def with_people(objects: dict, session: Session | None) -> dict:
+    """An object sensor's settings with the people (shared by every sensor, db.Person) among its
+    own labels while it recognises faces: {key, name, parent "person", face True}. Each one is an
+    entity of the sensor and a name its faces can get."""
+    if session is None or not faces_on(objects):
+        return objects
+    people = [
+        {"key": p.key, "name": p.name, "parent": "person", "face": True}
+        for p in session.scalars(select(Person).order_by(Person.created_at))
+    ]
+    return {**objects, "custom": [*(c for c in objects["custom"] if not c.get("face")), *people]}
 
 
 class Debouncer:
@@ -145,6 +171,18 @@ class ObjectTrack:
 
 
 @dataclass
+class FaceBurst:
+    """Checks every FACES["burst_interval_s"] while a person nobody is named for is there (logic.steer_face_burst)."""
+
+    until: float = 0.0  # running until then (at most); 0: not running
+    idle: int = 0  # checks in a row without a usable face or the person coming closer
+    absent: int = 0  # checks in a row without a person
+    best_height: float = 0.0  # the tallest person box (share of the frame) of this burst
+    best_face: float = 0.0  # the widest face (pixels) of this burst
+    spent: bool = False  # this visit had its burst: none again until the person has gone
+
+
+@dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
     debouncer: Debouncer = field(default_factory=Debouncer)
@@ -160,6 +198,7 @@ class LiveState:
     force: bool = False
     force_paused: bool = False  # the forced check was asked for by the user: also when paused
     burst_until: float = 0.0
+    face_burst: FaceBurst = field(default_factory=FaceBurst)
     last_probe: float = 0.0
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning
@@ -176,7 +215,15 @@ class LiveState:
     filtered_keys: set[str] = field(default_factory=set)
     filtered_logged: dict[str, float] = field(default_factory=dict)
     recheck_at: float = 0.0  # an object that was there went missing: check again then (0: no)
-    asked: dict[str, float] = field(default_factory=dict)  # own label -> when the review last asked
+    asked: dict[str, list[float]] = field(
+        default_factory=dict
+    )  # own label/person -> when the review asked (this cooldown)
+    # Faces: what the face search gave for the last person boxes it looked at ("ok" or the
+    # problem: "none", "cut", "small", "turned", "blurry", "unsure"), for "a usable face in 9 of 40".
+    face_stats: deque = field(default_factory=lambda: deque(maxlen=FACES["stats_window"]))
+    face_frame: tuple[int, int] | None = None  # the size of the last frame looked at for faces
+    face_min_px: float | None = None  # the smallest face (its width) it was looked at with
+    face_logged: tuple[float, float] = (0.0, 0.0)  # when a face nobody is named for was last kept, and its width
     # Reading sensors: the last read {"text", "score", "value", "reason", "at"} and the image
     # the reader saw (JPEG), shown in the UI so a bad region or display setting is easy to spot.
     reading: dict | None = None

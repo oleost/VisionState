@@ -1,8 +1,9 @@
 # Scope & Design Decisions
 
-> Describes VisionState **as built** (stable 0.6.3, 2026-10-05) and the open
-> ideas. Update it whenever a decision changes.
-> Project: **VisionState** · Licence: Apache-2.0 · Repository: `github.com/oleost/VisionState`
+> The design as built, the decisions behind it, and the roadmap. Update it in the same change as
+> the decision. How to use the app: [`visionstate/DOCS.md`](../visionstate/DOCS.md); where the code
+> is: [`ARCHITECTURE.md`](ARCHITECTURE.md); channels and releases: [`RELEASING.md`](RELEASING.md).
+> Setting names below are keys in `settings.py`, which holds their values.
 
 ## 1. Vision
 
@@ -13,8 +14,8 @@ the matching state on a live image, or by bulk-uploading images/video. Everythin
 locally, on any CPU, with a polished UI inside Home Assistant.
 
 A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
-pretrained detector, and a third, **reading sensors**, reads a number from a display with a
-text recognizer. Neither needs training.
+pretrained detector, and a third, **reading sensors**, reads a number from a display or the wheels
+of a meter. Neither needs training.
 
 ## 2. Goals / Non-goals
 
@@ -31,7 +32,7 @@ text recognizer. Neither needs training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §16.
+- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §14.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -39,7 +40,7 @@ text recognizer. Neither needs training.
 
 | Term | Meaning |
 |---|---|
-| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states) or `objects` (detector), fixed at creation. |
+| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector) or `reading` (a number), fixed at creation. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
 | **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
 | **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
@@ -57,7 +58,7 @@ text recognizer. Neither needs training.
 - Home Assistant app with **Ingress** (sidebar panel, HA handles authentication); requests
   from anything other than the Ingress proxy are refused.
 - Architectures: `amd64`, `aarch64`. Prebuilt images on GHCR, pulled by Home Assistant.
-- Two release channels (see §18): stable (`main`) and beta (`beta` branch, `#beta` repo URL).
+- Two release channels, stable and beta ([`RELEASING.md`](RELEASING.md)).
 - Also runnable as a plain Docker container / Python process for development, configured via
   environment variables and a long-lived HA token (no login outside HA).
 - MQTT broker discovered automatically through the Supervisor services API
@@ -80,8 +81,21 @@ so retraining only runs the backbone on new or changed samples.
 
 | ID | Model | Use |
 |---|---|---|
-| `dinov2-small-q8` | DINOv2 ViT-S/14, 8-bit quantised (bundled) | Default everywhere, ~25 ms per frame on a desktop CPU |
+| `dinov2-small-q8` | DINOv2 ViT-S/14, 8-bit quantised (bundled) | Default everywhere |
 | `dinov2-small` | DINOv2 ViT-S/14, fp32 (downloaded on demand, SHA-256 checked) | Optional, slightly more accurate |
+| `dinov2-base` | DINOv2 ViT-B/14, fp32 (downloaded on demand, 347 MB) | Fast PCs; separates objects best |
+
+- Each registry entry carries a rough footprint for **Compare and manage the models** in Settings
+  (`backbones.Footprint`: extra memory, time per check on 4 threads of a desktop CPU, an accuracy
+  rank within its kind), measured when the model was added. Texts and footprint may be updated in a
+  released entry; its file and inputs never change.
+- DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
+  also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
+  object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base
+  fp32, 0.08 for small fp32, 0.06 for small 8-bit — and 0.04 for base 8-bit, whose quantisation
+  squeezes everything together (other objects of a kind around 0.82), so base is offered in fp32
+  only; fp16 saved disk but used more memory on CPU. Base needs slightly stricter teaching limits
+  (`settings.TEACH_BY_BACKBONE`).
 
 - MobileNet was dropped: the available ONNX exports only expose classification logits.
 - Switching backbone retrains every sensor from its stored samples.
@@ -100,8 +114,14 @@ with the 80 COCO labels, their keys, groups and the popular ones):
 
 | ID | Model | Use |
 |---|---|---|
-| `dfine-s-coco` | D-FINE S, COCO, fp32 ONNX (bundled, 42 MB) | Default; ~0.1 s per check on a desktop CPU |
+| `dfine-s-coco` | D-FINE S, COCO, fp32 ONNX (bundled, 42 MB) | Default |
 | `dfine-n-coco` | D-FINE N, COCO, fp32 ONNX (downloaded on demand, 15 MB) | Faster, misses more |
+| `dfine-m-coco` | D-FINE M, COCO, fp32 ONNX (downloaded on demand, 79 MB) | Fast PCs; finds more small and hidden objects |
+| `dfine-l-coco` | D-FINE L, COCO, fp32 ONNX (downloaded on demand, 125 MB) | Fast PCs; the most accurate |
+
+D-FINE X (251 MB) was left out: twice the size of L for little more. At the default 60 % threshold
+M and L find the same objects in the test photos as S, with fewer weak false boxes, so the
+threshold is the same for every detector.
 
 1. Crop the ROI's bounding box plus a margin (`DETECTION["context_margin"]`) so edge objects are
    seen whole; stretch to 640×640 (no letterbox), scale to 0–1.
@@ -134,7 +154,9 @@ knew). Instead a second step compares boxes with boxes the user taught:
 - Unsure (`ask_similarity` 0.75 up to `match_similarity`, to an own label of the box's class): the
   box carries `ask`, counts neither for nor against that label (it keeps its published state), and
   goes to the review queue ("Is this Our car?", a history row `published_key = "ask"`, reason
-  `ask`) — one waiting question per label, at most one per review cooldown, none with review off.
+  `ask`) — one waiting question per label, at most one per review cooldown, none with review off;
+  about a face up to `FACES["ask_burst"]` (waiting, and per cooldown), `FACES["ask_gap_s"]` apart,
+  and an answer resets that person's cooldown.
   Yes/no teach the box from that history frame (as the label / as its class); answering again
   replaces that taught box. Below 0.75 it is simply not that label.
 - Switching off needs `DETECTION["clear_misses"]` (2) checks in a row without the object as well
@@ -150,17 +172,90 @@ knew). Instead a second step compares boxes with boxes the user taught:
 - Nothing changes for a sensor until something is taught; **Use what you taught** off skips it.
   The analysed frames of the last checks are kept (`frames_kept`) so a box can be taught a while
   after it was shown. Export/import carries taught boxes and own labels.
+- **Tunable** (`settings.TEACH_TUNABLE`): `match_similarity`, `keep_similarity`, `ask_similarity`,
+  `rescue_similarity` and `rescue_floor` can be set by the user, globally (DB setting `teach`,
+  `GET/PUT /api/v1/teach-limits`) and per sensor (`objects["teach"]`); unset values inherit.
+  `settings.merge_teach`: the backbone's defaults (`TEACH`, with `TEACH_BY_BACKBONE` on top) <
+  global < sensor. Asking and keeping must not start above a match (refused by the API). A user's
+  value stays when the backbone changes; the UI says to look at it again.
+
+**Recognising people by their face** (`faces.py`, `engine/faces.py`, `api/faces.py`; registry
+`faces.json`, tunables `settings.FACES`, per sensor `objects["faces"]` with `settings.FACE_DEFAULTS`;
+the user's limits `settings.FACE_TUNABLE`).
+Why it is a part of object sensors and not a kind, the research, the privacy rules and what is
+left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
+
+- Off by default; on only for a sensor that looks for `person` (its Settings tab, or the wizard),
+  after a confirmation that names what is stored and downloaded. The face models are never
+  bundled: the first sensor that turns it on downloads them (`backbones.download` with progress)
+  and loads them in the background — the sensor runs without faces meanwhile; a failed download waits for **Try again**. The last sensor
+  turning it off lets the model go; its files can then be deleted (like any downloaded model not
+  in use: `DELETE /api/v1/models/{kind}/{id}`, *Compare and manage the models*).
+- The user's limits (`settings.FACE_TUNABLE`: the smallest face and the four similarities) work
+  like the teaching limits: defaults (`FACE_DEFAULTS`, the similarities from the face model) <
+  global (Settings, DB setting `faces`) < the sensor's own (`objects["faces"]`); an unset value
+  inherits.
+- Each check: person boxes (at most `FACES["max_faces"]`, new boxes first, then the ones searched
+  longest ago) are cropped from the full frame in their upper part and tiled
+  four to one YuNet run (640 × 640). One face counts for one person box. The quality gate (not
+  cut by the frame's edge — the detector then guesses the eyes —, the face's width `min_face_px` —
+  not the distance between the eyes, which shrinks as a head turns —, detector score, how far it
+  is turned, sharpness) makes a bad face *no face*, never *unknown*. A usable face is aligned on
+  its five points (Umeyama + Pillow, no OpenCV), its brightness evened out (`faces.even_light`: a
+  face in front of a bright sky is nearly black) and embedded; cached embeddings carry
+  `faces.EMBEDDING_VERSION`, so a change to that step recomputes them.
+- A person's score is the mean similarity to their `top_k` closest taught faces. Thresholds belong
+  to the recogniser's registry entry (cosine values of one model mean nothing for another): a
+  match needs `match_similarity` and `FACES["margin"]` over the next person, and is published at
+  once from `sure_similarity`, else when a second check of the same box agrees; between
+  `ask_similarity` and a match the box is `ask` (review: "Is this Kari?"); a box that stays keeps
+  its name while no usable face is seen or the face is above `keep_similarity`. A sure name is
+  carried for `recheck_every` checks without searching again. A box whose usable face matched
+  nobody `unknown_after` checks in a row and never had a name counts for `unknown_person`
+  (`settings.FACE_UNKNOWN_KEY`, its own entities). Only faces seen clearly count:
+  `FACES["unknown_size"]` times the smallest face, turned at most `FACES["unknown_max_turn"]`,
+  detector score at least `FACES["unknown_min_score"]`; a smaller, more turned or less certain face
+  can be named but is otherwise *not sure who*, as not looking like anyone may only be the angle.
+  Measured on the NASA test photos: the same person 0.64–0.95 (SFace) and 0.59–0.93 (AuraFace),
+  different people at most 0.30 and 0.22.
+- The people are shared by every sensor (a household, not a camera): `person` rows, each with
+  `face` rows (`db.Face`: {box, points, score} in the crop, and the sensor it was taught on, null
+  once that sensor is deleted — the face stays). The crop (the face with a margin, not aligned, so
+  another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
+  embeddings are cached per face model (`face_embedding`), deleted with the face, never exported.
+  A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
+  stored on the sensor): its entities, and a name its faces can get. One index of all taught
+  faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
+- Each person also has two entities of their own on the app's device: `sensor.visionstate_<key>_seen_by`
+  (`mqtt.person_discovery_messages`): the slug of the sensor that sees them now — the one that saw
+  them last when several do — or `settings.PERSON_NOT_SEEN`; when and where they were last seen
+  are attributes, and when also a timestamp entity, `sensor.visionstate_<key>_last_seen` (a frame
+  confirmed afterwards moves it: `engine.objects.seen_earlier`, published at once). Kept in memory, and at start read back from the history
+  (`engine.objects.restore_last_seen`: the last "on", an "off" less `clear_after_s`, a box taught
+  from a frame), so "last seen" survives a restart while the history keeps it. A box taught from
+  a history frame or a review answer is written into that row (`api.teach.remember_taught`: its
+  label, `taught`), so the History shows what was taught from it.
+- `GET /people` and `/faces/{id}` (`api/faces.py`) list, rename, move and forget for all sensors;
+  teaching stays on a sensor (`/sensors/{id}/faces`), or comes from photos (`POST /people/photos`:
+  read like a state sensor's upload, `uploads.frames_from_file`; the best face of each picture
+  through the same gate, at most `FACES["max_photos"]`; origin `upload`, no sensor). Export carries the faces taught on that
+  sensor, with their people's keys and names, only with `?faces=true`; import adds them to the
+  person with that key or name (or a new one) and turns face recognition off.
 
 - Weights: D-FINE (Apache-2.0, COCO-trained; not the Objects365 variants, which carry other
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
-  (`tests/assets`) now guard every model file. 8-bit variants were slower and worse on CPU.
+  (`tests/assets`, `tests/test_models.py`) now guard every model file. 8-bit variants were slower and worse on CPU.
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
 | ID | Model | Use |
 |---|---|---|
-| `ppocrv6-tiny` | PP-OCRv6 tiny rec, ONNX (bundled, 4.5 MB) | Default; ~2 ms per read on a desktop CPU |
+| `ppocrv6-tiny` | PP-OCRv6 tiny rec, ONNX (bundled, 4.5 MB) | Default |
 | `ppocrv6-small` | PP-OCRv6 small rec, ONNX (downloaded on demand, 21 MB) | Unusual fonts |
+
+PP-OCRv6 medium (77 MB) was evaluated and left out (2026-10-11): on 280 drawn LCD/LED displays
+(clean, blurred, low resolution, low contrast, noisy, tilted, heavy JPEG) and 49 drawn counters
+it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-segment digits.
 
 1. Crop the ROI's bounding box (no margin, no mask). Display *auto*: autocontrast greyscale;
    when the read is unsure (< `READING["segments_fallback_below"]`) also try the digits' own
@@ -198,20 +293,13 @@ the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounde
 digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
 the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
 the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
-(`db.keep_text_reader`). How it is to get better (benchmark, the last value as an expectation,
-calibrated confidence, self-calibration of the region, wheels-v2, learning per sensor):
-[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md). Training code and data sources: `tools/wheelreader`
-(synthetic wheels drawn with OFL fonts, the CC0 Word-Wheel Water Meter Dataset (Sci Data 2026),
-the CC0 exports shared in issues #32/#40).
+(`db.keep_text_reader`). The model, its training data and its
+results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it is to get better:
+[`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md).
 
-- Evaluated for the wheel reader (2026-10-09; whole reading exact, last digit rounded): a
-  user's ESP32 water meter with red wheels, held out from training: 17/17 (PP-OCRv6 small 15,
-  tiny 8 with 5 too high); two water meters never seen in training (bolausson, test only): 30–33
-  of 35 and 15–18 of 18 with no value too high (small 30 with 2 too high, 15 with 1); the
-  Dryad test set (2,400 photos): 97.7 % when the photo is the right way up. Trained without the
-  user's images it read them just as well. The remaining misses are ±1 on a half-turned last
-  wheel. The decode score separates right from wrong reads only moderately, so it is not used
-  for more than the confidence.
+- Why a wheel reader (2026-10-09): on every meter tested it read more readings right than
+  PP-OCRv6 small and gave no value too high, which the text reader did (numbers in its README).
+  The remaining misses are ±1 on a half-turned last wheel.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
@@ -270,6 +358,11 @@ the pixels are decoded.
   - Optional region change detection: a small greyscale copy of the ROI is compared every
     *N* seconds; the AI only runs when the difference exceeds a threshold.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
+  - A sensor that recognises faces starts one by itself when a check finds a person nobody is
+    named for (`engine.logic.steer_face_burst`, tunables `FACES["burst_*"]`): someone walking up
+    shows a usable face for a few seconds only. It runs while they come closer or show a face, ends
+    once everyone is named, when they are gone, without progress or after `burst_max_s`, and comes
+    again only after they have gone. The light is held through it like any burst.
   - The MQTT `classify` button checks once.
 - **Light** (`triggers.light_entity`, `light_delay_s`; picked with the camera in the UI): a light,
   switch or input_boolean, switched over the HA REST API (`homeassistant.turn_on/off`). `lights.py`
@@ -319,15 +412,10 @@ the pixels are decoded.
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
-One HA **device** per sensor:
-
-| Entity | Type | Purpose |
-|---|---|---|
-| `sensor.<name>` | `sensor` (`device_class: enum`, options = state keys + `unknown`) | The result |
-| `…_confidence` | `sensor` (%) | Top probability |
-| `image.…_last_frame` | `image` | The ROI that was classified |
-| `button.…_classify_now` | `button` | Check now (automations) |
-| `switch.…_enabled` | `switch` | Pause / resume |
+One HA **device** per sensor (the entities a user sees are listed in DOCS.md). A state sensor:
+the result as `sensor` with `device_class: enum` (options = state keys + `unknown`), its
+confidence, an `image` of the region that was classified, a `button` to check now and a `switch`
+to pause it.
 
 **Object sensors** replace the first two with two entities per selected class:
 `binary_sensor.<name>_<class>` (`device_class: occupancy`, attributes: confidence,
@@ -381,8 +469,9 @@ outside Home Assistant it shows the expected IDs.
 Principle: **easy by default, details on demand.** Dark theme, responsive.
 
 1. **Dashboard** — cards per sensor: live thumbnail, state, confidence, 24 h timeline, health.
-2. **New sensor wizard** — camera → region → *detect*: states (names) or objects (popular
-   first, all 80 behind "Show all", with a test on a fresh frame) → optional triggers.
+2. **New sensor wizard** — camera → region → *detect*: states (names), objects (popular
+   first, all 80 behind "Show all") or a reading (display or counter), each tested on a fresh
+   frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
@@ -401,9 +490,9 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     object class or own label — the row's `state_key`; never a reading), event, time window and
     *waiting for review*, newest or oldest first. Each filter takes several values (any of them
     matches); filters combine with *and*. Events are a registry per kind
-    (`settings.HISTORY_EVENTS`: `change`, `flagged`; `appeared`, `cleared`, `filtered`, `asked`;
-    `value`, `rejected`, `verified`), sent to the UI in `/config`; `api/history.py` says which rows
-    each matches. One function (`history_query`) turns a filter into SQL for the list
+    (`settings.HISTORY_EVENTS`: `change`, `flagged`; `appeared`, `cleared`, `filtered`, `asked`,
+    `face_seen`; `value`, `rejected`, `verified`), sent to the UI in `/config`; `api/history.py`
+    says which rows each matches. One function (`history_query`) turns a filter into SQL for the list
     (`GET /history`, paged by a cursor on `(created_at, id)` so rows arriving at the top never
     repeat a row), its count and the facets (`GET /history/facets`: rows per sensor, key and event,
     each counted without its own filter so other choices stay offered). The filter lives in the
@@ -431,12 +520,12 @@ loads.
 
 ## 10. Data model & extensibility
 
-- SQLite; schema version in `PRAGMA user_version` with additive migrations (`db.MIGRATIONS`,
-  currently v10). An older version started on a newer database ignores the columns it does not
+- SQLite; schema version in `PRAGMA user_version` (`db.SCHEMA_VERSION`) with additive migrations
+  (`db.MIGRATIONS`). An older version started on a newer database ignores the columns it does not
   know (rollback works; checked by the upgrade test).
-- `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds classes, `min_size`,
-  `clear_after_s`, `use_taught` and the own labels `custom`) or `reading` (`sensor.reading` holds mode, decimals, unit, device class,
-  display, `digits`, `max_step`, `spot_rate`); reserved for `multi_label`. Every reading is
+- `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds the fields of
+  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`) or `reading`
+  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
   (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
@@ -460,6 +549,7 @@ loads.
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
 | Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
+| The people's taught faces (crops, shared by every sensor) | `/data/faces/` — not in the media folder, which every Home Assistant user can browse | Yes |
 | History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
@@ -501,41 +591,13 @@ automatically.
 - Not implemented: full export of all sensors + global settings, merge/replace import modes,
   exporting trained heads (retraining is faster than shipping them).
 
-## 13. Configuration (app options)
+## 13. Configuration
 
-`log_level`, `discovery_prefix`, and optional `mqtt_host`,
-`mqtt_port`, `mqtt_username`, `mqtt_password`. Everything else (AI model, review rules,
-sensor settings) lives in the UI.
+App options are only for logging and a broker Home Assistant does not provide (list in DOCS.md).
+Everything else (AI models, review rules, sensor settings) lives in the UI and the database, so it
+is part of backups and needs no restart.
 
-## 14. Tech stack
-
-| Layer | Choice |
-|---|---|
-| Runtime | Python 3.14 (image and CI), FastAPI, uvicorn, SQLAlchemy, asyncio |
-| Inference | ONNX Runtime, NumPy, Pillow, PyAV (bundled FFmpeg) |
-| Training | scikit-learn |
-| MQTT / HA | aiomqtt, websockets, httpx |
-| Frontend | Svelte 5 + Vite + TypeScript, plain CSS with design tokens (`tokens.css`), hash router (Ingress-safe), bundled fonts |
-| Packaging | HA app repository, Docker (python:3.14-slim), GitHub Actions → GHCR |
-| Quality | pytest (unit + integration with a fake camera/HA/MQTT; coverage measured in CI, floor 88 %), ruff, svelte-check, Playwright UI tests (desktop + phone with touch, against the real backend and `scripts/fake_camera.py`), image smoke test in CI, Dependabot (monthly, to `beta`) |
-| Docs | `README.md`, `visionstate/DOCS.md` (shown in HA), `CHANGELOG.md`, this file |
-
-## 15. Repo layout
-
-```
-/                       repository.yaml, README.md, CLAUDE.md
-/visionstate            HA app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
-/visionstate/backend    Python package + tests (inside the app dir: the Dockerfile builds from it);
-                        visionstate/engine/ is the runtime: Runtime (runtime.py) from one mixin
-                        per part (models, checks, objects, reading, teaching, training,
-                        publishing, history), state.py and logic.py (pure decisions)
-/visionstate/frontend   Svelte app
-/scripts                channel.py (stable/beta config switch), fake_camera.py (test camera)
-/docs                   SCOPE.md, promo/ (README screenshots and logos)
-/.github                CI workflow, Dependabot
-```
-
-## 16. Roadmap
+## 14. Roadmap
 
 | Milestone | Content | Version |
 |---|---|---|
@@ -553,48 +615,22 @@ sensor settings) lives in the UI.
 | **Mechanical counters** ✅ | Rolling digit wheels (water, gas): one cell per wheel, digit count check | 0.6.1 (beta 0.6.1b6) |
 | **Teaching object sensors** ✅ | Correct a box (not it / something else), own labels ("Our car"), missed boxes, Quality tab | 0.6.3 (beta 0.6.3b10) |
 | **Readings & light** ✅ | Reading Quality tab and review of rejected readings, extra reading entities (rate, problem, reader image), a light for each check, regular check off / trigger states, entity IDs without prefix | 0.6.3 (betas 0.6.3b1–b16) |
-| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
-| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right | 0.8.0 (betas 0.7.1b3–b4) |
-| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, export v2, self-calibrating regions, wheels-v2, learning per sensor — see [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | export v2 in 0.8.0 (betas 0.7.1b5–b6); the rest planned |
-| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
 | **Hardening** ✅ | Loops that survive unexpected errors (MQTT bridge, sensor loops), redacted log lines and tracebacks, source address checks, frame and image size limits, sturdier import, engine split into a package, coverage in CI | 0.6.4 |
+| **History** ✅ | History page with filters shared by every sensor's History tab, the images behind the Quality tab's mix-ups | 0.7.0 |
+| **Wheel reader** ✅ | Mechanical counters read wheel by wheel with a model made for VisionState; wheels mid-turn read right; export v2 of readings | 0.8.0 (betas 0.7.1b3–b6) |
+| **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
+| **Larger models, tunable teaching** ✅ | D-FINE M and L, DINOv2 base, a model comparison in Settings, teaching limits globally and per sensor | 0.9.0 (beta 0.8.1b1) |
+| **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
+| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
-**Open ideas** (not scheduled): full export/import of everything; merge/replace import;
+**Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
+summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); full
+export/import of everything; merge/replace import;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
 Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
 dials and gauges; several readings per sensor (a sign with four prices, a
-counter plus its dials); issue templates; per-sensor model
+counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
-
-## 17. Identity
-
-| Item | Value |
-|---|---|
-| Name | VisionState (beta: "VisionState (beta)") |
-| App slug | `visionstate` |
-| Repository | `github.com/oleost/VisionState` (`#beta` for the beta channel) |
-| Images | `ghcr.io/oleost/visionstate-{amd64,aarch64}:X.Y.Z` (+`latest`) / `:X.Y.ZbN` (+`beta`) |
-| MQTT discovery prefix / node id | `homeassistant` / `visionstate` |
-| Licence | Apache-2.0 |
-
-## 18. Release channels
-
-- **beta** branch: all changes land here first; versions `X.Y.ZbN`, GitHub pre-releases, own
-  media folder. The maintainer runs it permanently.
-- **main** branch: stable; changes only by promoting a tested beta through a PR
-  (branch-protected, CI required).
-- CI builds, tests and smoke-tests the image on both architectures, each on its own hardware
-  (start, MQTT, discovery, clean `docker stop` with exit code 0) before publishing, refuses
-  tags that do not match `config.yaml`, and refuses the wrong channel on a branch.
-- The amd64 image is also run under an emulated x86-64-v1 CPU (`kvm64`, qemu-user) with
-  `scripts/cpu_probe.py`, which exercises every native library and the app. NumPy is pinned
-  below 2.4 for that reason (2.4+ needs x86-64-v2; found through issue #29). Checked 2026-10:
-  with NumPy 2.3.5 all other pins (SciPy 1.18, scikit-learn 1.9, ONNX Runtime 1.30, Pillow 12,
-  PyAV 18) work on `kvm64` and `qemu64`.
-- A beta tag is the whole release: after both images are published CI creates the pre-release
-  from the changelog entry and fast-forwards `beta`, so the branch never carries a version
-  without images. Stable releases are promoted by hand.
-- Step-by-step procedures are in `CLAUDE.md`.

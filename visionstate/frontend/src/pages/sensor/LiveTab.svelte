@@ -5,7 +5,8 @@
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct, plural } from '../../lib/format';
-  import { objectColor, objectCount, objectKeys, objectName } from '../../lib/objects';
+  import FaceStats from '../../lib/components/FaceStats.svelte';
+  import { faceNote, facesOn, objectColor, objectCount, objectKeys, objectName } from '../../lib/objects';
   import { href, paths } from '../../lib/router.svelte';
   import type { Detection, Sensor } from '../../lib/types';
   import { TRIGGER_SOURCES } from '../../lib/ui';
@@ -21,6 +22,11 @@
     keys.map((key) => ({ key, n: objects.detections.filter((d) => counts(d, key)).length })).filter((x) => x.n > 0),
   );
   const filteredAway = $derived(objects.detections.filter((d) => d.filtered).length);
+  // Recognising faces: what the face search said about each person box of the last check.
+  const faces = $derived(facesOn(sensor));
+  const faceNotes = $derived(
+    faces ? objects.detections.filter((d) => d.face && !d.filtered).map((d) => faceNote(d, objects.custom)) : [],
+  );
   // Each class, followed by its own labels ("Rex" under "Dog").
   const rows = $derived(
     objects.live
@@ -87,6 +93,12 @@
           </li>
         {/each}
       </ul>
+      {#if faces}
+        <div class="faces">
+          {#each faceNotes as note, i (i)}<span class="xsmall muted">Person · {note}</span>{/each}
+          <FaceStats {objects} />
+        </div>
+      {/if}
       <p class="xsmall faint" style="margin-top:12px">
         An object is reported after {plural(sensor.debounce, 'check')} with it and cleared {objects.clear_after_s} s after it
         was last seen. Boxes below {pct(sensor.threshold)} are ignored.
@@ -95,7 +107,7 @@
         {/if}
       </p>
       <div class="trigger">
-        {#if sensor.live.in_burst}<span class="chip info">Checking every {sensor.triggers.burst_interval_s} s</span>{/if}
+        {#if sensor.live.in_burst}<span class="chip info">Checking every {sensor.live.burst_interval_s ?? sensor.triggers.burst_interval_s} s</span>{/if}
         {#if sensor.live.last_trigger}
           <span class="xsmall muted">
             {TRIGGER_SOURCES[sensor.live.last_trigger.source] ?? 'Triggered'} {ago(sensor.live.last_trigger.at)}:
@@ -173,6 +185,14 @@
     border-radius: var(--radius-pill);
     border: 1px solid var(--c-border-strong);
     color: var(--c-muted);
+  }
+  .faces {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
   }
   .trigger {
     display: flex;

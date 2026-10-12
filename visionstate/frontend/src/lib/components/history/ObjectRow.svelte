@@ -1,7 +1,7 @@
 <script lang="ts">
   // A history row of an object sensor: an object appeared, cleared, was filtered away by what the
-  // sensor was taught, or the sensor asked about it. It opens to the frame with its boxes, which can
-  // be corrected there.
+  // sensor was taught, the sensor asked about it, or it saw a face nobody is named for. It opens to
+  // the frame with its boxes, which can be corrected (or a person named) there.
   import { api } from '../../api';
   import { dateTime, pct } from '../../format';
   import { objectColor, objectCount, objectKeys, objectName } from '../../objects';
@@ -29,7 +29,18 @@
     return [...counts].map(([key, n]) => objectCount(n, key, own)).join(', ');
   });
 
-  const WHAT: Record<string, string> = { on: 'detected', off: 'cleared', filtered: 'filtered away', ask: '? (asked in Review)' };
+  // What was taught from this frame since it was recorded (a person named, a box corrected).
+  const taught = $derived([
+    ...new Set((p.detections ?? []).filter((d) => d.taught).map((d) => objectName(d.label ?? d.key, own))),
+  ]);
+
+  const WHAT: Record<string, string> = {
+    on: 'detected',
+    off: 'cleared',
+    filtered: 'filtered away',
+    ask: '? (asked in Review)',
+    face: '· face seen (tap the person to name them)',
+  };
 </script>
 
 <div class="card item">
@@ -40,12 +51,19 @@
       <span class="row wrap" style="gap:8px">
         <strong class="row" style="gap:8px" class:muted={filtered}>
           <span class="dot" class:ring={filtered} style:background={on ? objectColor(classes, p.state_key) : 'var(--c-unknown)'}></span>
-          {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{WHAT[p.published_key ?? ''] ?? ''}
+          {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{p.published_key === 'face' && taught.length
+            ? '· face seen'
+            : (WHAT[p.published_key ?? ''] ?? '')}
         </strong>
         {#if (on || filtered) && p.confidence}<span class="mono small muted">{pct(p.confidence)}</span>{/if}
       </span>
       <span class="xsmall faint">{dateTime(p.created_at)}</span>
       {#if inFrame}<span class="xsmall muted">In the frame: {inFrame}</span>{/if}
+      {#if taught.length}
+        <span class="xsmall taught row" style="gap:4px" data-testid="history-taught">
+          <Icon name="check" size={12} />Taught: {taught.join(', ')}
+        </span>
+      {/if}
     </span>
     <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
   </button>
@@ -72,6 +90,10 @@
     cursor: pointer;
   }
   .sensor {
+    overflow-wrap: anywhere;
+  }
+  .taught {
+    color: var(--c-accent);
     overflow-wrap: anywhere;
   }
   img {

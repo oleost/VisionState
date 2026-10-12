@@ -6,8 +6,8 @@ from __future__ import annotations
 import math
 
 from .. import detectors, imaging, readers, teach
-from ..settings import DETECTION
-from .state import LiveState, ObjectTrack, SensorConfig
+from ..settings import DETECTION, FACES
+from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig
 
 
 def review_reason(
@@ -152,9 +152,9 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
     """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
     if live.last_run is None:
         return now, "full"
-    in_burst = now < live.burst_until
-    if in_burst:
-        full_at = live.last_run + cfg.triggers["burst_interval_s"]
+    pace = burst_pace(cfg, live, now)
+    if pace is not None:
+        full_at = live.last_run + pace
     elif cfg.triggers["regular"]:
         # Counted from the last check, whatever caused it: frequent triggers postpone it.
         full_at = live.last_run + cfg.interval_s
@@ -167,6 +167,51 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
         if probe_at < full_at:
             return probe_at, "probe"
     return full_at, "full"
+
+
+def burst_pace(cfg: SensorConfig, live: LiveState, now: float) -> float | None:
+    """Seconds between checks while a burst runs (a trigger's, or looking for a face), or None."""
+    paces = [cfg.triggers["burst_interval_s"]] if now < live.burst_until else []
+    if now < live.face_burst.until:
+        paces.append(FACES["burst_interval_s"])
+    return min(paces) if paces else None
+
+
+def steer_face_burst(burst: FaceBurst, found: list[dict], now: float) -> str | None:
+    """After a check of a sensor that recognises faces: start or end looking for a face more
+    often while a person is there (FACES["burst_*"]). Returns "start" or "stop" when that changes."""
+    people = [d for d in found if d["key"] == "person" and not d.get("filtered")]
+    if not people:
+        burst.absent += 1
+        if burst.absent >= FACES["burst_absent_checks"]:
+            burst.spent = False  # gone: the next visit gets a burst of its own
+            return _end_face_burst(burst, spent=False)
+        return None
+    burst.absent = 0
+    unnamed = [d for d in people if (d.get("face") or {}).get("state") != "match"]
+    height = max(d["box"][3] - d["box"][1] for d in people)
+    width = max(float((d.get("face") or {}).get("face_px") or 0) for d in people)
+    if burst.until == 0.0:
+        if burst.spent or not unnamed:
+            return None
+        burst.until, burst.idle, burst.best_height, burst.best_face = now + FACES["burst_max_s"], 0, height, width
+        return "start"
+    if not unnamed or now >= burst.until:
+        return _end_face_burst(burst, spent=True)  # everyone named, or the time is up
+    usable = any((d.get("face") or {}).get("box") and not (d.get("face") or {}).get("problem") for d in unnamed)
+    closer = height > burst.best_height * FACES["burst_progress"] or width > burst.best_face * FACES["burst_progress"]
+    burst.idle = 0 if usable or closer else burst.idle + 1
+    burst.best_height, burst.best_face = max(burst.best_height, height), max(burst.best_face, width)
+    if burst.idle >= FACES["burst_idle_checks"]:
+        return _end_face_burst(burst, spent=True)  # standing turned away, or no face to be had
+    return None
+
+
+def _end_face_burst(burst: FaceBurst, spent: bool) -> str | None:
+    running = burst.until > 0.0
+    burst.until, burst.idle = 0.0, 0
+    burst.spent = burst.spent or spent
+    return "stop" if running else None
 
 
 def reading_verdict(

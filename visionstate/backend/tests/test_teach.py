@@ -443,3 +443,83 @@ def test_an_unsure_own_label_is_asked_about_and_the_answer_taught(settings, monk
         after_a_check()
         assert client.post(f"/api/v1/review/{item['id']}", json={"action": "skip"}).status_code == 200
         assert taught() == ["rex"]
+
+
+# --- tunable limits: backbone defaults < global < sensor -----------------------------------------
+
+
+def test_teach_limits_inherit_backbone_global_and_sensor():
+    from visionstate.settings import TEACH_BY_BACKBONE, TEACH_TUNABLE, merge_teach, teach_defaults
+
+    small = teach_defaults("dinov2-small-q8")
+    assert small == {key: TEACH[key] for key in TEACH_TUNABLE}
+    base = teach_defaults("dinov2-base")
+    assert base["match_similarity"] == TEACH_BY_BACKBONE["dinov2-base"]["match_similarity"] > small["match_similarity"]
+    merged = merge_teach(
+        "dinov2-base", {"ask_similarity": 0.7, "junk": 1}, {"ask_similarity": 0.72, "rescue_floor": None}
+    )
+    assert merged["ask_similarity"] == 0.72  # the sensor's own value wins
+    assert merged["match_similarity"] == base["match_similarity"]  # nobody set it: the backbone's default
+    assert merged["rescue_floor"] == TEACH["rescue_floor"]  # None = inherit
+    assert "junk" not in merged and merged["max_labels"] == TEACH["max_labels"]  # the rest of TEACH comes along
+
+
+def test_apply_uses_the_limits_it_is_given():
+    parents = {"our_car": "car"}
+    idx = index([("our_car", "car", OUR_CAR)], parents)
+    vector = np.stack([toward(OUR_CAR, unit(0, 0, 0, 1), 0.85)])
+    found = [det("car")]
+    strict = teach.apply(found, [0], vector, [], np.zeros((0, 4)), idx, ["car"], parents)[0]
+    assert "label" not in strict  # 0.85 is below the default 0.88
+    loose = {**TEACH, "match_similarity": 0.84}
+    assert (
+        teach.apply(found, [0], vector, [], np.zeros((0, 4)), idx, ["car"], parents, None, loose)[0]["label"]
+        == "our_car"
+    )
+    no_asking = {**TEACH, "ask_similarity": 0.86}
+    assert "ask" not in teach.apply(found, [0], vector, [], np.zeros((0, 4)), idx, ["car"], parents, None, no_asking)[0]
+
+
+def test_teach_limits_api_global_sensor_and_export(settings):  # noqa: F811
+    from visionstate.settings import teach_defaults
+
+    with TestClient(create_app(settings)) as client:
+        view = client.get("/api/v1/teach-limits").json()
+        defaults = teach_defaults(view["backbone"])
+        assert view["defaults"] == defaults == view["effective"]
+        assert set(view["values"]) == set(defaults) and not any(view["values"].values())
+        config = client.get("/api/v1/config").json()["teach"]
+        assert config["tunable"] == list(defaults) and config["limits"]["match_similarity"][1] < 1
+
+        # Global: set one, the rest stay at the default; nonsense is refused.
+        view = client.put("/api/v1/teach-limits", json={"match_similarity": 0.92}).json()
+        assert view["values"]["match_similarity"] == 0.92 and view["effective"]["match_similarity"] == 0.92
+        assert view["effective"]["ask_similarity"] == defaults["ask_similarity"]
+        assert client.put("/api/v1/teach-limits", json={"ask_similarity": 0.95}).status_code == 400  # above match
+        assert client.put("/api/v1/teach-limits", json={"match_similarity": 1.5}).status_code == 422
+        rt = client.app.state.runtime
+        assert rt.global_teach == {"match_similarity": 0.92}
+
+        # A sensor: inherits, can have its own values, and loses them again.
+        sid = create(client, objects={"classes": ["dog"]}).json()["id"]
+        assert sensor(client, sid)["objects"]["teach"] == {}
+        assert rt.teach_limits(rt.load_sensor(sid))["match_similarity"] == 0.92
+        resp = client.patch(f"/api/v1/sensors/{sid}", json={"objects": {"teach": {"match_similarity": 0.8}}})
+        assert resp.status_code == 200, resp.text
+        assert sensor(client, sid)["objects"]["teach"] == {"match_similarity": 0.8}
+        assert sensor(client, sid)["objects"]["classes"] == ["dog"]  # the rest of objects stays
+        assert rt.teach_limits(rt.load_sensor(sid))["match_similarity"] == 0.8
+        bad = {"objects": {"teach": {"match_similarity": 0.8, "keep_similarity": 0.85}}}
+        assert client.patch(f"/api/v1/sensors/{sid}", json=bad).status_code == 400  # keep above match
+        assert sensor(client, sid)["objects"]["teach"] == {"match_similarity": 0.8}  # unchanged
+
+        # Export and import carry the sensor's own values.
+        exported = client.get(f"/api/v1/sensors/{sid}/export")
+        imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
+        assert imported.status_code == 201, imported.text
+        assert sensor(client, imported.json()["id"])["objects"]["teach"] == {"match_similarity": 0.8}
+
+        client.patch(f"/api/v1/sensors/{sid}", json={"objects": {"teach": {}}})
+        assert sensor(client, sid)["objects"]["teach"] == {}
+        client.put("/api/v1/teach-limits", json={})
+        assert rt.teach_limits(rt.load_sensor(sid))["match_similarity"] == defaults["match_similarity"]

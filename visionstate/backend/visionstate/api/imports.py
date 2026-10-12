@@ -9,9 +9,10 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from sqlalchemy import select
 
-from .. import bundle, detectors, imaging
-from ..db import keep_text_reader
+from .. import bundle, detectors, faces, imaging
+from ..db import Person, keep_text_reader
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
@@ -23,9 +24,11 @@ from . import teach
 from .common import (
     API_PREFIX,
     runtime,
+    slugify,
     unique_name,
     unique_slug,
 )
+from .faces import add_face_row, new_person, taken_keys
 from .samples import copy_limited
 
 log = logging.getLogger(__name__)
@@ -43,20 +46,23 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
         path.unlink(missing_ok=True)
         raise HTTPException(413, f"Bundle is larger than {UPLOAD_LIMITS['max_file_mb']} MB")
     try:
-        sensor_id, skipped = await asyncio.to_thread(_import_sync, rt, path)
+        sensor_id, skipped, faces_off = await asyncio.to_thread(_import_sync, rt, path)
     except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as err:
         raise HTTPException(400, f"Import failed: {redact(str(err))}") from err
     finally:
         path.unlink(missing_ok=True)
     await rt.sensor_created(sensor_id)
+    await rt.people_changed()  # people that came with their faces
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg and cfg.kind == KIND_STATES:
         rt.schedule_retrain(sensor_id, delay=0)
-    return {"id": sensor_id, "skipped": skipped}
+    # faces_off: it recognised faces where it was exported; the UI says to turn that on again here.
+    return {"id": sensor_id, "skipped": skipped, "faces_off": faces_off}
 
 
-def _import_sync(rt: Runtime, path: Path) -> tuple[int, int]:
-    """Creates the sensor of a bundle; returns its ID and how many of its images were unreadable."""
+def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
+    """Creates the sensor of a bundle; returns its ID, how many of its images were unreadable and
+    whether face recognition, on where it was exported, was turned off."""
     from pydantic import ValidationError
 
     from .sensors import SensorIn
@@ -93,6 +99,12 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int]:
         raise ValueError(f"invalid sensor in bundle: {err.errors()[0].get('msg')}") from err
     except HTTPException as err:
         raise ValueError(f"invalid sensor in bundle: {err.detail}") from err
+    faces_off = False
+    if spec.objects is not None and spec.objects.faces is not None:
+        # Taught faces come along, face recognition does not: it is turned on there, with its
+        # own confirmation (and download).
+        faces_off = bool(spec.objects.faces.enabled)
+        spec.objects.faces.enabled = False
     samples = manifest.get("samples", []) if spec.kind in (KIND_STATES, KIND_OBJECTS) else []
     if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
         raise ValueError("too many samples in bundle")
@@ -121,7 +133,31 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int]:
         except (ValueError, KeyError, TypeError, AttributeError, OSError) as err:
             skipped += 1
             log.warning("Import: skipping a sample: %s", err)
-    return sensor_id, skipped
+    stored = manifest.get("faces", []) if spec.kind == KIND_OBJECTS else []
+    for item in stored if isinstance(stored, list) else []:
+        try:
+            _import_face(rt, path, sensor_id, item)
+        except (ValueError, KeyError, TypeError, AttributeError, OSError, HTTPException) as err:
+            skipped += 1
+            log.warning("Import: skipping a face: %s", getattr(err, "detail", err))
+    return sensor_id, skipped, faces_off
+
+
+def _import_face(rt: Runtime, path: Path, sensor_id: int, item: dict) -> None:
+    """A taught face from a bundle, for its person: the one with that key (or name), else a new one."""
+    face = faces.face_to_dict(faces.face_from_dict(item["face"]))
+    image = imaging.decode(bundle.read_sample_bytes(path, str(item["file"]), "faces"))
+    key, name = str(item["person"]), str(item.get("name") or item["person"]).strip()[:64]
+    with rt.db.session() as s:
+        person = s.scalar(select(Person).where(Person.key == key))
+        if person is None:
+            person = next((p for p in s.scalars(select(Person)) if p.name.lower() == name.lower()), None)
+        if person is None:
+            person = new_person(s, name)
+            if key not in taken_keys(s) and slugify(key, "") == key:
+                person.key = key  # the same entity IDs as where it was exported
+        filename = rt.storage.save_face(image)
+        add_face_row(s, person.id, sensor_id, filename, image, face, "import")
 
 
 def _import_sample(rt: Runtime, path: Path, sensor_id: int, kind: str, item: dict, own: set, state_ids: dict) -> None:

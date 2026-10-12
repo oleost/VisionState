@@ -1,8 +1,7 @@
 # Wheel reader: plan for better counter readings
 
-Status: **plan** (written 2026-10-09, after 0.7.1b4); B1 (the export) is built in 0.7.1b5. This document is
-the design for improving how VisionState reads **mechanical counters** (rolling digit wheels on
-water and gas meters). It applies to reading sensors with the *counter* display and the wheel reader
+The design for improving how VisionState reads **mechanical counters** (rolling digit wheels on
+water and gas meters); what is done and what is next is in the table in §9. It applies to reading sensors with the *counter* display and the wheel reader
 (`counter_reader: "wheels"`). The general design is in [`SCOPE.md`](SCOPE.md), and the model and its
 training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
 
@@ -13,13 +12,7 @@ training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
   over 100 bins (0.0–9.9). `readers.wheel_value` then finds the most likely value whose wheels fit
   together, from right to left, with one common shift of up to ±2 bins. The last wheel is rounded,
   and the confidence is the mean probability per wheel.
-- **Trained on** 600 k drawn cells, the CC0 Dryad Word-Wheel set (nearest-digit labels; about a
-  third of the crops are upside down, picked by a synthetic-only model) and the CC0 exports from
-  issues #32 and #40.
-- **Results:**
-  - #40 meter, held out: 17/17 (PP-OCRv6 small 15, tiny 8).
-  - Two meters never seen: 30–33/35 and 15–18/18, no value too high.
-  - Dryad test: 97.7 % with the right orientation.
+- **Training data and results:** [`tools/wheelreader/README.md`](../tools/wheelreader/README.md).
 - **Known weaknesses, with evidence:**
   - *±1 on the last digit* when the last wheel is about half way. The rounding moves with the
     per-frame shift (pedro32: 81 exact + 12 at +1).
@@ -46,7 +39,7 @@ training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
 5. **No telemetry.** Data only arrives when a user exports it and shares it on purpose.
 6. **The registry rules stay.** A changed model, or changed calibration of a model, gets a new
    registry id. Existing sensors keep their behaviour until the user picks the new one, as in
-   0.7.1b4.
+   0.8.0 (counters made before the wheel reader kept the text reader).
 
 ## 3. Phase 0 — benchmark and metrics (the base for everything else)
 
@@ -147,9 +140,10 @@ In the decoder the expectation can be tested, explained, set per sensor and used
 
 ## 5. Phase B — better data in
 
-### B1. The export ("Export checked readings")
+### B1. The export ("Export readings") — done
 
-**Built in 0.7.1b5–b6**, with these changes to the table below (decided 2026-10-10):
+Built in 0.8.0; what it contains is in [`SCOPE.md`](SCOPE.md) §12. Decisions that differ from the
+first plan (2026-10-10):
 - the light is recorded per reading automatically (greyscale picture, and whether VisionState had
   the sensor's light on) instead of a flag in the dialog;
 - frames are **not** deduplicated in the app — a reading of the same frame is still a reading; the
@@ -157,28 +151,13 @@ In the decoder the expectation can be tested, explained, set per sensor and used
 - the unchecked accepted readings are **always** included (no option, no count limit): the images
   are what is scarce. Their value is the reader's guess, so the tools use them as labels only after
   a check (§B4);
-- no spot-check button (0.7.1b5 had one; removed in b6);
-- no count limits: one ZIP of at most 24 MB (GitHub's limit is 25 MB per file; about 1,000
-  readings), checked readings first, then the newest unchecked ones; what does not fit is counted
-  in `left_out`. Splitting into parts was built and dropped as more than we need now. Images are
-  not scaled down: the data stays as the app stored it.
+- no spot-check button; `spot_rate` is the way to get accepted readings checked;
+- one ZIP of at most 24 MB (GitHub's limit is 25 MB per file), checked readings first, then the
+  newest unchecked ones; what does not fit is counted in `left_out`. Splitting into parts was built
+  and dropped as more than we need now. Images are not scaled down.
 
-It already gives the region with a margin, the right value, the answer, the region each reading
-was made in and the CC0 licence. To add (format version `"format": 2` in `readings.json`, and
-README.txt to match):
-
-| Add | Why |
-|---|---|
-| reader id and model version **per reading** | today `reader` is the current choice for the whole export; after 0.7.1b4 OCR and wheel readings are mixed |
-| wheel reader details per reading: position and probability per wheel, the shift, V with its fraction | shows where the model hesitated without running it again; lets us check calibration on shared data |
-| an optional free-text **"What meter is this?"** in the export dialog | today it has to be written in the post, and it gets forgotten |
-| an optional **light** flag (day / night or IR / flash), not the time of day | IR and flash are their own problems; the time of day is more than we need |
-| each frame **once** | the old export had one image read 15 times |
-| optionally the latest **unchecked accepted** readings, marked `"answer": "unchecked"` | today almost only rejected readings get checked, so exports are mostly failures. A counter only goes up, so ordered unchecked readings still give useful weak labels |
-| a button to **spot-check** a few accepted readings before exporting | easier than changing `spot_rate` |
-
-Privacy stays as it is: only the region with a small margin, no camera, name or position, and the
-day only. The user looks at the images before sharing (README.txt).
+Privacy: only the region with a small margin, no camera, name or position, and the day only. The
+user looks at the images before sharing (README.txt in the ZIP).
 
 ### B2. Collecting
 
@@ -251,7 +230,9 @@ the correlation peak and skip frames where it is weak (light changes, IR switchi
 
 The manual 4-point correction stays planned for strongly angled cameras (see the earlier
 decision: measure the read rate at real angles first, for example with the user's ESP32 camera, or
-with `fake_camera` given a perspective parameter). C2 can later suggest the four points.
+with `fake_camera` given a perspective parameter). C2 can later suggest the four points. Open
+questions: reuse the 4-corner polygon region or a new corner tool (existing sensors must keep
+working), the corner order and orientation, and dragging corners on a phone.
 
 ## 7. Phase D — wheels-v2
 
@@ -294,21 +275,23 @@ with `fake_camera` given a perspective parameter). C2 can later suggest the four
 
 ## 9. Order, size and dependencies
 
-| Phase | Builds on | Size | Gives |
-|---|---|---|---|
-| 0 Benchmark | — | small | a fair measure for everything after |
-| A1 Expectation | 0 | medium | far fewer too-high and unclear readings |
-| A2 Calibration | 0 | small | a threshold that means what it says |
-| A3 Extra decimal | — | small | a smoother rate, earlier leak detection |
-| B1 Export v2 | — | small–medium | the data we need, labelled properly |
-| B2 Collecting | B1 | ongoing | more meter types |
-| C2 Calibration per sensor | 0 | medium | a stable last digit, forgiving regions |
-| C3 Camera drift | C2 | small–medium | sensors survive small camera moves |
-| C4 4-point perspective | real angle tests | medium | angled cameras |
-| D wheels-v2 | 0, B (data), C1 | large | a better base model |
-| E Learning per sensor | D (embedding), A2 | medium | the last step for an unusual meter |
+| Phase | Builds on | Size | Gives | Status |
+|---|---|---|---|---|
+| 0 Benchmark | — | small | a fair measure for everything after | planned |
+| A1 Expectation | 0 | medium | far fewer too-high and unclear readings | planned |
+| A2 Calibration | 0 | small | a threshold that means what it says | planned |
+| A3 Extra decimal | — | small | a smoother rate, earlier leak detection | planned |
+| B1 Export v2 | — | small–medium | the data we need, labelled properly | **done, 0.8.0** |
+| B2 Collecting | B1 | ongoing | more meter types | next (issue forms point to Discussions) |
+| C2 Calibration per sensor | 0 | medium | a stable last digit, forgiving regions | planned |
+| C3 Camera drift | C2 | small–medium | sensors survive small camera moves | when a real case asks for it |
+| C4 4-point perspective | real angle tests | medium | angled cameras | waits for a test with a real angled meter |
+| D wheels-v2 | 0, B (data), C1 | large | a better base model | planned |
+| E Learning per sensor | D (embedding), A2 | medium | the last step for an unusual meter | planned |
 
-Suggested order: **0 → A1 + A2 + B1 (in parallel; B2 starts right after B1) → A3 → C2 → D → E**,
+Update the status column in the same change that builds a phase.
+
+Suggested order: **0 → A1 + A2 (B2 alongside) → A3 → C2 → D → E**,
 with C3 and C4 when real cases ask for them. A and C2 need no new training and help every existing
 counter sensor right away.
 

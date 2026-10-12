@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.9.0
+
+### New
+
+- **Recognise people by their face** on object sensors that look for Person. Off until you turn it
+  on per sensor; the faces never leave your Home Assistant.
+  - Name the people of your household by tapping them on the Live tab, in the history or in the
+    review queue, or add photos from your phone on the new **People** page.
+  - A person named on one camera is known on every camera, with their own sensor that says where
+    they are now. **Unknown person** turns on for a clear face that matches nobody.
+  - While someone walks up, the sensor looks for their face about every second, and when it is
+    not sure who it is, it asks you in Review: each answer teaches it how that camera sees them.
+  - Made for doorbells: faces in front of a bright sky are evened out before they are compared,
+    and the Live tab shows whether your camera sees faces well enough.
+  - Two face models: **SFace** (fine on a Raspberry Pi 4) and **AuraFace** (for a fast PC).
+- **Larger AI models for fast PCs** under **Settings → AI model**: **D-FINE M** and **L** find more
+  small and far-off objects, **DINOv2 base** tells similar states apart best. Compare every model's
+  memory, speed and accuracy there, and delete downloaded ones you no longer use.
+- **Teaching limits you can tune**, for all object sensors and per sensor.
+- **The wizard warns about a small picture**, which may be the camera's low-resolution stream.
+
+### Better
+
+- **The History shows what you taught from it** (*Taught: Our car*).
+- **"Last seen" survives an update or restart**: a sensor no longer says *Not seen yet* about
+  something it has seen before.
+
+### Fixed
+
+- Boxes on the Live tab now always match the picture shown.
+- Switching AI models gives the memory of the old model back without a restart.
+
 ## 0.8.0
 
 ### New

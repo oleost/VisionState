@@ -1,0 +1,62 @@
+{
+  "detector": "yunet-2023mar",
+  "detectors": {
+    "yunet-2023mar": {
+      "name": "YuNet (OpenCV Zoo)",
+      "description": "Finds faces and five points on them (eyes, nose, mouth corners) in the upper part of a person box.",
+      "url": "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx",
+      "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+      "size": 232589,
+      "input_size": 640,
+      "license": "MIT",
+      "data": "Trained on WIDER FACE, a research data set (non-commercial terms).",
+      "source": "https://huggingface.co/opencv/face_detection_yunet",
+      "bundled": false
+    }
+  },
+  "default": "sface-2021dec",
+  "recognisers": {
+    "sface-2021dec": {
+      "name": "SFace (fast)",
+      "description": "Small and fast; made to work with YuNet. Recommended, also on a Raspberry Pi.",
+      "url": "https://huggingface.co/opencv/face_recognition_sface/resolve/3d7082438a6e4551e840c9b2bb60b71e8da4b524/face_recognition_sface_2021dec.onnx",
+      "sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+      "size": 38696353,
+      "input_size": 112,
+      "mean": 0.0,
+      "std": 1.0,
+      "match_similarity": 0.5,
+      "sure_similarity": 0.6,
+      "ask_similarity": 0.32,
+      "keep_similarity": 0.4,
+      "license": "Apache-2.0",
+      "data": "The model's paper trained it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, research data sets (non-commercial terms).",
+      "source": "https://huggingface.co/opencv/face_recognition_sface",
+      "bundled": false,
+      "ram_mb": 60,
+      "time_ms": 20,
+      "accuracy": 3
+    },
+    "auraface-v1": {
+      "name": "AuraFace v1 (accurate)",
+      "description": "A large model: tells faces apart better in poor light and at an angle, but needs about 600 MB of memory and is slow on small CPUs. For a fast PC.",
+      "url": "https://huggingface.co/fal/AuraFace-v1/resolve/af6d057c9b0ec4071d4c49c80e3539258798b609/glintr100.onnx",
+      "sha256": "a7933ea5330113b01c9b60351d8f4c33003f145d8470ac5f0e52ee2effe25c60",
+      "size": 260694151,
+      "input_size": 112,
+      "mean": 127.5,
+      "std": 127.5,
+      "match_similarity": 0.4,
+      "sure_similarity": 0.5,
+      "ask_similarity": 0.28,
+      "keep_similarity": 0.3,
+      "license": "Apache-2.0",
+      "data": "Trained on a commercial data set that its makers say allows commercial use.",
+      "source": "https://huggingface.co/fal/AuraFace-v1",
+      "bundled": false,
+      "ram_mb": 600,
+      "time_ms": 60,
+      "accuracy": 5
+    }
+  }
+}

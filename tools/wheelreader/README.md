@@ -26,9 +26,16 @@ Licence: Apache-2.0. Trained on data that may be used for anything:
 | [Word-Wheel Water Meter Dataset](https://doi.org/10.5061/dryad.7d7wm3860) (Sci Data 2026), recognition crops | CC0 | training (labels: the nearest digit per wheel) |
 | Checked readings exported from VisionState and shared in issues [#32](https://github.com/oleost/VisionState/issues/32) and [#40](https://github.com/oleost/VisionState/issues/40) | CC0 (the export's LICENSE.txt) | training; `wheels-v1` was evaluated with #40 0001–0017 held out, then trained on all of it |
 
-Results (whole reading exact, last digit rounded; see `docs/SCOPE.md`): the #40 water meter
-held out 17/17 (PP-OCRv6 small 15/17), two meters never seen 30–33/35 and 15–18/18 with no value
-too high, the Dryad test set 97.7 % when the photo is the right way up.
+Results of `wheels-v1` (2026-10-09; whole reading exact, last digit rounded):
+
+| Set | Wheel reader | PP-OCRv6 small | PP-OCRv6 tiny |
+|---|---|---|---|
+| #40 water meter with red wheels (ESP32 camera), 0001–0017 held out | 17/17 | 15/17 | 8/17 (5 too high) |
+| Two water meters never seen in training (test only, GPL images kept locally) | 30–33/35 and 15–18/18, none too high | 30/35 (2 too high), 15/18 (1 too high) | — |
+| Dryad test set (2,400 photos), right way up | 97.7 % | — | — |
+
+Trained without the #40 images it read them just as well. The remaining misses are ±1 on a
+half-turned last wheel. Known weaknesses and what comes next are in the plan below.
 
 ## Making it again
 

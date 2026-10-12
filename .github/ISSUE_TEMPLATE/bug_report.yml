@@ -1,0 +1,45 @@
+name: Bug report
+description: Something does not work as described in the documentation
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Remove camera addresses and passwords from anything you paste.
+  - type: input
+    id: version
+    attributes:
+      label: VisionState version
+      description: Settings → Apps → VisionState (or VisionState (beta))
+      placeholder: "0.8.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Sensor kind
+      options:
+        - State sensor
+        - Object sensor
+        - Reading sensor
+        - Not about one sensor
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Home Assistant version and hardware
+      placeholder: "2026.10.0, Raspberry Pi 4 / Intel NUC / Proxmox VM"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Steps to see it again help a lot. A screenshot is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: The app's Log tab, around the time it happened.
+      render: text

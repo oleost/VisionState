@@ -365,15 +365,69 @@ REVIEW_TOPICS = {
 }
 
 
-def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
-    """App-wide entities (not tied to one sensor), grouped under a "VisionState" device."""
-    device = {
+def _hub_device() -> dict:
+    return {
         "identifiers": [APP_SLUG],
         "name": "VisionState",
         "manufacturer": "VisionState",
         "model": "VisionState app",
         "sw_version": VERSION,
     }
+
+
+def person_topics(key: str) -> dict[str, str]:
+    """Topics of a person's own entities: on which sensor they are seen, and when they were last
+    seen (never renamed once released)."""
+    base = f"{APP_SLUG}/people/{key}"
+    return {"state": f"{base}/state", "attributes": f"{base}/attributes", "last_seen": f"{base}/last_seen"}
+
+
+def person_discovery_messages(prefix: str, people: list[tuple[str, str]]) -> list[tuple[str, dict]]:
+    """Each person's own entities on the "VisionState" device: "<name> seen by"
+    (sensor.visionstate_<key>_seen_by), the slug of the sensor that sees them or not_seen, and
+    "<name> last seen" (sensor.visionstate_<key>_last_seen), a timestamp, so Home Assistant shows
+    "3 minutes ago" also when the user confirmed a frame afterwards. (The names say what the value
+    is; a person's own name alone was easily taken for Home Assistant's person.<name>. Beta
+    installs keep the entity ID they had.)"""
+    messages = []
+    for key, name in people:
+        t = person_topics(key)
+        messages.append(
+            (
+                f"{prefix}/sensor/{APP_SLUG}/person_{key}/config",
+                {
+                    "unique_id": f"{APP_SLUG}_person_{key}",
+                    "default_entity_id": f"sensor.{APP_SLUG}_{key}_seen_by",
+                    "name": f"{name} seen by",
+                    "state_topic": t["state"],
+                    "json_attributes_topic": t["attributes"],
+                    "icon": "mdi:account-eye",
+                    "availability": [{"topic": BRIDGE_AVAILABILITY}],
+                    "device": _hub_device(),
+                },
+            )
+        )
+        messages.append(
+            (
+                f"{prefix}/sensor/{APP_SLUG}/person_{key}_last_seen/config",
+                {
+                    "unique_id": f"{APP_SLUG}_person_{key}_last_seen",
+                    "default_entity_id": f"sensor.{APP_SLUG}_{key}_last_seen",
+                    "name": f"{name} last seen",
+                    "state_topic": t["last_seen"],
+                    "device_class": "timestamp",
+                    "icon": "mdi:account-clock",
+                    "availability": [{"topic": BRIDGE_AVAILABILITY}],
+                    "device": _hub_device(),
+                },
+            )
+        )
+    return messages
+
+
+def hub_discovery_messages(prefix: str) -> list[tuple[str, dict]]:
+    """App-wide entities (not tied to one sensor), grouped under a "VisionState" device."""
+    device = _hub_device()
     return [
         (
             f"{prefix}/sensor/{APP_SLUG}/review_queue/config",
@@ -530,6 +584,17 @@ class MqttBridge:
     async def publish_hub_discovery(self) -> None:
         for topic, payload in hub_discovery_messages(self.settings.discovery_prefix):
             await self.publish(topic, payload, retain=True)
+
+    async def publish_people_discovery(self, people: list[tuple[str, str]]) -> None:
+        for topic, payload in person_discovery_messages(self.settings.discovery_prefix, people):
+            await self.publish(topic, payload, retain=True)
+
+    async def remove_person(self, key: str) -> None:
+        """Forget a person's own entity and its retained values."""
+        for entity in (f"person_{key}", f"person_{key}_last_seen"):
+            await self.publish(f"{self.settings.discovery_prefix}/sensor/{APP_SLUG}/{entity}/config", "", retain=True)
+        for topic in person_topics(key).values():
+            await self.publish(topic, "", retain=True)
 
     async def remove_discovery(self, sensor: SensorDescriptor) -> None:
         for topic, _ in discovery_messages(self.settings.discovery_prefix, sensor):

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { api } from '../lib/api';
-  import { app, shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import { app, shownConfidence, stateInfo, toastError, toastImported } from '../lib/app.svelte';
   import AnalysedFrame from '../lib/components/AnalysedFrame.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import LiveFrame from '../lib/components/LiveFrame.svelte';
@@ -36,9 +36,9 @@
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     try {
-      const { id, skipped } = await api.importBundle(file);
-      toast(skipped ? `Sensor imported; ${skipped} unreadable image${skipped === 1 ? '' : 's'} skipped` : 'Sensor imported');
-      go(paths.sensor(id));
+      const result = await api.importBundle(file);
+      toastImported(result);
+      go(paths.sensor(result.id, result.faces_off ? 'settings' : ''));
     } catch (err) {
       toastError(err);
     } finally {

@@ -4,6 +4,28 @@ A map of the code: what runs where, how one check flows through it, and which fi
 for common changes. What VisionState does and why is in [`SCOPE.md`](SCOPE.md); how to work on
 it is in [`CLAUDE.md`](../CLAUDE.md).
 
+## Repository
+
+```
+repository.yaml, README.md, CLAUDE.md, SECURITY.md
+visionstate/            the Home Assistant app: config.yaml, Dockerfile, DOCS.md, CHANGELOG.md, icon/logo
+  backend/              Python package `visionstate` + tests (the Dockerfile builds from visionstate/)
+  frontend/             Svelte app, Playwright tests in e2e/ (and promo.mjs: the README screenshots)
+scripts/                channel.py (stable/beta config), fake_camera.py (test camera), seed_demo.py
+                        (the demo sensors), CI helpers:
+                        check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py
+tools/wheelreader/      training code of the wheel reader model (not part of the app image)
+docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md,
+                        FACE_RECOGNITION_PLAN.md, promo/ (README images)
+.github/                CI workflow, Dependabot, issue forms
+```
+
+**Stack:** Python 3.14, FastAPI, uvicorn, SQLAlchemy (SQLite), asyncio; ONNX Runtime (CPU only),
+NumPy, Pillow, PyAV (bundled FFmpeg), scikit-learn; aiomqtt, websockets, httpx. Frontend: Svelte 5 +
+Vite + TypeScript, plain CSS with design tokens, a hash router (Ingress-safe), bundled fonts. Docker
+image `python:3.14-slim`, built by GitHub Actions and published on GHCR. Quality: pytest (with a fake
+camera, Home Assistant and MQTT), ruff, pyright, svelte-check, Playwright, an image smoke test.
+
 ## The process
 
 One Python process (`python -m visionstate`) serves the API and the built UI through Home
@@ -30,12 +52,13 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models, storage, review rules, review reminder), `common.py` (input models and views shared by them) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
+| `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
 | `imaging.py` | Decoding, regions (ROI), crops, change signatures, drawing boxes |
@@ -49,7 +72,7 @@ API as `request.app.state.runtime`.
 parts it uses — its class line says what it depends on:
 
 ```
-Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── TeachingMixin ── ModelsMixin ── TrainingMixin
+Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, TeachingMixin ── ModelsMixin ── TrainingMixin
         │                │                    └─ PublishingMixin
         │                └─ ReadingChecksMixin ── ModelsMixin, PublishingMixin
         ├─ HistoryMixin ── PublishingMixin                (all of them on RuntimeBase)
@@ -61,11 +84,12 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── TeachingMixin �
 | `base.py` | `RuntimeBase`: the shared state (`__init__`), loading a sensor, its live state, waking it |
 | `runtime.py` | Lifecycle (start/stop), sensors coming and going, waking a sensor, triggers |
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
-| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next |
+| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next, looking for a face while a person is there (`steer_face_burst`) |
 | `checks.py` | Each sensor's loop, change detection (probe), the light, `run_once` and the state sensors' check |
-| `objects.py`, `reading.py` | The check of an object sensor and of a reading sensor |
+| `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
 | `teaching.py` | Taught boxes of object sensors (index, embeddings) |
+| `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
 | `publishing.py` | Discovery and values to Home Assistant, the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
@@ -82,7 +106,7 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   ├─ decode (imaging.decode)
   └─ by kind:
       state sensor   → checks._run_states  backbone embedding → head → probabilities
-      object sensor  → objects._run_objects detector → taught boxes (teaching) → tracks (logic)
+      object sensor  → objects._run_objects detector → taught boxes (teaching) → faces → tracks (logic)
       reading sensor → reading._run_reading reader → parse → plausibility → debounce
         │
         ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image
@@ -96,9 +120,16 @@ error is kept in `LiveState.error` and shown in the UI.
 
 - **SQLite** (`<data>/visionstate.db`): `sensor` (+ `state`), `sample` (+ `sample_label`,
   `embedding` cache), `prediction` (the history and the review queue), `reading_stat`,
-  `model_info` (per sensor), `setting` (global settings as JSON).
-- **Files** (`<media>/`): `samples/<sensor>/`, `history/<sensor>/`, thumbnails; `<data>/heads/`
-  (trained heads), `<data>/models/` (downloaded models).
+  `model_info` (per sensor), `setting` (global settings as JSON), `person` (+ `face`,
+  `face_embedding` cache: the people taught by face, shared by every sensor).
+- **Faces** (`<data>/faces/`): crops of the people's taught faces — in the app's own storage, not
+  the media folder (see `storage.Storage.face_path`).
+- **Files** (`<media>/`): `samples/<sensor>/` (training images; for object sensors the crops of
+  taught boxes), `history/<sensor>/`, `thumbs/`; `<data>/heads/` (trained heads), `<data>/models/`
+  (downloaded models, left out of backups).
+- **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
+  `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
+  `prediction` rows (see `db.py`).
 - **Settings of a sensor** that have many fields (`triggers`, `objects`, `reading`, `review`) are
   stored as JSON and always read through `settings.merge_*`, so a field added later gets its
   default for existing sensors without a migration.
@@ -113,9 +144,10 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
-| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
+| `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
+| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states…) |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…) |
 
 ## Recipes
 
@@ -139,8 +171,14 @@ a test that an old database is upgraded (see `tests/test_entity_ids.py`).
 **A new API endpoint**: in the `api/` file of its topic, input as a pydantic model, its function
 in `lib/api.ts`, its type in `lib/types.ts`.
 
-**A new AI model**: a new entry in the registry JSON (never change a released one), checked
-against real inputs in the tests.
+**A new history event**: its name in `settings.HISTORY_EVENTS`, which rows it matches in
+`EVENT_ROWS` (`api/history.py`; every filter becomes SQL in `history_query`, nowhere else), its
+label in `HISTORY_EVENTS` in `lib/ui.ts`.
+
+**A new AI model**: a new entry in the registry JSON (never change a released one's file or
+inputs), with its measured footprint (`ram_mb`, `time_ms`, `accuracy`; see `backbones.Footprint`).
+`tests/test_models.py` checks every entry against real inputs once it is downloaded
+(`python -m visionstate.backbones models --all`, as CI does).
 
 **A new page or tab**: the route in `router.svelte.ts` (tab: `TABS_BY_KIND` in `ui.ts`), the page
 in `pages/`, and an e2e test in `e2e/ui.spec.ts` on all three devices.

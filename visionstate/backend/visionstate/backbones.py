@@ -3,18 +3,21 @@
 Available backbones are declared in ``backbones.json``; adding a model is a new entry there.
 Entries are never changed or removed once released, so a stored choice keeps working.
 Run ``python -m visionstate.backbones <dest>`` to download all bundled models (backbones,
-detectors, readers) for the Dockerfile and CI. ``download``/``locate`` work for every kind of spec.
+detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloaded on first use. ``download``/``locate`` work for every kind of spec.
 """
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import hashlib
 import json
 import logging
 import sys
 import threading
 import urllib.request
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -42,6 +45,27 @@ class ModelFile(Protocol):
 
 
 @dataclass(frozen=True)
+class Footprint:
+    """What a model costs and gives, roughly, for the model comparison in Settings.
+
+    Measured with ONNX Runtime on 4 threads of a desktop CPU (the extra memory once loaded and
+    run, the time of one check); ``accuracy`` ranks the models of one kind from 1 to 5. Texts and
+    these numbers may be updated in a released entry; its file and inputs never change.
+    """
+
+    ram_mb: int = 0
+    time_ms: int = 0
+    accuracy: int = 0
+
+    @classmethod
+    def of(cls, entry: dict) -> Footprint:
+        return cls(int(entry.get("ram_mb", 0)), int(entry.get("time_ms", 0)), int(entry.get("accuracy", 0)))
+
+    def as_dict(self) -> dict:
+        return {"ram_mb": self.ram_mb, "time_ms": self.time_ms, "accuracy": self.accuracy}
+
+
+@dataclass(frozen=True)
 class BackboneSpec:
     id: str
     name: str
@@ -54,6 +78,9 @@ class BackboneSpec:
     std: tuple[float, float, float]
     pooling: str
     bundled: bool
+    license: str = ""
+    source: str = ""
+    footprint: Footprint = field(default_factory=lambda: Footprint())
 
     @property
     def filename(self) -> str:
@@ -76,6 +103,9 @@ def load_registry() -> tuple[str, dict[str, BackboneSpec]]:
             std=tuple(v["std"]),
             pooling=v.get("pooling", "cls_mean"),
             bundled=bool(v.get("bundled", False)),
+            license=v.get("license", ""),
+            source=v.get("source", ""),
+            footprint=Footprint.of(v),
         )
         for key, v in raw["backbones"].items()
     }
@@ -93,16 +123,22 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(spec: ModelFile, dest_dir: Path) -> Path:
+def download(spec: ModelFile, dest_dir: Path, progress: Callable[[int], None] | None = None) -> Path:
+    """Fetch a model into ``dest_dir`` (unless it is there already) and check its SHA-256;
+    ``progress`` is told the bytes fetched so far."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / spec.filename
     if target.exists() and sha256_file(target) == spec.sha256:
         return target
     tmp = target.with_suffix(".part")
     log.info("Downloading model %s from %s", spec.id, spec.url)
+    done = 0
     with urllib.request.urlopen(spec.url, timeout=60) as resp, tmp.open("wb") as out:  # noqa: S310
         while chunk := resp.read(1 << 20):
             out.write(chunk)
+            done += len(chunk)
+            if progress is not None:
+                progress(done)
     actual = sha256_file(tmp)
     if actual != spec.sha256:
         tmp.unlink(missing_ok=True)
@@ -123,13 +159,28 @@ def cpu_session(model_path: Path):
     """An ONNX Runtime session on the CPU — the only target, deliberately (docs/SCOPE.md).
 
     Only the CPU provider is passed, so nothing else ONNX Runtime ships with (such as its
-    Azure provider) is ever used.
+    Azure provider) is ever used. Only errors are logged: SFace's file lists its weights as graph
+    inputs too, and ONNX Runtime warned about every one of them (174 lines) each time it loaded.
     """
     import onnxruntime as ort
 
     options = ort.SessionOptions()
+    options.log_severity_level = 3
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
+
+
+def release_memory() -> None:
+    """Give the memory of models that are no longer used back to the system.
+
+    A dropped ONNX Runtime session is freed, but glibc keeps the freed memory for later use, so
+    switching models left the app hundreds of MB larger every time (until a restart).
+    ``malloc_trim`` returns it; on other C libraries (Windows, macOS) there is nothing to do."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError, AttributeError:
+        pass
 
 
 class Embedder:
@@ -169,12 +220,15 @@ class Embedder:
 
 
 if __name__ == "__main__":
-    from . import detectors, readers
+    from . import detectors, faces, readers
 
     logging.basicConfig(level=logging.INFO)
-    destination = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
-    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers (readings).
+    args = [a for a in sys.argv[1:] if a != "--all"]
+    destination = Path(args[0] if args else "models")
+    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers
+    # (readings); with --all also the ones downloaded on first use (the face models are never
+    # bundled), for the tests of every model.
     specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
-    for spec in [*specs, *readers.WHEEL_READERS.values()]:
-        if spec.bundled:
+    for spec in [*specs, *readers.WHEEL_READERS.values(), faces.DETECTOR, *faces.RECOGNISERS.values()]:
+        if spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

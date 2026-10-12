@@ -6,6 +6,7 @@
   import { toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import PeopleCards from '../../lib/components/PeopleCards.svelte';
   import TeachableFrame from '../../lib/components/TeachableFrame.svelte';
   import { ago, dateTime, pct } from '../../lib/format';
   import { noneLabel, objectName } from '../../lib/objects';
@@ -32,6 +33,8 @@
   });
 
   const own = $derived(sensor.objects?.custom ?? []);
+  // Boxes taught by their look (faces are under People): only then is "What you taught" shown.
+  const boxesTaught = $derived((sensor.objects?.taught ?? 0) > 0 || own.some((l) => !l.face));
   const compared = $derived((sensor.objects?.taught_keys ?? []).map((k) => objectName(k).toLowerCase()));
 
   interface Group {
@@ -46,7 +49,7 @@
   const groups = $derived.by(() => {
     if (!taught) return [] as Group[];
     const result = new Map<string, Group>();
-    for (const label of taught.labels) {
+    for (const label of taught.labels.filter((l) => !l.face)) {
       result.set(label.key, {
         id: label.key,
         title: label.name,
@@ -106,23 +109,26 @@
 
 <div class="layout">
   <div class="col" style="gap:var(--space-5)">
-    <section class="card pad">
-      <div class="card-title"><h3>What you taught</h3></div>
-      {#if taught && !taught.use_taught}
-        <div class="notice warn" style="margin-bottom:12px">
-          Turned off under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>: the AI alone decides until you turn it on again.
-        </div>
-      {/if}
-      <p class="small muted">
-        {#if compared.length}
-          Each {compared.join(', ')} the AI finds is compared with these boxes. When it clearly looks like one of them it
-          gets that answer; otherwise the AI's own answer stands.
-        {:else}
-          Nothing to compare with yet.
+    <PeopleCards {sensor} {onchange} />
+    {#if boxesTaught}
+      <section class="card pad">
+        <div class="card-title"><h3>What you taught</h3></div>
+        {#if taught && !taught.use_taught}
+          <div class="notice warn" style="margin-bottom:12px">
+            Turned off under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>: the AI alone decides until you turn it on again.
+          </div>
         {/if}
-        Tap a box on the <a href={href(paths.sensor(sensor.id, 'live'))}>Live</a> tab or in the history to teach more.
-      </p>
-    </section>
+        <p class="small muted">
+          {#if compared.length}
+            Each {compared.join(', ')} the AI finds is compared with these boxes. When it clearly looks like one of them it
+            gets that answer; otherwise the AI's own answer stands.
+          {:else}
+            Nothing to compare with yet.
+          {/if}
+          Tap a box on the <a href={href(paths.sensor(sensor.id, 'live'))}>Live</a> tab or in the history to teach more.
+        </p>
+      </section>
+    {/if}
 
     {#if taught === null}
       <p class="muted">Loading…</p>

@@ -353,3 +353,27 @@ def test_detector_choice_is_stored_and_switchable(settings):
             "detector": "nope",
         }
         assert client.put("/api/v1/settings", json=body).status_code == 400
+
+
+def test_the_frame_on_screen_changes_together_with_its_boxes(settings):
+    """While a check looks for objects (and faces), the sensor still shows the last frame with its
+    boxes: a new frame is announced only together with what was found in it."""
+    import asyncio
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = PhotoCamera("beach")
+        # Paused: only the check run here looks at the camera.
+        sid = create(client, objects={"classes": ["dog"]}, interval_s=3600, enabled=False).json()["id"]
+        live = rt.live_state(sid)
+        live.frame_id, live.detections = "before", [{"key": "dog", "score": 0.9, "box": [0, 0, 0.1, 0.1]}]
+        seen_during: list = []
+
+        async def detect(*_args, **_kwargs):
+            seen_during.append((live.frame_id, len(live.detections)))
+            return []
+
+        rt.detect_objects = detect
+        asyncio.run_coroutine_threadsafe(rt.run_once(rt.load_sensor(sid)), rt._loop).result(timeout=30)
+        assert seen_during == [("before", 1)]  # the old frame with its own boxes, meanwhile
+        assert live.frame_id not in (None, "before") and live.detections == []

@@ -2,12 +2,13 @@
   // Teach an object sensor about one box: right, not what the AI said, something else (one of its
   // objects or own labels, or a new own label), or — for a box the user drew — what the AI missed.
   // The first time a sensor is taught, it asks once whether to start. A bottom sheet on phones,
-  // a small dialog on wider screens.
+  // a small dialog on wider screens. On a sensor that recognises faces, a person box first asks
+  // "Who is this?" with a close-up of the face; a person is only ever taught from a usable face.
   import { onMount, untrack } from 'svelte';
   import { api } from '../api';
   import { app, toast, toastError } from '../app.svelte';
   import { pct } from '../format';
-  import { activeLabels, boxName, boxReason, noneLabel, objectName } from '../objects';
+  import { activeLabels, boxReason, byFace, facesOn, noneLabel, objectName, peopleOf } from '../objects';
   import type { Detection, Sensor, TeachInput } from '../types';
   import Icon from './Icon.svelte';
 
@@ -32,7 +33,7 @@
     ondone: () => void;
   } = $props();
 
-  type View = 'main' | 'other' | 'new' | 'confirm';
+  type View = 'main' | 'other' | 'new' | 'confirm' | 'person';
   let view = $state<View>(untrack(() => detection) ? 'main' : 'other'); // the sheet is made for one box
   let pending = $state<{ label?: string; new_label?: string; summary: string } | null>(null);
   let newName = $state('');
@@ -41,20 +42,55 @@
 
   const own = $derived(sensor.objects?.custom ?? []);
   const classes = $derived(sensor.objects?.classes ?? []);
-  const current = $derived(detection ? (detection.label ?? detection.key) : null);
-  const name = $derived(detection ? boxName(detection, own) : '');
+  // A box named by its face (a person, or the unknown person) is taught here as what it is: a person.
+  const current = $derived(
+    detection ? (detection.label && !byFace(detection.label, own) ? detection.label : detection.key) : null,
+  );
+  const name = $derived(current ? objectName(current, own) : '');
   const objectWord = $derived(detection ? objectName(detection.key).toLowerCase() : '');
   const firstTime = $derived((sensor.objects?.taught ?? 0) === 0);
-  const roomForLabel = $derived(own.length < (app.config?.teach.max_labels ?? 0));
-  // Everything the box could be instead: the sensor's objects and own labels, except what it is now.
+  const roomForLabel = $derived(own.filter((l) => !l.face).length < (app.config?.teach.max_labels ?? 0));
+  // Everything the box could be instead: the sensor's objects and own labels (people are taught by
+  // their face, not here), except what it is now.
   const options = $derived([
     ...classes.filter((k) => k !== current).map((k) => ({ key: k, text: objectName(k), sub: '' })),
     ...activeLabels(sensor)
-      .filter((l) => l.key !== current)
+      .filter((l) => l.key !== current && !l.face)
       .map((l) => ({ key: l.key, text: l.name, sub: `a kind of ${objectName(l.parent).toLowerCase()}` })),
   ]);
 
-  // Close-up of the box with some of its surroundings (needs the image's size for the shape).
+  // Faces: is there a usable face in this person box? Asked once when the sheet opens.
+  const faceMode = $derived(!!detection && detection.key === 'person' && !detection.filtered && facesOn(sensor));
+  const people = $derived(peopleOf(sensor));
+  const roomForPerson = $derived(people.length < (app.config?.faces.max_people ?? 0));
+  let face = $state<{ box: [number, number, number, number] | null; message: string } | null>(null);
+  let personName = $state('');
+  onMount(() => {
+    if (!untrack(() => faceMode)) return;
+    api
+      .checkFace(sensor.id, { ...source, box })
+      .then((r) => (face = { box: r.problem ? null : r.face, message: r.message }))
+      .catch((err) => (face = { box: null, message: err instanceof Error ? err.message : String(err) }));
+  });
+
+  async function teachPerson(person: { key?: string; name?: string }) {
+    busy = true;
+    try {
+      const body = { ...source, box, score: detection?.score ?? null };
+      const r = await api.teachFace(sensor.id, person.key ? { ...body, person: person.key } : { ...body, new_person: person.name });
+      const suggest = app.config?.faces.suggest_faces ?? 0;
+      const more = r.faces < suggest ? ' A few more, in other light and from other angles, make it reliable.' : '';
+      toast(`Got it: this is ${r.name} (${r.faces} face${r.faces === 1 ? '' : 's'}).${more}`);
+      ondone();
+      onclose();
+    } catch (err) {
+      toastError(err);
+      busy = false;
+    }
+  }
+
+  // Close-up of the box with some of its surroundings (needs the image's size for the shape); of
+  // the face, when one was found.
   let natural = $state<{ w: number; h: number } | null>(null);
   $effect(() => {
     if (!src) return;
@@ -63,7 +99,7 @@
     img.src = src;
   });
   const area = $derived.by(() => {
-    const [x1, y1, x2, y2] = box;
+    const [x1, y1, x2, y2] = face?.box ?? box;
     const mx = (x2 - x1) * 0.2;
     const my = (y2 - y1) * 0.2;
     return [Math.max(0, x1 - mx), Math.max(0, y1 - my), Math.min(1, x2 + mx), Math.min(1, y2 + my)];
@@ -160,7 +196,50 @@
         <button class="btn" onclick={onclose}>Cancel</button>
       </div>
     </div>
+  {:else if view === 'person'}
+    <form
+      class="col body"
+      onsubmit={(e) => {
+        e.preventDefault();
+        if (personName.trim()) teachPerson({ name: personName.trim() });
+      }}
+    >
+      <label class="field">
+        Who is this?
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input" bind:value={personName} maxlength="64" placeholder="Name" autofocus />
+      </label>
+      <span class="xsmall faint">Gets an on/off sensor and a count in Home Assistant.</span>
+      <div class="row actions">
+        <button class="btn primary" type="submit" disabled={busy || !personName.trim()}>Add person</button>
+        <button class="btn" type="button" onclick={() => (view = 'main')}>Back</button>
+      </div>
+    </form>
   {:else if view === 'main' && detection}
+    {#if faceMode}
+      <div class="col body who">
+        <strong>Who is this?</strong>
+        {#if !face}
+          <span class="small muted">Looking for the face…</span>
+        {:else if !face.box}
+          <span class="small muted">{face.message}</span>
+        {:else}
+          <div class="row wrap people">
+            {#each people as p, i (p.key)}
+              <button class="btn chip-btn" class:first={i === 0} disabled={busy} onclick={() => teachPerson({ key: p.key })}>
+                {p.name}
+              </button>
+            {/each}
+            {#if roomForPerson}
+              <button class="btn chip-btn accent-outline" class:first={!people.length} disabled={busy} onclick={() => (view = 'person')}>
+                <Icon name="plus" size={14} /> New person…
+              </button>
+            {/if}
+          </div>
+          <span class="xsmall faint">Not someone you know? Close this.</span>
+        {/if}
+      </div>
+    {/if}
     <div class="col body">
       {#if detection.filtered}
         <button class="btn first choice" disabled={busy} onclick={() => choose({ label: detection.key }, `Got it: boxes like this count as ${objectWord} again.`)}>
@@ -281,6 +360,16 @@
   }
   .body {
     gap: var(--space-2);
+  }
+  .who {
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .people {
+    gap: var(--space-2);
+  }
+  .chip-btn {
+    height: var(--touch);
   }
   .choice {
     height: var(--touch);

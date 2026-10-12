@@ -10,6 +10,17 @@ down to 640 px.
 | `beach.jpg` | one person and several dogs | [Dog owner walking his dogs on the beach..JPG](https://commons.wikimedia.org/wiki/File:Dog_owner_walking_his_dogs_on_the_beach..JPG) |
 | `cat.jpg` | one cat | [House cat sitting next to apartment entrance door looking off to side.jpg](https://commons.wikimedia.org/wiki/File:House_cat_sitting_next_to_apartment_entrance_door_looking_off_to_side.jpg) |
 
+The face tests use NASA portraits, works of the US federal government and so in the public domain,
+from Wikimedia Commons, scaled down:
+
+| File | Who | Source |
+|---|---|---|
+| `face_williams_2006.jpg` | Suni Williams | [Sunita Williams.jpg](https://commons.wikimedia.org/wiki/File:Sunita_Williams.jpg) |
+| `face_williams_2018.jpg` | Suni Williams, twelve years later | [Sunita Williams in 2018.jpg](https://commons.wikimedia.org/wiki/File:Sunita_Williams_in_2018.jpg) |
+| `face_wilmore.jpg` | Butch Wilmore | [Barry Wilmore.jpg](https://commons.wikimedia.org/wiki/File:Barry_Wilmore.jpg) |
+| `face_crew.jpg` | Williams (left) and Wilmore, 2024 | [Boeing CFT Crew Portrait-Sunita Williams and Barry Wilmore (KSC-20240404-PH-NAS01 0001).jpg](https://commons.wikimedia.org/wiki/File:Boeing_CFT_Crew_Portrait-Sunita_Williams_and_Barry_Wilmore_(KSC-20240404-PH-NAS01_0001).jpg) |
+| `face_group.jpg` | A crew of nine with both of them | [The official Expedition 71 crew portrait with CFT crew.jpg](https://commons.wikimedia.org/wiki/File:The_official_Expedition_71_crew_portrait_with_CFT_crew.jpg) |
+
 `counter_red.jpg` is the counter of a real water meter (seven wheels, the last three red, read
 as `0632289`): one image from the checked readings a user exported from VisionState and shared
 in [issue #40](https://github.com/oleost/VisionState/issues/40) under CC0 (the export's
@@ -19,3 +30,14 @@ the region the same way.
 
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.
+
+The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
+
+| File | What | Source |
+|---|---|---|
+| `demo_driveway.jpg` | Emma on her car, cut to 16:9 with a camera's date and name drawn on | [Woman Car](https://stocksnap.io/photo/woman-car-WKVLDV0K0G) by Candace McDaniel, StockSnap (CC0) |
+| `demo_emma_car.jpg` | Emma in the same car: a face to teach | [Woman Car](https://stocksnap.io/photo/woman-car-XHLANQWHBS), same author (CC0) |
+| `demo_emma_guitar.jpg` | Emma on the car with a guitar: a face to teach | [Woman Car](https://stocksnap.io/photo/woman-car-TV3QFON1JP), same author (CC0) |
+| `demo_garage.jpg` | A garage door from inside, cut; the script draws it open and half open | [Utility building interior view of wood panel overhead garage doors](https://commons.wikimedia.org/wiki/File:UTILITY_BUILDING_INTERIOR_VIEW_OF_WOOD_PANEL_OVERHEAD_GARAGE_DOORS,_LOOKING_NORTHWEST._-_Tucson_Plant_Materials_Center,_General_Utility_Building,_3241_North_Romero_Road,_HABS_ARIZ,10-TUCSO,32C-7.tif), HABS (public domain) |
+
+"Emma" is a made-up name. The water meter is `counter_turning.jpg` above.

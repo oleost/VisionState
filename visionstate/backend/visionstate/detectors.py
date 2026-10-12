@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from .backbones import cpu_session
+from .backbones import Footprint, cpu_session
 from .settings import DETECTION
 
 REGISTRY_FILE = Path(__file__).with_name("detectors.json")
@@ -44,6 +44,7 @@ class DetectorSpec:
     license: str
     source: str
     bundled: bool
+    footprint: Footprint = field(default_factory=lambda: Footprint())
 
     @property
     def filename(self) -> str:
@@ -85,6 +86,7 @@ def load_registry() -> tuple[str, dict[str, DetectorSpec], dict[str, LabelSet]]:
             license=v.get("license", ""),
             source=v.get("source", ""),
             bundled=bool(v.get("bundled", False)),
+            footprint=Footprint.of(v),
         )
         for key, v in raw["detectors"].items()
     }

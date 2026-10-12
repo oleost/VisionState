@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from .db import Database, Prediction, Sample, Sensor
+from .db import Database, Face, Person, Prediction, Sample, Sensor
 from .redact import has_credentials, redact
 from .settings import EXPORT_STRIP_CREDENTIALS, UPLOAD_LIMITS, VERSION
 from .storage import Storage
@@ -18,8 +18,11 @@ BUNDLE_SCHEMA = 1
 MANIFEST = "manifest.json"
 
 
-def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) -> str:
-    """Writes a bundle for one sensor to ``target``; returns the suggested download filename."""
+def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, include_faces: bool = False) -> str:
+    """Writes a bundle for one sensor to ``target``; returns the suggested download filename.
+
+    The faces taught on this sensor go along only with ``include_faces`` (the user ticks it), with
+    the names of their people; their embeddings never do (an import computes them again)."""
     with db.session() as s:
         sensor = s.get(Sensor, sensor_id)
         if sensor is None:
@@ -49,9 +52,28 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path) 
                 "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
             },
             "samples": [],
+            "faces": [],
         }
         samples = s.scalars(select(Sample).where(Sample.sensor_id == sensor_id)).all()
+        query = select(Face, Person).join(Person, Face.person_id == Person.id).where(Face.sensor_id == sensor_id)
+        taught_faces = [(face, person) for face, person in s.execute(query).all()] if include_faces else []
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+            for face, person in taught_faces:
+                path = storage.face_path(face.filename)
+                if not path.exists():
+                    continue
+                archive.write(path, f"faces/{face.filename}")
+                manifest["faces"].append(
+                    {
+                        "file": face.filename,
+                        "person": person.key,
+                        "name": person.name,
+                        "origin": face.origin,
+                        "is_night": face.is_night,
+                        "face": face.face,
+                        "created_at": face.created_at.isoformat(),
+                    }
+                )
             for sample in samples:
                 path = storage.sample_path(sensor_id, sample.filename)
                 if not path.exists():
@@ -242,9 +264,9 @@ def read_manifest(path: Path) -> dict:
     return manifest
 
 
-def read_sample_bytes(path: Path, filename: str) -> bytes:
+def read_sample_bytes(path: Path, filename: str, folder: str = "samples") -> bytes:
     with zipfile.ZipFile(path) as archive:
-        info = archive.getinfo(f"samples/{filename}")
+        info = archive.getinfo(f"{folder}/{filename}")
         if info.file_size > UPLOAD_LIMITS["max_zip_member_mb"] * 1_000_000:
             raise ValueError(f"{filename} is too large")
         return archive.read(info)

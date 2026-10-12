@@ -6,10 +6,8 @@
 </p>
 
 <p align="center">
-  <b>Teach a local AI what your camera sees — and turn it into a Home Assistant sensor.</b><br>
-  Garage door open, closed or halfway? Gate shut? Click a few examples and you have a sensor.<br>
-  Person at the door, car in the driveway, cat on the lawn? Pick the objects — no training needed.<br>
-  kWh on the meter, minutes left on the washer? Read the number.
+  <b>Turn your cameras into Home Assistant sensors — with a local AI you teach in minutes.</b><br>
+  Is the garage door open? Who just came home, and is that our car? What does the water meter say?
 </p>
 
 <p align="center">
@@ -28,125 +26,56 @@
 </p>
 
 <p align="center">
-  <img src="docs/promo/dashboard.png" alt="VisionState dashboard with a garage door, a driveway and a power meter sensor" width="900">
+  <img src="docs/promo/dashboard.png" alt="VisionState with a driveway, a garage door and a water meter sensor" width="900">
 </p>
 
-## Why VisionState?
+## Three kinds of sensor
 
-Your cameras already see whether *the garage door is half open*, *the gate is shut* or *the
-lights in the shed are still on*. VisionState turns what they see into **states** you can use in
-Home Assistant — and because every home is different, you teach it yourself, in minutes,
-without writing code or leaving Home Assistant:
+| | What you get | How |
+|---|---|---|
+| 🚪 **States** | *Garage door open, closed or halfway*, gate shut, lights on in the shed | Click a few examples of each state; it learns in about a second |
+| 🧍 **Objects & people** | *Emma is home*, *our car is in the driveway*, a cat on the lawn, an unknown person at the door | Pick from 80 objects — no training. Name people by their face once; every camera knows them |
+| 🔢 **Readings** | The water, gas or power meter, the minutes left on the washer | Draw a box around the number. Counters only go up and land in the Energy dashboard |
 
-- 📸 **Train by clicking** — look at the live image and press the matching state (or keys `1`–`9`).
-  The model retrains in about a second after every click.
-- 🐕 **Find objects without training** — people, cars, bicycles, cats, dogs and 75 more, with a
-  count and an on/off sensor for each. Pick them, done. Wrong about your garden statue? Tap the
-  box: *not a person*. Want *our car* apart from any car? Give it its own label.
-- 🔢 **Read numbers** — power meters, the rolling digits of water and gas meters (read wheel by
-  wheel, also while a wheel is half way between two digits), prices, the minutes left on the
-  washing machine. Counters only go up and land straight in the Energy dashboard; implausible readings are rejected, and a
-  Quality tab shows how reliably your meter is read.
-- 🎯 **Watch only what matters** — draw a box (or any shape) around the door or the driveway;
-  the AI ignores everything else.
-- 📦 **Bulk upload** — drop images, ZIP archives or a **video**; frames are extracted, duplicates
-  skipped, and the current model suggests a label for each one.
-- ⚡ **Smart triggers** — check when a motion sensor, door contact or the garage opener changes
-  (or only when it becomes one state), or when the image itself changes. No more polling every
-  few seconds.
-- 💡 **Cameras in the dark** — a light or switch is turned on for each check, and while you frame
-  the image, then off again — for a meter in a cabinet.
-- 🩺 **Finds its own mistakes** — flags training images whose label looks wrong, so one slip
-  doesn't drag the sensor down.
-- 🔁 **Gets better as you use it** — a review queue collects the frames the AI was unsure about;
-  one click turns them into training data. Forgot about it? A reminder shows up in Home Assistant
-  (or on your phone) after a week — never a ping for every frame.
-- 🕓 **Everything in one history** — every state change, object that came and went and reading,
-  with its frame; filter by sensor, by what was seen, by event and by time, and bookmark the view.
-- 🧠 **Runs locally on any CPU** — Intel, AMD and Raspberry Pi 4/5. No cloud, no GPU, no subscription.
-- 🏠 **Native Home Assistant** — sidebar app with Ingress; sensors appear through MQTT discovery,
-  named like any other integration's. Keep a sensor out of Home Assistant while you tune it.
-- 🎥 **Any camera** — every `camera.*` entity in Home Assistant (ESP32-CAM, IP cameras, NVRs…),
-  or a direct RTSP / HTTP snapshot URL.
-
-## A look inside
+<p align="center">
+  <img src="docs/promo/objects.png" alt="An object sensor recognising Emma by her face and telling our car from any car" width="900">
+</p>
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src="docs/promo/objects.png" alt="An object sensor finding dogs and a person" width="100%"></td>
-    <td width="50%" valign="top"><img src="docs/promo/reading.png" alt="A reading sensor reading a power meter" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/reading.png" alt="A reading sensor reading the wheels of a real water meter" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/people.png" alt="The People page with the faces taught for Emma" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top"><b>Objects</b> — people, cars, animals and more, found without any training. Each one becomes an on/off sensor and a count in Home Assistant.</td>
-    <td valign="top"><b>Reading</b> — the number on a display or on the rolling wheels of a water or gas meter, checked before it is published: a counter never goes down.</td>
-  </tr>
-  <tr>
-    <td colspan="2" valign="top"><img src="docs/promo/wizard.png" alt="The new sensor wizard testing an object sensor on a fresh frame" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2" valign="top"><b>New sensor</b> — pick a camera, draw the region and choose what to detect: your own states, objects or a number. The wizard tests it on a fresh frame right away.</td>
+    <td valign="top"><b>Real meters</b> — the rolling wheels of a water meter, read right even while a wheel is half way between two digits.</td>
+    <td valign="top"><b>People</b> — a few photos from your phone are enough to start; faces never leave your Home Assistant.</td>
   </tr>
 </table>
 
-## In Home Assistant
+## Highlights
 
-Every sensor is a normal Home Assistant device, set up automatically through MQTT discovery —
-ready for dashboards, automations and the history graph.
+- 🧠 **100 % local on any CPU** — Intel, AMD, Raspberry Pi 4/5. No cloud, no GPU, no subscription, no telemetry.
+- 🏠 **Native Home Assistant** — a sidebar app; every sensor is a normal device through MQTT discovery.
+- 🎥 **Any camera** — every `camera.*` entity, or an RTSP / HTTP snapshot URL.
+- 🎯 **Watch only what matters** — draw a region around the door or the driveway; the rest is ignored.
+- ⚡ **Checks when something happens** — on motion, a door contact or a change in the image, and can switch on a light for a camera in the dark.
+- 🔁 **Gets better as you use it** — unsure frames go to a review queue, wrong boxes are fixed with a tap, and suspicious labels are flagged.
+
+## In Home Assistant
 
 <table>
   <tr>
     <td width="50%" valign="top"><img src="docs/promo/ha-states.png" alt="A garage door state sensor as a Home Assistant device" width="100%"></td>
-    <td width="50%" valign="top"><img src="docs/promo/ha-objects.png" alt="An object sensor as a Home Assistant device" width="100%"></td>
+    <td width="50%" valign="top"><img src="docs/promo/ha-objects.png" alt="The driveway object sensor as a Home Assistant device, with Emma and our car" width="100%"></td>
   </tr>
   <tr>
-    <td valign="top"><b>State sensor</b> — the state (<code>closed</code>, <code>open</code>, …) with its confidence, the last frame, a button to check now and a switch to pause it.</td>
-    <td valign="top"><b>Object sensor</b> — an on/off sensor and a count for every object you picked, plus the last frame with the boxes drawn in.</td>
+    <td valign="top"><b>State sensor</b> — the state with its confidence, the last frame, a button to check now and a switch to pause it.</td>
+    <td valign="top"><b>Object sensor</b> — an on/off sensor and a count for every object, person and own label.</td>
   </tr>
 </table>
 
-## Install
-
-**Requirements:** Home Assistant OS or Supervised (2025.10 or newer), the **Mosquitto broker**
-app and the **MQTT** integration, and at least one camera.
-
-1. Click **Add repository** above — or go to **Settings → Apps** (called *Add-ons* in older
-   versions) **→ App store → ⋮ → Repositories** and add `https://github.com/oleost/VisionState`.
-2. Install **VisionState** (it downloads a ready-made image for your machine).
-3. Start it and open **VisionState** from the sidebar.
-
-### Beta channel
-
-New features are released as **beta** first and move to the stable app once they are tested. To
-help test them, add `https://github.com/oleost/VisionState#beta` as a repository and install
-**VisionState (beta)**.
-
-- The beta is a separate app with its own data; move sensors over with **Export** (stable) and
-  **Import** (beta). Entity ids stay the same, so automations keep working.
-- Run only one of the two apps at a time — both publish the same sensors.
-
-## Get your first sensor in five minutes
-
-1. **New sensor** → name it, pick a camera.
-2. Draw a box around the thing to watch (drag its corners to shape it to the object).
-3. Name the states, e.g. *Open*, *Closed*, *Partial*.
-4. On the **Label** tab, press the matching state a few times for each situation — about
-   **20 per state**, including some at night.
-5. Under **Settings → When to check**, add your motion sensor or garage opener as a trigger.
-
-That's it — `sensor.garage_door` is now in Home Assistant:
-
-| Entity | What it is |
-|---|---|
-| `sensor.<name>` | The state (`open`, `closed`, …) — or `unknown` when the AI isn't sure |
-| `sensor.<name>_confidence` | How sure the AI is, in % |
-| `image.<name>_last_frame` | The region that was classified |
-| `button.<name>_classify_now` | Check right now (handy in automations) |
-| `switch.<name>_enabled` | Pause / resume |
-| `sensor.visionstate_review_queue` | Frames waiting for review (all sensors) |
-
 ```yaml
-# Example: notify when the garage door has been open for 10 minutes
-alias: Garage door left open
+# Example: tell me when the garage door has been open for 10 minutes
 triggers:
   - trigger: state
     entity_id: sensor.garage_door
@@ -158,104 +87,61 @@ actions:
       message: The garage door has been open for 10 minutes.
 ```
 
-The full user guide is in [`visionstate/DOCS.md`](visionstate/DOCS.md) (also on the app's
-*Documentation* tab).
+## Install
+
+**Requirements:** Home Assistant OS or Supervised (2025.10 or newer), the **Mosquitto broker** app
+with the **MQTT** integration, and a camera.
+
+1. Click **Add repository** above — or add `https://github.com/oleost/VisionState` under
+   **Settings → Apps → App store → ⋮ → Repositories**.
+2. Install **VisionState**, start it and open it from the sidebar.
+3. **New sensor** → pick a camera, draw a region, choose what to watch. The wizard tests it on a
+   fresh frame right away.
+
+New features come to a separate **beta** app first: add `https://github.com/oleost/VisionState#beta`
+instead. Run only one of the two at a time (they publish the same sensors); move sensors with
+**Export** and **Import**.
+
+The user guide — every entity, triggers, faces, readings, review — is on the app's
+*Documentation* tab ([`visionstate/DOCS.md`](visionstate/DOCS.md)).
 
 ## How it works
 
 ```
-camera ─► crop to your region ─► DINOv2 (ONNX, 8-bit) ─► feature vector ─► tiny per-sensor classifier
-                                                                                     │
-Home Assistant ◄── MQTT discovery ◄── debounce + "unknown" below threshold ◄─────────┘
+camera ─► your region ─► pretrained model (ONNX, CPU) ─► small per-sensor model ─► debounce ─► MQTT ─► Home Assistant
 ```
 
-A pre-trained vision model ([DINOv2](https://github.com/facebookresearch/dinov2)) turns the
-region into a feature vector. On top of that, each sensor gets its own small classifier trained
-on *your* labelled images — which is why a handful of examples is enough and training takes
-about a second. Results are debounced so someone walking past doesn't flip the state.
-
-Object sensors use a pretrained detector instead ([D-FINE](https://github.com/Peterande/D-FINE),
-Apache-2.0, trained on the COCO objects). It finds every object in the region; each object you
-picked is reported with a count and cleared a while after it was last seen. Boxes you corrected
-teach it your camera: later boxes that clearly look like one you taught get your answer.
-
-Reading sensors read the digits in the region with a small text recognizer
-([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), Apache-2.0) that may only output digits,
-then check the value (a counter never goes down) before publishing it. Mechanical counters are
-read by a small model made for VisionState that tells how far each wheel has turned; the wheels
-are read together, the way they turn ([`tools/wheelreader`](tools/wheelreader), trained on
-public-domain meter photos and drawn wheels).
-
-Everything stays on your machine: images live in `/media/visionstate`, models and settings in
-the app's data folder (included in Home Assistant backups).
+- **States:** [DINOv2](https://github.com/facebookresearch/dinov2) turns the region into a feature
+  vector; a tiny classifier per sensor, trained on *your* examples, picks the state.
+- **Objects:** [D-FINE](https://github.com/Peterande/D-FINE) finds the COCO objects; boxes you
+  corrected or gave an own label teach it your camera.
+- **Faces:** [YuNet](https://github.com/opencv/opencv_zoo) finds a face on each person, and only a
+  clear one is compared ([SFace](https://github.com/opencv/opencv_zoo), or
+  [AuraFace](https://huggingface.co/fal/AuraFace-v1) on a fast PC) with the faces you named.
+- **Readings:** [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) reads digits; mechanical
+  counters use a small wheel reader made for VisionState ([`tools/wheelreader`](tools/wheelreader)).
+  Every value is checked before it is published.
 
 ## Privacy & security
 
-- 100 % local — no cloud services, no telemetry.
-- Only reachable through Home Assistant Ingress (requires a Home Assistant login).
-- Camera passwords are hidden in logs and removed from exported sensor bundles.
+- Nothing leaves your machine; there is no telemetry.
+- Only reachable through Home Assistant Ingress (a Home Assistant login).
+- Camera passwords are hidden in logs and removed from exports.
+- Face recognition is off until you turn it on for a camera; faces are kept in the app's own
+  storage and exported only if you tick it.
 
-## Development
+## Contributing
 
-```
-visionstate/            Home Assistant app (config.yaml, Dockerfile, docs)
-  backend/              Python 3.14 · FastAPI · ONNX Runtime · scikit-learn
-  frontend/             Svelte 5 · Vite · TypeScript
-scripts/channel.py      Switches the app config between the stable and beta channel
-scripts/fake_camera.py  A fake camera (garage door, real photos, drawn displays and counters) for local testing
-docs/SCOPE.md           Design as built, decisions and roadmap
-CLAUDE.md               Contributor guide: conventions, how to test and verify, release steps
-```
-
-New features land on the `beta` branch first and reach `main` (stable) only after testing;
-please open pull requests against `beta`. [`CLAUDE.md`](CLAUDE.md) explains the conventions, how to
-test changes locally (fake camera, MQTT, UI tests on desktop and phone) and the pitfalls we ran
-into — it is written for people and AI coding assistants alike.
-
-<details>
-<summary>Run it locally</summary>
-
-Backend:
-
-```bash
-cd visionstate/backend
-python3.14 -m venv .venv && . .venv/bin/activate  # Windows: py -3.14 -m venv .venv; .venv\Scripts\activate
-pip install -r requirements-dev.txt
-python -m visionstate.backbones models            # download the bundled model once
-pytest
-VISIONSTATE_DATA=./dev/data VISIONSTATE_MEDIA=./dev/media VISIONSTATE_BUNDLED_MODELS=./models \
-  HA_URL=http://homeassistant.local:8123 HA_TOKEN=<long-lived token> \
-  VISIONSTATE_MQTT_HOST=<broker> python -m visionstate
-```
-
-> ⚠️ Outside Home Assistant the app has **no login**: anyone who can reach port 8099 can use it.
-> Only run it like this on your own machine or behind a reverse proxy with authentication.
-
-Frontend (proxies `/api` to the backend on port 8099):
-
-```bash
-cd visionstate/frontend
-npm install
-npm run dev
-```
-
-UI tests (Playwright) start the backend and a fake camera by themselves and run every page on a
-desktop browser and on an emulated phone with touch:
-
-```bash
-cd visionstate/frontend
-npx playwright install chromium   # once
-npm run build
-VS_PYTHON=../backend/.venv/bin/python npm run e2e
-```
-
-</details>
-
-Issues and ideas are welcome in [GitHub Issues](https://github.com/oleost/VisionState/issues).
+Pull requests go to the `beta` branch. [`CLAUDE.md`](CLAUDE.md) is the contributor guide (run it
+locally against a fake camera, checks, UI tests on desktop and phones) and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) maps the code. Issues and ideas:
+[GitHub Issues](https://github.com/oleost/VisionState/issues). Security: [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 
-[Apache-2.0](LICENSE). The bundled models are Apache-2.0 as well: DINOv2 (Meta), D-FINE,
-PaddleOCR PP-OCRv6 and the VisionState wheel reader.
+[Apache-2.0](LICENSE). Bundled models: DINOv2 (Meta), D-FINE, PaddleOCR PP-OCRv6 and the
+VisionState wheel reader, all Apache-2.0. Face models, downloaded only when a camera recognises
+faces: YuNet (MIT), SFace or AuraFace (Apache-2.0). The screenshots use CC0 and public-domain
+images.
 
 If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕

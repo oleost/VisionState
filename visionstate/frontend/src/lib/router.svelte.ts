@@ -23,6 +23,7 @@ export const paths = {
   sensor: (id: number, tab: SensorTab | '' = '') => (tab ? `sensors/${id}/${tab}` : `sensors/${id}`),
   sensorHome: (id: number, kind: SensorKind) => `sensors/${id}/${TABS_BY_KIND[kind][0]}`,
   review: () => 'review',
+  people: () => 'people',
   /** `query`: a history filter (lib/history.ts toQuery). */
   history: (query = '') => withQuery('history', query),
   settings: () => 'settings',

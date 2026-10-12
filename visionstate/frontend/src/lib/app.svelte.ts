@@ -1,6 +1,7 @@
 // Global app state: server config, status and toasts.
 import { api } from './api';
-import type { AppConfig, Sensor, StateDef, Status } from './types';
+import { plural } from './format';
+import type { AppConfig, ImportResult, Sensor, StateDef, Status } from './types';
 import { TOAST_MAX, TOAST_MS } from './ui';
 
 export const app = $state<{ config: AppConfig | null; status: Status | null; error: string }>({
@@ -42,6 +43,19 @@ export function toast(message: string, opts: Partial<Omit<Toast, 'id' | 'message
 export function dismiss(id: number): void {
   const index = toasts.findIndex((t) => t.id === id);
   if (index >= 0) toasts.splice(index, 1);
+}
+
+/** What an import brought: unreadable images it skipped, and face recognition to turn on again (it
+ * is off after an import, so it gets its own confirmation here). */
+export function toastImported(result: ImportResult): void {
+  const skipped = result.skipped ? `; ${plural(result.skipped, 'unreadable image')} skipped` : '';
+  if (result.faces_off) {
+    toast(`Sensor imported${skipped}. It recognised faces where it came from: turn Recognise faces on below.`, {
+      tone: 'warn',
+    });
+  } else {
+    toast(`Sensor imported${skipped}`);
+  }
 }
 
 export function toastError(err: unknown): void {

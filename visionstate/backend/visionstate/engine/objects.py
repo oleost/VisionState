@@ -8,36 +8,39 @@ import time
 from datetime import UTC, datetime
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .. import detectors, imaging, teach
-from ..db import Prediction
+from ..db import Person, Prediction, Sensor
 from ..mqtt import object_topics, topics
 from ..redact import redact
-from ..settings import DETECTION, TEACH
+from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, KIND_OBJECTS, TEACH
 from .base import RuntimeBase
-from .logic import update_tracks
+from .faces import FacesMixin
+from .logic import steer_face_burst, update_tracks
 from .publishing import PublishingMixin
-from .state import SensorConfig
+from .state import ObjectTrack, SensorConfig
 from .teaching import TeachingMixin
 
 log = logging.getLogger(__name__)
 OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an object sensor
 
 
-class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
-    async def _run_objects(self, cfg: SensorConfig, image: Image.Image) -> None:
-        """One check of an object sensor: detect, compare with what was taught, update and publish."""
+class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase):
+    async def _run_objects(self, cfg: SensorConfig, image: Image.Image, frame_id: str | None) -> None:
+        """One check of an object sensor: detect, compare with what was taught, update and publish.
+        ``frame_id`` (the frame analysed) is announced together with what was found in it."""
         live = self.live_state(cfg.id)
         classes = cfg.objects["classes"]
         index = await self.taught_index(cfg)
         rescue = bool(index and index.rescue)
         # Once a box the detector missed was taught, its unsure boxes are looked at too.
-        floor = min(cfg.threshold, TEACH["rescue_floor"]) if rescue else cfg.threshold
+        floor = min(cfg.threshold, self.teach_limits(cfg)["rescue_floor"]) if rescue else cfg.threshold
         try:
             found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
         except Exception as err:  # noqa: BLE001 - detector missing or failed to load
             live.error = f"Object detector unavailable: {redact(str(err))}"
+            live.frame_id, live.detections = frame_id, []
             return
         candidates: list[dict] = []
         if rescue:
@@ -45,9 +48,11 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
         if index is not None:
             found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
+        if cfg.faces_on:
+            found = await self.apply_faces(cfg, image, found, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
-        live.detections = found
+        live.frame_id, live.detections = frame_id, found  # together: the boxes belong to that frame
         best = max(counted, key=lambda d: d["score"], default=None)
         live.top, live.confidence = (best.get("label") or best["key"], best["score"]) if best else (None, 0.0)
         keys = cfg.object_keys
@@ -56,6 +61,10 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
         # Something that was there is missing: look again soon instead of at the next interval.
         missing = any(t.on and 0 < t.misses < DETECTION["clear_misses"] for t in live.tracks.values())
         live.recheck_at = now + DETECTION["recheck_s"] if missing else 0.0
+        if cfg.faces_on:
+            await self.update_people(cfg)  # each person's own entity: where they are seen
+            if steer_face_burst(live.face_burst, found, now) == "start":
+                live.last_trigger = {"source": "person", "detail": "looking for a face", "at": now}
 
         for key in keys:
             track = live.tracks[key]
@@ -73,6 +82,7 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             await self._send(cfg, ot["attributes"], attributes, retain=True)
         names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
         names.update({c["key"]: c["name"] for c in cfg.custom_labels})
+        names[FACE_UNKNOWN_KEY] = "Unknown person"
         drawn = [{**d, "key": d.get("label") or d["key"]} for d in counted]
         annotated = await asyncio.to_thread(
             lambda: imaging.crop_box(
@@ -86,12 +96,82 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             published = "on" if track.on else "off"
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, published, track.score, found)
         await self._record_filtered(cfg, image, found, now)
+        if cfg.faces_on:
+            await self._record_face(cfg, image, found, now)
         await self._ask_unsure(cfg, image, found, now)
+
+    async def _record_face(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
+        """Keep a frame in the history when a usable face nobody is named for is seen, so the user
+        can name them there later: at most one per FACES["record_cooldown_s"], unless the face came
+        FACES["record_closer"] times closer since (the best look at someone at a doorbell)."""
+        live = self.live_state(cfg.id)
+        unnamed = [
+            d
+            for d in found
+            if (face := d.get("face"))
+            and face.get("problem") is None
+            and face.get("box")
+            and face.get("state") != "match"
+        ]
+        if not unnamed:
+            return
+        best = max(unnamed, key=lambda d: d["face"].get("face_px", 0))
+        width = float(best["face"].get("face_px", 0))
+        at, logged_width = live.face_logged
+        if now - at < FACES["record_cooldown_s"] and width < logged_width * FACES["record_closer"]:
+            return
+        live.face_logged = (now, width)
+        key = best.get("label") or best["key"]
+        await asyncio.to_thread(self._record_detection, cfg.id, image, key, "face", best["score"], found)
+
+    def restore_last_seen(self) -> None:
+        """At start: when each object, own label and person was last seen, from the history (the
+        live state starts empty, so every sensor said "not seen yet" after an update or restart).
+        An "off" row is written clear_after_s after the object was last there; a box taught from a
+        history frame counts at that frame's time. Only what the history still keeps is known."""
+        with self.db.session() as s:
+            objects = select(Sensor.id).where(Sensor.kind == KIND_OBJECTS)
+            events = s.execute(
+                select(
+                    Prediction.sensor_id,
+                    Prediction.state_key,
+                    Prediction.published_key,
+                    func.max(Prediction.created_at),
+                )
+                .where(Prediction.sensor_id.in_(objects), Prediction.published_key.in_(("on", "off")))
+                .group_by(Prediction.sensor_id, Prediction.state_key, Prediction.published_key)
+            ).all()
+            taught_rows = s.execute(
+                select(Prediction.sensor_id, Prediction.created_at, Prediction.detections).where(
+                    Prediction.sensor_id.in_(objects), Prediction.published_key.in_(("face", "ask"))
+                )
+            ).all()
+            people = set(s.scalars(select(Person.key)))
+        clear_after: dict[int, float] = {}
+        for sensor_id, key, event, created in events:
+            if sensor_id not in clear_after:
+                cfg = self.load_sensor(sensor_id)
+                clear_after[sensor_id] = float(cfg.objects["clear_after_s"]) if cfg and cfg.objects else 0.0
+            at = _timestamp(created) - (clear_after[sensor_id] if event == "off" else 0.0)
+            self.seen_earlier(sensor_id, key, at, key in people)
+        for sensor_id, created, detections in taught_rows:
+            for d in detections or []:
+                if d.get("taught") and d.get("label"):
+                    self.seen_earlier(sensor_id, d["label"], _timestamp(created), d["label"] in people)
+
+    def seen_earlier(self, sensor_id: int, key: str, at: float, person: bool = False) -> None:
+        """``key`` (an own label, or a ``person``) was taught from a frame taken at ``at``: it counts
+        as last seen then, unless a check saw it later. Nothing is switched on: that frame is the past."""
+        track = self.live_state(sensor_id).tracks.setdefault(key, ObjectTrack())
+        track.last_seen = max(track.last_seen, at)
+        last = self._person_last.get(key)
+        if person and (last is None or at > last[0]):
+            self._person_last[key] = (at, sensor_id)  # the People page's "last seen"
 
     async def _ask_unsure(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Put a box that may be an own label, but not clearly, in the review queue ("Is this Our
-        car?"); the answer is taught. One question per label at a time, at most one per review
-        cooldown, and none while the review rules are off."""
+        car?"); the answer is taught. One question per label per review cooldown (about a face: up
+        to FACES["ask_burst"], FACES["ask_gap_s"] apart), and none while the review rules are off."""
         live = self.live_state(cfg.id)
         rules = self.review_rules(cfg)
         unsure = [d for d in found if d.get("ask") and not d.get("filtered")]
@@ -99,30 +179,38 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
             return
         asked = False
         for label in sorted({d["ask"]["label"] for d in unsure}):
-            if now - live.asked.get(label, 0.0) < rules["cooldown_s"]:
-                continue
             box = max((d for d in unsure if d["ask"]["label"] == label), key=lambda d: d["ask"]["similarity"])
-            live.asked[label] = now
-            asked = await asyncio.to_thread(self._record_question, cfg.id, image, box, found) or asked
+            burst = FACES["ask_burst"] if box["ask"].get("face") else 1
+            times = [t for t in live.asked.get(label, []) if now - t < rules["cooldown_s"]]
+            if len(times) >= burst or (times and now - times[-1] < FACES["ask_gap_s"]):
+                live.asked[label] = times
+                continue
+            recorded = await asyncio.to_thread(self._record_question, cfg.id, image, box, found, burst)
+            live.asked[label] = [*times, now] if recorded else times
+            asked = asked or recorded
         if asked:
             await self.publish_review_count()
 
-    def _record_question(self, sensor_id: int, image: Image.Image, box: dict, found: list[dict]) -> bool:
-        """A history row waiting for review: may ``box`` be its own label? False: one is waiting already."""
+    def _record_question(self, sensor_id: int, image: Image.Image, box: dict, found: list[dict], most: int = 1) -> bool:
+        """A history row waiting for review: may ``box`` be its own label? False: ``most`` about
+        that label are waiting already."""
         label = box["ask"]["label"]
         with self.db.session() as s:
             waiting = s.scalar(
-                select(Prediction.id).where(
+                select(func.count(Prediction.id)).where(
                     Prediction.sensor_id == sensor_id,
                     Prediction.published_key == "ask",
                     Prediction.state_key == label,
                     Prediction.reviewed.is_(False),
                 )
             )
-        if waiting is not None:
+        if (waiting or 0) >= most:
             return False
         frame = self.storage.save_history(sensor_id, image)
         question = {"label": label, "similarity": box["ask"]["similarity"], "box": box["box"], "detected": box["key"]}
+        if box["ask"].get("face") and (box.get("face") or {}).get("box"):
+            question["face"] = box["face"]["box"]  # "Is this Kari?" / "Who is this?" about a face
+            question["example"] = box["ask"].get("id")  # the closest taught face, to compare with
         with self.db.session() as s:
             s.add(
                 Prediction(
@@ -155,7 +243,8 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
     def _record_detection(
         self, sensor_id: int, image: Image.Image, key: str, published: str, score: float, found: list[dict]
     ) -> None:
-        """A history row of an object sensor: a class or own label went "on" or "off", or was "filtered"."""
+        """A history row of an object sensor: a class or own label went "on" or "off", was
+        "filtered", or a face nobody is named for was seen ("face")."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(
@@ -166,8 +255,13 @@ class ObjectChecksMixin(TeachingMixin, PublishingMixin, RuntimeBase):
                     confidence=score,
                     probs={},
                     frame=frame,
-                    is_change=True,
+                    is_change=published != "face",  # a face seen is not a change of what is there
                     reviewed=True,  # nothing to review: the detector is not trained here
                     detections=found,
                 )
             )
+
+
+def _timestamp(value: datetime) -> float:
+    """A stored time as a Unix timestamp (SQLite keeps it without its zone: UTC)."""
+    return (value if value.tzinfo else value.replace(tzinfo=UTC)).timestamp()
