@@ -125,6 +125,13 @@
         </span>
         <progress max={status.progress.total} value={status.progress.done}></progress>
       </div>
+    {:else if status?.embedding}
+      <div class="col" style="gap:6px">
+        <span class="small muted">
+          Learning the taught faces with the face model… {status.embedding.done} of {status.embedding.total}
+        </span>
+        <progress max={status.embedding.total} value={status.embedding.done}></progress>
+      </div>
     {:else if status && !status.loaded}
       <span class="small muted">Loading the face model…</span>
     {:else if sensor.objects}

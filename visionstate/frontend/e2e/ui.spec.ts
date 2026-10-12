@@ -1306,6 +1306,28 @@ test('an answer in the review queue can be changed from the list', async ({ page
   errors.expectNone();
 });
 
+test('faces: a new face model learning the taught faces shows on the cards, the Faces card and People', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const faceId = await seededFaceSensorId(request);
+  // Switching the face model embeds every taught face again; the status says how far it is.
+  await page.route('**/api/v1/status', async (route) => {
+    const status = await (await route.fetch()).json();
+    status.faces = { ...status.faces, loaded: false, loading: true, embedding: { done: 3, total: 8 } };
+    await route.fulfill({ json: status });
+  });
+  await page.goto('#/');
+  const card = page.locator('.card', { has: page.getByRole('link', { name: 'Crew', exact: true }) });
+  await expect(card.getByText('Learning faces… 3/8')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.goto(`#/sensors/${faceId}/settings`);
+  await expect(page.locator('h1 ~ .chip', { hasText: 'Learning faces… 3/8' })).toBeVisible();
+  await expect(page.getByTestId('faces-card').getByText(/Learning the taught faces .* 3 of 8/)).toBeVisible();
+  await page.goto('#/people');
+  await expect(page.getByTestId('faces-embedding')).toContainText('3 of 8');
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
 test('faces: turned on with a confirmation, a person taught from the Live tab, shown under Quality', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const faceId = await seededFaceSensorId(request);

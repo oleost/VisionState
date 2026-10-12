@@ -159,6 +159,7 @@
   function faceStatus(f: FaceStatus): string {
     if (f.error) return f.error;
     if (f.progress) return `downloading… ${size(f.progress.done)} of ${size(f.progress.total)}`;
+    if (f.embedding) return `learning the taught faces… ${f.embedding.done} of ${f.embedding.total}`;
     if (f.loaded) return info?.face_models.find((m) => m.id === f.model)?.name ?? f.model;
     if (f.loading) return 'loading…';
     return 'loaded when a sensor recognises faces';

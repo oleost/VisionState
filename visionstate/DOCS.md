@@ -196,7 +196,8 @@ everyone.
   (**Recognise people by their face** under the objects, once Person is picked). A sheet says
   what is stored and which face model is downloaded (once, from Hugging Face), and nothing
   happens until you confirm. While it downloads the sensor keeps working without faces; the card
-  shows the progress, and **Try again** if it failed. Without internet, put the file the message
+  shows the progress, and **Try again** if it failed. The sensor's card on the start page and its
+  page say *Downloading faces…*, *Loading faces…* or *Learning faces…* until faces are named. Without internet, put the file the message
   names in the app's `models` folder by hand.
 - **Does my camera see faces well enough?** The **Live** tab draws a small rounded box around
   each face it finds in a person, and says for each person what it saw: a name, *face too small*,
@@ -529,7 +530,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   times as slow per face), which tells faces apart better in poor light and at an angle. YuNet
   was trained on a research data set and SFace's paper names research data sets too (their
   terms are not commercial); AuraFace's makers say its data allows commercial use. Switching
-  compares every taught face again with the new model; the people are kept. Only loaded while a
+  computes every taught face again with the new model (*Learning faces… 12/40* on the sensors'
+  cards, the progress on the Faces card and the People page; the sensors find people without
+  naming them until it is done); the people are kept. Only loaded while a
   sensor recognises faces.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,

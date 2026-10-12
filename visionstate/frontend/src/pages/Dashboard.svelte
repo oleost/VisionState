@@ -9,7 +9,7 @@
   import StatePill from '../lib/components/StatePill.svelte';
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
-  import { isObjectSensor, objectName } from '../lib/objects';
+  import { facesBusy, isObjectSensor, objectName } from '../lib/objects';
   import { isReadingSensor, readingText, readingUnit } from '../lib/reading';
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
@@ -118,7 +118,9 @@
             <div class="row">
               <h2><a href={href(paths.sensor(s.id))}>{s.name}</a></h2>
               <span class="spacer"></span>
-              {#if s.training}<span class="chip info">Training…</span>{:else}<span class="chip {status.tone}">{status.label}</span>{/if}
+              {#if s.training}<span class="chip info">Training…</span>{:else if facesBusy(s)}<span class="chip info"
+                  >{facesBusy(s)}</span
+                >{:else}<span class="chip {status.tone}">{status.label}</span>{/if}
             </div>
             <div class="col" style="gap:2px">
               <span class="mono xsmall muted">{s.entity_id}</span>

@@ -113,6 +113,16 @@ export function objectSummary(sensor: Sensor): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** What a running object sensor that recognises faces waits for, as a chip ("" when ready, or when the
+ * face model failed: its Faces card says why). It works without faces meanwhile. */
+export function facesBusy(sensor: Pick<Sensor, 'kind' | 'enabled' | 'objects'>): string {
+  const f = app.status?.faces;
+  if (!f || f.error || !sensor.enabled || !isObjectSensor(sensor) || !sensor.objects?.faces?.enabled) return '';
+  if (f.progress) return 'Downloading faces…';
+  if (f.embedding) return `Learning faces… ${f.embedding.done}/${f.embedding.total}`;
+  return f.loaded ? '' : 'Loading faces…';
+}
+
 /** Whether a box's label comes from its face: a person taught by face, or the unknown person. */
 export const byFace = (label: string, own: OwnLabel[] = []) =>
   label === app.config?.face_unknown_key || own.some((l) => l.key === label && l.face);

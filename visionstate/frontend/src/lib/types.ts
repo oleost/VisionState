@@ -270,12 +270,14 @@ export interface ImportResult {
   faces_off: boolean;
 }
 
-/** The face model: chosen, loaded, downloading (bytes) or why it failed. */
+/** The face model: chosen, loaded, downloading (bytes), embedding the taught faces (count) or why it failed. */
 export interface FaceStatus {
   model: string;
   loaded: boolean;
   loading: boolean;
   progress: { done: number; total: number } | null;
+  /** The taught faces being embedded with a newly loaded model: how many of how many. */
+  embedding: { done: number; total: number } | null;
   error: string;
   downloaded: boolean;
 }

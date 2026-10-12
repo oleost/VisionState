@@ -7,7 +7,7 @@
   import HistoryView from '../lib/components/history/HistoryView.svelte';
   import ObjectChips from '../lib/components/ObjectChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
-  import { isObjectSensor } from '../lib/objects';
+  import { facesBusy, isObjectSensor } from '../lib/objects';
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
@@ -87,7 +87,9 @@
             {:else}
               <StatePill name={current.name} color={current.color} confidence={shownConfidence(sensor)} />
             {/if}
-            {#if sensor.training}<span class="chip info">Training…</span>{:else if sensor.status !== 'ok'}<span
+            {#if sensor.training}<span class="chip info">Training…</span>{:else if facesBusy(sensor)}<span class="chip info"
+                >{facesBusy(sensor)}</span
+              >{:else if sensor.status !== 'ok'}<span
                 class="chip {SENSOR_STATUS[sensor.status].tone}">{SENSOR_STATUS[sensor.status].label}</span
               >{/if}
             <span class="mono xsmall muted">{isObjectSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span>

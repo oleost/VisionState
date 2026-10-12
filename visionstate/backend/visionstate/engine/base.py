@@ -69,6 +69,7 @@ class RuntimeBase:
         self.face_choice = faces.DEFAULT_RECOGNISER
         self.face_error = ""
         self.face_progress: dict | None = None  # {"done", "total"} bytes while it downloads
+        self.face_embedding: dict | None = None  # {"done", "total"} taught faces while they are embedded
         self._face_lock = asyncio.Lock()
         self._face_task: asyncio.Task | None = None
         self.face_index: faces.FaceIndex | None = None  # the people's taught faces; built on use
