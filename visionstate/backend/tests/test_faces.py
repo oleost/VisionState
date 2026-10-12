@@ -184,6 +184,13 @@ def photo_faces(recogniser, name):
 
 
 @pytest.mark.parametrize("spec", [on_disk(s) for s in faces.RECOGNISERS.values()])
+def test_loading_a_face_model_keeps_the_log_quiet(spec, capfd):
+    """SFace's file lists its weights as graph inputs: ONNX Runtime wrote 174 warnings per load."""
+    faces.Recogniser(spec, MODEL_DIR / spec.filename)
+    assert "onnxruntime" not in capfd.readouterr().err.replace("\x00", "")
+
+
+@pytest.mark.parametrize("spec", [on_disk(s) for s in faces.RECOGNISERS.values()])
 def test_every_face_model_tells_people_apart_in_real_photos(spec):
     recogniser = faces.Recogniser(spec, MODEL_DIR / spec.filename)
     limits = spec.thresholds

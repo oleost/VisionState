@@ -159,11 +159,13 @@ def cpu_session(model_path: Path):
     """An ONNX Runtime session on the CPU — the only target, deliberately (docs/SCOPE.md).
 
     Only the CPU provider is passed, so nothing else ONNX Runtime ships with (such as its
-    Azure provider) is ever used.
+    Azure provider) is ever used. Only errors are logged: SFace's file lists its weights as graph
+    inputs too, and ONNX Runtime warned about every one of them (174 lines) each time it loaded.
     """
     import onnxruntime as ort
 
     options = ort.SessionOptions()
+    options.log_severity_level = 3
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
 
