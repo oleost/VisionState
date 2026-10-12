@@ -52,8 +52,12 @@ def _files() -> list[Path]:
 
 FILES = _files()
 NAMES = {p.name for p in FILES}
-MODULES = {p.stem: p for p in BACKEND.rglob("*.py") if "__pycache__" not in p.parts and p.stem != "__init__"}
-BACKEND_TEXT = "\n".join(p.read_text(encoding="utf-8") for p in MODULES.values())
+# Modules by name; several share one (faces.py, engine/faces.py, api/faces.py): any of them counts.
+MODULES: dict[str, list[Path]] = {}
+for _path in BACKEND.rglob("*.py"):
+    if "__pycache__" not in _path.parts and _path.stem != "__init__":
+        MODULES.setdefault(_path.stem, []).append(_path)
+BACKEND_TEXT = "\n".join(p.read_text(encoding="utf-8") for paths in MODULES.values() for p in paths)
 # Tables whose columns a doc may name (`prediction.read_ok`); "sensor" is also a Home Assistant domain.
 TABLES = set(re.findall(r'__tablename__ = "(\w+)"', (BACKEND / "db.py").read_text(encoding="utf-8"))) - {"sensor"}
 # A plan names code that is still to be written; only its links and paths are checked.
@@ -92,7 +96,7 @@ def _problem(token: str, doc: Path) -> str | None:
             return None
         first, name = m[1], m[2]
         if first in MODULES:
-            text = MODULES[first].read_text(encoding="utf-8")
+            text = "\n".join(p.read_text(encoding="utf-8") for p in MODULES[first])
             if _defines(text, name) or name.endswith("_"):
                 return None
             return f"{first}.py does not define {name}"
