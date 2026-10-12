@@ -61,6 +61,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             if self.heads_load(sensor_id):
                 log.info("Sensor %s: model from another version, retraining from stored images", sensor_id)
                 self.schedule_retrain(sensor_id, delay=0)
+        await asyncio.to_thread(self.restore_last_seen)  # "last seen" survives an update or restart
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
         await self.faces_settled()  # sensors that recognise faces: load the face model in the background

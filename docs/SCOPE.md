@@ -229,7 +229,11 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
 - Each person also has their own entity on the app's device, `sensor.visionstate_<key>`
   (`mqtt.person_discovery_messages`): the slug of the sensor that sees them now — the one that saw
   them last when several do — or `settings.PERSON_NOT_SEEN`; when and where they were last seen
-  are attributes. Kept in memory: after a restart everyone is `not_seen` until seen again.
+  are attributes. Kept in memory, and at start read back from the history
+  (`engine.objects.restore_last_seen`: the last "on", an "off" less `clear_after_s`, a box taught
+  from a frame), so "last seen" survives a restart while the history keeps it. A box taught from
+  a history frame or a review answer is written into that row (`api.teach.remember_taught`: its
+  label, `taught`), so the History shows what was taught from it.
 - `GET /people` and `/faces/{id}` (`api/faces.py`) list, rename, move and forget for all sensors;
   teaching stays on a sensor (`/sensors/{id}/faces`), or comes from photos (`POST /people/photos`:
   read like a state sensor's upload, `uploads.frames_from_file`; the best face of each picture
@@ -353,6 +357,11 @@ the pixels are decoded.
   - Optional region change detection: a small greyscale copy of the ROI is compared every
     *N* seconds; the AI only runs when the difference exceeds a threshold.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
+  - A sensor that recognises faces starts one by itself when a check finds a person nobody is
+    named for (`engine.logic.steer_face_burst`, tunables `FACES["burst_*"]`): someone walking up
+    shows a usable face for a few seconds only. It runs while they come closer or show a face, ends
+    once everyone is named, when they are gone, without progress or after `burst_max_s`, and comes
+    again only after they have gone. The light is held through it like any burst.
   - The MQTT `classify` button checks once.
 - **Light** (`triggers.light_entity`, `light_delay_s`; picked with the camera in the UI): a light,
   switch or input_boolean, switched over the HA REST API (`homeassistant.turn_on/off`). `lights.py`

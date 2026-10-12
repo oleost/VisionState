@@ -260,6 +260,7 @@ export const ENTITY_ID_PATTERN = /^[a-z0-9_]+\.[a-z0-9_]+$/;
 export const TRIGGER_SOURCES: Record<string, string> = {
   entity: 'Entity changed',
   change: 'Image changed',
+  person: 'Person seen',
 };
 
 /** Placeholder the backend puts where credentials were removed from an exported URL (redact.MASK). */

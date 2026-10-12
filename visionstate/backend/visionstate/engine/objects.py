@@ -11,15 +11,15 @@ from PIL import Image
 from sqlalchemy import func, select
 
 from .. import detectors, imaging, teach
-from ..db import Prediction
+from ..db import Person, Prediction, Sensor
 from ..mqtt import object_topics, topics
 from ..redact import redact
-from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, TEACH
+from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, KIND_OBJECTS, TEACH
 from .base import RuntimeBase
 from .faces import FacesMixin
-from .logic import update_tracks
+from .logic import steer_face_burst, update_tracks
 from .publishing import PublishingMixin
-from .state import SensorConfig
+from .state import ObjectTrack, SensorConfig
 from .teaching import TeachingMixin
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         live.recheck_at = now + DETECTION["recheck_s"] if missing else 0.0
         if cfg.faces_on:
             await self.update_people(cfg)  # each person's own entity: where they are seen
+            if steer_face_burst(live.face_burst, found, now) == "start":
+                live.last_trigger = {"source": "person", "detail": "looking for a face", "at": now}
 
         for key in keys:
             track = live.tracks[key]
@@ -121,6 +123,50 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         live.face_logged = (now, width)
         key = best.get("label") or best["key"]
         await asyncio.to_thread(self._record_detection, cfg.id, image, key, "face", best["score"], found)
+
+    def restore_last_seen(self) -> None:
+        """At start: when each object, own label and person was last seen, from the history (the
+        live state starts empty, so every sensor said "not seen yet" after an update or restart).
+        An "off" row is written clear_after_s after the object was last there; a box taught from a
+        history frame counts at that frame's time. Only what the history still keeps is known."""
+        with self.db.session() as s:
+            objects = select(Sensor.id).where(Sensor.kind == KIND_OBJECTS)
+            events = s.execute(
+                select(
+                    Prediction.sensor_id,
+                    Prediction.state_key,
+                    Prediction.published_key,
+                    func.max(Prediction.created_at),
+                )
+                .where(Prediction.sensor_id.in_(objects), Prediction.published_key.in_(("on", "off")))
+                .group_by(Prediction.sensor_id, Prediction.state_key, Prediction.published_key)
+            ).all()
+            taught_rows = s.execute(
+                select(Prediction.sensor_id, Prediction.created_at, Prediction.detections).where(
+                    Prediction.sensor_id.in_(objects), Prediction.published_key.in_(("face", "ask"))
+                )
+            ).all()
+            people = set(s.scalars(select(Person.key)))
+        clear_after: dict[int, float] = {}
+        for sensor_id, key, event, created in events:
+            if sensor_id not in clear_after:
+                cfg = self.load_sensor(sensor_id)
+                clear_after[sensor_id] = float(cfg.objects["clear_after_s"]) if cfg and cfg.objects else 0.0
+            at = _timestamp(created) - (clear_after[sensor_id] if event == "off" else 0.0)
+            self.seen_earlier(sensor_id, key, at, key in people)
+        for sensor_id, created, detections in taught_rows:
+            for d in detections or []:
+                if d.get("taught") and d.get("label"):
+                    self.seen_earlier(sensor_id, d["label"], _timestamp(created), d["label"] in people)
+
+    def seen_earlier(self, sensor_id: int, key: str, at: float, person: bool = False) -> None:
+        """``key`` (an own label, or a ``person``) was taught from a frame taken at ``at``: it counts
+        as last seen then, unless a check saw it later. Nothing is switched on: that frame is the past."""
+        track = self.live_state(sensor_id).tracks.setdefault(key, ObjectTrack())
+        track.last_seen = max(track.last_seen, at)
+        last = self._person_last.get(key)
+        if person and (last is None or at > last[0]):
+            self._person_last[key] = (at, sensor_id)  # the People page's "last seen"
 
     async def _ask_unsure(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Put a box that may be an own label, but not clearly, in the review queue ("Is this Our
@@ -214,3 +260,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
                     detections=found,
                 )
             )
+
+
+def _timestamp(value: datetime) -> float:
+    """A stored time as a Unix timestamp (SQLite keeps it without its zone: UTC)."""
+    return (value if value.tzinfo else value.replace(tzinfo=UTC)).timestamp()

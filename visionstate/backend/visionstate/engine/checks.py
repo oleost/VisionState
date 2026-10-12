@@ -134,7 +134,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
         live = self.live_state(cfg.id)
         if not entity or live.light_off_task or not self.lights.held(entity, f"check:{cfg.id}"):
             return
-        wait = max(0.0, live.burst_until - time.time())
+        wait = max(0.0, max(live.burst_until, live.face_burst.until) - time.time())
 
         async def off() -> None:
             await asyncio.sleep(wait)

@@ -107,7 +107,7 @@
         {/if}
       </p>
       <div class="trigger">
-        {#if sensor.live.in_burst}<span class="chip info">Checking every {sensor.triggers.burst_interval_s} s</span>{/if}
+        {#if sensor.live.in_burst}<span class="chip info">Checking every {sensor.live.burst_interval_s ?? sensor.triggers.burst_interval_s} s</span>{/if}
         {#if sensor.live.last_trigger}
           <span class="xsmall muted">
             {TRIGGER_SOURCES[sensor.live.last_trigger.source] ?? 'Triggered'} {ago(sensor.live.last_trigger.at)}:

@@ -26,7 +26,7 @@ from ..engine import Runtime, SensorConfig
 from ..settings import FACES, KIND_OBJECTS, TEACH, UPLOAD_LIMITS, merge_objects
 from .common import API_PREFIX, iso, runtime, slugify
 from .samples import copy_limited
-from .teach import RESERVED_KEYS, frame_image
+from .teach import RESERVED_KEYS, frame_image, remember_taught
 
 router = APIRouter(prefix=f"{API_PREFIX}/sensors", tags=["faces"])
 people_router = APIRouter(prefix=API_PREFIX, tags=["faces"])
@@ -217,6 +217,8 @@ async def teach_face(sensor_id: int, body: FaceTeachIn, request: Request) -> dic
         await rt.people_changed()  # the person's entities on every sensor that recognises faces
     else:
         rt.faces_changed()
+    if body.history_id is not None:
+        await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, key, "person", True)
     return {"id": face_id, "label": key, "name": name, "faces": n}
 
 

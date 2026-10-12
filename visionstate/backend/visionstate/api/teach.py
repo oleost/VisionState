@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from PIL import Image
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
-from .. import detectors, imaging
+from .. import detectors, imaging, teach
 from ..db import Person, Prediction, Sample
 from ..engine import Runtime
 from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
@@ -175,7 +176,46 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     if new is not None:
         await rt.sensor_updated(sensor_id, retrain=False)  # the new label's entities
     rt.taught_changed(sensor_id)
+    if body.history_id is not None:
+        await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, label, body.detected)
     return {"id": example_id, "label": label, "seen": seen}
+
+
+def remember_taught(
+    rt: Runtime,
+    sensor_id: int,
+    history_id: int,
+    box: list[float],
+    label: str,
+    detected: str | None,
+    person: bool = False,
+) -> None:
+    """A box taught from a history frame (or a review answer): the row shows it with its new label
+    from then on, and an own label or person counts as seen at that frame's time (so the sensor no
+    longer says "not seen yet" about what was just taught from it)."""
+    with rt.db.session() as s:
+        row = s.get(Prediction, history_id)
+        if row is None or row.sensor_id != sensor_id:
+            return
+        found = [dict(d) for d in row.detections or []]
+        best = max(found, key=lambda d: teach.box_iou(d["box"], box), default=None)
+        if best is None or teach.box_iou(best["box"], box) < TEACH["keep_iou"]:
+            best = {"key": detected or label, "score": 0.0, "box": list(box)}
+            found.append(best)
+        best.pop("ask", None)
+        best.pop("filtered", None)
+        if label in (NONE_LABEL, best["key"]):
+            best.pop("label", None)  # not it, or just the class it was found as
+            if label == NONE_LABEL:
+                best["filtered"] = True
+        else:
+            best["label"] = label
+        best["taught"] = True
+        row.detections = found
+        created = row.created_at
+        at = (created if created.tzinfo else created.replace(tzinfo=UTC)).timestamp()  # stored naive, in UTC
+    if label not in (NONE_LABEL, best["key"]):
+        rt.seen_earlier(sensor_id, label, at, person)
 
 
 def delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnElement[bool]]) -> int:

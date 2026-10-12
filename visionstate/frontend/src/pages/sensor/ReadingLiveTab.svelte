@@ -90,7 +90,7 @@
         <span class="chip ok">Last reading accepted</span>
       {/if}
       <div class="trigger">
-        {#if sensor.live.in_burst}<span class="chip info">Reading every {sensor.triggers.burst_interval_s} s</span>{/if}
+        {#if sensor.live.in_burst}<span class="chip info">Reading every {sensor.live.burst_interval_s ?? sensor.triggers.burst_interval_s} s</span>{/if}
         {#if sensor.live.last_trigger}
           <span class="xsmall muted">
             {TRIGGER_SOURCES[sensor.live.last_trigger.source] ?? 'Triggered'} {ago(sensor.live.last_trigger.at)}:

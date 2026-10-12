@@ -114,7 +114,9 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
 ### Teaching an object sensor
 
 The detector works without training, but it can be corrected where it gets your camera wrong.
-Tap a box on the **Live** tab or on a history frame (or its entry under the frame):
+Tap a box on the **Live** tab or on a history frame (or its entry under the frame). A history
+entry you taught from says so (*Taught: Our car*), and what you taught counts as last seen at
+that frame's time:
 
 | Choice | What happens from then on |
 |---|---|
@@ -174,7 +176,8 @@ someone it has not been taught. It is **off** until you turn it on. The people a
 every camera that recognises faces knows everyone you named on any of them, and each person also
 gets their own sensor (for Kari: `sensor.visionstate_kari`) whose value is the sensor that sees
 them now — the one that saw them last, when several do — or `not_seen`, with when and where they
-were last seen as attributes (after a restart of the app: `not_seen` until they are seen again).
+were last seen as attributes. After a restart or an update of the app, when everyone and
+everything was last seen comes back from the history (as far back as it keeps frames).
 
 **Before you turn it on.** Faces are biometric data. VisionState keeps them on your Home
 Assistant only — no face ever leaves it, as nothing else does — but the people you teach should
@@ -229,6 +232,11 @@ everyone.
   goes through the same check; the message says how many were added and why a photo was skipped.
   A quick start: faces taught on each camera still recognise people best, as a camera sees them
   from another angle and in other light. Photos can be added once a sensor recognises faces.
+- **When someone comes**: a person walking up to the camera shows a usable face for only a few
+  seconds. When a check finds a person nobody is named for, the sensor checks about every second
+  for a while (*Person seen* on the **Live** tab): while they come closer or show their face,
+  until they are named or gone, and for half a minute at most. Someone who stays (on the steps,
+  in the garden) gets one such burst, not one every few minutes.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
   match names the person; a less certain one needs a second check that agrees. A person who stays
   where they were keeps the name while their face is turned away. Close to someone, but not

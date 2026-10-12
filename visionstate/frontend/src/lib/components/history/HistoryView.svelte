@@ -41,12 +41,13 @@
   let active: HistoryFilter = {}; // the filter of the list shown ("the last hours" fixed when loaded)
   let generation = 0; // a newer load makes answers to older requests stale
 
-  async function load() {
+  /** The list again; `limit`: as many rows as are shown (after teaching from one, so it shows that). */
+  async function load(limit?: number) {
     const mine = ++generation;
     const filter = toFilter(shown);
     try {
       const [page, found] = await Promise.all([
-        api.history(filter, { order: shown.order, limit: settings?.page_size }),
+        api.history(filter, { order: shown.order, limit: limit ?? settings?.page_size }),
         api.historyFacets(filter),
       ]);
       if (mine !== generation) return;
@@ -66,8 +67,15 @@
   const key = $derived(JSON.stringify(shown));
   $effect(() => {
     void key;
-    untrack(load);
+    untrack(() => load());
   });
+
+  // Taught from a row: the row now shows what was taught (and the sensors their new labels).
+  function taughtFrom() {
+    onchange();
+    const shownRows = items?.length ?? 0;
+    void load(Math.min(Math.max(shownRows, settings?.page_size ?? 0), settings?.max_page_size ?? shownRows));
+  }
 
   async function more() {
     if (!next || loadingMore) return;
@@ -199,7 +207,7 @@
   </span>
   <span class="spacer"></span>
   {#if fresh > 0}
-    <button type="button" class="btn sm accent-outline" onclick={load}>Show {fresh} new</button>
+    <button type="button" class="btn sm accent-outline" onclick={() => load()}>Show {fresh} new</button>
   {/if}
 </div>
 
@@ -220,7 +228,7 @@
       {@const sensor = byId.get(item.sensor_id)}
       {#if sensor}
         {@const Row = ROWS[sensor.kind]}
-        <Row {item} {sensor} showSensor={!locked} {onchange} />
+        <Row {item} {sensor} showSensor={!locked} onchange={taughtFrom} />
       {/if}
     {/each}
   </div>

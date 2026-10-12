@@ -415,6 +415,15 @@ def test_a_face_question_is_answered_in_the_review_queue(settings):  # noqa: F81
         assert {p["name"]: len(p["faces"]) for p in people} == {"Suni": 1, "Butch": 1}
         assert wait_for(lambda: live(client, sid).get("butch", {}).get("on"), timeout=30)
         assert merge_objects(None)["faces"]["ask_unknown"] is False  # off by default
+        # The question's frame in the history now shows who it was: taught from it.
+        rows = client.get("/api/v1/history", params={"sensor": sid, "limit": 100}).json()["items"]
+        row = next(r for r in rows if r["id"] == item["id"])
+        assert [d["label"] for d in row["detections"] if d.get("taught")] == ["butch"]
+    # After an update or restart, when each person was last seen comes back from the history.
+    with TestClient(create_app(settings)) as client:
+        assert live(client, sid)["butch"]["last_seen"] and live(client, sid)["suni"]["last_seen"]
+        seen = {p["key"]: p["seen"]["at"] for p in client.get("/api/v1/people").json()["people"]}
+        assert seen["butch"] and seen["suni"]
 
 
 def test_a_face_model_that_cannot_be_downloaded_leaves_the_sensor_working(settings, monkeypatch, tmp_path):  # noqa: F811

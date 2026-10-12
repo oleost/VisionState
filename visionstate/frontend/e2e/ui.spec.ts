@@ -689,6 +689,21 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-quality.png'), fullPage: true });
 
+    // Taught from a history frame: its entry says so from then on.
+    await page.goto(`#/sensors/${id}/history`);
+    const dogRow = page.getByRole('button', { name: /Dog detected/ }).first();
+    await expect(dogRow).toBeVisible({ timeout: 15_000 });
+    // The thumbnails load first, or the list moves under the tap on a phone; and the toast from
+    // teaching the missed box covers the bottom of a phone screen for a while.
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete || img.loading === 'lazy'));
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toHaveCount(0, { timeout: 20_000 });
+    await press(dogRow, info);
+    await expect(page.locator('.full .box').first()).toBeVisible();
+    await press(page.locator('.full button.found', { hasText: 'Dog' }).first(), info);
+    await press(sheet.getByRole('button', { name: 'Correct' }), info);
+    await expect(page.getByTestId('history-taught').first()).toContainText('Taught: Dog');
+    await expectNoHorizontalOverflow(page);
+
     // Settings: its own teaching limits. Until set, a field shows the global value in grey.
     await page.goto(`#/sensors/${id}/settings`);
     await expect(page.getByText('Use what you taught')).toBeVisible();

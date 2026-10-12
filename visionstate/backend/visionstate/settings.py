@@ -292,6 +292,18 @@ FACES = {
     # seconds apart; an answer opens the next one right away. Own labels ask one at a time.
     "ask_burst": 5,
     "ask_gap_s": 3.0,
+    # Looking for a face while a person is there: someone walking up to a doorbell shows a usable
+    # face for a few seconds only, often between two regular checks. A check that finds a person
+    # nobody is named for checks again every burst_interval_s (or the sensor's burst pace if
+    # faster), until everyone in view is named, nobody was seen in burst_absent_checks checks in a
+    # row, burst_idle_checks checks in a row brought neither a usable face nor a person coming
+    # closer (a box or face burst_progress times larger than before), or after burst_max_s. Then not
+    # again until the person has gone: someone sitting on the steps gets one burst, not one an hour.
+    "burst_interval_s": 1.0,
+    "burst_max_s": 30.0,
+    "burst_idle_checks": 6,
+    "burst_absent_checks": 2,
+    "burst_progress": 1.1,
     # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
     # images, ZIP archives and videos): at most this many faces are added from one upload, and a
     # video gives a frame every this many seconds (turning the head gives several angles).

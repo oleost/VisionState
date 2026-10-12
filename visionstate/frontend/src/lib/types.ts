@@ -64,7 +64,7 @@ export interface ReminderInfo extends ReminderRules {
 export type ReviewOverrides = { [K in keyof ReviewRules]: ReviewRules[K] | null };
 
 export interface TriggerInfo {
-  source: 'entity' | 'change';
+  source: 'entity' | 'change' | 'person';
   detail: string;
   at: number;
 }
@@ -178,6 +178,8 @@ export interface Detection {
   ask?: { id: number | null; label: string; similarity: number; face?: boolean };
   /** Person boxes of a sensor that recognises faces: what the face search found (see FaceInfo). */
   face?: FaceInfo;
+  /** On a history frame: taught from it since (its label is the answer; filtered: "not it"). */
+  taught?: boolean;
 }
 
 /**
@@ -403,6 +405,8 @@ export interface Live {
   probs: Record<string, number>;
   last_run: number | null;
   in_burst: boolean;
+  /** Seconds between checks of that burst (a trigger's, or looking for a face while a person is there). */
+  burst_interval_s?: number | null;
   change_score: number | null;
   last_trigger: TriggerInfo | null;
   /** Why the sensor's light could not be switched ('' = fine). */

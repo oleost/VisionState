@@ -171,6 +171,18 @@ class ObjectTrack:
 
 
 @dataclass
+class FaceBurst:
+    """Checks every FACES["burst_interval_s"] while a person nobody is named for is there (logic.steer_face_burst)."""
+
+    until: float = 0.0  # running until then (at most); 0: not running
+    idle: int = 0  # checks in a row without a usable face or the person coming closer
+    absent: int = 0  # checks in a row without a person
+    best_height: float = 0.0  # the tallest person box (share of the frame) of this burst
+    best_face: float = 0.0  # the widest face (pixels) of this burst
+    spent: bool = False  # this visit had its burst: none again until the person has gone
+
+
+@dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
     debouncer: Debouncer = field(default_factory=Debouncer)
@@ -186,6 +198,7 @@ class LiveState:
     force: bool = False
     force_paused: bool = False  # the forced check was asked for by the user: also when paused
     burst_until: float = 0.0
+    face_burst: FaceBurst = field(default_factory=FaceBurst)
     last_probe: float = 0.0
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning

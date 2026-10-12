@@ -20,6 +20,7 @@ from ..settings import (
     FACE_DEFAULTS,
     FACE_LIMITS,
     FACE_UNKNOWN_KEY,
+    FACES,
     KIND_OBJECTS,
     KIND_READING,
     LIGHT_DOMAINS,
@@ -494,6 +495,11 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     else:
         status = "ok"
     ids = entity_ids(rt, sensor)
+    now = time.time()
+    paces = [merge_triggers(sensor.triggers)["burst_interval_s"]] if live and live.burst_until > now else []
+    if live and live.face_burst.until > now:
+        paces.append(FACES["burst_interval_s"])
+    pace = min(paces) if paces else None
     return {
         "id": sensor.id,
         "slug": sensor.slug,
@@ -526,7 +532,9 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "confidence": live.confidence if live else 0.0,
             "probs": live.probs if live else {},
             "last_run": live.last_run if live else None,
-            "in_burst": bool(live and live.burst_until > time.time()),
+            # A burst of checks (a trigger's, or looking for a face while a person is there) and its pace.
+            "in_burst": pace is not None,
+            "burst_interval_s": pace,
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
             "light_error": live.light_error if live else "",
