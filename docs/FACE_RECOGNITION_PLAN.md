@@ -150,7 +150,9 @@ Not legal advice; the points to design for, and to say plainly in DOCS.md.
     or must be left out.
   - Timing: the Annex III obligations apply from 2 December 2027 after the "Digital Omnibus"
     (Regulation (EU) 2026/1744, per secondary sources). The Commission's draft guidelines on
-    high-risk classification (May 2026) are to be checked once final.
+    high-risk classification (May 2026) are to be checked once final; on 2026-10-12, before face
+    recognition reached the stable channel, no final version was found — only the draft of 19 May
+    2026 — and nothing in the draft changes the verdict below.
   - The Art. 5 prohibition on *untargeted* scraping of facial images from the internet or CCTV to
     build or expand recognition databases applies to everyone: VisionState must never grow a
     gallery of strangers by itself.
@@ -484,7 +486,8 @@ Where the build differs from §3–§9:
   frame" is not built), and a history row of a person shows the frame, not the face.
 - History has no extra filter for people: people are own labels, so the *What* filter already
   lists them, and *Unknown person* with them.
-- Separate day and night faces per person (§11) and phase 4 are not built.
+- Separate day and night faces per person (§11) are not built. Of phase 4, only teaching from
+  photos is: a person's photos, a short video or a ZIP on the **People** page (origin `upload`).
 - After the first tries the maintainer asked for: the faces' limits (smallest face and the four
   similarities) set for all sensors under **Settings → Recognising faces** and per sensor, like the
   teaching limits (§9.6 had only *Smallest face*, per sensor); turning faces on in the wizard too
