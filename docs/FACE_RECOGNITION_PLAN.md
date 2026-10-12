@@ -499,3 +499,17 @@ Where the build differs from §3–§9:
   (renamed and forgotten there, and on each sensor's Quality tab), and has their own entity saying
   which sensor sees them now. Deleting a sensor keeps the faces taught on it. §9's per-sensor
   people and *Forget all faces* on the Faces card are replaced by this.
+- **A backlit doorbell** (the maintainer's, 2026-10-12: 2560 × 1920 fisheye, half of it sky). The
+  person was found in nearly every frame, and the face was usable (67–73 px) from about two metres,
+  but against the bright sky it was nearly black: its SFace embedding was 0.30–0.51 from the faces
+  taught earlier and only 0.15–0.53 from one taken seconds before, so it was named late and asked
+  about rarely. Two changes, measured with the faces of one walk taught and those of a second walk
+  as queries (CC0 NASA faces as other people):
+  - the face's brightness is evened out before it is embedded (`faces.even_light`, a histogram
+    equalisation of its luminance): named right from 39 % to 64 %, all of them at least in the ask
+    band (86 % before), and other people less alike (the highest from 0.30 to 0.26; Williams
+    2006–2018 0.64 → 0.63, Williams–Wilmore 0.09 → 0.01);
+  - SFace's `ask_similarity` from 0.38 to 0.32, so an uncertain face of a taught person becomes a
+    question (and an answer a taught face) instead of *not sure who*.
+  Faces taught on the camera itself, in its own light, still help most: answering the questions is
+  how a camera learns someone.

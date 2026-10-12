@@ -154,7 +154,9 @@ knew). Instead a second step compares boxes with boxes the user taught:
 - Unsure (`ask_similarity` 0.75 up to `match_similarity`, to an own label of the box's class): the
   box carries `ask`, counts neither for nor against that label (it keeps its published state), and
   goes to the review queue ("Is this Our car?", a history row `published_key = "ask"`, reason
-  `ask`) — one waiting question per label, at most one per review cooldown, none with review off.
+  `ask`) — one waiting question per label, at most one per review cooldown, none with review off;
+  about a face up to `FACES["ask_burst"]` (waiting, and per cooldown), `FACES["ask_gap_s"]` apart,
+  and an answer resets that person's cooldown.
   Yes/no teach the box from that history frame (as the label / as its class); answering again
   replaces that taught box. Below 0.75 it is simply not that label.
 - Switching off needs `DETECTION["clear_misses"]` (2) checks in a row without the object as well
@@ -199,7 +201,9 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   cut by the frame's edge — the detector then guesses the eyes —, the face's width `min_face_px` —
   not the distance between the eyes, which shrinks as a head turns —, detector score, how far it
   is turned, sharpness) makes a bad face *no face*, never *unknown*. A usable face is aligned on
-  its five points (Umeyama + Pillow, no OpenCV) and embedded.
+  its five points (Umeyama + Pillow, no OpenCV), its brightness evened out (`faces.even_light`: a
+  face in front of a bright sky is nearly black) and embedded; cached embeddings carry
+  `faces.EMBEDDING_VERSION`, so a change to that step recomputes them.
 - A person's score is the mean similarity to their `top_k` closest taught faces. Thresholds belong
   to the recogniser's registry entry (cosine values of one model mean nothing for another): a
   match needs `match_similarity` and `FACES["margin"]` over the next person, and is published at

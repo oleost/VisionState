@@ -61,7 +61,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
   exception (log it once, try again) — only `CancelledError` may end it.
 - Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`): entries are never changed
-  or removed once released (their texts and measured footprint may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
+  or removed once released (their texts, measured footprint and similarity limits may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
   broken and only a test with real photos showed it).
 - Frontend: colours/type/spacing only in `tokens.css`, UI constants in `ui.ts`, API URLs only in

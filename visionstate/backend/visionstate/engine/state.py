@@ -202,7 +202,9 @@ class LiveState:
     filtered_keys: set[str] = field(default_factory=set)
     filtered_logged: dict[str, float] = field(default_factory=dict)
     recheck_at: float = 0.0  # an object that was there went missing: check again then (0: no)
-    asked: dict[str, float] = field(default_factory=dict)  # own label -> when the review last asked
+    asked: dict[str, list[float]] = field(
+        default_factory=dict
+    )  # own label/person -> when the review asked (this cooldown)
     # Faces: what the face search gave for the last person boxes it looked at ("ok" or the
     # problem: "none", "cut", "small", "turned", "blurry", "unsure"), for "a usable face in 9 of 40".
     face_stats: deque = field(default_factory=lambda: deque(maxlen=FACES["stats_window"]))

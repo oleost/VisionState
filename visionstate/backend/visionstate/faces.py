@@ -5,7 +5,7 @@ The face models are declared in ``faces.json``: one face detector (YuNet: a face
 points — the eyes, the nose tip and the mouth corners) and the recognisers the user can choose
 from (a face embedding from a face aligned on those five points). None of them is bundled: they
 are downloaded when a sensor first turns face recognition on. Entries are never changed or
-removed once released (their texts and footprint may be).
+removed once released (their texts, footprint and similarity limits may be).
 
 A face is only looked for in the upper part of a person box the object detector found, cut from
 the full frame. A face that fails the quality gate (too small, blurry, turned away, unsure) is
@@ -23,12 +23,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .backbones import Footprint, cpu_session
 from .settings import FACE_DEFAULTS, FACE_TUNABLE, FACES
 
 REGISTRY_FILE = Path(__file__).with_name("faces.json")
+
+# How a face becomes an embedding besides the model (see ``Recogniser.embed``); part of the key of
+# cached embeddings, so a change here recomputes them. 2: the brightness of the face is evened out.
+EMBEDDING_VERSION = 2
 
 # Where the five points of a face go in a 112 × 112 aligned face (the ArcFace template, which
 # SFace uses too): right eye, left eye (as seen in the picture: left, right), nose tip, mouth corners.
@@ -405,6 +409,17 @@ def clearly_seen(face: Face, min_face_px: float) -> bool:
 # --- Telling who it is ------------------------------------------------------------------------
 
 
+def even_light(face: Image.Image) -> Image.Image:
+    """The face with its brightness spread over the full range (its colours kept).
+
+    A doorbell looks out at a bright sky, so a face in front of it is often nearly black: its
+    embedding then hardly looked like the same person a few seconds later. Evening out the light
+    raised the faces named right in a backlit test from 39 % to 64 % and made other people look
+    less alike, not more (docs/FACE_RECOGNITION_PLAN.md §12)."""
+    y, cb, cr = face.convert("YCbCr").split()
+    return Image.merge("YCbCr", (ImageOps.equalize(y), cb, cr)).convert("RGB")
+
+
 class Recogniser:
     """Turns aligned faces into L2-normalised embeddings with one ONNX recogniser."""
 
@@ -418,7 +433,7 @@ class Recogniser:
         """One embedding per aligned face; one at a time (some models take a batch of one only)."""
         vectors = []
         for face in faces:
-            arr = np.asarray(face.convert("RGB"), dtype=np.float32)
+            arr = np.asarray(even_light(face), dtype=np.float32)
             arr = ((arr - self.spec.mean) / self.spec.std).transpose(2, 0, 1)[None]
             with self._lock:
                 out = np.asarray(self.session.run(None, {self.input_name: arr})[0])[0]

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from '../lib/api';
-  import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
+  import { app, refreshStatus, toast, toastError, toastImported } from '../lib/app.svelte';
   import FaceLimitsEditor from '../lib/components/FaceLimitsEditor.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ModelCompare from '../lib/components/ModelCompare.svelte';
@@ -146,9 +146,9 @@
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     try {
-      const { id, skipped } = await api.importBundle(file);
-      toast(skipped ? `Sensor imported; ${skipped} unreadable image${skipped === 1 ? '' : 's'} skipped` : 'Sensor imported');
-      go(paths.sensor(id));
+      const result = await api.importBundle(file);
+      toastImported(result);
+      go(paths.sensor(result.id, result.faces_off ? 'settings' : ''));
     } catch (err) {
       toastError(err);
     } finally {

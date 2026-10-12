@@ -261,6 +261,13 @@ export interface PhotoResult {
   faces: number | null;
 }
 
+/** POST /import: the new sensor; `faces_off`: it recognised faces where it was exported (now off). */
+export interface ImportResult {
+  id: number;
+  skipped: number;
+  faces_off: boolean;
+}
+
 /** The face model: chosen, loaded, downloading (bytes) or why it failed. */
 export interface FaceStatus {
   model: string;

@@ -208,6 +208,7 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body
             rt.taught_changed(sensor_id)
     if is_face:
         await _answer_face(rt, request, prediction_id, sensor_id, question, score, body)
+        rt.live_state(sensor_id).asked.pop(question["label"], None)  # answered: the next may come now
     elif action != "skip":
         label = question["label"] if action == "yes" else question["detected"]
         taught_box = TeachIn(

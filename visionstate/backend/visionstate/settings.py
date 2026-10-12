@@ -287,6 +287,11 @@ FACES = {
     # seconds per sensor, unless the face came this many times closer (wider) since the last one.
     "record_cooldown_s": 60,
     "record_closer": 1.5,
+    # "Is this Kari?": a person moves, so each question shows another face to teach. Up to this many
+    # questions about one person per review cooldown (and waiting at once), at least this many
+    # seconds apart; an answer opens the next one right away. Own labels ask one at a time.
+    "ask_burst": 5,
+    "ask_gap_s": 3.0,
     # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
     # images, ZIP archives and videos): at most this many faces are added from one upload, and a
     # video gives a frame every this many seconds (turning the head gives several angles).

@@ -27,7 +27,7 @@
       "std": 1.0,
       "match_similarity": 0.5,
       "sure_similarity": 0.6,
-      "ask_similarity": 0.38,
+      "ask_similarity": 0.32,
       "keep_similarity": 0.4,
       "license": "Apache-2.0",
       "data": "The model's paper trained it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, research data sets (non-commercial terms).",

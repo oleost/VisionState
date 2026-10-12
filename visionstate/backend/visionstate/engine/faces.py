@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from .. import backbones, faces, imaging
 from ..db import Face, FaceEmbedding, Person, Sensor
@@ -176,7 +176,9 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         return index
 
     def _build_face_index(self, model: faces.FaceModel, generation: int) -> faces.FaceIndex:
+        cache_key = f"{model.id}/{faces.EMBEDDING_VERSION}"  # cached embeddings of another version are not used
         with self.db.session() as s:
+            s.execute(delete(FaceEmbedding).where(FaceEmbedding.model == model.id))  # before versions
             examples = [
                 (face_id, key, filename, dict(face))
                 for face_id, key, filename, face in s.execute(
@@ -189,7 +191,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 r.face_id: np.frombuffer(r.vector, dtype=np.float32)
                 for r in s.scalars(
                     select(FaceEmbedding).where(
-                        FaceEmbedding.face_id.in_([e[0] for e in examples]), FaceEmbedding.model == model.id
+                        FaceEmbedding.face_id.in_([e[0] for e in examples]), FaceEmbedding.model == cache_key
                     )
                 )
             }
@@ -204,7 +206,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 aligned = faces.align(crop, faces.face_from_dict(face), model.recogniser.spec.input_size)
                 vector = model.recogniser.embed([aligned])[0]
                 with self.db.session() as s:
-                    s.merge(FaceEmbedding(face_id=face_id, model=model.id, vector=vector.tobytes()))
+                    s.merge(FaceEmbedding(face_id=face_id, model=cache_key, vector=vector.tobytes()))
             ids.append(face_id)
             labels.append(key)
             vectors.append(vector)

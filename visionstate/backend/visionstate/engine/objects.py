@@ -8,7 +8,7 @@ import time
 from datetime import UTC, datetime
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .. import detectors, imaging, teach
 from ..db import Prediction
@@ -124,8 +124,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
 
     async def _ask_unsure(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Put a box that may be an own label, but not clearly, in the review queue ("Is this Our
-        car?"); the answer is taught. One question per label at a time, at most one per review
-        cooldown, and none while the review rules are off."""
+        car?"); the answer is taught. One question per label per review cooldown (about a face: up
+        to FACES["ask_burst"], FACES["ask_gap_s"] apart), and none while the review rules are off."""
         live = self.live_state(cfg.id)
         rules = self.review_rules(cfg)
         unsure = [d for d in found if d.get("ask") and not d.get("filtered")]
@@ -133,27 +133,32 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             return
         asked = False
         for label in sorted({d["ask"]["label"] for d in unsure}):
-            if now - live.asked.get(label, 0.0) < rules["cooldown_s"]:
-                continue
             box = max((d for d in unsure if d["ask"]["label"] == label), key=lambda d: d["ask"]["similarity"])
-            live.asked[label] = now
-            asked = await asyncio.to_thread(self._record_question, cfg.id, image, box, found) or asked
+            burst = FACES["ask_burst"] if box["ask"].get("face") else 1
+            times = [t for t in live.asked.get(label, []) if now - t < rules["cooldown_s"]]
+            if len(times) >= burst or (times and now - times[-1] < FACES["ask_gap_s"]):
+                live.asked[label] = times
+                continue
+            recorded = await asyncio.to_thread(self._record_question, cfg.id, image, box, found, burst)
+            live.asked[label] = [*times, now] if recorded else times
+            asked = asked or recorded
         if asked:
             await self.publish_review_count()
 
-    def _record_question(self, sensor_id: int, image: Image.Image, box: dict, found: list[dict]) -> bool:
-        """A history row waiting for review: may ``box`` be its own label? False: one is waiting already."""
+    def _record_question(self, sensor_id: int, image: Image.Image, box: dict, found: list[dict], most: int = 1) -> bool:
+        """A history row waiting for review: may ``box`` be its own label? False: ``most`` about
+        that label are waiting already."""
         label = box["ask"]["label"]
         with self.db.session() as s:
             waiting = s.scalar(
-                select(Prediction.id).where(
+                select(func.count(Prediction.id)).where(
                     Prediction.sensor_id == sensor_id,
                     Prediction.published_key == "ask",
                     Prediction.state_key == label,
                     Prediction.reviewed.is_(False),
                 )
             )
-        if waiting is not None:
+        if (waiting or 0) >= most:
             return False
         frame = self.storage.save_history(sensor_id, image)
         question = {"label": label, "similarity": box["ask"]["similarity"], "box": box["box"], "detected": box["key"]}

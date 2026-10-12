@@ -92,7 +92,10 @@
       />
       <span class="col" style="gap:2px">
         <strong class="small">Ask me about faces I do not know</strong>
-        <span class="xsmall faint">“Who is this?” in the review queue. Keeps frames of strangers longer.</span>
+        <span class="xsmall faint">
+          Also asks “Who is this?” in the review queue about faces nobody is named for. A question waiting for an
+          answer keeps its frame twice as long as the history.
+        </span>
       </span>
     </label>
     {#if globalFaces}

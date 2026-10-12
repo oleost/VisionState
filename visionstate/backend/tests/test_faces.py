@@ -12,8 +12,10 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageFilter
+from sqlalchemy import select
 
 from visionstate import detectors, faces
+from visionstate.db import FaceEmbedding
 from visionstate.main import create_app
 from visionstate.settings import FACE_UNKNOWN_KEY, FACES, merge_objects
 
@@ -47,6 +49,18 @@ def test_align_puts_the_five_points_on_the_template():
     aligned = np.asarray(faces.align(image, face_at([tuple(p) for p in points])).convert("L"))
     for x, y in faces.TEMPLATE_112:
         assert aligned[round(y), round(x)] > 128
+
+
+def test_even_light_spreads_a_dark_face_over_the_full_range():
+    # A face in front of a bright sky: dark and flat. Evened out it uses the full range, its
+    # colours kept (a red face stays red), at the same size.
+    dark = Image.effect_noise((112, 112), 20).point(lambda v: 20 + v // 8).convert("RGB")
+    dark = Image.merge("RGB", (dark.getchannel(0).point(lambda v: v + 10), dark.getchannel(1), dark.getchannel(2)))
+    even = faces.even_light(dark)
+    low, high = even.convert("L").getextrema()
+    assert even.size == dark.size and low < 40 and high > 215
+    r, g, b = (np.asarray(even.getchannel(c), dtype=np.float32).mean() for c in range(3))
+    assert r > g and r > b
 
 
 def test_turn_eye_distance_and_quality_gate():
@@ -311,6 +325,10 @@ def test_people_are_taught_recognised_forgotten_exported(settings):  # noqa: F81
         face_id = people["people"][0]["faces"][0]["id"]
         first = people["people"][0]["faces"][0]
         assert first["suspect"] is None and first["sensor_id"] == sid and people["look_alikes"] == []
+        # Embeddings are cached per model and version (an older version is recomputed).
+        with rt.db.session() as s:
+            keys = set(s.scalars(select(FaceEmbedding.model)))
+        assert keys == {f"{faces.DEFAULT_RECOGNISER}/{faces.EMBEDDING_VERSION}"}
         # Each person's own entity says where they are seen: on this sensor now.
         assert people["people"][0]["seen"]["now"] == "beach" and people["people"][0]["seen"]["sensor_id"] == sid
         image = client.get(f"/api/v1/faces/{face_id}/image")
@@ -342,6 +360,7 @@ def test_people_are_taught_recognised_forgotten_exported(settings):  # noqa: F81
         assert imported.status_code == 201, imported.text
         copy = imported.json()["id"]
         assert view(client, copy)["objects"]["faces"]["enabled"] is False  # turned on there, by the user
+        assert imported.json()["faces_off"] is True  # so the UI says to turn it on
         # The same people (no copies of them), each with the face again, from the new sensor.
         people = client.get("/api/v1/people").json()["people"]
         assert [(p["key"], len(p["faces"])) for p in people] == [("suni", 2), ("butch", 2)]
@@ -530,3 +549,36 @@ def test_people_are_taught_from_photos(settings):  # noqa: F811
         nobody = client.post("/api/v1/people/photos", data={"new_person": "Nobody"}, files=empty).json()
         assert nobody["added"] == 0 and len(client.get("/api/v1/people").json()["people"]) == 1
         assert client.post("/api/v1/people/photos", files=empty).status_code == 400  # who is it?
+
+
+def test_questions_about_a_face_come_in_a_burst_and_an_answer_opens_the_next(settings):  # noqa: F811
+    """Someone walking up to a doorbell shows several faces worth teaching: up to
+    FACES["ask_burst"] questions about one person per review cooldown, FACES["ask_gap_s"] apart,
+    and an answer lets the next one come right away. An own label is asked about one at a time."""
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        sid = create(client, objects={"classes": ["person", "car"]}, enabled=False).json()["id"]
+        cfg = rt.load_sensor(sid)
+        image = Image.new("RGB", (64, 48))
+        kari = {"key": "person", "score": 0.9, "box": [0.1, 0.1, 0.5, 0.9], "face": {"box": [0.2, 0.1, 0.3, 0.2]}}
+        kari["ask"] = {"id": None, "label": "kari", "similarity": 0.4, "face": True}
+        car = {"key": "car", "score": 0.9, "box": [0.5, 0.5, 0.9, 0.9], "ask": {"label": "our_car", "similarity": 0.8}}
+
+        def waiting(label):
+            items = client.get("/api/v1/review").json()["items"]
+            return [i for i in items if i["probs"]["ask"]["label"] == label]
+
+        start = 1_000_000.0
+        for n in range(8):  # a check every 2 s: a question at most every FACES["ask_gap_s"]
+            client.portal.call(rt._ask_unsure, cfg, image, [kari, car], start + 2 * n)
+        assert len(waiting("kari")) == 4  # 16 s of checks every 2 s: at 0, 4, 8 and 12 s
+        assert len(waiting("our_car")) == 1
+        for n in range(8, 20):
+            client.portal.call(rt._ask_unsure, cfg, image, [kari, car], start + 2 * n)
+        assert len(waiting("kari")) == FACES["ask_burst"]  # then it waits for the cooldown
+        # An answer opens the next question at once (no 5 minutes to wait in front of the camera).
+        first = waiting("kari")[0]["id"]
+        assert client.post(f"/api/v1/review/{first}", json={"action": "skip"}).status_code == 200
+        client.portal.call(rt._ask_unsure, cfg, image, [kari, car], start + 41)
+        assert len(waiting("kari")) == FACES["ask_burst"] and waiting("kari")[0]["id"] != first
+        assert len(waiting("our_car")) == 1

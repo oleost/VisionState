@@ -137,7 +137,9 @@ clearly (say a car in light you never taught it in), goes to the **review queue*
 car?* Meanwhile the label stays as it was — it is not switched off, nor on. **Yes** teaches the box
 as your label, **No** as an ordinary car, both in that light, so the next time it knows. A box that
 looks little like it is simply not yours, and it does not ask. At most one question per label is
-waiting, and no more often than the review cooldown (**Settings → Review queue**).
+waiting, and no more often than the review cooldown (**Settings → Review queue**). About a person's
+face it may ask a few times in a row (someone walking up shows several faces worth teaching), a
+few seconds apart, and answering one lets the next come right away.
 
 - Every check decides anew, box by box, by what a box looks like — not where it is, so an object
   that moves a little or is lit differently is still recognised. Boxes filtered away in a check
@@ -235,8 +237,9 @@ everyone.
   camera) that matched nobody in two checks in a row turns **Unknown person** on. A face further
   away or more turned can still be named, but if it looks like nobody it is only *not sure who*:
   a face seen from the side often does not look like the faces you taught. **Ask me about faces I
-  do not know** (off by default) also asks *Who is this?* about strangers; that keeps frames of
-  strangers in the history longer.
+  do not know** (off by default) also asks *Who is this?* about faces nobody is named for. Without
+  it such a face is still kept in the history (*Face seen, not named*) to name later; a question
+  waiting for an answer keeps its frame twice as long as the history.
 - It never learns by itself: only faces you name are taught.
 - **People** (in the menu, once there are people or a sensor recognises faces) shows every person
   with their faces and the camera each was taught on (× forgets one), where they were last seen,
@@ -479,7 +482,8 @@ How long history is kept is set under **Settings → Storage** (below).
   sensor, the boxes it was taught and its own labels. Camera passwords are removed from the file.
   For a sensor where faces were taught it asks first whether to **include the faces** taught on it
   (unticked by default), with their people's names. An import adds them to the people of the same
-  name (or makes them), but face recognition stays off until you turn it on there.
+  name (or makes them), but face recognition stays off until you turn it on there: the import
+  says so and opens the sensor's Settings tab.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again on the sensor's
