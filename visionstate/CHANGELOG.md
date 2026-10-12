@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0b4
+
+### Better
+
+- **Each person has a "last seen" sensor.** Next to *Ole seen by* (which camera sees them now; was
+  just *Ole*), *Ole last seen* shows in Home Assistant when they were last seen, also when you
+  confirmed afterwards that a frame was them. New installs name them
+  `sensor.visionstate_ole_seen_by` and `sensor.visionstate_ole_last_seen`; entities you already
+  have keep their IDs.
+- **Answering a question marks the whole moment** in the History: the *face seen* entry of the
+  same frame says *Taught: Ole* too.
+
 ## 0.9.0b3
 
 ### Better
