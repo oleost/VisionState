@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import numpy as np
 from PIL import Image
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.sqlite import insert
 
 from .. import backbones, faces, imaging
 from ..db import Face, FaceEmbedding, Person, Sensor
@@ -26,6 +28,10 @@ from .publishing import PublishingMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
+
+# The index of taught faces is built one at a time: a check and a request (the People page) could
+# otherwise embed the same face at once and both store it.
+_INDEX_LOCK = threading.Lock()
 
 
 def _iou(a: Sequence[float], b: Sequence[float]) -> float:
@@ -176,6 +182,10 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         return index
 
     def _build_face_index(self, model: faces.FaceModel, generation: int) -> faces.FaceIndex:
+        with _INDEX_LOCK:
+            return self._build_face_index_locked(model, generation)
+
+    def _build_face_index_locked(self, model: faces.FaceModel, generation: int) -> faces.FaceIndex:
         cache_key = f"{model.id}/{faces.EMBEDDING_VERSION}"  # cached embeddings of another version are not used
         with self.db.session() as s:
             s.execute(delete(FaceEmbedding).where(FaceEmbedding.model == model.id))  # before versions
@@ -205,8 +215,9 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 crop = imaging.load(path)
                 aligned = faces.align(crop, faces.face_from_dict(face), model.recogniser.spec.input_size)
                 vector = model.recogniser.embed([aligned])[0]
-                with self.db.session() as s:
-                    s.merge(FaceEmbedding(face_id=face_id, model=cache_key, vector=vector.tobytes()))
+                row = {"face_id": face_id, "model": cache_key, "vector": vector.tobytes()}
+                with self.db.session() as s:  # stored once, whoever comes first
+                    s.execute(insert(FaceEmbedding).values(**row).on_conflict_do_nothing())
             ids.append(face_id)
             labels.append(key)
             vectors.append(vector)

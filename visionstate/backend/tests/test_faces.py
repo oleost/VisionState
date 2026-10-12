@@ -7,12 +7,13 @@ The photos are NASA portraits (public domain, tests/assets/README.md): Suni Will
 import io
 import json
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageFilter
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from visionstate import detectors, faces
 from visionstate.db import FaceEmbedding
@@ -329,6 +330,15 @@ def test_people_are_taught_recognised_forgotten_exported(settings):  # noqa: F81
         with rt.db.session() as s:
             keys = set(s.scalars(select(FaceEmbedding.model)))
         assert keys == {f"{faces.DEFAULT_RECOGNISER}/{faces.EMBEDDING_VERSION}"}
+        # A check and a request building the index at once store each face's embedding once.
+        for _ in range(5):
+            with rt.db.session() as s:
+                s.execute(delete(FaceEmbedding))
+            with ThreadPoolExecutor(8) as pool:
+                built = list(pool.map(lambda _: rt._build_face_index(rt.face_model, 0), range(8)))
+            assert all(len(index.ids) == 2 for index in built)
+        with rt.db.session() as s:
+            assert s.scalar(select(func.count()).select_from(FaceEmbedding)) == 2
         # Each person's own entity says where they are seen: on this sensor now.
         assert people["people"][0]["seen"]["now"] == "beach" and people["people"][0]["seen"]["sensor_id"] == sid
         image = client.get(f"/api/v1/faces/{face_id}/image")
