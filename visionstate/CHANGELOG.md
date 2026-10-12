@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0b3
+
+### Better
+
+- **Faces are looked for while someone is there.** Someone walking up to a doorbell shows a usable
+  face for only a few seconds, often between two checks. When a check finds a person nobody is
+  named for, a sensor that recognises faces now checks about every second while they come closer,
+  until they are named or gone (half a minute at most, and once per visit).
+- **The History shows what you taught from it.** After naming a person or correcting a box in a
+  history frame (or answering a question in Review), its entry says *Taught: Ole*.
+- **"Last seen" survives an update or restart.** A sensor no longer says *Not seen yet* about Our
+  car or a person it has seen before: when each was last seen comes back from the history.
+
 ## 0.9.0b2
 
 ### Better
