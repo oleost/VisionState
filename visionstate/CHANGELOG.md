@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.0b2
+
+### Better
+
+- **Faces in front of a bright sky are recognised better.** A doorbell looking out at the sky
+  often sees a face that is nearly black; its light is now evened out before it is compared, so
+  you are named sooner and other people look less alike.
+- **It asks more when it is not sure who someone is**, so answering teaches it how each camera
+  sees you: from a lower similarity (with SFace), several times in a row while someone walks up
+  (a few seconds apart, up to five), and right away again after you answer.
+- **After importing a sensor that recognised faces**, the app says that face recognition is off
+  on the new sensor and opens its Settings tab to turn it on.
+- The text of **Ask me about faces I do not know** says what it does.
+
 ## 0.9.0b1
 
 ### Fixed
