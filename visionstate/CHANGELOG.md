@@ -1,141 +1,36 @@
 # Changelog
 
-## 0.9.0b5
-
-### Fixed
-
-- **Opening the People page could fail right after a face was taught** (an error about
-  `face_embedding`), when a check was comparing faces at the same moment.
-
-## 0.9.0b4
-
-### Better
-
-- **Each person has a "last seen" sensor.** Next to *Ole seen by* (which camera sees them now; was
-  just *Ole*), *Ole last seen* shows in Home Assistant when they were last seen, also when you
-  confirmed afterwards that a frame was them. New installs name them
-  `sensor.visionstate_ole_seen_by` and `sensor.visionstate_ole_last_seen`; entities you already
-  have keep their IDs.
-- **Answering a question marks the whole moment** in the History: the *face seen* entry of the
-  same frame says *Taught: Ole* too.
-
-## 0.9.0b3
-
-### Better
-
-- **Faces are looked for while someone is there.** Someone walking up to a doorbell shows a usable
-  face for only a few seconds, often between two checks. When a check finds a person nobody is
-  named for, a sensor that recognises faces now checks about every second while they come closer,
-  until they are named or gone (half a minute at most, and once per visit).
-- **The History shows what you taught from it.** After naming a person or correcting a box in a
-  history frame (or answering a question in Review), its entry says *Taught: Ole*.
-- **"Last seen" survives an update or restart.** A sensor no longer says *Not seen yet* about Our
-  car or a person it has seen before: when each was last seen comes back from the history.
-
-## 0.9.0b2
-
-### Better
-
-- **Faces in front of a bright sky are recognised better.** A doorbell looking out at the sky
-  often sees a face that is nearly black; its light is now evened out before it is compared, so
-  you are named sooner and other people look less alike.
-- **It asks more when it is not sure who someone is**, so answering teaches it how each camera
-  sees you: from a lower similarity (with SFace), several times in a row while someone walks up
-  (a few seconds apart, up to five), and right away again after you answer.
-- **After importing a sensor that recognised faces**, the app says that face recognition is off
-  on the new sensor and opens its Settings tab to turn it on.
-- The text of **Ask me about faces I do not know** says what it does.
-
-## 0.9.0b1
-
-### Fixed
-
-- **A quiet log when faces are recognised.** Each time the SFace face model was loaded, the app's
-  log filled with 174 harmless warnings from ONNX Runtime about how the model file is stored. The
-  model works exactly as before; only errors from ONNX Runtime are logged now.
-
-## 0.8.1b5
-
-### Fixed
-
-- **Boxes on the Live tab now always match the picture.** While a check was still looking for
-  objects and faces, the Live tab could show its new frame with the boxes of the check before — a
-  person (and their face) drawn where nobody stood any more. A new frame now appears together with
-  what was found in it.
-- **The face model is let go when face recognition is turned off** while a check was still busy:
-  that check could load it again, and it then stayed in memory until a restart.
-
-## 0.8.1b4
-
-### New
-
-- **Teach a face from your phone.** On the **People** page, **Add a person** or **Add photos** on a
-  person takes photos straight from the phone's camera or its gallery (also in the Home Assistant
-  app), a short video turning the head a little, or a ZIP of photos. Each goes through the same
-  check as a face on a camera, and the message says what was added and why a photo was skipped.
-  A quick start; faces taught on each camera still recognise people best.
-
-## 0.8.1b3
+## 0.9.0
 
 ### New
 
 - **Recognise people by their face** on object sensors that look for Person. Off until you turn it
-  on, per sensor, after a sheet that says what is stored and what is downloaded (once, from Hugging
-  Face); it can also be turned on in the new sensor wizard. The faces never leave your Home
-  Assistant.
-  - **Name the people of your household** by tapping them on the Live tab, in a history frame or in
-    the review queue: *Who is this?* Only a usable face can be taught, so a back or a jacket never
-    becomes someone.
-  - **Shared by every camera:** a person named on one camera is known on all that recognise faces.
-    Each gets an on/off sensor and a count per camera, and their own sensor
-    (`sensor.visionstate_<name>`) that says which camera sees them now, or `not_seen`.
-  - **Unknown person** turns on for a face seen clearly that matches nobody you named; a face
-    further away or turned to the side can still be named, but never makes someone a stranger.
-  - **People** (in the menu) lists everyone with their faces and the camera each was taught on,
-    where they were last seen, people the AI finds alike and faces that may carry the wrong name;
-    rename, move or forget faces and people there.
-  - **Does my camera see faces well enough?** The Live tab draws each face and says why one cannot
-    be used (too small, turned away, cut off by the edge, blurry), and how many of the last people
-    had a usable face.
-  - A face nobody is named for keeps a frame in the history (*Face seen, not named*), so someone
-    who was only at the door for a moment can be named afterwards.
-  - **Limits** for faces (smallest face, how close a face must be to be named, asked about or kept)
-    under **Settings → Recognising faces** for all sensors, and per sensor.
-  - Two face models: **SFace** (small, fine on a Raspberry Pi 4) and **AuraFace** (for a fast PC).
-- **Compare and manage the models** (Settings → AI model): every model from the smallest to the
-  largest, with the face models next to the object detector; a downloaded model that is not in use
-  can be deleted there.
-- **The wizard warns about a small picture**: it may be the camera's low-resolution stream, while
-  the main stream is often hidden in Home Assistant.
+  on per sensor; the faces never leave your Home Assistant.
+  - Name the people of your household by tapping them on the Live tab, in the history or in the
+    review queue, or add photos from your phone on the new **People** page.
+  - A person named on one camera is known on every camera, with their own sensor that says where
+    they are now. **Unknown person** turns on for a clear face that matches nobody.
+  - While someone walks up, the sensor looks for their face about every second, and when it is
+    not sure who it is, it asks you in Review: each answer teaches it how that camera sees them.
+  - Made for doorbells: faces in front of a bright sky are evened out before they are compared,
+    and the Live tab shows whether your camera sees faces well enough.
+  - Two face models: **SFace** (fine on a Raspberry Pi 4) and **AuraFace** (for a fast PC).
+- **Larger AI models for fast PCs** under **Settings → AI model**: **D-FINE M** and **L** find more
+  small and far-off objects, **DINOv2 base** tells similar states apart best. Compare every model's
+  memory, speed and accuracy there, and delete downloaded ones you no longer use.
+- **Teaching limits you can tune**, for all object sensors and per sensor.
+- **The wizard warns about a small picture**, which may be the camera's low-resolution stream.
 
-## 0.8.1b2
+### Better
+
+- **The History shows what you taught from it** (*Taught: Our car*).
+- **"Last seen" survives an update or restart**: a sensor no longer says *Not seen yet* about
+  something it has seen before.
 
 ### Fixed
 
-- **Switching AI models gives the memory back.** After choosing another model under **Settings → AI
-  model**, the memory of the old one now goes back to the system instead of staying with the app
-  until a restart: switching between the included and the larger models back and forth made the app
-  a few hundred MB larger every time.
-
-## 0.8.1b1
-
-### New
-
-- **Larger AI models for fast PCs**, downloaded on first use under **Settings → AI model**:
-  - **D-FINE M** (79 MB) and **D-FINE L** (125 MB) for object sensors find more small, far-off and
-    partly hidden objects than the included D-FINE S, at about three and four times its time per
-    check.
-  - **DINOv2 base** (347 MB, about 400 MB of memory) for state sensors tells similar states and
-    taught objects apart best, at about three times the time of DINOv2 small.
-- **Compare the models**: under the model choices, every model with its rough memory use, time per
-  check, download size and how accurate it is compared with the others.
-- **Teaching limits you can tune.** How close a box must be to the boxes you taught an object sensor
-  — to take their answer, to keep it while it stays in place, to ask you in the review queue, to
-  find a missed object again — can now be set under **Settings → Teaching object sensors** for all
-  object sensors, and per sensor under its **Settings → What you taught**. An empty field shows in
-  grey the value it uses (the default, or on a sensor the global value) until you set your own.
-  The defaults follow the state model: with DINOv2 base a box must be a little closer to count.
-  A sensor's own values come along in its export.
+- Boxes on the Live tab now always match the picture shown.
+- Switching AI models gives the memory of the old model back without a restart.
 
 ## 0.8.0
 
