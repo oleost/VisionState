@@ -174,10 +174,13 @@ An object sensor that looks for **Person** can tell *who* it is: the people you 
 on/off sensor and a count in Home Assistant, like own labels, and **Unknown person** turns on for
 someone it has not been taught. It is **off** until you turn it on. The people are **shared**:
 every camera that recognises faces knows everyone you named on any of them, and each person also
-gets their own sensor (for Kari: `sensor.visionstate_kari`) whose value is the sensor that sees
-them now — the one that saw them last, when several do — or `not_seen`, with when and where they
-were last seen as attributes. After a restart or an update of the app, when everyone and
-everything was last seen comes back from the history (as far back as it keeps frames).
+gets two sensors of their own: *Kari seen by* (`sensor.visionstate_kari_seen_by`), the sensor that
+sees them now — the one that saw them last, when several do — or `not_seen`, and *Kari last seen*
+(`sensor.visionstate_kari_last_seen`), when they were last seen. Confirming afterwards that a frame
+was Kari (in Review or the History) counts too: the history of *Kari seen by* shows only what was
+recognised at the time, *Kari last seen* moves to that frame. After a restart or an update of the
+app, when everyone and everything was last seen comes back from the history (as far back as it
+keeps frames).
 
 **Before you turn it on.** Faces are biometric data. VisionState keeps them on your Home
 Assistant only — no face ever leaves it, as nothing else does — but the people you teach should

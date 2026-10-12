@@ -256,6 +256,10 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         for key, _ in people:
             await self._publish_person(key, self._person_where.get(key, PERSON_NOT_SEEN), force=True)
 
+    async def person_last_seen_changed(self, key: str) -> None:
+        """A person was taught from a frame (they were there then): their entity's last_seen now."""
+        await self._publish_person(key, self._person_where.get(key, PERSON_NOT_SEEN), force=True)
+
     async def update_people(self, cfg: SensorConfig) -> None:
         """After a check of a sensor that recognises faces: where each person is now. A person
         seen on several sensors is where they were seen last."""
@@ -293,6 +297,8 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         }
         await self.mqtt.publish(t["state"], where, retain=True)
         await self.mqtt.publish(t["attributes"], attributes, retain=True)
+        if attributes["last_seen"]:  # never seen: the timestamp sensor stays unknown
+            await self.mqtt.publish(t["last_seen"], attributes["last_seen"], retain=True)
 
     # --- One check ------------------------------------------------------------------------------
 

@@ -226,10 +226,11 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
   stored on the sensor): its entities, and a name its faces can get. One index of all taught
   faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
-- Each person also has their own entity on the app's device, `sensor.visionstate_<key>`
+- Each person also has two entities of their own on the app's device: `sensor.visionstate_<key>_seen_by`
   (`mqtt.person_discovery_messages`): the slug of the sensor that sees them now — the one that saw
   them last when several do — or `settings.PERSON_NOT_SEEN`; when and where they were last seen
-  are attributes. Kept in memory, and at start read back from the history
+  are attributes, and when also a timestamp entity, `sensor.visionstate_<key>_last_seen` (a frame
+  confirmed afterwards moves it: `engine.objects.seen_earlier`, published at once). Kept in memory, and at start read back from the history
   (`engine.objects.restore_last_seen`: the last "on", an "off" less `clear_after_s`, a box taught
   from a frame), so "last seen" survives a restart while the history keeps it. A box taught from
   a history frame or a review answer is written into that row (`api.teach.remember_taught`: its

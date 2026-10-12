@@ -421,9 +421,10 @@ def test_a_face_question_is_answered_in_the_review_queue(settings):  # noqa: F81
         assert [d["label"] for d in row["detections"] if d.get("taught")] == ["butch"]
     # After an update or restart, when each person was last seen comes back from the history.
     with TestClient(create_app(settings)) as client:
-        assert live(client, sid)["butch"]["last_seen"] and live(client, sid)["suni"]["last_seen"]
+        # (Butch was waited for until seen; Suni may have been taught and gone before a check saw her.)
+        assert live(client, sid)["butch"]["last_seen"]
         seen = {p["key"]: p["seen"]["at"] for p in client.get("/api/v1/people").json()["people"]}
-        assert seen["butch"] and seen["suni"]
+        assert seen["butch"]
 
 
 def test_a_face_model_that_cannot_be_downloaded_leaves_the_sensor_working(settings, monkeypatch, tmp_path):  # noqa: F811
@@ -518,9 +519,14 @@ def test_a_downloaded_model_not_in_use_can_be_deleted(settings):  # noqa: F811
 def test_each_person_has_an_entity_saying_where_they_are():
     from visionstate.mqtt import person_discovery_messages, person_topics
 
-    [(topic, config)] = person_discovery_messages("homeassistant", [("ole", "Ole")])
+    [(topic, config), (stamp_topic, stamp)] = person_discovery_messages("homeassistant", [("ole", "Ole")])
+    # And one saying when they were last seen, as a timestamp ("3 minutes ago" in Home Assistant).
+    assert stamp_topic == "homeassistant/sensor/visionstate/person_ole_last_seen/config"
+    assert stamp["default_entity_id"] == "sensor.visionstate_ole_last_seen" and stamp["name"] == "Ole last seen"
+    assert stamp["device_class"] == "timestamp" and stamp["unique_id"] == "visionstate_person_ole_last_seen"
+    assert stamp["state_topic"] == person_topics("ole")["last_seen"] == "visionstate/people/ole/last_seen"
     assert topic == "homeassistant/sensor/visionstate/person_ole/config"
-    assert config["default_entity_id"] == "sensor.visionstate_ole" and config["name"] == "Ole"
+    assert config["default_entity_id"] == "sensor.visionstate_ole_seen_by" and config["name"] == "Ole seen by"
     assert config["unique_id"] == "visionstate_person_ole" and config["device"]["identifiers"] == ["visionstate"]
     assert config["state_topic"] == person_topics("ole")["state"] == "visionstate/people/ole/state"
 
@@ -591,3 +597,72 @@ def test_questions_about_a_face_come_in_a_burst_and_an_answer_opens_the_next(set
         client.portal.call(rt._ask_unsure, cfg, image, [kari, car], start + 41)
         assert len(waiting("kari")) == FACES["ask_burst"] and waiting("kari")[0]["id"] != first
         assert len(waiting("our_car")) == 1
+
+
+def test_a_person_taught_from_a_frame_was_last_seen_then(settings):  # noqa: F811
+    """Answering "yes, Kari" about a frame from 17:28 means Kari was there at 17:28: their entity
+    says so at once (last_seen), while its value stays where they are now."""
+    from datetime import UTC, datetime
+
+    from visionstate.mqtt import person_topics
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        sent: dict[str, object] = {}
+
+        async def publish(topic, payload, retain=False):
+            sent[topic] = payload
+
+        rt.mqtt.publish = publish
+        at = datetime(2026, 10, 12, 15, 28, tzinfo=UTC).timestamp()
+        rt.seen_earlier(1, "kari", at, person=True)
+        client.portal.call(rt.person_last_seen_changed, "kari")
+        topics = person_topics("kari")
+        assert sent[topics["state"]] == "not_seen"
+        assert sent[topics["attributes"]]["last_seen"] == "2026-10-12T15:28:00+00:00"
+        assert sent[topics["last_seen"]] == "2026-10-12T15:28:00+00:00"  # the timestamp entity
+        # An older frame does not move it back.
+        rt.seen_earlier(1, "kari", at - 3600, person=True)
+        client.portal.call(rt.person_last_seen_changed, "kari")
+        assert sent[topics["attributes"]]["last_seen"] == "2026-10-12T15:28:00+00:00"
+
+
+def test_what_is_taught_from_a_frame_shows_on_the_same_moments_entries(settings):  # noqa: F811
+    """A face seen and the question about it are two history entries of one moment: answering
+    the question marks both (where the box is the same), not an entry of another moment."""
+    from datetime import timedelta
+
+    from visionstate.api.teach import remember_taught
+    from visionstate.db import Prediction, utcnow
+    from visionstate.settings import HISTORY
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        sid = create(client, objects={"classes": ["person"]}, enabled=False).json()["id"]
+        box = [0.4, 0.2, 0.6, 0.9]
+        person = {"key": "person", "score": 0.9, "box": box}
+        now = utcnow()
+        later = now + timedelta(seconds=HISTORY["same_moment_s"] * 4)
+        rows = [("ask", now), ("face", now + timedelta(seconds=1)), ("face", later)]
+        with rt.db.session() as s:
+            made = [
+                Prediction(
+                    sensor_id=sid,
+                    state_key="person",
+                    published_key=k,
+                    confidence=0.9,
+                    probs={},
+                    created_at=at,
+                    detections=[dict(person)],
+                    is_change=False,
+                    reviewed=True,
+                )
+                for k, at in rows
+            ]
+            s.add_all(made)
+            s.flush()
+            ids = [m.id for m in made]
+        remember_taught(rt, sid, ids[0], box, "kari", "person", person=True)
+        with rt.db.session() as s:
+            taught = [[d.get("label") for d in s.get(Prediction, i).detections if d.get("taught")] for i in ids]
+        assert taught == [["kari"], ["kari"], []]

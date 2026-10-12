@@ -513,3 +513,12 @@ Where the build differs from §3–§9:
     question (and an answer a taught face) instead of *not sure who*.
   Faces taught on the camera itself, in its own light, still help most: answering the questions is
   how a camera learns someone.
+- **After walking up to that doorbell** (the same day): the face of someone walking up was usable
+  for about three seconds, often between two regular checks, so a sensor that recognises faces now
+  checks about every second while a person nobody is named for is there and coming closer
+  (`engine.logic.steer_face_burst`, `FACES["burst_*"]`); it asks about a person up to
+  `FACES["ask_burst"]` times per review cooldown, and an answer opens the next question at once.
+  What is taught from a history frame or an answer is written into that row and the same
+  moment's rows (*Taught: Ole*) and counts as last seen then; "last seen" is read back from the
+  history at start. Each person has two entities: *Ole seen by* (the sensor that sees them now)
+  and *Ole last seen* (a timestamp) — their own name alone was easily taken for Home Assistant's own person entity.

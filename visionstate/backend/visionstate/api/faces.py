@@ -219,6 +219,7 @@ async def teach_face(sensor_id: int, body: FaceTeachIn, request: Request) -> dic
         rt.faces_changed()
     if body.history_id is not None:
         await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, key, "person", True)
+        await rt.person_last_seen_changed(key)  # Home Assistant gets that last_seen too
     return {"id": face_id, "label": key, "name": name, "faces": n}
 
 

@@ -481,6 +481,9 @@ STORAGE_LIMITS = {
 
 HISTORY = {
     "page_size": 50,
+    # Rows of one sensor this close in time are the same moment (a face seen and the question about
+    # it): what is taught from one of them shows on the others too, where the box is the same.
+    "same_moment_s": 3.0,
     "max_page_size": 200,
     "max_filter_values": 50,  # values of one filter (sensors, keys, events) in one request
     "window_presets_h": (1, 24, 24 * 7, 24 * 30),  # time windows offered besides "any time"

@@ -1,7 +1,7 @@
 <script lang="ts">
   // The people VisionState knows by their face, shared by every object sensor that recognises
   // faces: their faces (from every camera), where they were seen, renaming and forgetting. Each
-  // person also has their own Home Assistant entity, sensor.visionstate_<key>: the sensor that
+  // person also has their own Home Assistant entity, sensor.visionstate_<key>_seen_by: the sensor that
   // sees them now, or not_seen.
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError } from '../lib/app.svelte';
@@ -56,8 +56,9 @@
   <h1>People</h1>
   <p class="muted intro">
     The people you named by their face. Every camera that recognises faces knows them: each gets an on/off sensor
-    there, and their own sensor in Home Assistant (<span class="mono">sensor.visionstate_…</span>) says which camera
-    sees them now.
+    there, and their own sensors in Home Assistant say which camera sees them now
+    (<span class="mono">sensor.visionstate_…_seen_by</span>) and when they were last seen
+    (<span class="mono">…_last_seen</span>).
   </p>
   {#if faces && !faces.sensors}
     <div class="notice">

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC
+from datetime import UTC, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from PIL import Image
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import detectors, imaging, teach
 from ..db import Person, Prediction, Sample
 from ..engine import Runtime
-from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
+from ..settings import FACE_UNKNOWN_KEY, HISTORY, KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 from .sensors import prediction_view
 
@@ -197,25 +197,44 @@ def remember_taught(
         row = s.get(Prediction, history_id)
         if row is None or row.sensor_id != sensor_id:
             return
-        found = [dict(d) for d in row.detections or []]
-        best = max(found, key=lambda d: teach.box_iou(d["box"], box), default=None)
-        if best is None or teach.box_iou(best["box"], box) < TEACH["keep_iou"]:
-            best = {"key": detected or label, "score": 0.0, "box": list(box)}
-            found.append(best)
-        best.pop("ask", None)
-        best.pop("filtered", None)
-        if label in (NONE_LABEL, best["key"]):
-            best.pop("label", None)  # not it, or just the class it was found as
-            if label == NONE_LABEL:
-                best["filtered"] = True
-        else:
-            best["label"] = label
-        best["taught"] = True
-        row.detections = found
+        key = _mark_taught(row, box, label, detected, add=True) or label
+        # The same moment's other rows (a face seen, and the question about it) show it too.
+        moment = timedelta(seconds=HISTORY["same_moment_s"])
+        for other in s.scalars(
+            select(Prediction).where(
+                Prediction.sensor_id == sensor_id,
+                Prediction.id != row.id,
+                Prediction.created_at.between(row.created_at - moment, row.created_at + moment),
+            )
+        ):
+            _mark_taught(other, box, label, detected, add=False)
         created = row.created_at
         at = (created if created.tzinfo else created.replace(tzinfo=UTC)).timestamp()  # stored naive, in UTC
-    if label not in (NONE_LABEL, best["key"]):
+    if label not in (NONE_LABEL, key):
         rt.seen_earlier(sensor_id, label, at, person)
+
+
+def _mark_taught(row: Prediction, box: list[float], label: str, detected: str | None, add: bool) -> str | None:
+    """Write a taught box into a history row: the box of the row that is this one (or, ``add``,
+    a new one) gets the label; returns the class it was found as, or None (no such box)."""
+    found = [dict(d) for d in row.detections or []]
+    best = max(found, key=lambda d: teach.box_iou(d["box"], box), default=None)
+    if best is None or teach.box_iou(best["box"], box) < TEACH["keep_iou"]:
+        if not add:
+            return None
+        best = {"key": detected or label, "score": 0.0, "box": list(box)}
+        found.append(best)
+    best.pop("ask", None)
+    best.pop("filtered", None)
+    if label in (NONE_LABEL, best["key"]):
+        best.pop("label", None)  # not it, or just the class it was found as
+        if label == NONE_LABEL:
+            best["filtered"] = True
+    else:
+        best["label"] = label
+    best["taught"] = True
+    row.detections = found
+    return best["key"]
 
 
 def delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnElement[bool]]) -> int:
