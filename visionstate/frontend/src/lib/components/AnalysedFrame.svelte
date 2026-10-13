@@ -82,7 +82,9 @@
   }
 
   onDestroy(() => {
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    // Let go of the frame once the image is gone: revoked while it still loads, WebKit logs an error.
+    const last = objectUrl;
+    if (last) setTimeout(() => URL.revokeObjectURL(last), 1000);
   });
   const teachOn = $derived(boxesFrame ?? shownFrame ?? fallbackFrame);
 </script>

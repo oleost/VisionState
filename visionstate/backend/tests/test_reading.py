@@ -676,7 +676,7 @@ def test_counter_limit_over_time(settings, monkeypatch):
         # A real jump while it was watching (no whole step of a digit): accepted once readings agree.
         camera.text = "00800"
         assert wait_for(lambda: view()["value"] == "800", timeout=30)
-        assert sent["visionstate/meter/state"] == "800"
+        assert wait_for(lambda: sent.get("visionstate/meter/state") == "800", timeout=10)  # sent just after
 
         def agreed():
             items = client.get("/api/v1/history", params={"sensor": sid, "limit": 50}).json()["items"]
@@ -692,14 +692,16 @@ def test_counter_limit_over_time(settings, monkeypatch):
         assert newest["probs"]["reason"] == "went down"
         assert client.post(f"/api/v1/review/{newest['id']}", json={"action": "read_ok"}).status_code == 200
         assert wait_for(lambda: view()["value"] == "700", timeout=30)
-        assert sent["visionstate/meter/state"] == "700"
+        assert wait_for(lambda: sent.get("visionstate/meter/state") == "700", timeout=10)
     # After a restart it goes on from the confirmed value (which is not in the history as a value).
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
-        assert wait_for(
-            lambda: (client.get(f"/api/v1/sensors/{sid}").json()["reading"]["last"] or {}).get("reason") is None,
-            timeout=60,
-        )
+
+        def first():  # the first reading after the restart (none yet: {})
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]["last"] or {}
+
+        assert wait_for(lambda: "at" in first(), timeout=60)
+        assert first()["reason"] is None
         assert client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "700"
 
 

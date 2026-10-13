@@ -84,7 +84,9 @@
   onDestroy(() => {
     loop++;
     clearTimeout(timer);
-    if (url) URL.revokeObjectURL(url);
+    // Let go of the frame once the image is gone: revoked while it still loads, WebKit logs an error.
+    const last = url;
+    if (last) setTimeout(() => URL.revokeObjectURL(last), 1000);
   });
 </script>
 

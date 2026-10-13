@@ -476,14 +476,16 @@ def test_a_face_model_that_cannot_be_downloaded_leaves_the_sensor_working(settin
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime
         assert client.post("/api/v1/faces/retry").status_code == 200
-        assert wait_for(lambda: rt.face_status()["error"], timeout=10)
+        # The error is set inside the loading task, which ends just after it.
+        assert wait_for(lambda: rt.face_status()["error"] and not rt.face_status()["loading"], timeout=10)
         error = rt.face_status()["error"]
         assert faces.DETECTOR.filename in error and "by hand" in error
         assert rt.face_model is None and not rt.face_status()["loading"]
         # No retry by itself: only when asked.
         assert rt.wanted_faces() is None and rt.face_status()["error"] == error
         assert client.post("/api/v1/faces/retry").status_code == 200
-        assert wait_for(lambda: rt.face_status()["error"], timeout=10)
+        # The error is set inside the loading task, which ends just after it.
+        assert wait_for(lambda: rt.face_status()["error"] and not rt.face_status()["loading"], timeout=10)
         settings_view = client.get("/api/v1/settings").json()
         assert [m["id"] for m in settings_view["face_models"]] == list(faces.RECOGNISERS)
         assert all(not m["installed"] and m["data"] for m in settings_view["face_models"])
