@@ -275,6 +275,37 @@ def test_an_index_built_before_an_own_label_existed_is_rebuilt(settings):  # noq
     db.engine.dispose()
 
 
+def test_a_taught_box_whose_image_is_gone_is_skipped(settings):  # noqa: F811
+    """A taught box whose stored image has disappeared (a partly restored data dir, an external
+    clean-up) must not take the whole sensor down: it is skipped, like a broken upload, and the
+    index is built from the boxes that are still there."""
+    import asyncio
+
+    from PIL import Image
+
+    from visionstate.db import Database, Sample, Sensor
+    from visionstate.engine import Runtime
+
+    settings.ensure_dirs()
+    db = Database(settings.db_path)
+    db.init()
+    rt = Runtime(settings, db)
+    rt.embedder = FakeEmbedder()
+    with db.session() as s:
+        row = Sensor(slug="drive", name="Drive", kind=KIND_OBJECTS, source_type="http", source="x", interval_s=5,
+                     threshold=0.6, debounce=1, objects={"classes": ["dog"]})  # fmt: skip
+        s.add(row)
+        s.flush()
+        sid = row.id
+    kept = rt.add_object_example(sid, Image.new("RGB", (64, 64)), [0.1, 0.1, 0.5, 0.5], "dog", "dog", 0.9, "live")
+    gone = rt.add_object_example(sid, Image.new("RGB", (64, 64)), [0.5, 0.5, 0.9, 0.9], "dog", "dog", 0.9, "live")
+    with db.session() as s:
+        rt.storage.sample_path(sid, s.get(Sample, gone).filename).unlink()
+    index = asyncio.run(rt.taught_index(rt.load_sensor(sid)))  # would raise FileNotFoundError before
+    assert index is not None and index.ids == [kept]
+    db.engine.dispose()
+
+
 # --- the API, with the real detector and backbone on CC0 photos ----------------------------
 
 

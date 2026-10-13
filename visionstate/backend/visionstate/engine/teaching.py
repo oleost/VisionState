@@ -48,6 +48,12 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
                 select(Sample).where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None)).order_by(Sample.id)
             )
             examples = [x for x in rows if x.object_label is not None and teach.usable(x.object_label, parents)]
+        # A taught box whose image has vanished (a partly restored data dir, an external clean-up)
+        # must not take the whole sensor down: it is skipped, like a broken upload.
+        gone = [x.id for x in examples if not self.storage.sample_path(cfg.id, x.filename).exists()]
+        if gone:
+            log.warning("Sensor %s: skipping %d taught box(es) with no image on disk: %s", cfg.slug, len(gone), gone)
+            examples = [x for x in examples if x.id not in set(gone)]
         vectors = self._taught_vectors(cfg, examples)
         return teach.build(
             embedder.spec.id,
