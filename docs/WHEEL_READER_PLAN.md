@@ -148,8 +148,9 @@ first plan (2026-10-10):
   the sensor's light on) instead of a flag in the dialog;
 - frames are **not** deduplicated in the app — a reading of the same frame is still a reading; the
   training tools remove duplicate images (§B4);
-- the unchecked accepted readings are **always** included (no option, no count limit): the images
-  are what is scarce. Their value is the reader's guess, so the tools use them as labels only after
+- the unchecked readings, accepted and rejected, are **always** included (no option, no count
+  limit): the images are what is scarce, and with the rejected ones a sensor's checks can be
+  replayed in order (`seconds`). Their value is the reader's guess, so the tools use them as labels only after
   a check (§B4);
 - no spot-check button; `spot_rate` is the way to get accepted readings checked;
 - one ZIP of at most 24 MB (GitHub's limit is 25 MB per file), checked readings first, then the

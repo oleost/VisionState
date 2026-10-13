@@ -868,7 +868,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 2 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 3 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
@@ -876,16 +876,25 @@ def test_wheel_counter_sensor_flow(settings):
         assert (unchecked["answer"], unchecked["value"], unchecked["right_value"]) == ("unchecked", "90.100", None)
         assert entry["reader"] == readers.DEFAULT_WHEEL_READER and entry["app"] == VERSION
         assert entry["answer"] == "read correctly" and entry["seconds"] == 0 <= unchecked["seconds"]
-        assert entry["lamp"] is False and entry["greyscale"] is False
+        assert entry["lamp"] is False and entry["greyscale"] is False and entry["frame_size"] == [800, 360]
         assert round(entry["wheels"]["value"]) == 89950 and len(entry["wheels"]["per_wheel"]) == 7
         assert export(meter="  Gas meter, white on black  ")["meter"] == "Gas meter, white on black"
         verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
-        assert verified["unchecked_accepted"] == 1
+        assert verified["unchecked"] == 1
+
+        # A rejected reading nobody answered goes in too, newest first among the unchecked ones.
+        with client.app.state.runtime.db.session() as s:
+            frame = s.scalars(select(Prediction.frame).where(Prediction.sensor_id == sid)).first()
+            details = {"text": "0099999", "value": "99.999", "reason": "went down"}
+            s.add(Prediction(sensor_id=sid, state_key="reading", confidence=0.5, probs=details, frame=frame))
+        rejected = export()["readings"][1]
+        assert (rejected["answer"], rejected["rejected"], rejected["value"]) == ("unchecked", "went down", "99.999")
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]["unchecked"] == 2
 
         # The ZIP stays small enough for GitHub: what does not fit is left out (the oldest) and counted.
         with patch.dict(READING, {"export_max_mb": 0.0001}):  # room for one image only
             small = export()
-        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 1
+        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 2
 
         # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
         exported = client.get(f"/api/v1/sensors/{sid}/export").content

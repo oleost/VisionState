@@ -355,7 +355,7 @@ First choose **what it looks like**:
   The reader does **not** learn from these answers: they show how reliable the reading is and
   which setting to change.
 - **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
-  checked and the accepted ones nobody checked (marked as unchecked) — only the region of each,
+  checked and the ones nobody checked, accepted or rejected (marked as unchecked) — only the region of each,
   not the whole picture — with what was read and what was right, which reader read it and (for
   the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
   made in, so moving the region later does not spoil the readings from before. Write what the

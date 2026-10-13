@@ -149,7 +149,7 @@ export interface ReadingQuality {
     right_accepted: number;
     waiting: number;
     /** Accepted readings nobody checked whose frame is kept (they go into the export too). */
-    unchecked_accepted: number;
+    unchecked: number;
   };
   items: Prediction[];
 }

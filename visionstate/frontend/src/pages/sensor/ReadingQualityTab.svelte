@@ -55,7 +55,7 @@
   const shownDay = $derived(quality ? quality.daily[hover ?? quality.daily.length - 1] : null);
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
-  const unchecked = $derived(v?.unchecked_accepted ?? 0);
+  const unchecked = $derived(v?.unchecked ?? 0);
 
   let meter = $state(''); // the export's optional "What meter is this?"
 

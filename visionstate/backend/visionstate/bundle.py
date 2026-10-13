@@ -106,7 +106,8 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 2  # readings.json; 2 added per-reading reader details, "meter", unchecked readings
+READINGS_FORMAT = 3  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+# 3: unchecked rejected readings too, the camera picture's size
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -115,16 +116,21 @@ Every image is only the region the sensor reads (a display or counter, with a li
 around it) — not the whole camera picture. readings.json lists for each image what the reader
 read, the value it made of it, why it was rejected (if it was), and the answer given in
 VisionState: "read correctly", "misread" (with the right value when it was entered), or
-"unchecked" (an accepted reading nobody checked: the reader's value, not confirmed by a person).
-The checked readings come first, newest first, then the unchecked ones, newest first.
+"unchecked" (nobody checked it: the reader's value, not confirmed by a person; "rejected" says
+whether it was accepted). The checked readings come first, newest first, then the unchecked ones,
+newest first.
 
 Per reading it also says which reader read it ("reader"; null for readings from before
 VisionState 0.8.0, beta 0.7.1b5), the app version ("app"), whether the whole picture was greyscale (an
-infrared or night camera) and whether VisionState had switched the sensor's light on ("lamp").
+infrared or night camera), whether VisionState had switched the sensor's light on ("lamp") and
+the size of the whole camera picture in pixels ("frame_size"; a camera that changes its size after
+a restart moves what the region shows).
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
 image), how sure it was, its most likely positions, the common shift of all wheels and the
 value with the last wheel's fraction. "seconds" is the time since the oldest reading of the
-export (no time of day).
+export (no time of day): sorted by it, the readings are in the order they were made. VisionState
+keeps only the readings that changed the value, the rejected ones and spot checks, so a reading
+that only repeated the last value is not in it.
 
 The file stays under 24 MB (GitHub takes files up to 25 MB): the readings that did not fit
 are counted in "left_out" — export again later for newer ones.
@@ -155,8 +161,8 @@ ANSWERS = {True: "read correctly", False: "misread", None: "unchecked"}
 def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path, reader: str, meter: str = "") -> str:
     """Writes a reading sensor's readings to share to ``target`` (one ZIP).
 
-    The readings checked by hand come first, then the accepted ones nobody checked (marked
-    "unchecked"), each newest first; every image is the region crop of the stored frame. The ZIP
+    The readings checked by hand come first, then the ones nobody checked (marked "unchecked",
+    accepted or rejected), each newest first; every image is the region crop of the stored frame. The ZIP
     stays under ``READING["export_max_mb"]``; the readings that did not fit are counted.
     ``meter``: what the user says the meter is. Returns the suggested download filename; raises
     LookupError when there is nothing to export.
@@ -174,11 +180,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         newest = Prediction.created_at.desc()
         rows = [
             *s.scalars(select(Prediction).where(*mine, Prediction.read_ok.is_not(None)).order_by(newest)),
-            *s.scalars(
-                select(Prediction)
-                .where(*mine, Prediction.read_ok.is_(None), Prediction.published_key.is_not(None))
-                .order_by(newest)
-            ),
+            *s.scalars(select(Prediction).where(*mine, Prediction.read_ok.is_(None)).order_by(newest)),
         ]
         current = sensor.roi
         slug = sensor.slug
@@ -221,6 +223,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "reader": details.get("reader"),
                     "app": details.get("app"),
                     "greyscale": imaging.is_night(frame),
+                    "frame_size": list(frame.size),
                     "lamp": details.get("lamp"),
                     **({"wheels": details["wheels"]} if "wheels" in details else {}),
                 }

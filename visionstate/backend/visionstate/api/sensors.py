@@ -479,8 +479,8 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
             "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
             "waiting": count(Prediction.reviewed.is_(False)),
-            # accepted, nobody checked, the frame kept: they go into the export too
-            "unchecked_accepted": count(~rejected, Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
+            # nobody checked, the frame kept: they go into the export too
+            "unchecked": count(Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
         }
         items = s.scalars(
             select(Prediction)
