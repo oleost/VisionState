@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.1b1
+
+### Better
+
+- **Counters accept the value after a restart or update.** How much a counter may go up now grows
+  with the time it was not seen — the app was away, or the readings were unsure — so the first
+  reading after an update is no longer rejected as *changed too much*. A wheel read one digit too
+  high over and over still stays out.
+- **A counter learns its own limit** (*Learn it*, Settings → Sensor output): how fast it goes up
+  on a busy day, learned from a week of its readings. Or set a **fixed rise per hour**. Counters
+  you already have keep the limit you set, turned into a rate.
+- **A real jump is accepted once several readings agree** (the Live tab says *Jump accepted*) —
+  say the light failed during a shower. A jump that looks like one misread digit waits for you in
+  Review.
+- **Read correctly in Review moves the counter on**: answering it for the newest rejected reading
+  makes that the value — also the way out for a counter stuck on a value read too high.
+- **Switching the face model shows its progress** on the sensors' cards, the Faces card, People and
+  Settings, and the taught faces are learned again right after the new model is loaded.
+
 ## 0.9.0
 
 ### New
