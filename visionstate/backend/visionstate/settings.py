@@ -85,7 +85,7 @@ COUNTER_READERS = ("wheels", "ocr")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
 # Counters: what limits how fast the value may go up (see READING_DEFAULTS["change_limit"]).
-READING_CHANGE_LIMITS = ("auto", "fixed", "off")
+READING_CHANGE_LIMITS = ("auto", "fixed", "step", "off")
 READING_DEFAULTS = {
     "mode": "counter",
     "decimals": 0,  # digits after the decimal point; the reader's own dots and commas are ignored
@@ -97,8 +97,10 @@ READING_DEFAULTS = {
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
-    # Counters: how fast the counter may go up. "auto" learns it from the counter's own readings,
-    # "fixed" takes max_rate (per hour, in the counter's unit), "off" sets no limit.
+    # Counters: how fast the counter may go up. "auto" learns it from the counter's own readings
+    # (max_rate until then; 0: COUNTER_LIMIT["standard_steps_per_min"]), "fixed" takes max_rate
+    # (per hour, in the counter's unit; 0: no limit), "step" takes max_step for every reading,
+    # however long since the last one (0: no limit), "off" sets no limit.
     "change_limit": "auto",
     "max_rate": 0.0,
     # Share of accepted readings that is also sent to the review queue, to find misreads that
@@ -128,6 +130,9 @@ COUNTER_LIMIT = {
     "learn_days": 14,
     "min_days": 7,
     "safety": 2.0,  # "auto": the learned rate and day times this
+    # "auto" until it learned, and what the UI fills in for "fixed" and "step": this many steps of
+    # the counter's last digit a minute (0.04 m³ a minute for a water meter with three decimals).
+    "standard_steps_per_min": 40,
     "margin_steps": 2,  # always allowed: this many steps of the last digit (a wheel half way)
     # A gap between two readings longer than gap_checks intervals (at least gap_min_s) is time the
     # counter was not seen (the app was down, the camera away).

@@ -8,7 +8,8 @@ wrong gives; those wait for an answer in Review.
 
 "auto" learns the limit from the counter's own accepted readings: the largest rise over a few
 minutes per day and the rise per day (db.ReadingStat ``peak`` and ``total``), only over stretches
-in which it was read all the time. Pure logic, no I/O:
+in which it was read all the time; until then a rate (set, or the standard one) applies. "step"
+is the older limit: the same change for every reading, however long since the last one. Pure logic, no I/O:
 the engine (engine/reading.py) keeps a ``Watch`` per sensor and stores it (db.ReadingWatch).
 """
 
@@ -61,10 +62,23 @@ def margin(settings: dict) -> float:
     return COUNTER_LIMIT["margin_steps"] * 10 ** -int(settings["decimals"])
 
 
+def standard_rate(settings: dict) -> float:
+    """The standard limit per hour: COUNTER_LIMIT["standard_steps_per_min"] steps of the last digit a minute."""
+    return COUNTER_LIMIT["standard_steps_per_min"] * 10 ** -int(settings["decimals"]) * 60
+
+
+def learned_rate(learned: Learned | None) -> float | None:
+    """The rate per hour "auto" allows once it learned (with its room to spare), or None."""
+    return COUNTER_LIMIT["safety"] * learned.per_hour if learned is not None else None
+
+
 def limit(settings: dict, learned: Learned | None, seconds: float) -> float | None:
     """The largest rise allowed after ``seconds`` of counting time, or None (no limit)."""
     hours = max(0.0, seconds) / 3600
     mode = settings["change_limit"]
+    if mode == "step":  # the same for every reading, as counters had before the rate
+        step = float(settings["max_step"])
+        return step if step > 0 else None
     if mode == "fixed":
         rate = float(settings["max_rate"])
         return margin(settings) + rate * hours if rate > 0 else None
@@ -72,6 +86,9 @@ def limit(settings: dict, learned: Learned | None, seconds: float) -> float | No
         days = max(1, math.ceil(seconds / 86_400))
         rise = min(learned.per_hour * hours, learned.per_day * days)
         return margin(settings) + COUNTER_LIMIT["safety"] * rise
+    if mode == "auto":  # still learning: the rate set, or the standard one
+        rate = float(settings["max_rate"]) or standard_rate(settings)
+        return margin(settings) + rate * hours
     return None
 
 

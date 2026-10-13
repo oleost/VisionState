@@ -495,6 +495,7 @@ def test_change_detection_with_a_light_reads_a_new_frame_in_the_light(tmp_path, 
             "interval_s": 3600,
             "debounce": 1,
             "threshold": 0.5,  # "88888" below is read at ~0.69
+            "reading": {"mode": "counter", "change_limit": "off"},  # 500 to 88888 in seconds
         }
         sid = client.post("/api/v1/sensors", json={**body, "triggers": triggers}).json()["id"]
 

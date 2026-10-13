@@ -895,14 +895,22 @@ test('a counter has a rate window for its rate entity', async ({ page, request }
   }
 });
 
-test('a counter learns how fast it may go up, or takes a fixed rate', async ({ page, request }, info) => {
+test('a counter learns how fast it may go up, or takes a fixed rate or change per reading', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
   await page.goto(`#/sensors/${id}/settings`);
   const choice = page.getByLabel('Limit how fast the counter may go up');
   await expect(choice).toHaveValue('auto');
   await expect(page.getByText(/Learning from its readings: \d+ of \d+ days/)).toBeVisible();
+  // Until it learned, the standard rate applies, shown and open to change.
+  const config = await (await request.get('api/v1/config')).json();
+  const before = (await (await request.get(`api/v1/sensors/${id}`)).json()).reading;
+  const standard = Number((config.counter_standard_steps_per_min * 10 ** -before.decimals * 60).toPrecision(6));
+  await expect(page.getByLabel('Largest rise per hour')).toHaveValue(String(standard));
+  await expect(page.getByLabel('Largest rise per hour')).toBeEnabled();
+  await choice.selectOption('step');
   await expect(page.getByLabel('Largest rise per hour')).toHaveCount(0);
+  await expect(page.getByLabel('Largest rise per reading')).not.toHaveValue('0');
   await choice.selectOption('fixed');
   await page.getByLabel('Largest rise per hour').fill('2.4');
   await press(page.getByRole('button', { name: 'Save changes' }), info);
@@ -918,7 +926,7 @@ test('a counter learns how fast it may go up, or takes a fixed rate', async ({ p
   } finally {
     const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
     const { value: _v, last: _l, has_image: _h, limit: _lim, ...reading } = sensor.reading;
-    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, change_limit: 'auto', max_rate: 0 } } });
+    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, change_limit: 'auto', max_rate: 0, max_step: 0 } } });
   }
 });
 

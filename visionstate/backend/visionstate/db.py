@@ -76,26 +76,24 @@ def _keep_text_readers(conn: Connection) -> None:
             )
 
 
-def keep_change_step(reading: dict | None, interval_s: float) -> dict | None:
+def keep_change_step(reading: dict | None) -> dict | None:
     """Reading settings of a counter made before change_limit, with the limit it had kept.
 
-    Its ``max_step`` (the change allowed between two readings) becomes that much per interval,
-    as a rate per hour ("fixed"); a counter without one gets no limit ("off"), as before. A
-    counter that has ``change_limit`` and anything else are returned as they are.
+    Its ``max_step`` (the change allowed between two readings) stays that ("step"); a counter
+    without one gets no limit ("off"), as before. A counter that has ``change_limit`` and
+    anything else are returned as they are.
     """
     if not isinstance(reading, dict) or reading.get("mode", "counter") != "counter" or "change_limit" in reading:
         return reading
     step = float(reading.get("max_step") or 0)
-    if step <= 0:
-        return {**reading, "change_limit": "off"}
-    return {**reading, "change_limit": "fixed", "max_rate": round(step * 3600 / max(interval_s, 1.0), 6)}
+    return {**reading, "change_limit": "step" if step > 0 else "off"}
 
 
 def _keep_change_steps(conn: Connection) -> None:
-    rows = conn.execute(text("SELECT id, reading, interval_s FROM sensor WHERE reading IS NOT NULL")).all()
-    for sensor_id, raw, interval_s in rows:
+    rows = conn.execute(text("SELECT id, reading FROM sensor WHERE reading IS NOT NULL")).all()
+    for sensor_id, raw in rows:
         reading = json.loads(raw) if isinstance(raw, str) else raw
-        kept = keep_change_step(reading, float(interval_s))
+        kept = keep_change_step(reading)
         if kept is not reading:
             conn.execute(
                 text("UPDATE sensor SET reading = :r WHERE id = :id"), {"r": json.dumps(kept), "id": sensor_id}
@@ -106,7 +104,7 @@ def _keep_change_steps(conn: Connection) -> None:
 DATA_MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     # Counters made before 0.7.1b3 keep the text reader; new ones get the wheel reader.
     12: _keep_text_readers,
-    # Counters keep the change limit they had, now as a rate (see keep_change_step).
+    # Counters keep the change limit they had (see keep_change_step).
     14: _keep_change_steps,
 }
 

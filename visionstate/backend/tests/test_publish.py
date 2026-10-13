@@ -44,7 +44,7 @@ def test_sensor_not_sent_to_home_assistant(tmp_path):
             "kind": "reading",
             "source_type": "http",
             "source": "x",
-            "reading": {"mode": "counter", "decimals": 1},
+            "reading": {"mode": "counter", "decimals": 1, "change_limit": "off"},
             "interval_s": 1,
             "debounce": 1,
             "publish": False,

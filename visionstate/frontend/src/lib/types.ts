@@ -85,8 +85,9 @@ export type ReadingType = 'display' | 'counter';
 /** What reads a mechanical counter: each wheel's position, or the wheels as text (OCR). */
 export type CounterReader = 'wheels' | 'ocr';
 
-/** Counters: how fast the value may go up — learned from its readings, a fixed rate, or no limit. */
-export type ChangeLimit = 'auto' | 'fixed' | 'off';
+/** Counters: how fast the value may go up — learned from its readings, a fixed rate, a fixed
+ * change per reading, or no limit. */
+export type ChangeLimit = 'auto' | 'fixed' | 'step' | 'off';
 
 /** A counter's limit as it is now (backend change_limit.py). */
 export interface CounterLimit {
@@ -96,6 +97,8 @@ export interface CounterLimit {
   /** Learned: the busiest rise per hour and per day (null until learned). */
   per_hour: number | null;
   per_day: number | null;
+  /** What "auto" allows per hour once learned, with its room to spare (null until learned). */
+  rate: number | null;
   /** How much the last reading could go up (null: no limit). */
   allowed: number | null;
   /** Read with confidence over the limit since the last accepted reading. */
@@ -112,10 +115,12 @@ export interface ReadingSettings {
   digits: number;
   /** Mechanical counters only: what reads the wheels. */
   counter_reader: CounterReader;
-  /** Values and times left: the largest change between two readings (0 = no limit). */
+  /** Values and times left, and counters with change_limit "step": the largest change between two
+   * readings (0 = no limit). */
   max_step: number;
   change_limit: ChangeLimit;
-  /** change_limit "fixed": how much the counter may go up per hour. */
+  /** change_limit "fixed": how much the counter may go up per hour (0 = no limit); "auto": until it
+   * learned (0 = the standard rate). */
   max_rate: number;
   /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
   spot_rate: number;
@@ -548,6 +553,8 @@ export interface AppConfig {
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
+  /** A counter's standard limit: this many steps of its last digit a minute. */
+  counter_standard_steps_per_min: number;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   counter_readers: CounterReader[];

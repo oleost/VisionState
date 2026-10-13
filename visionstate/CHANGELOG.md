@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.1b2
+
+### Fixed
+
+- **A counter that learns its limit is no longer without one while it learns.** Until *Learn it*
+  has a week of readings, a rate now applies — shown in Settings → Sensor output and yours to
+  change. It starts at a standard one (for a water meter with three decimals, 0.04 m³ a minute);
+  once learned, the learned rate takes its place. Before, a misread wheel could get through in the
+  first week.
+
+### Better
+
+- **Fixed per reading is back** as a choice next to *Learn it*, *Fixed rate* and *No limit*: the
+  largest rise from one reading to the next, the same however long the app was away. Choosing a
+  fixed limit fills in the standard one to start from.
+- **Counters from 0.9.0 keep their limit exactly**: the change per reading you set stays *Fixed per
+  reading*, instead of being turned into a rate. Counters already updated to 0.9.1b1 keep what
+  they have.
+
 ## 0.9.1b1
 
 ### Better

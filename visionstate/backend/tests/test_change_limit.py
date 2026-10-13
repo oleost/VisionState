@@ -17,7 +17,14 @@ def test_limit_grows_with_time():
     assert change_limit.limit(FIXED, None, 35 * 60) == pytest.approx(MARGIN + 1.4)
     assert change_limit.limit({**FIXED, "max_rate": 0}, None, 60) is None
     assert change_limit.limit({**WATER, "change_limit": "off"}, BUSY, 60) is None
-    assert change_limit.limit(WATER, None, 60) is None  # "auto", nothing learned yet: no limit
+    # "auto", nothing learned yet: the rate set, or the standard one (0.04 m³ a minute here).
+    assert change_limit.limit(WATER, None, 60) == pytest.approx(MARGIN + 0.04)
+    assert change_limit.limit({**WATER, "max_rate": 1.2}, None, 60) == pytest.approx(MARGIN + 0.02)
+    assert change_limit.standard_rate({**WATER, "decimals": 1}) == pytest.approx(240)
+    # "step": the same for every reading, however long the counter was away; 0: no limit.
+    step = {**WATER, "change_limit": "step", "max_step": 0.04}
+    assert change_limit.limit(step, BUSY, 60) == change_limit.limit(step, BUSY, 86_400) == 0.04
+    assert change_limit.limit({**step, "max_step": 0}, BUSY, 60) is None
     safety = COUNTER_LIMIT["safety"]
     assert change_limit.limit(WATER, BUSY, 60) == pytest.approx(MARGIN + safety * 0.55 / 60)
     # Away for three days: no more than three busy days, not three days of showering.
@@ -121,3 +128,10 @@ def test_readings_that_do_not_agree_start_again():
     assert watch.pending == [(180, 100.2), (240, 100.21)]
     assert not change_limit.hold(watch, 300, 99.0, "went down", 100.0, WATER)
     assert watch.pending == []
+
+
+def test_learning_counter_keeps_out_issue_40s_misread():
+    """Issue #40: switched to "auto", a wheel read two digits off (635.709 to 637.799) 32 minutes
+    after the last accepted reading went through, as nothing was learned yet."""
+    allowed = change_limit.limit(WATER, None, 1920)
+    assert allowed is not None and allowed < 637.799 - 635.709

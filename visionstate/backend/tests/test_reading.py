@@ -369,11 +369,11 @@ def test_counters_keep_their_change_limit_as_a_rate(tmp_path):
     db.init()
     with db.session() as s:
         kept = {r.slug: merge_reading(r.reading) for r in s.query(Sensor)}
-    # 0.04 m³ a minute is 2.4 m³ an hour; no limit stays no limit; values keep max_step.
-    assert (kept["water"]["change_limit"], kept["water"]["max_rate"]) == ("fixed", 2.4)
+    # The change per reading stays exactly that; no limit stays no limit; values keep max_step.
+    assert (kept["water"]["change_limit"], kept["water"]["max_step"]) == ("step", 0.04)
     assert kept["gas"]["change_limit"] == "off"
     assert kept["price"]["max_step"] == 5
-    assert keep_change_step({"mode": "counter", "change_limit": "auto"}, 60) == {
+    assert keep_change_step({"mode": "counter", "change_limit": "auto"}) == {
         "mode": "counter",
         "change_limit": "auto",
     }
@@ -453,7 +453,13 @@ def test_reading_sensor_flow(settings):
             "kind": "reading",
             "source_type": "http",
             "source": "http://fake",
-            "reading": {"mode": "counter", "decimals": 1, "unit": "kWh", "device_class": "energy"},
+            "reading": {
+                "mode": "counter",
+                "decimals": 1,
+                "unit": "kWh",
+                "device_class": "energy",
+                "change_limit": "off",
+            },
             "interval_s": 1,
             "debounce": 1,
         }
@@ -716,6 +722,7 @@ def test_counter_sensor_flow(settings):
         "decimals": 3,
         "unit": "m³",
         "counter_reader": "ocr",
+        "change_limit": "off",  # the counter jumps between checks seconds apart
     }
     body = {
         "name": "Water meter",
@@ -800,7 +807,8 @@ def test_counter_sensor_flow(settings):
 def test_wheel_counter_sensor_flow(settings):
     """A counter read with the wheel reader (the default): turning wheels, the preview, the export."""
     camera = CounterCamera(89949.8)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³"}
+    # The counter jumps between checks seconds apart: no limit.
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³", "change_limit": "off"}
     body = {
         "name": "Gas meter",
         "kind": "reading",

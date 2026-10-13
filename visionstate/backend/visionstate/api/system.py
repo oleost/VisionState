@@ -17,6 +17,7 @@ from .. import backbones, detectors, faces, readers
 from ..db import Person, Prediction, Sensor
 from ..redact import redact
 from ..settings import (
+    COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
     FACE_LIMITS,
@@ -126,6 +127,7 @@ def ui_config() -> dict:
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
         "reading_defaults": READING_DEFAULTS,
         "reading_limits": READING_LIMITS,
+        "counter_standard_steps_per_min": COUNTER_LIMIT["standard_steps_per_min"],
         "reading_modes": READING_MODES,
         "reading_displays": READING_DISPLAYS,
         "counter_readers": COUNTER_READERS,

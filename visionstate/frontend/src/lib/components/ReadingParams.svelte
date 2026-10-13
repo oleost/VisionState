@@ -13,6 +13,8 @@
     rateWindow = $bindable(),
     mode,
     unit,
+    decimals,
+    intervalS,
     limit = null,
   }: {
     threshold: number;
@@ -24,6 +26,8 @@
     rateWindow: number;
     mode: ReadingMode;
     unit: string;
+    decimals: number;
+    intervalS: number;
     /** What the counter's limit learned so far (from the sensor's view). */
     limit?: CounterLimit | null;
   } = $props();
@@ -32,14 +36,27 @@
   const stepLimits = $derived(app.config?.reading_limits.max_step ?? [0, 1e9]);
   const rateLimits = $derived(app.config?.reading_limits.max_rate ?? [0, 1e9]);
   const amount = (n: number) => `${Number(n.toPrecision(3))}${unit ? ` ${unit}` : ''}`;
+  const round = (n: number) => Number(n.toPrecision(6));
+  // The standard limit: steps of the last digit a minute, per hour or per check.
+  const standardRate = $derived(round((app.config?.counter_standard_steps_per_min ?? 0) * 10 ** -decimals * 60));
+  // Per check: in steps of the last digit, at least one.
+  const standardStep = $derived(round(Math.max(1, Math.round((standardRate * intervalS) / 3600 / 10 ** -decimals)) * 10 ** -decimals));
+  const learnedRate = $derived(changeLimit === 'auto' ? (limit?.rate ?? null) : null);
   const limitHint = $derived.by(() => {
     if (changeLimit === 'off') return 'Only a counter that reads lower than before is rejected.';
     if (changeLimit === 'fixed') return 'Time the app was away (or the readings unsure) allows more.';
+    if (changeLimit === 'step') return 'The same for every reading, however long the app was away.';
     if (limit?.per_hour != null && limit.per_day != null)
       return `Learned from ${limit.days} days: up to ${amount(limit.per_hour)} an hour and ${amount(limit.per_day)} a day on a busy day, with room to spare.`;
-    if (!limit) return 'Learned from its own readings; no limit until then.';
-    return `Learning from its readings: ${limit.days} of ${limit.needed} days. No limit until then.`;
+    if (!limit) return 'Learned from its own readings; the rate below until then.';
+    return `Learning from its readings: ${limit.days} of ${limit.needed} days. The rate below until then.`;
   });
+  // A limit chosen without a value of its own starts at the standard one (0 would be no limit).
+  function chooseLimit(value: ChangeLimit) {
+    changeLimit = value;
+    if (value === 'fixed' && !maxRate) maxRate = learnedRate ?? standardRate;
+    if (value === 'step' && !maxStep) maxStep = standardStep;
+  }
   const spotLimits = $derived(app.config?.reading_limits.spot_rate ?? [0, 1]);
   const windowLimits = $derived(app.config?.reading_limits.rate_window_min ?? [1, 1440]);
 </script>
@@ -72,13 +89,19 @@
           <span>Limit how fast the counter may go up</span>
           <span class="xsmall faint">{limitHint}</span>
         </span>
-        <select class="input sm" bind:value={changeLimit} aria-label="Limit how fast the counter may go up">
+        <select
+          class="input sm"
+          value={changeLimit}
+          onchange={(e) => chooseLimit(e.currentTarget.value as ChangeLimit)}
+          aria-label="Limit how fast the counter may go up"
+        >
           <option value="auto">Learn it</option>
-          <option value="fixed">Fixed</option>
+          <option value="fixed">Fixed rate</option>
+          <option value="step">Fixed per reading</option>
           <option value="off">No limit</option>
         </select>
       </label>
-      {#if changeLimit === 'fixed'}
+      {#if changeLimit === 'auto' || changeLimit === 'fixed'}
         <label class="line">
           <span>Reject a reading that goes up faster than</span>
           <span class="row"
@@ -88,10 +111,28 @@
               min={rateLimits[0]}
               max={rateLimits[1]}
               step="any"
-              bind:value={maxRate}
+              value={learnedRate != null ? round(learnedRate) : changeLimit === 'auto' ? maxRate || standardRate : maxRate}
+              disabled={learnedRate != null}
+              oninput={(e) => (maxRate = Number(e.currentTarget.value))}
               aria-label="Largest rise per hour"
             />
             {unit ? `${unit}/h` : 'per hour'}</span
+          >
+        </label>
+      {:else if changeLimit === 'step'}
+        <label class="line">
+          <span>Reject a reading that goes up more than</span>
+          <span class="row"
+            ><input
+              class="input sm num"
+              type="number"
+              min={stepLimits[0]}
+              max={stepLimits[1]}
+              step="any"
+              bind:value={maxStep}
+              aria-label="Largest rise per reading"
+            />
+            {unit}</span
           >
         </label>
       {/if}

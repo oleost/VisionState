@@ -231,6 +231,8 @@
           bind:rateWindow={reading.rate_window_min}
           mode={reading.mode}
           unit={reading.unit}
+          decimals={reading.decimals}
+          intervalS={interval_s}
         />
       {:else}
         <SensorParams bind:threshold bind:debounce />

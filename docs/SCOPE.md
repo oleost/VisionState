@@ -308,6 +308,16 @@ times its busiest shower) rejected right readings after a 35-minute update.
   learned 0.82 m³/h for a meter that ran at 0.75 at most, and after its first week no wrong
   value was published. A wheel read too high right after a long time away does get through —
   nothing tells it from water used meanwhile — and then the "went down" lock below applies.
+  Until it learned, a rate applies: `max_rate`, or when that is 0 `standard_steps_per_min` steps
+  of the last digit a minute (issue #40's 0.04 m³ a minute, three decimals). It once set no limit
+  until then; on issue #40's meter, switched to *Learn it*, a wheel read two digits off went
+  through as +2.09 m³ in its first week. The UI shows the rate in use, and fills in the standard
+  one when *Fixed rate* or *Fixed per reading* is chosen without a value; 0 there stays "no
+  limit", as it was before.
+- *Fixed per reading* (`step`): `max_step` for every reading, however long since the last one —
+  the limit counters had before the rate, which some users find easier to tune ("how many
+  decimals may move between two checks"). Counters from before keep it unchanged (migration 14,
+  `db.keep_change_step`); after a restart a real rise waits for readings that agree, or Review.
 - Readings over the limit that agree (`agree_readings` in a row over `agree_s`, never lower, each
   step within the limit) are accepted, and learned from: a real jump while the readings were
   unsure, or a counter that goes faster than it ever did. Not when the jump is one wheel's step

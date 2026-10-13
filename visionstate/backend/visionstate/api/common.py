@@ -491,13 +491,15 @@ def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
 
 def limit_view(settings: dict, watch: change_limit.Watch) -> dict:
     """What a counter's limit is now: learned (per hour and day, from how many days; ``needed``
-    days before it is) and how much the next reading may go up (None: no limit)."""
+    days before it is; ``rate``: what "auto" allows per hour once learned) and how much the next
+    reading may go up (None: no limit)."""
     learned = watch.learned
     return {
         "days": watch.days,
         "needed": COUNTER_LIMIT["min_days"],
         "per_hour": learned.per_hour if learned else None,
         "per_day": learned.per_day if learned else None,
+        "rate": change_limit.learned_rate(learned),
         "allowed": change_limit.limit(settings, learned, watch.budget_s),
         "held": watch.held,
     }

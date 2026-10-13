@@ -326,19 +326,23 @@ First choose **what it looks like**:
 - **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new
   counters) learns it from the counter's own readings: the fastest it went up over ten minutes
   and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of
-  readings first and sets no limit until then; the Settings tab shows what it learned. *Fixed*
-  takes a rise per hour you choose; *No limit* rejects only a counter that reads lower.
-  The longer the counter was not seen — the app restarted or was updated, the camera was away,
-  the readings were unsure — the more it may have gone up, so a reading after a restart is
-  accepted. Time in which the counter was read clearly but too high does not count: a wheel
+  readings first; until then a rate per hour applies, which you may change — it starts at a
+  standard one (for a water meter with three decimals 0.04 m³ a minute) — and once learned, the
+  Settings tab shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
+  *Fixed per reading* the largest rise from one reading to the next, the same however long the
+  app was away (after a restart a real rise may wait for several readings to agree, or for your
+  answer in Review); *No limit* rejects only a counter that reads lower. Choosing *Fixed rate* or
+  *Fixed per reading* fills in the standard limit to start from.
+  With *Learn it* and *Fixed rate*, the longer the counter was not seen — the app restarted or
+  was updated, the camera was away, the readings were unsure — the more it may have gone up, so
+  a reading after a restart is accepted. Time in which the counter was read clearly but too high does not count: a wheel
   that is read one digit too high over and over stays rejected.
   A real jump while the app was watching (say the light failed during a shower) is accepted
   once several readings in a row agree — the Live tab says *Jump accepted* — unless the jump is
   exactly what one digit read wrong gives (0.1, 1, 10 … more): that waits in the Review queue.
   Answering *Read correctly*, or *Misread* with the right value, on the newest rejected reading
   makes that the counter's value, so it goes on from there. Counters set up before the limit
-  was learned keep the limit they had, turned into a rate (the old change per reading, per check
-  interval), or no limit.
+  could be learned keep the limit they had: *Fixed per reading* with the same change, or no limit.
 - **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
   the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the
