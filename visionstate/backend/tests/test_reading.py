@@ -13,11 +13,11 @@ from PIL import Image
 from sqlalchemy import select
 
 from visionstate import readers
-from visionstate.db import Database, Prediction, Sensor, keep_text_reader
+from visionstate.db import Database, Prediction, Sensor, keep_change_step, keep_text_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
-from visionstate.settings import KIND_READING, READING, VERSION, merge_reading
+from visionstate.settings import COUNTER_LIMIT, KIND_READING, READING, VERSION, merge_reading
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, counter_positions, render, render_counter
@@ -51,13 +51,15 @@ def test_parse(text, settings, expected):
 
 
 def test_implausible_readings():
-    counter = cfg(mode="counter", max_step=10)
-    assert implausible(100, None, counter) is None  # nothing to compare with yet
-    assert implausible(99, 100, counter) == "went down"
-    assert implausible(111, 100, counter) == "changed too much"
-    assert implausible(105, 100, counter) is None
+    counter = cfg(mode="counter", max_step=10)  # a counter's limit is change_limit's, not max_step
+    assert implausible(100, None, counter, 10) is None  # nothing to compare with yet
+    assert implausible(99, 100, counter, 10) == "went down"
+    assert implausible(111, 100, counter, 10) == "changed too much"
+    assert implausible(105, 100, counter, 10) is None
+    assert implausible(1000, 100, counter) is None  # no limit
     value = cfg(mode="value")
     assert implausible(1.2, 1.9, value) is None  # values may go down, no step limit set
+    assert implausible(1.2, 1.9, cfg(mode="value", max_step=0.5)) == "changed too much"
 
 
 def test_counter_digit_count():
@@ -348,6 +350,35 @@ def test_counters_made_before_the_wheel_reader_keep_the_text_reader(tmp_path):
     assert keep_text_reader(None) is None
 
 
+def test_counters_keep_their_change_limit_as_a_rate(tmp_path):
+    path = tmp_path / "old.db"
+    Database(path).init()
+    con = sqlite3.connect(path)
+    row = (
+        "INSERT INTO sensor (slug, name, kind, source_type, source, interval_s, threshold, debounce, enabled, "
+        "entity_prefix, publish, created_at, reading) VALUES (?, ?, 'reading', 'http', 'x', ?, 0.7, 2, 1, 0, 1, "
+        "'2026-10-01', ?)"
+    )
+    con.execute(row, ("water", "Water", 60, json.dumps({"mode": "counter", "decimals": 3, "max_step": 0.04})))
+    con.execute(row, ("gas", "Gas", 30, json.dumps({"mode": "counter", "max_step": 0})))
+    con.execute(row, ("price", "Price", 60, json.dumps({"mode": "value", "max_step": 5})))
+    con.execute("PRAGMA user_version = 13")  # as a database of 0.9.0
+    con.commit()
+    con.close()
+    db = Database(path)
+    db.init()
+    with db.session() as s:
+        kept = {r.slug: merge_reading(r.reading) for r in s.query(Sensor)}
+    # 0.04 m³ a minute is 2.4 m³ an hour; no limit stays no limit; values keep max_step.
+    assert (kept["water"]["change_limit"], kept["water"]["max_rate"]) == ("fixed", 2.4)
+    assert kept["gas"]["change_limit"] == "off"
+    assert kept["price"]["max_step"] == 5
+    assert keep_change_step({"mode": "counter", "change_limit": "auto"}, 60) == {
+        "mode": "counter",
+        "change_limit": "auto",
+    }
+
+
 def test_darkest_turns_coloured_digits_as_dark_as_black_ones():
     image = Image.new("RGB", (3, 1))
     image.putpixel((0, 0), (200, 30, 35))  # red digit
@@ -597,6 +628,79 @@ def test_restart_keeps_checking_against_the_last_value(settings):
             timeout=60,
         )
         assert client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "500"
+
+
+@requires_reader
+def test_counter_limit_over_time(settings, monkeypatch):
+    """A counter's limit: a misread that repeats stays out, time the app was down lets the value
+    on, readings that agree are accepted, and a value confirmed in Review is the new last value."""
+    monkeypatch.setitem(COUNTER_LIMIT, "agree_s", 2.0)
+    camera = DisplayCamera("00500")
+    reading = {"mode": "counter", "change_limit": "fixed", "max_rate": 360}  # 0.1 a second
+    body = {"name": "Meter", "kind": "reading", "source_type": "http", "source": "x", "interval_s": 1, "debounce": 1}
+    body["reading"] = reading
+    sent: dict[str, object] = {}
+
+    async def publish(topic, payload, retain=False):
+        sent[topic] = payload
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = camera
+        rt.mqtt.publish = publish
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]
+
+        def last():
+            return view()["last"] or {}
+
+        assert wait_for(lambda: view()["value"] == "500", timeout=60)
+        assert view()["limit"]["allowed"] is not None and view()["limit"]["needed"] == COUNTER_LIMIT["min_days"]
+
+        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow.
+        camera.text = "00600"
+        assert wait_for(lambda: last().get("value") == "600" and last().get("reason") == "changed too much", 30)
+        held = rt.live[sid].watch.budget_s
+        assert wait_for(lambda: len(rt.live[sid].watch.pending) >= 4, timeout=30)
+        assert view()["value"] == "500" and view()["limit"]["held"]
+        assert rt.live[sid].watch.budget_s == held
+
+        # The app was down for an hour: the counter went on, and that rise is accepted.
+        camera.text = "00650"
+        assert wait_for(lambda: last().get("value") == "650", timeout=30)
+        rt.live[sid].watch.seen_at -= 3600
+        assert wait_for(lambda: view()["value"] == "650", timeout=30)
+
+        # A real jump while it was watching (no whole step of a digit): accepted once readings agree.
+        camera.text = "00800"
+        assert wait_for(lambda: view()["value"] == "800", timeout=30)
+        assert sent["visionstate/meter/state"] == "800"
+
+        def agreed():
+            items = client.get("/api/v1/history", params={"sensor": sid, "limit": 50}).json()["items"]
+            return [h for h in items if h["published_key"] == "800" and h["probs"].get("agreed")]
+
+        assert wait_for(lambda: len(agreed()) == 1, timeout=10)  # the row is written after publishing
+
+        # Read lower (the 800 was wrong, say): confirmed in Review, it becomes the last value.
+        camera.text = "00700"
+        assert wait_for(lambda: last().get("reason") == "went down", timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 1, timeout=30)
+        newest = client.get("/api/v1/review").json()["items"][0]
+        assert newest["probs"]["reason"] == "went down"
+        assert client.post(f"/api/v1/review/{newest['id']}", json={"action": "read_ok"}).status_code == 200
+        assert wait_for(lambda: view()["value"] == "700", timeout=30)
+        assert sent["visionstate/meter/state"] == "700"
+    # After a restart it goes on from the confirmed value (which is not in the history as a value).
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        assert wait_for(
+            lambda: (client.get(f"/api/v1/sensors/{sid}").json()["reading"]["last"] or {}).get("reason") is None,
+            timeout=60,
+        )
+        assert client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "700"
 
 
 @requires_reader

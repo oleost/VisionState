@@ -85,6 +85,23 @@ export type ReadingType = 'display' | 'counter';
 /** What reads a mechanical counter: each wheel's position, or the wheels as text (OCR). */
 export type CounterReader = 'wheels' | 'ocr';
 
+/** Counters: how fast the value may go up — learned from its readings, a fixed rate, or no limit. */
+export type ChangeLimit = 'auto' | 'fixed' | 'off';
+
+/** A counter's limit as it is now (backend change_limit.py). */
+export interface CounterLimit {
+  /** Days with readings it learns from, and how many it needs before the learned limit applies. */
+  days: number;
+  needed: number;
+  /** Learned: the busiest rise per hour and per day (null until learned). */
+  per_hour: number | null;
+  per_day: number | null;
+  /** How much the last reading could go up (null: no limit). */
+  allowed: number | null;
+  /** Read with confidence over the limit since the last accepted reading. */
+  held: boolean;
+}
+
 export interface ReadingSettings {
   mode: ReadingMode;
   decimals: number;
@@ -95,7 +112,11 @@ export interface ReadingSettings {
   digits: number;
   /** Mechanical counters only: what reads the wheels. */
   counter_reader: CounterReader;
+  /** Values and times left: the largest change between two readings (0 = no limit). */
   max_step: number;
+  change_limit: ChangeLimit;
+  /** change_limit "fixed": how much the counter may go up per hour. */
+  max_rate: number;
   /** Share of accepted readings also sent to the review queue (rejected ones always go there). */
   spot_rate: number;
   /** Counters: the rate entity in Home Assistant is the change over about this many minutes. */
@@ -147,6 +168,8 @@ export interface ReadingResult {
   reason: string | null;
   /** A counter read one step below its value: the last wheel turning; the value stays, no rejection. */
   settling?: boolean;
+  /** A counter's readings over its limit agreed with each other: accepted after all. */
+  agreed?: boolean;
   at: number;
 }
 
@@ -155,6 +178,8 @@ export interface SensorReading extends ReadingSettings {
   value: string | null;
   last: ReadingResult | null;
   has_image: boolean;
+  /** Counters only. */
+  limit: CounterLimit | null;
 }
 
 /**
@@ -522,7 +547,7 @@ export interface AppConfig {
   faces: { max_people: number; max_faces_per_person: number; suggest_faces: number; stats_window: number };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'spot_rate' | 'rate_window_min', [number, number]>;
+  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   counter_readers: CounterReader[];

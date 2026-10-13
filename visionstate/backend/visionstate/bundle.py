@@ -235,7 +235,18 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             "meter": meter.strip()[: READING["export_meter_max_chars"]] or None,
             # How the sensor reads; nothing about where it is (no camera, name or region position).
             "settings": {
-                k: settings[k] for k in ("mode", "display", "digits", "counter_reader", "decimals", "unit", "max_step")
+                k: settings[k]
+                for k in (
+                    "mode",
+                    "display",
+                    "digits",
+                    "counter_reader",
+                    "decimals",
+                    "unit",
+                    "max_step",
+                    "change_limit",
+                    "max_rate",
+                )
             },
             "left_out": left_out,
             "readings": items,

@@ -84,6 +84,8 @@ READING_DISPLAYS = ("auto", "led", "lcd", "counter")
 COUNTER_READERS = ("wheels", "ocr")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
+# Counters: what limits how fast the value may go up (see READING_DEFAULTS["change_limit"]).
+READING_CHANGE_LIMITS = ("auto", "fixed", "off")
 READING_DEFAULTS = {
     "mode": "counter",
     "decimals": 0,  # digits after the decimal point; the reader's own dots and commas are ignored
@@ -92,7 +94,13 @@ READING_DEFAULTS = {
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
-    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
+    # Values and times left: the largest plausible change between two readings (0 = no limit).
+    # Counters use change_limit instead (see COUNTER_LIMIT).
+    "max_step": 0.0,
+    # Counters: how fast the counter may go up. "auto" learns it from the counter's own readings,
+    # "fixed" takes max_rate (per hour, in the counter's unit), "off" sets no limit.
+    "change_limit": "auto",
+    "max_rate": 0.0,
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
     "spot_rate": 0.0,
@@ -104,8 +112,33 @@ READING_LIMITS = {
     "decimals": (0, 4),
     "digits": (1, 12),
     "max_step": (0.0, 1e9),
+    "max_rate": (0.0, 1e9),
     "spot_rate": (0.0, 1.0),
     "rate_window_min": (1.0, 1440.0),
+}
+# The limit on how fast a counter may go up (change_limit.py). The time since the last accepted
+# reading allows more change, but only time the counter was not seen: down, or read unsure.
+# Readings that were read with confidence but went over the limit hold that time still, so a
+# misread that repeats can never wait its way through.
+COUNTER_LIMIT = {
+    # "auto": the largest rise over this window per day, and the day's total rise, of the last
+    # learn_days days; the second largest of them (one misread that slipped through does not
+    # count). Learned after min_days days with readings: a whole week, wash day and weekend.
+    "window_s": 600,
+    "learn_days": 14,
+    "min_days": 7,
+    "safety": 2.0,  # "auto": the learned rate and day times this
+    "margin_steps": 2,  # always allowed: this many steps of the last digit (a wheel half way)
+    # A gap between two readings longer than gap_checks intervals (at least gap_min_s) is time the
+    # counter was not seen (the app was down, the camera away).
+    "gap_checks": 3,
+    "gap_min_s": 300.0,
+    # Readings over the limit are accepted when this many in a row, over at least agree_s, agree
+    # with each other (never lower, each step within the limit) — unless the jump looks like one
+    # wheel or digit read wrong (a whole step of a higher digit): those wait for an answer in Review.
+    "agree_readings": 3,
+    "agree_s": 300.0,
+    "relearn_s": 3600.0,  # how often the learned limit is worked out again
 }
 # Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
 # why the last reading was rejected, as a lower-case key.

@@ -271,14 +271,56 @@ it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
-   going down, a mechanical counter read with another number of digits than it has wheels, or a
-   change above `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   going down, a mechanical counter read with another number of digits than it has wheels, a
+   counter going up faster than its limit (below), or another value changing more than
+   `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
    one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
    value stays, but it is no rejection (no history row, no review item, counted as accepted) —
    seen in a user's export, where one too-high value made every right reading after it a "went
    down" rejection. A right value typed in the review (`readers.right_value`) is taken as written
    with a point or comma, and digits only are placed with the configured decimals.
-   The last published value is restored from the history after a restart.
+   The last published value is restored from the history after a restart (or from
+   `reading_watch`, when that is newer: a counter's, or a value confirmed in Review).
+
+**Counter limit** (`change_limit.py`, `settings.COUNTER_LIMIT`): how much a counter may go up
+since a reading last confirmed its published value is a rate times the time it was *not seen*,
+plus two steps of the last digit. (Confirmed, not merely accepted: a reading still waiting for
+its debounce leaves the published value older than it, and during a long shower that is minutes.) A fixed `max_step` between two readings (what counters had until then) was both
+too loose and too tight: issue #40's water meter (0.04 m³ per one-minute reading = 2.4 m³/h, four
+times its busiest shower) rejected right readings after a 35-minute update.
+- *Not seen* is time the app was down (a pause longer than `gap_checks` intervals), and time the
+  readings were unsure. Once a reading was read with confidence over the limit (`held`), normal
+  pauses stop counting: otherwise a wheel misread over and over would get through after a while,
+  as the allowed rise grows. This is the reason the limit is not simply "rate × time since the
+  last accepted value".
+- *Learn it* (`auto`, the default for new counters): per local day `reading_stat` keeps the
+  largest rise over `window_s` (600 s) and the day's rise, from the accepted readings (each with
+  the lower of its value and the next one's, so one read too high adds nothing; published values
+  would put a whole shower into one step) — only over stretches where the counter was read all
+  the time, so a rise over a pause is never learned. The limit takes the
+  second-largest day of the last `learn_days`, so one misread that slipped through does not count,
+  times `safety`; for a long pause it is capped by that many busy days. It needs `min_days` days
+  (a whole week: wash day and weekend). On issue #40's data, ×2 left room above every right
+  reading (the largest was 1.1 × the learned rate). Replayed three times over with readings every
+  minute, 14 times away (35 min to two days), 15 stretches of unsure readings and six wheels read
+  a digit too high for 20–120 min: the fixed 0.04 per reading kept the value behind the meter for
+  528 hours; learned, 32 hours (the debounce during long showers, as with a fixed rate), it
+  learned 0.82 m³/h for a meter that ran at 0.75 at most, and after its first week no wrong
+  value was published. A wheel read too high right after a long time away does get through —
+  nothing tells it from water used meanwhile — and then the "went down" lock below applies.
+- Readings over the limit that agree (`agree_readings` in a row over `agree_s`, never lower, each
+  step within the limit) are accepted, and learned from: a real jump while the readings were
+  unsure, or a counter that goes faster than it ever did. Not when the jump is one wheel's step
+  (or nine of them) plus a plausible rise — what a misread wheel gives (on a digital display any
+  digit, 1–9 steps): those wait for an answer in Review.
+- Confirmed in Review (*read correctly* for an unsure or implausible reading, or a typed right
+  value) on a rejected reading newer than the last accepted one: that value becomes the last one
+  (`engine.reading.anchor_reading`). It is also the way out for a counter stuck above its real
+  value, the "went down" lock — never automatic, as Home Assistant takes a counter going down
+  for a reset.
+- The limit's state (`reading_watch`) is stored with every reading, so a restart knows how long
+  the app was away. Counters made before the limit (schema v14, and importing an older export:
+  `db.keep_change_step`) keep theirs as `fixed`: the old `max_step` per check interval, as a rate.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
 `wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one

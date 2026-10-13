@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from .. import detectors
+from ..change_limit import Watch
 from ..db import Person, Sensor
 from ..mqtt import SensorDescriptor
 from ..settings import (
@@ -233,6 +234,7 @@ class LiveState:
     # and (time, value) of accepted readings of a counter for its rate (see readers.counter_rate).
     reads: deque = field(default_factory=deque)
     rate_samples: deque = field(default_factory=deque)
+    watch: Watch = field(default_factory=Watch)  # counters: how much the value may go up next
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"

@@ -309,8 +309,8 @@ First choose **what it looks like**:
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
   five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
   wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
-  a limit on how much the value may change (Settings → Sensor output) catches a misread that is
-  too high. A reading exactly one step of the last digit below the value is the
+  a limit on how fast it may go up (see *Counter limit* below) catches a misread that is too
+  high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
@@ -319,10 +319,26 @@ First choose **what it looks like**:
   choose *Wheel reader* on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
-  mechanical counter is read with the wrong number of digits, or the value changes more than the
-  limit you set. Every rejected reading is listed in the **History** tab with the reason and
-  waits in the **Review** queue. A new value is published after 2 equal readings in a row
-  (adjustable).
+  mechanical counter is read with the wrong number of digits, a counter goes up faster than its
+  limit, or another value changes more than the limit you set. Every rejected reading is listed
+  in the **History** tab with the reason and waits in the **Review** queue. A new value is
+  published after 2 equal readings in a row (adjustable).
+- **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new
+  counters) learns it from the counter's own readings: the fastest it went up over ten minutes
+  and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of
+  readings first and sets no limit until then; the Settings tab shows what it learned. *Fixed*
+  takes a rise per hour you choose; *No limit* rejects only a counter that reads lower.
+  The longer the counter was not seen — the app restarted or was updated, the camera was away,
+  the readings were unsure — the more it may have gone up, so a reading after a restart is
+  accepted. Time in which the counter was read clearly but too high does not count: a wheel
+  that is read one digit too high over and over stays rejected.
+  A real jump while the app was watching (say the light failed during a shower) is accepted
+  once several readings in a row agree — the Live tab says *Jump accepted* — unless the jump is
+  exactly what one digit read wrong gives (0.1, 1, 10 … more): that waits in the Review queue.
+  Answering *Read correctly*, or *Misread* with the right value, on the newest rejected reading
+  makes that the counter's value, so it goes on from there. Counters set up before the limit
+  was learned keep the limit they had, turned into a rate (the old change per reading, per check
+  interval), or no limit.
 - **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
   the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the

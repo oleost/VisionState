@@ -890,8 +890,35 @@ test('a counter has a rate window for its rate entity', async ({ page, request }
     errors.expectNone();
   } finally {
     const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
-    const { value: _v, last: _l, has_image: _h, ...reading } = sensor.reading;
+    const { value: _v, last: _l, has_image: _h, limit: _lim, ...reading } = sensor.reading;
     await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, rate_window_min: 15 } } });
+  }
+});
+
+test('a counter learns how fast it may go up, or takes a fixed rate', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  await page.goto(`#/sensors/${id}/settings`);
+  const choice = page.getByLabel('Limit how fast the counter may go up');
+  await expect(choice).toHaveValue('auto');
+  await expect(page.getByText(/Learning from its readings: \d+ of \d+ days/)).toBeVisible();
+  await expect(page.getByLabel('Largest rise per hour')).toHaveCount(0);
+  await choice.selectOption('fixed');
+  await page.getByLabel('Largest rise per hour').fill('2.4');
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  try {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    expect([sensor.reading.change_limit, sensor.reading.max_rate]).toEqual(['fixed', 2.4]);
+    expect(sensor.reading.limit.allowed).not.toBeNull();
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-limit.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    const { value: _v, last: _l, has_image: _h, limit: _lim, ...reading } = sensor.reading;
+    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, change_limit: 'auto', max_rate: 0 } } });
   }
 });
 

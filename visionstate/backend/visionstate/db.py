@@ -27,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -50,6 +50,8 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     ],
     11: [("prediction", "sample_id", "INTEGER")],
     # 13: the people and their faces (new tables: person, face, face_embedding).
+    # 14: what a counter's limit learns per day (and a new table: reading_watch).
+    14: [("reading_stat", "peak", "FLOAT"), ("reading_stat", "total", "FLOAT")],
 }
 
 
@@ -74,10 +76,38 @@ def _keep_text_readers(conn: Connection) -> None:
             )
 
 
+def keep_change_step(reading: dict | None, interval_s: float) -> dict | None:
+    """Reading settings of a counter made before change_limit, with the limit it had kept.
+
+    Its ``max_step`` (the change allowed between two readings) becomes that much per interval,
+    as a rate per hour ("fixed"); a counter without one gets no limit ("off"), as before. A
+    counter that has ``change_limit`` and anything else are returned as they are.
+    """
+    if not isinstance(reading, dict) or reading.get("mode", "counter") != "counter" or "change_limit" in reading:
+        return reading
+    step = float(reading.get("max_step") or 0)
+    if step <= 0:
+        return {**reading, "change_limit": "off"}
+    return {**reading, "change_limit": "fixed", "max_rate": round(step * 3600 / max(interval_s, 1.0), 6)}
+
+
+def _keep_change_steps(conn: Connection) -> None:
+    rows = conn.execute(text("SELECT id, reading, interval_s FROM sensor WHERE reading IS NOT NULL")).all()
+    for sensor_id, raw, interval_s in rows:
+        reading = json.loads(raw) if isinstance(raw, str) else raw
+        kept = keep_change_step(reading, float(interval_s))
+        if kept is not reading:
+            conn.execute(
+                text("UPDATE sensor SET reading = :r WHERE id = :id"), {"r": json.dumps(kept), "id": sensor_id}
+            )
+
+
 # Changes to the data of existing databases, keyed on the version they upgrade to (after the columns).
 DATA_MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     # Counters made before 0.7.1b3 keep the text reader; new ones get the wheel reader.
     12: _keep_text_readers,
+    # Counters keep the change limit they had, now as a rate (see keep_change_step).
+    14: _keep_change_steps,
 }
 
 
@@ -227,6 +257,25 @@ class ReadingStat(Base):
     reads: Mapped[int] = mapped_column(Integer, default=0)
     accepted: Mapped[int] = mapped_column(Integer, default=0)
     rejected: Mapped[dict] = mapped_column(JSON, default=dict)  # reason -> count
+    # Counters, for the limit they learn (change_limit.learn): the largest rise over
+    # COUNTER_LIMIT["window_s"] and the total rise that day, while the counter was seen.
+    peak: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class ReadingWatch(Base):
+    """A counter's limit between readings (change_limit.Watch), so a restart knows how long it was
+    away, and the last accepted value of a reading sensor when it is newer than the history's
+    (a counter's, or a value confirmed in Review)."""
+
+    __tablename__ = "reading_watch"
+
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), primary_key=True)
+    value: Mapped[str | None] = mapped_column(String(64), nullable=True)  # accepted at accepted_at
+    seen_at: Mapped[float | None] = mapped_column(Float, nullable=True)  # epoch seconds
+    accepted_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    budget_s: Mapped[float] = mapped_column(Float, default=0.0)
+    held: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ModelInfo(Base):
