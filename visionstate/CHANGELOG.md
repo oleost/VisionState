@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.1b5
+
+### Fixed
+
+- **A reading sensor with the unit `m3` now shows its value in Home Assistant.** Home Assistant
+  only takes `m³` for water and gas, and dropped the whole value entity without a word — only the
+  rate and the diagnostics appeared. VisionState now sends the unit the way Home Assistant writes
+  it (`m3` → `m³`, `kwh` → `kWh`); a unit the chosen type does not take at all is sent without the
+  type, so the entity still appears (not in the Energy dashboard; the app's log says so). Sensors
+  whose entities already work are not changed.
+
+### Better
+
+- **A light waits 2 seconds before the frame by default** (was 1 second): an ESP32 camera at full
+  size needs about a second per picture, and with 1 second the frame read was often dark. Sensors
+  you already have keep their setting — raise *Wait before taking the frame* to 2 s if readings
+  come out dark.
+
 ## 0.9.1b4
 
 ### Fixed
