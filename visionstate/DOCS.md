@@ -300,6 +300,11 @@ First choose **what it looks like**:
 | **Value** | Prices and other numbers that go up and down | `measurement` (none for money, as Home Assistant requires) |
 | **Time left** | Countdowns like `1:25` on appliances | minutes (`1:25` = 85 min), device class *duration* |
 
+- **Unit** and **Home Assistant type**: Home Assistant only takes certain units for a type
+  (water: m³, L, gal, ft³, CCF, MCF). VisionState sends `m3` as `m³` and `kwh` as `kWh`; a unit
+  the type does not take at all is sent without the type, so the entity still appears, only not
+  in the Energy dashboard (the app's log says so).
+
 - **Digits after the decimal point** decide where the decimal point is. Dots and commas on the
   display are ignored, because a stray dot is the most common misread. When the test read shows
   a decimal point (for example `1234.5`), VisionState offers to set the matching number.

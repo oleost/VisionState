@@ -489,6 +489,11 @@ the version Home Assistant ships) instead of the occupancy class's house icon.
 **Reading sensors** publish the value on `sensor.<name>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
 `measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
+Home Assistant's MQTT discovery refuses an entity whose unit its device class does not take (exact
+match: `m3` with `water` made the value entity disappear without a word), so `mqtt.ha_unit` writes a
+unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`) and otherwise leaves the
+device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
+without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
 Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
 them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of

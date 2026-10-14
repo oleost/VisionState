@@ -164,6 +164,18 @@ READING_RATE_UNITS = {
     "m³": ("m³/h", "volume_flow_rate", 1.0),
     "L": ("L/min", "volume_flow_rate", 1 / 60),
 }
+# The units Home Assistant accepts per device class of READING_DEVICE_CLASSES (its sensor
+# DEVICE_CLASS_UNITS; classes not listed take any unit). MQTT discovery refuses an entity whose
+# unit is not in its class's list, exactly as written: "m3" or "kwh" make the entity disappear.
+HA_DEVICE_CLASS_UNITS = {
+    "energy": ("Wh", "kWh", "MWh", "GWh", "TWh", "mWh", "J", "kJ", "MJ", "GJ", "cal", "kcal", "Mcal", "Gcal", "thm"),
+    "water": ("m³", "L", "gal", "ft³", "CCF", "MCF"),
+    "gas": ("m³", "L", "ft³", "CCF", "MCF"),
+    "volume": ("m³", "L", "mL", "gal", "fl. oz.", "ft³", "CCF", "MCF"),
+    "duration": ("d", "h", "min", "s", "ms", "μs"),
+    "power": ("mW", "W", "kW", "MW", "GW", "TW"),
+    "temperature": ("°C", "°F", "K"),
+}
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
     # Quality tab: the periods it sums up (days, today included) and how many readings it lists.

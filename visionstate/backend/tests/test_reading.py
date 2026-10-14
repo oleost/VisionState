@@ -131,6 +131,32 @@ def test_discovery_for_reading_sensor():
     assert "state_class" not in price  # Home Assistant rejects measurement for money
 
 
+def test_discovery_writes_the_unit_as_home_assistant_takes_it():
+    """Home Assistant refuses a unit its device class does not take ("m3" for water): the entity
+    would be missing. Clear spellings are corrected, otherwise the device class is left out."""
+
+    def configs(reading):
+        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading))
+        return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
+
+    water = configs({"mode": "counter", "unit": "m3", "device_class": "water"})
+    assert (water["state"]["unit_of_measurement"], water["state"]["device_class"]) == ("m³", "water")
+    assert (water["rate"]["unit_of_measurement"], water["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
+    energy = configs({"mode": "counter", "unit": " kwh ", "device_class": "energy"})["state"]
+    assert (energy["unit_of_measurement"], energy["device_class"]) == ("kWh", "energy")
+    # "mwh" could be MWh or mWh, "dm³" is no water unit: sent without the device class.
+    for unit, device_class in (("mwh", "energy"), ("dm³", "water")):
+        state = configs({"mode": "counter", "unit": unit, "device_class": device_class})["state"]
+        assert state["unit_of_measurement"] == unit and "device_class" not in state
+        assert state["state_class"] == "total_increasing"
+    # Left alone: what Home Assistant already takes, so no entity changes its unit.
+    plain = configs({"mode": "counter", "unit": "m3"})
+    assert plain["state"]["unit_of_measurement"] == "m3" and plain["rate"]["unit_of_measurement"] == "m3/h"
+    assert configs({"mode": "value", "unit": "kr", "device_class": "monetary"})["state"]["unit_of_measurement"] == "kr"
+    no_unit = configs({"mode": "counter", "device_class": "water"})["state"]
+    assert no_unit["device_class"] == "water" and "unit_of_measurement" not in no_unit
+
+
 def test_diagnostic_entities_of_reading_sensors():
     """Raw reading, problem, accepted share for every reading sensor; a rate for counters only.
 
