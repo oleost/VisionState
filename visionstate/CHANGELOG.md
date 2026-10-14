@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.1b3
+
+### Fixed
+
+- **An object sensor no longer stops when the image of a taught box is gone** (issue #45, thanks
+  to @terryhonn for the report and @wzd8888 for the first fix). It showed *No such file or
+  directory* on every check. A box, or a state sensor's training image, whose file is missing or
+  unreadable is now left out — the log names it — and the sensor keeps working.
+
+### Better
+
+- **Training images are kept in the app's own storage**, next to the database that lists them,
+  so a Home Assistant backup of the app holds both. They were in the media folder, which the
+  app's backups — also the one Home Assistant makes before every update — do not include: after a
+  restore, the database could list images that were not there. The media folder is also shown
+  to every Home Assistant user by the media browser. Your images are copied over by themselves
+  after the update; the old copies in `/media/visionstate/samples` are removed 30 days later, so
+  going back to the backup made before the update still works until then. Backups of the app get
+  larger by the size of your training images (Settings → Storage shows it). History frames stay
+  in the media folder.
+- **Readings are held when the camera's picture changes size** (a camera that comes back from a
+  restart with another resolution shows something else in the region): *problem* becomes
+  `camera_changed`, Home Assistant gets a notification, and the sensor asks you to check the
+  region — **The region is right** or **Adjust the region**. It reads again by itself when the
+  size comes back.
+- **Export readings** also holds the rejected readings nobody answered, and each reading's
+  picture size, so an export shows the sensor's checks in order.
+
 ## 0.9.1b2
 
 ### Fixed
