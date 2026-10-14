@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1b4
+
+### Fixed
+
+- **Deleting a training image, a taught box or a face no longer shows an error** when the file
+  cannot be removed (in use, or no permission): it is gone from VisionState, and the log names
+  the file.
+- **Moving training images to the app's storage** skips an image you delete while it is being
+  copied, instead of waiting ten minutes to go on with the rest, and leaves no copy of it behind.
+
 ## 0.9.1b3
 
 ### Fixed
