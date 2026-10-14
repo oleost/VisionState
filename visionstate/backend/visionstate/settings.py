@@ -525,6 +525,14 @@ STORAGE_LIMITS = {
     "history_max_gb": (0.0, 1000.0),
 }
 
+# Training images moved from the media folder to the app's own storage (engine/history.py,
+# move_samples). The copies left in the media folder are removed this many days after the move: until
+# then, restoring the backup Home Assistant made before the update (it holds the app's storage, not
+# the media folder) gives the older version back with every image it knew.
+SAMPLES_MOVE = {
+    "keep_old_days": 30,
+}
+
 # --- Browsing the history (the History page and each sensor's History tab) ---------------
 
 HISTORY = {
@@ -696,7 +704,19 @@ class Settings:
 
     @property
     def samples_dir(self) -> Path:
+        """Training images (and the boxes taught to object sensors): in the app's own storage, like
+        the database that lists them, so a backup holds both."""
+        return self.data_dir / "samples"
+
+    @property
+    def old_samples_dir(self) -> Path:
+        """Where training images were kept before they moved to ``samples_dir`` (read until moved)."""
         return self.media_dir / "samples"
+
+    @property
+    def sample_thumbs_dir(self) -> Path:
+        """Thumbnails of training images: next to them, left out of backups (made again when asked for)."""
+        return self.data_dir / "thumbs" / "sample"
 
     @property
     def history_dir(self) -> Path:
@@ -717,6 +737,7 @@ class Settings:
             self.heads_dir,
             self.faces_dir,
             self.samples_dir,
+            self.sample_thumbs_dir,
             self.history_dir,
             self.thumbs_dir,
         ):

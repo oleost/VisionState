@@ -264,9 +264,9 @@ everyone.
   stay. Deleting a sensor keeps the faces taught on it. Turned off on every sensor, the face model
   is let go from memory; **Settings → AI model → Compare and manage the models** can then delete
   its file.
-- **Where faces are kept**: in the app's own storage, not in the media folder (which Home
-  Assistant's media browser shows to every user) — so they are in Home Assistant backups: keep
-  those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
+- **Where faces are kept**: in the app's own storage, like training images, not in the media
+  folder (which Home Assistant's media browser shows to every user) — so they are in Home Assistant
+  backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
   person; an export never contains them.
 
 ## Reading sensors
@@ -507,10 +507,18 @@ How long history is kept is set under **Settings → Storage** (below).
 
 ## Backup, export and import
 
-- Settings, the database and trained models live in the app's data folder and are part of
-  Home Assistant backups.
-- Training images and history frames are stored in `/media/visionstate` (the beta app uses
-  `/media/visionstate_beta`).
+- Settings, the database, trained models and **training images** (also the boxes taught to object
+  sensors and the taught faces) live in the app's own storage and are part of Home Assistant
+  backups of the app, so a restore brings back what you taught together with its images.
+- **History frames** are stored in `/media/visionstate` (the beta app uses
+  `/media/visionstate_beta`); they are only in a backup that includes the media folder.
+- Older versions kept training images in `/media/visionstate/samples`. They are copied to the
+  app's own storage by themselves after the update; the copies in the media folder are removed
+  30 days later (until then, going back to the backup made before the update still finds them).
+  Images there that no sensor uses are left alone and can be deleted by hand.
+- A training image that has gone missing (for example after restoring a backup made without it)
+  is left out of training and of what an object sensor was taught; the log names it, and the
+  sensor keeps working.
 - **Settings → Storage** shows how much space history frames and training images use and how
   much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
   reached first; the oldest frames are removed first, frames waiting for review last (they are

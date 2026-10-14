@@ -76,7 +76,10 @@ class TrainingMixin(RuntimeBase):
         cfg, samples, labels = self._labelled_samples(sensor_id)
         if cfg is None or cfg.kind != KIND_STATES:
             return
-        vectors = self.vectors_for(cfg, samples)
+        kept, vectors = self.vectors_for(cfg, samples)
+        if len(kept) < len(samples):  # images gone: trained on the others
+            label_of = {x.id: label for x, label in zip(samples, labels, strict=True)}
+            samples, labels = kept, [label_of[x.id] for x in kept]
         with self.db.session() as s:
             info = s.get(ModelInfo, sensor_id)
             version = (info.version if info else 0) + 1
@@ -113,11 +116,15 @@ class TrainingMixin(RuntimeBase):
             f"{result.accuracy:.1%}" if result.accuracy is not None else "n/a",
         )
 
-    def vectors_for(self, cfg: SensorConfig, samples: list[Sample]) -> np.ndarray:
-        """Embeddings for samples, computing and caching the missing ones."""
+    def vectors_for(self, cfg: SensorConfig, samples: list[Sample]) -> tuple[list[Sample], np.ndarray]:
+        """Embeddings for samples, computing and caching the missing ones.
+
+        Returns the samples that have one: a sample whose image is gone or unreadable (a backup
+        restored without the images) is left out instead of failing the training.
+        """
         embedder = self.embedder
         if embedder is None or not samples:
-            return np.zeros((0, 0), dtype=np.float32)
+            return [], np.zeros((0, 0), dtype=np.float32)
         backbone_id = embedder.spec.id
         keys = {s.id: imaging.roi_key(cfg.roi if s.use_roi else None) for s in samples}
         with self.db.session() as s:
@@ -128,12 +135,19 @@ class TrainingMixin(RuntimeBase):
                 r.sample_id: np.frombuffer(r.vector, dtype=np.float32) for r in rows if r.roi_key == keys[r.sample_id]
             }
         missing = [sample for sample in samples if sample.id not in cached]
+        gone = []
         for start in range(0, len(missing), EMBED_BATCH):
-            batch = missing[start : start + EMBED_BATCH]
-            images = []
-            for sample in batch:
-                image = imaging.load(self.storage.sample_path(cfg.id, sample.filename))
+            batch, images = [], []
+            for sample in missing[start : start + EMBED_BATCH]:
+                try:
+                    image = imaging.load(self.storage.sample_path(cfg.id, sample.filename))
+                except OSError:  # missing, or not a whole image
+                    gone.append(sample.id)
+                    continue
+                batch.append(sample)
                 images.append(imaging.crop(image, cfg.roi) if sample.use_roi else image)
+            if not images:
+                continue
             vectors = embedder.embed(images)
             with self.db.session() as s:
                 for sample, vector in zip(batch, vectors, strict=False):
@@ -146,14 +160,23 @@ class TrainingMixin(RuntimeBase):
                         )
                     )
                     cached[sample.id] = vector
-        return np.stack([cached[sample.id] for sample in samples])
+        if gone:
+            log.warning(
+                "Sensor %s: %d training images are missing or unreadable and left out: %s", cfg.slug, len(gone), gone
+            )
+            samples = [sample for sample in samples if sample.id in cached]
+        if not samples:
+            return [], np.zeros((0, 0), dtype=np.float32)
+        return samples, np.stack([cached[sample.id] for sample in samples])
 
     def suggest(self, cfg: SensorConfig, samples: list[Sample]) -> dict[int, tuple[str, float]]:
         """Predicted state for (unlabelled) samples, used as upload suggestions."""
         head = self.heads.get(cfg.id)
         if not samples or head is None or self.embedder is None or head.backbone != self.embedder.spec.id:
             return {}
-        vectors = self.vectors_for(cfg, samples)
+        samples, vectors = self.vectors_for(cfg, samples)
+        if not samples:
+            return {}
         result = {}
         for sample, probs in zip(samples, head.predict(vectors, cfg.state_keys), strict=False):
             key, p = max(probs.items(), key=lambda kv: kv[1])

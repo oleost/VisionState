@@ -376,6 +376,12 @@ class Database:
                     index.create(conn, checkfirst=True)
             conn.execute(text(f"PRAGMA user_version = {SCHEMA_VERSION}"))
 
+    @staticmethod
+    def after_commit(session: Session, action: Callable[[], None]) -> None:
+        """Run ``action`` once ``session`` is committed, never when it is rolled back: a file is
+        removed only together with the row that lists it."""
+        event.listen(session, "after_commit", lambda _session: action(), once=True)
+
     @contextmanager
     def session(self) -> Iterator[Session]:
         session = self._factory()

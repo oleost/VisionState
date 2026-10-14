@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, timedelta
+from functools import partial
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from PIL import Image
@@ -243,7 +244,7 @@ def delete_examples(rt: Runtime, s: Session, sensor_id: int, where: list[ColumnE
         select(Sample).where(Sample.sensor_id == sensor_id, Sample.object_label.is_not(None), *where)
     ).all()
     for row in rows:
-        rt.storage.delete_sample(sensor_id, row.id, row.filename)
+        rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, row.id, row.filename))
         s.delete(row)
     return len(rows)
 

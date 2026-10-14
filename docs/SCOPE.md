@@ -610,9 +610,23 @@ loads.
 |---|---|---|
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
-| Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
-| The people's taught faces (crops, shared by every sensor) | `/data/faces/` — not in the media folder, which every Home Assistant user can browse | Yes |
-| History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+| Training images (and boxes taught to object sensors, as crops) | `/data/samples/<sensor>/` | Yes |
+| Thumbnails of training images | `/data/thumbs/sample/` | Excluded (made again when asked for) |
+| The people's taught faces (crops, shared by every sensor) | `/data/faces/` | Yes |
+| History frames | `/media/visionstate/history/` (beta: `/media/visionstate_beta`) | With the media folder. Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+
+What the user taught lives in `/data`, next to the database that lists it: Home Assistant backs up
+an app's `/data` (also by itself before every update) but not the media folder, so training
+images in the media folder came back without their rows, or rows without their images, after a
+restore (issue #45). The media folder is also shown to every Home Assistant user by the media
+browser. Only the history stays there: large, removed by its limits, fine to lose. Training images
+are a few hundred small JPEGs per sensor at most.
+
+Versions up to 0.9.1b2 kept training images in the media folder. They are read there until they
+are copied (`engine.HistoryMixin.move_samples`, in the clean-up loop, so start-up is not held up);
+the old copies stay for `SAMPLES_MOVE["keep_old_days"]` after the first copy, so restoring the
+backup made before the update still gives the older version its images, then they are removed.
+Files no sensor lists are left in the media folder.
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
 frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):

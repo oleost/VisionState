@@ -125,9 +125,14 @@ error is kept in `LiveState.error` and shown in the UI.
   `face_embedding` cache: the people taught by face, shared by every sensor).
 - **Faces** (`<data>/faces/`): crops of the people's taught faces — in the app's own storage, not
   the media folder (see `storage.Storage.face_path`).
-- **Files** (`<media>/`): `samples/<sensor>/` (training images; for object sensors the crops of
-  taught boxes), `history/<sensor>/`, `thumbs/`; `<data>/heads/` (trained heads), `<data>/models/`
-  (downloaded models, left out of backups).
+- **Files**: `<data>/samples/<sensor>/` (training images; for object sensors the crops of taught
+  boxes — next to the database that lists them, so a backup holds both), `<data>/thumbs/sample/`,
+  `<data>/heads/` (trained heads), `<data>/models/` (downloaded models; models and thumbnails are
+  left out of backups); `<media>/history/<sensor>/` and `<media>/thumbs/history/`. Versions before
+  the move kept training images in `<media>/samples/`: they are read there until
+  `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed
+  only after the row that lists it (`db.Database.after_commit`), and an image that is gone anyway
+  is left out of training and of the taught boxes instead of stopping the sensor.
 - **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
   `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
   `prediction` rows (see `db.py`).

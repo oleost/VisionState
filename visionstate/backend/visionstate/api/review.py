@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from functools import partial
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request
@@ -184,7 +185,7 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
         sample = s.get(Sample, row.sample_id) if row.sample_id is not None else None
         if sample is not None and sample.sensor_id == sensor_id:
             if state_id is None:
-                rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
+                rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, sample.id, sample.filename))
                 s.delete(sample)
                 row.sample_id = None
             else:
@@ -232,10 +233,10 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body
         row.reviewed = True
         row.sample_id = None
         if taught is not None and is_face and (face := s.get(Face, taught)) is not None:
-            rt.storage.delete_face(face.filename)  # the face the first answer taught
+            rt.db.after_commit(s, partial(rt.storage.delete_face, face.filename))  # the face the first answer taught
             s.delete(face)
         elif taught is not None and not is_face and (sample := s.get(Sample, taught)) is not None:
-            rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
+            rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, sample.id, sample.filename))
             s.delete(sample)
     if taught is not None:
         if is_face:
