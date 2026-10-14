@@ -485,6 +485,7 @@ def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
         "value": live.debouncer.published if live else None,
         "last": live.reading if live else None,
         "has_image": bool(live and live.reading_image),
+        "camera_changed": live.camera_changed if live else None,
         "limit": limit_view(settings, live.watch) if live and settings["mode"] == "counter" else None,
     }
 

@@ -106,7 +106,8 @@ itself (`__main__.py`).
   `/set?state=open|closed|partial`, `/set?night=1`), `/photo/<name>.jpg` (the CC0 photos from
   `backend/tests/assets`, for object sensors), `/display.jpg?text=12:05&style=lcd|led` (a drawn
   seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
-  counter; `.5` = the last wheel half way to the next digit).
+  counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
+  `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.

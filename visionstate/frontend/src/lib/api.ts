@@ -158,6 +158,8 @@ export const api = {
     request<Sensor>(`sensors/${id}`, send('PATCH', body)),
   deleteSensor: (id: number) => request<void>(`sensors/${id}`, send('DELETE')),
   classify: (id: number) => request(`sensors/${id}/classify`, send('POST')),
+  /** A reading sensor's camera changed its picture size and the region is still right. */
+  acceptPicture: (id: number) => request(`sensors/${id}/accept-picture`, send('POST')),
   retrain: (id: number) => request(`sensors/${id}/retrain`, send('POST')),
 
   async frame(id: number, cached = false): Promise<Frame> {

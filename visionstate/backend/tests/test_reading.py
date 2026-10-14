@@ -404,10 +404,16 @@ class CounterCamera:
 
     def __init__(self, value: float):
         self.value = value
+        self.wider = 0  # pixels added on the right: a camera that came back with another picture size
 
     async def grab(self, source_type, source):
+        image = render_counter(self.value)
+        if self.wider:
+            wide = Image.new("RGB", (image.width + self.wider, image.height), (40, 40, 40))
+            wide.paste(image, (0, 0))
+            image = wide
         buf = io.BytesIO()
-        render_counter(self.value).save(buf, format="JPEG", quality=92)
+        image.save(buf, format="JPEG", quality=92)
         return buf.getvalue()
 
     async def close(self):
@@ -801,6 +807,96 @@ def test_counter_sensor_flow(settings):
         assert good["text"] == "0089941" and good["value"] == "89.941" and good["wrong_digit_count"] is False
         bad = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "digits": 8}}).json()
         assert bad["wrong_digit_count"] is True
+
+
+class NoticeHa:
+    """Home Assistant stand-in that records the notifications."""
+
+    enabled = True
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_service(self, domain, service, data):
+        self.calls.append((service, data))
+
+    async def app_path(self):
+        return "/app/abc_visionstate"
+
+    async def close(self):
+        pass
+
+
+@requires_reader
+def test_camera_changed_holds_readings(settings):
+    """A camera that comes back with another picture size holds the readings until it is checked."""
+    camera = CounterCamera(89931)
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "change_limit": "off"}
+    body = {
+        "name": "Water meter",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "http://fake",
+        "roi": counter_box(7),
+        "reading": reading,
+        "interval_s": 3600,
+        "debounce": 1,
+    }
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber, rt.ha = camera, NoticeHa()
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]
+
+        def check() -> None:
+            at = (view()["last"] or {}).get("at")
+            client.post(f"/api/v1/sensors/{sid}/classify")
+            assert wait_for(lambda: (view()["last"] or {}).get("at") != at, timeout=30)
+
+        def history() -> list[dict]:
+            return client.get("/api/v1/history", params={"sensor": sid}).json()["items"]
+
+        assert wait_for(lambda: view()["value"] == "89.931", timeout=60)
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size == [800, 360]
+
+        # Another size: not read, the value stays, the frame is kept once, Home Assistant is told.
+        camera.wider, camera.value = 400, 89990
+        rows = len(history())
+        check()
+        check()
+        got = view()
+        assert got["value"] == "89.931" and got["last"]["reason"] == "camera changed"
+        assert got["camera_changed"]["from"] == [800, 360] and got["camera_changed"]["to"] == [1200, 360]
+        assert wait_for(lambda: len(history()) == rows + 1)
+        service, data = rt.ha.calls[-1]
+        assert service == "create" and "800×360 to 1200×360" in data["message"]
+        assert data["notification_id"] == READING["camera_notification_id"] + "water_meter"
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["verified"]["waiting"] == 0  # nothing to review: the card on the sensor asks
+
+        # Back to its size: reading again by itself, the notification goes.
+        camera.wider = 0
+        check()
+        assert view()["camera_changed"] is None and view()["value"] == "89.990"
+        assert rt.ha.calls[-1][0] == "dismiss"
+
+        # Changed again, and the user says the region is still right: the new size is the one.
+        camera.wider, camera.value = 400, 89995
+        check()
+        assert view()["camera_changed"] is not None
+        assert client.post(f"/api/v1/sensors/{sid}/accept-picture").status_code == 200
+        assert wait_for(lambda: view()["camera_changed"] is None, timeout=30)
+        assert rt.ha.calls[-1][0] == "dismiss"
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size == [1200, 360]
+
+        # A new region is drawn on the picture as it is now.
+        client.patch(f"/api/v1/sensors/{sid}", json={"roi": {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5}})
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size is None
 
 
 @requires_reader

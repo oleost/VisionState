@@ -226,6 +226,8 @@ the shift of the region against a reference frame by phase correlation (numpy FF
 OpenCV) and move the region along. AI-on-the-edge does this with two reference marks the user
 picks. Doing it automatically, on the area around the region, needs no user step. It must check
 the correlation peak and skip frames where it is weak (light changes, IR switching).
+A camera that comes back with another picture size is already caught without this (readings held,
+"camera changed", [`SCOPE.md`](SCOPE.md) §5); C3 is for a picture that moved at the same size.
 
 ### C4. Perspective correction
 

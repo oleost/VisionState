@@ -14,7 +14,7 @@
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
+  import { CAMERA_CHANGED, NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
 
   let sensors = $state<Sensor[] | null>(null);
   let importInput: HTMLInputElement;
@@ -120,6 +120,8 @@
               <span class="spacer"></span>
               {#if s.training}<span class="chip info">Training…</span>{:else if facesBusy(s)}<span class="chip info"
                   >{facesBusy(s)}</span
+                >{:else if s.reading?.camera_changed}<span class="chip warn" title={CAMERA_CHANGED.help}
+                  >{CAMERA_CHANGED.label}</span
                 >{:else}<span class="chip {status.tone}">{status.label}</span>{/if}
             </div>
             <div class="col" style="gap:2px">

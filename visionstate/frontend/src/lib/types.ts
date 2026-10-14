@@ -183,6 +183,8 @@ export interface SensorReading extends ReadingSettings {
   value: string | null;
   last: ReadingResult | null;
   has_image: boolean;
+  /** The camera's picture has another size than the region was drawn on: readings are held. */
+  camera_changed: { from: [number, number]; to: [number, number]; since: number } | null;
   /** Counters only. */
   limit: CounterLimit | null;
 }

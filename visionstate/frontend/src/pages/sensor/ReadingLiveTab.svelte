@@ -6,7 +6,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct } from '../../lib/format';
   import { READING_MODE_INFO, TRIGGER_SOURCES } from '../../lib/ui';
-  import { REJECT_REASONS, readingText, readingUnit } from '../../lib/reading';
+  import { CAMERA_CHANGED_REASON, REJECT_REASONS, readingText, readingUnit } from '../../lib/reading';
   import { href, paths } from '../../lib/router.svelte';
   import type { Sensor } from '../../lib/types';
 
@@ -39,6 +39,8 @@
             <span class="danger-text">{sensor.live.error}</span>
           {:else if !last}
             <span class="muted">Waiting for the first reading…</span>
+          {:else if last.reason === CAMERA_CHANGED_REASON}
+            Not read: the camera's picture changed size <span class="faint"> · {ago(last.at)}</span>
           {:else}
             Read <span class="mono">“{last.text || '—'}”</span> · {pct(last.score)} sure
             <span class="faint"> · {ago(last.at)}</span>
@@ -80,7 +82,10 @@
     <section class="card pad col value-card">
       <span class="eyebrow">{READING_MODE_INFO[reading.mode].title}</span>
       <span class="value mono">{readingText(sensor)}</span>
-      {#if last?.reason}
+      {#if last?.reason === CAMERA_CHANGED_REASON}
+        <span class="chip warn">Not read: the camera's picture changed size</span>
+        <span class="xsmall muted">The value above stays.</span>
+      {:else if last?.reason}
         <span class="chip warn">Last reading rejected: {REJECT_REASONS[last.reason] ?? last.reason}</span>
         <span class="xsmall muted">Read “{last.text || '—'}”{last.value ? ` (${last.value} ${readingUnit(reading)})` : ''}; the value above stays.</span>
       {:else if last?.agreed}

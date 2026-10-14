@@ -53,7 +53,7 @@
   const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
   const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
   const readingSensor = isReadingSensor(initial);
-  const { value: _v, last: _l, has_image: _h, limit: _lim, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
+  const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);

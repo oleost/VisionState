@@ -147,7 +147,15 @@ COUNTER_LIMIT = {
 }
 # Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
 # why the last reading was rejected, as a lower-case key.
-READING_PROBLEMS = ("ok", "nothing_read", "unsure", "wrong_digit_count", "went_down", "changed_too_much")
+READING_PROBLEMS = (
+    "ok",
+    "nothing_read",
+    "unsure",
+    "wrong_digit_count",
+    "went_down",
+    "changed_too_much",
+    "camera_changed",
+)
 # Unit of a counter -> (unit of its rate, Home Assistant device class, factor from "per hour").
 # Other units get "<unit>/h" without a device class.
 READING_RATE_UNITS = {
@@ -186,6 +194,8 @@ READING = {
     "export_max_mb": 24,
     "export_meter_max_chars": 300,  # the optional "What meter is this?" text
     "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
+    # The notification in Home Assistant when a camera's picture changed size (+ the sensor's slug)
+    "camera_notification_id": f"{APP_SLUG}_camera_changed_",
 }
 
 DETECTION = {

@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { api } from '../lib/api';
   import { shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
+  import CameraChanged from '../lib/components/CameraChanged.svelte';
   import ExportButton from '../lib/components/ExportButton.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import HistoryView from '../lib/components/history/HistoryView.svelte';
@@ -117,6 +118,9 @@
   </header>
 
   <div class="page">
+    {#if sensor.reading?.camera_changed}
+      <div class="changed"><CameraChanged {sensor} onSettings={tab === 'settings'} onchange={load} /></div>
+    {/if}
     {#if tab === 'live' && isReadingSensor(sensor)}
       <ReadingLiveTab {sensor} onchange={load} />
     {:else if tab === 'live'}
@@ -194,6 +198,9 @@
   }
   nav a:hover {
     color: var(--c-text);
+  }
+  .changed {
+    margin-bottom: var(--space-5);
   }
   .count {
     min-width: 18px;

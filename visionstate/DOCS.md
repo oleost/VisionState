@@ -343,6 +343,14 @@ First choose **what it looks like**:
   Answering *Read correctly*, or *Misread* with the right value, on the newest rejected reading
   makes that the counter's value, so it goes on from there. Counters set up before the limit
   could be learned keep the limit they had: *Fixed per reading* with the same change, or no limit.
+- **Camera changed:** the region is kept as a part of the picture, so a camera that comes back
+  from a restart with another picture size (some ESP32 cameras fall back to their default size,
+  and also show another part of what they see) would make the region cover something else.
+  VisionState notices it: the readings are held (the value stays, *problem* is
+  `camera_changed`), the sensor shows a card and Home Assistant a notification. It goes on by
+  itself when the size is back. Otherwise look at the region on the Live tab: **The region is
+  right** reads again at the new size, **Adjust the region** opens Settings, where a new region
+  is drawn on the picture as it is now. Only reading sensors with a region are checked.
 - **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
   the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the
@@ -375,7 +383,7 @@ First choose **what it looks like**:
   | Entity | What it is |
   |---|---|
   | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
-  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`) |
+  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`, `camera_changed`) |
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
   | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |

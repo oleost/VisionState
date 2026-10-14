@@ -890,7 +890,7 @@ test('a counter has a rate window for its rate entity', async ({ page, request }
     errors.expectNone();
   } finally {
     const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
-    const { value: _v, last: _l, has_image: _h, limit: _lim, ...reading } = sensor.reading;
+    const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...reading } = sensor.reading;
     await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, rate_window_min: 15 } } });
   }
 });
@@ -925,7 +925,7 @@ test('a counter learns how fast it may go up, or takes a fixed rate or change pe
     errors.expectNone();
   } finally {
     const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
-    const { value: _v, last: _l, has_image: _h, limit: _lim, ...reading } = sensor.reading;
+    const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...reading } = sensor.reading;
     await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, change_limit: 'auto', max_rate: 0, max_step: 0 } } });
   }
 });
@@ -1448,4 +1448,48 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .butch');
   errors.expectNone();
+});
+
+test('a camera that changed its picture size holds the readings until the region is checked', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const camera = `size-${info.project.name}`; // its own picture size: the projects run at the same time
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: `Resized ${info.project.name}`,
+      kind: 'reading',
+      source_type: 'http',
+      source: `${COUNTER_URL(89931)}&camera=${camera}`,
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, change_limit: 'off' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+  const reading = async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading;
+  try {
+    await expect.poll(async () => (await reading()).value, { timeout: 60_000 }).toBe('89.931');
+    await request.get(`${CAMERA_URL}/set?wider=400&camera=${camera}`);
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(async () => (await reading()).camera_changed?.to, { timeout: 30_000 }).toEqual([1200, 360]);
+
+    await page.goto('#/');
+    await expect(page.locator('.sensor', { hasText: `Resized ${info.project.name}` }).getByText('Camera changed')).toBeVisible();
+    await page.goto(`#/sensors/${id}/live`);
+    const notice = page.getByTestId('camera-changed');
+    await expect(notice).toContainText('from 800×360 to 1200×360 pixels');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .notice');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'camera-changed.png'), fullPage: true });
+    await expect(notice.getByRole('link', { name: 'Adjust the region' })).toHaveAttribute('href', `#/sensors/${id}/settings`);
+
+    await press(notice.getByRole('button', { name: 'The region is right' }), info);
+    await expect(notice).toHaveCount(0, { timeout: 30_000 });
+    expect((await reading()).camera_changed).toBeNull();
+    errors.expectNone();
+  } finally {
+    await request.get(`${CAMERA_URL}/set?wider=0&camera=${camera}`);
+    await request.delete(`api/v1/sensors/${id}`);
+  }
 });

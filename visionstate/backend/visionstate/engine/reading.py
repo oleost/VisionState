@@ -13,10 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import change_limit, imaging, readers
-from ..db import Prediction, ReadingStat, ReadingWatch
+from ..db import Prediction, ReadingStat, ReadingWatch, Sensor
 from ..mqtt import rate_unit, topics
 from ..redact import redact
-from ..settings import COUNTER_LIMIT, READING, VERSION
+from ..settings import COUNTER_LIMIT, READING, REMINDER, VERSION
 from .base import RuntimeBase
 from .logic import reading_verdict
 from .models import ModelsMixin
@@ -24,6 +24,8 @@ from .publishing import PublishingMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
+
+CAMERA_CHANGED = "camera changed"  # the rejection reason while a camera's picture has another size
 
 
 class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
@@ -47,6 +49,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             restored = await asyncio.to_thread(self._restore_reading, cfg.id, live.watch)
             if live.debouncer.published is None:
                 live.debouncer.published = restored
+        if await self._camera_changed(cfg, image, lit):
+            return
         try:
             text, used = await self.read_number(image, cfg.roi, settings)
         except Exception as err:  # noqa: BLE001 - reader missing or failed to load
@@ -100,6 +104,79 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             learned = change_limit.observe(watch, now, value, cfg.interval_s, agreed)
         await self._publish_reading(cfg, image, reader_jpeg, text, shown, reason, now)
         await self._keep_reading(cfg, image, text, shown, reason, changed, lit, learned)
+
+    async def _camera_changed(self, cfg: SensorConfig, image: Image.Image, lit: bool) -> bool:
+        """Hold the readings while the camera's picture has another size than the region was drawn on.
+
+        The region is stored as a share of the picture, so a camera that comes back from a restart
+        with another size (an ESP32 camera falling back to its default, which also crops another
+        part of its sensor) makes the region show something else, and the reader reads that. The
+        first frame after the region or source changed sets the size (db.Sensor.frame_size). A
+        frame of another size is not read: the last value stays, the problem is "camera_changed",
+        the frame is kept in the history once and Home Assistant gets a notification. It ends by
+        itself when the size is back, or when the user accepts the new picture or changes the
+        region (both clear the stored size). Returns whether the readings are held.
+        """
+        live = self.live_state(cfg.id)
+        size = list(image.size)
+        known = cfg.frame_size
+        if known is None:
+            await asyncio.to_thread(self._set_frame_size, cfg.id, size)
+        if known is None or known == size or cfg.roi is None:  # the whole picture: nothing moves
+            if live.camera_changed is not None:
+                log.info("%s: reading again, with the camera's picture at %dx%d", cfg.name, *size)
+                live.camera_changed = None
+                await self.camera_notice(cfg, None)
+            return False
+        now = time.time()
+        held = live.camera_changed
+        if held is None or held["to"] != size:
+            log.warning(
+                "%s: the camera's picture changed from %dx%d to %dx%d: readings are held until the region is checked",
+                cfg.name,
+                *known,
+                *size,
+            )
+            live.camera_changed = held = {"from": known, "to": size, "since": now}
+            details = {"text": "", "value": None, "reason": CAMERA_CHANGED, "roi": cfg.roi, "app": VERSION, "lamp": lit}
+            await asyncio.to_thread(self._record_reading, cfg.id, image, None, 0.0, details, False)
+            await self.camera_notice(cfg, held)
+        live.reading = {"text": "", "score": 0.0, "value": None, "reason": CAMERA_CHANGED, "settling": False, "at": now}
+        crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
+        live.reading_image = await asyncio.to_thread(imaging.encode_jpeg, crop, 85)
+        await asyncio.to_thread(self._count_reading, cfg.id, CAMERA_CHANGED)
+        await self._publish_reading(cfg, image, live.reading_image, readers.Text("", 0.0), None, CAMERA_CHANGED, now)
+        return True
+
+    def _set_frame_size(self, sensor_id: int, size: list[int]) -> None:
+        with self.db.session() as s:
+            sensor = s.get(Sensor, sensor_id)
+            if sensor is not None:
+                sensor.frame_size = size
+
+    async def camera_notice(self, cfg: SensorConfig, held: dict | None) -> None:
+        """The notification in Home Assistant that a camera's picture changed (None: take it away)."""
+        if not self.ha.enabled:
+            return
+        notification_id = READING["camera_notification_id"] + cfg.slug
+        try:
+            if held is None:
+                await self.ha.call_service("persistent_notification", "dismiss", {"notification_id": notification_id})
+                return
+            text = (
+                f"{cfg.name}: the camera's picture changed from {held['from'][0]}×{held['from'][1]} to "
+                f"{held['to'][0]}×{held['to'][1]} pixels, so the region may show something else. "
+                "Readings are held until the size is back, or until you check the region in VisionState."
+            )
+            try:
+                link = await self.ha.app_path()
+            except Exception:  # noqa: BLE001 - a notification without a link is still one
+                link = None
+            message = f"{text}\n\n[Open VisionState]({link})" if link else text
+            data = {"title": REMINDER["title"], "message": message, "notification_id": notification_id}
+            await self.ha.call_service("persistent_notification", "create", data)
+        except Exception as err:  # noqa: BLE001 - Home Assistant restarting: the problem entity still says it
+            log.warning("Could not send the notification about %s's camera: %s", cfg.name, redact(str(err)))
 
     async def _publish_reading(
         self,

@@ -331,6 +331,16 @@ times its busiest shower) rejected right readings after a 35-minute update.
 - The limit's state (`reading_watch`) is stored with every reading, so a restart knows how long
   the app was away. Counters made before the limit (schema v14, and importing an older export:
   `db.keep_change_step`) keep theirs as `fixed`: the old `max_step` per check interval, as a rate.
+- **Camera changed** (reading sensors with a region): the region is a share of the picture, so a
+  camera back from a restart with another size reads something else (issue #40: an ESP32 camera
+  whose picture moved, nobody near it). The first frame after the region or source changed sets
+  `db.Sensor.frame_size`; a frame of another size is not read (`engine.reading.CAMERA_CHANGED`):
+  the value stays, the frame is kept once in the history (not in Review: the card on the sensor
+  asks), and Home Assistant gets a notification (`READING["camera_notification_id"]`). It ends
+  when the size is back, or when the user says the region is right (`POST
+  /sensors/{id}/accept-picture`) or draws a new one (both clear the size). Held rather than
+  paused, so a camera that comes back at its old size needs nothing. A camera that moved without
+  changing size is not caught by this: that is C3 in `docs/WHEEL_READER_PLAN.md`.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
 `wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
