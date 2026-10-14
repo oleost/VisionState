@@ -55,10 +55,16 @@ class HistoryMixin(PublishingMixin, RuntimeBase):
                 new.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(old, part)
                 part.replace(new)  # whole or not at all
+            except FileNotFoundError:  # deleted meanwhile
+                part.unlink(missing_ok=True)
+                continue
             except OSError as err:  # disk full: the rest is read from the media folder and tried later
                 part.unlink(missing_ok=True)
                 log.warning("Could not move training images to the app's storage: %s", err)
                 return
+            if not old.exists():  # deleted while it was copied (Storage.delete_sample removes both)
+                new.unlink(missing_ok=True)
+                continue
             copied += 1
         if copied:
             log.info("Copied %d training images from %s to the app's storage", copied, old_root)

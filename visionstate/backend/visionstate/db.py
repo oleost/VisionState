@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+
+log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 15
 
@@ -379,8 +382,16 @@ class Database:
     @staticmethod
     def after_commit(session: Session, action: Callable[[], None]) -> None:
         """Run ``action`` once ``session`` is committed, never when it is rolled back: a file is
-        removed only together with the row that lists it."""
-        event.listen(session, "after_commit", lambda _session: action(), once=True)
+        removed only together with the row that lists it. A file that cannot be removed then is
+        logged: the row is gone already, so the request must not fail."""
+
+        def run(_session: Session) -> None:
+            try:
+                action()
+            except OSError as err:
+                log.warning("Could not remove a file: %s", err)
+
+        event.listen(session, "after_commit", run, once=True)
 
     @contextmanager
     def session(self) -> Iterator[Session]:

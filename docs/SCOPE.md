@@ -619,8 +619,9 @@ What the user taught lives in `/data`, next to the database that lists it: Home 
 an app's `/data` (also by itself before every update) but not the media folder, so training
 images in the media folder came back without their rows, or rows without their images, after a
 restore (issue #45). The media folder is also shown to every Home Assistant user by the media
-browser. Only the history stays there: large, removed by its limits, fine to lose. Training images
-are a few hundred small JPEGs per sensor at most.
+browser. Only the history stays there: large, removed by its limits, fine to lose. Training images are
+what the user labelled or taught (a taught box is a small crop, a state sensor's image a whole
+frame), usually tens of MB in all; Settings → Storage shows how much.
 
 Versions up to 0.9.1b2 kept training images in the media folder. They are read there until they
 are copied (`engine.HistoryMixin.move_samples`, in the clean-up loop, so start-up is not held up);

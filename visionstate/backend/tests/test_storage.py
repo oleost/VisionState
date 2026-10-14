@@ -294,3 +294,46 @@ def test_a_media_folder_inside_the_apps_storage_keeps_its_images(tmp_path):
     rt.move_samples()
     assert len(list((tmp_path / "samples" / str(sid)).iterdir())) == 1
     db.engine.dispose()
+
+
+def test_an_image_deleted_while_it_is_moved_is_not_brought_back(runtime, monkeypatch):
+    import shutil
+
+    rt = runtime
+    sid = state_sensor(rt)
+    (_, gone), (_, raced), (_, kept) = old_sample(rt, sid, 1), old_sample(rt, sid, 2), old_sample(rt, sid, 3)
+    copy = shutil.copy2
+
+    def deleted_meanwhile(src, dst):
+        name = src.name
+        if name == gone:  # removed before the copy starts
+            src.unlink()
+            raise FileNotFoundError(src)
+        copy(src, dst)
+        if name == raced:  # removed (Storage.delete_sample) while it was copied
+            src.unlink()
+
+    monkeypatch.setattr(shutil, "copy2", deleted_meanwhile)
+    rt.move_samples()
+    assert not rt.storage.new_sample_path(sid, gone).exists()
+    assert not rt.storage.new_sample_path(sid, raced).exists()
+    assert rt.storage.new_sample_path(sid, kept).exists()  # one gone does not stop the others
+    assert rt.db.get_setting("samples_moved_at")
+
+
+def test_a_file_that_cannot_be_removed_does_not_fail_the_request(runtime, caplog):
+    from visionstate.db import Sample
+
+    rt = runtime
+    sid = state_sensor(rt)
+    sample_id = rt.add_sample(sid, noise(1), "upload", None)
+
+    def locked():
+        raise PermissionError("in use")
+
+    with rt.db.session() as s:
+        rt.db.after_commit(s, locked)
+        s.delete(s.get(Sample, sample_id))
+    with rt.db.session() as s:
+        assert s.get(Sample, sample_id) is None
+    assert "Could not remove a file" in caplog.text

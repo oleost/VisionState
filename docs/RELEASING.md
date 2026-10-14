@@ -76,7 +76,7 @@ all of it and tell the maintainer what was checked and what was found.
      keep working, their entities keep their IDs, the log has no warnings or errors;
    - restart Home Assistant, reboot the host and restart the MQTT broker: the app and its entities
      come back by themselves;
-   - make a backup of the app and restore it: the sensors are back;
+   - make a backup of the app and restore it: the sensors are back, with their training images;
    - **soak for 1 hour** with the sensors checking: the app's memory (Supervisor app stats) and its
      data on disk level off instead of growing, the log stays quiet;
    - open the app in Home Assistant at desktop width and on a phone (Ingress);
