@@ -24,7 +24,10 @@ training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
     day while the others sat at 0.1–0.2. The decoder put them outside the slack, where their
     probability dropped to 0.02–0.08 although the digit was plain. That one wheel pulled the mean
     under 0.70, so 22 of the 29 rejected readings were right. A low threshold is not the fix: at 0.56,
-    3–4 of that day's 7 misreads would have passed, one of them too high (585 instead of 565). See A2.
+    3–4 of that day's 7 misreads would have passed, one of them too high (585 instead of 565). It can
+    also flip the digit. In one sharp, well-lit frame the black 7 had 0.49 of its mass at 7.2–7.3
+    and 0.21 at 0.2. Only 7.2 fell inside the slack, so the decoder read 032.776 instead of 732.776
+    at confidence 0.84. Only "went down" caught it. See A2.
   - *Red wheels half way while the water stands still.* All of oleost1's misreads came from the last
     wheel stopped exactly half way (6½). The neighbouring red 9 or 6 was then read as 8, and the last
     wheel as 2, 8 or 9. The same hard frame then comes back for as long as nobody draws water.

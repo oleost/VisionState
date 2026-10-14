@@ -387,7 +387,10 @@ TRIGGER_DEFAULTS = {
     # A light or switch that is turned on before a check takes its frame and off afterwards (a
     # lamp or flash next to the camera). Left alone when it is already on.
     "light_entity": "",
-    "light_delay_s": 1.0,  # wait between switching on and taking the frame
+    # Wait between switching on and taking the frame. Frames are thrown away meanwhile (see
+    # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
+    # threw away only the stale one and the frame read was often dark.
+    "light_delay_s": 2.0,
 }
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),

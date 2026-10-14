@@ -459,7 +459,7 @@ For a camera in a dark place, such as a meter cabinet: pick a light, switch or h
 the camera (the first step of the wizard, or **Settings → General**). VisionState switches it on:
 
 - **for each check**: before the frame is taken, and off again afterwards. *Wait before taking the
-  frame* (default 1 s) gives the light and the camera time; meanwhile VisionState fetches a frame
+  frame* (default 2 s; longer if the frames still come out dark) gives the light and the camera time; meanwhile VisionState fetches a frame
   every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
   they took earlier, and only adjust their exposure between pictures: this way the frame that is
   read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
