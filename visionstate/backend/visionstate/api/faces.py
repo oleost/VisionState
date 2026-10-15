@@ -10,6 +10,7 @@ import asyncio
 import itertools
 import tempfile
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -451,7 +452,7 @@ def _forget_people(rt: Runtime, key: str | None) -> None:
         persons = [person_by_key(s, key)] if key is not None else list(s.scalars(select(Person)))
         for person in persons:
             for face in s.scalars(select(Face).where(Face.person_id == person.id)):
-                rt.storage.delete_face(face.filename)
+                rt.db.after_commit(s, partial(rt.storage.delete_face, face.filename))
             s.delete(person)  # their faces and embeddings go with them (foreign keys)
 
 
@@ -488,7 +489,7 @@ def forget_face(face_id: int, request: Request) -> Response:
         face = s.get(Face, face_id)
         if face is None:
             raise HTTPException(404, "Face not found")
-        rt.storage.delete_face(face.filename)
+        rt.db.after_commit(s, partial(rt.storage.delete_face, face.filename))
         s.delete(face)  # its cached embeddings go with it (foreign key)
     rt.faces_changed()
     return Response(status_code=204)

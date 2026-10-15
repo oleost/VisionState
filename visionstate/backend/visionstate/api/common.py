@@ -11,11 +11,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import detectors, imaging, teach
+from .. import change_limit, detectors, imaging, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
 from ..mqtt import main_entities
 from ..settings import (
+    COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
     FACE_LIMITS,
@@ -28,6 +29,7 @@ from ..settings import (
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    READING_CHANGE_LIMITS,
     READING_DEFAULTS,
     READING_DEVICE_CLASSES,
     READING_DISPLAYS,
@@ -297,6 +299,8 @@ class ReadingIn(BaseModel):
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
+    change_limit: str = READING_DEFAULTS["change_limit"]
+    max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])
     spot_rate: float = Field(default=READING_DEFAULTS["spot_rate"], ge=_dlo["spot_rate"], le=_dhi["spot_rate"])
     rate_window_min: float = Field(
         default=READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
@@ -314,6 +318,13 @@ class ReadingIn(BaseModel):
     def _display(cls, value: str) -> str:
         if value not in READING_DISPLAYS:
             raise ValueError(f"Unknown display {value!r}")
+        return value
+
+    @field_validator("change_limit")
+    @classmethod
+    def _change_limit(cls, value: str) -> str:
+        if value not in READING_CHANGE_LIMITS:
+            raise ValueError(f"Unknown change limit {value!r}")
         return value
 
     @field_validator("counter_reader")
@@ -468,11 +479,30 @@ def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
     """A reading sensor's part of its view: its settings, the published value and the last read."""
     if sensor.kind != KIND_READING:
         return None
+    settings = merge_reading(sensor.reading)
     return {
-        **merge_reading(sensor.reading),
+        **settings,
         "value": live.debouncer.published if live else None,
         "last": live.reading if live else None,
         "has_image": bool(live and live.reading_image),
+        "camera_changed": live.camera_changed if live else None,
+        "limit": limit_view(settings, live.watch) if live and settings["mode"] == "counter" else None,
+    }
+
+
+def limit_view(settings: dict, watch: change_limit.Watch) -> dict:
+    """What a counter's limit is now: learned (per hour and day, from how many days; ``needed``
+    days before it is; ``rate``: what "auto" allows per hour once learned) and how much the next
+    reading may go up (None: no limit)."""
+    learned = watch.learned
+    return {
+        "days": watch.days,
+        "needed": COUNTER_LIMIT["min_days"],
+        "per_hour": learned.per_hour if learned else None,
+        "per_day": learned.per_day if learned else None,
+        "rate": change_limit.learned_rate(learned),
+        "allowed": change_limit.limit(settings, learned, watch.budget_s),
+        "held": watch.held,
     }
 
 

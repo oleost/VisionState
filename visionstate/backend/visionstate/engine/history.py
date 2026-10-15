@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+import shutil
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 
 from ..db import Prediction, Sample, utcnow
-from ..settings import RUNTIME, STORAGE_DEFAULTS
+from ..settings import RUNTIME, SAMPLES_MOVE, STORAGE_DEFAULTS
 from .base import RuntimeBase
 from .publishing import PublishingMixin
 
@@ -20,11 +21,74 @@ class HistoryMixin(PublishingMixin, RuntimeBase):
     async def _cleanup_loop(self) -> None:
         while True:
             try:
+                await asyncio.to_thread(self.move_samples)
+            except Exception:  # noqa: BLE001
+                log.exception("Moving training images failed")
+            try:
                 await asyncio.to_thread(self.cleanup_history)
                 await self.publish_review_count()
             except Exception:  # noqa: BLE001
                 log.exception("Cleanup failed")
             await asyncio.sleep(RUNTIME["cleanup_interval_s"])
+
+    def move_samples(self) -> None:
+        """Copy the training images older versions kept in the media folder to the app's own
+        storage (Settings.samples_dir), where a backup holds them together with the database.
+
+        Until then they are read where they are (Storage.sample_path). The old copies stay for
+        SAMPLES_MOVE["keep_old_days"] after the first move, so the older version still finds its
+        images when the backup made before the update is restored; then they are removed.
+        """
+        old_root = self.settings.old_samples_dir
+        if not old_root.exists() or old_root.resolve() == self.settings.samples_dir.resolve():
+            return  # nothing to move (or the media folder is set to the app's storage itself)
+        with self.db.session() as s:
+            rows = s.execute(select(Sample.sensor_id, Sample.filename)).all()
+        copied = 0
+        for sensor_id, filename in rows:
+            old = self.storage.old_sample_path(sensor_id, filename)
+            new = self.storage.new_sample_path(sensor_id, filename)
+            if new.exists() or not old.exists():
+                continue
+            part = new.with_name(f"{new.name}.part")
+            try:
+                new.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old, part)
+                part.replace(new)  # whole or not at all
+            except FileNotFoundError:  # deleted meanwhile
+                part.unlink(missing_ok=True)
+                continue
+            except OSError as err:  # disk full: the rest is read from the media folder and tried later
+                part.unlink(missing_ok=True)
+                log.warning("Could not move training images to the app's storage: %s", err)
+                return
+            if not old.exists():  # deleted while it was copied (Storage.delete_sample removes both)
+                new.unlink(missing_ok=True)
+                continue
+            copied += 1
+        if copied:
+            log.info("Copied %d training images from %s to the app's storage", copied, old_root)
+        moved_at = self.db.get_setting("samples_moved_at")
+        if not isinstance(moved_at, str):
+            self.db.set_setting("samples_moved_at", utcnow().isoformat())
+            return
+        if utcnow() - datetime.fromisoformat(moved_at) < timedelta(days=SAMPLES_MOVE["keep_old_days"]):
+            return
+        removed = 0
+        for sensor_id, filename in rows:
+            old = self.storage.old_sample_path(sensor_id, filename)
+            if old.exists() and self.storage.new_sample_path(sensor_id, filename).exists():
+                old.unlink()
+                removed += 1
+        shutil.rmtree(self.settings.thumbs_dir / "sample", ignore_errors=True)  # older versions' thumbnails
+        for folder in [*old_root.iterdir(), old_root]:
+            if folder.is_dir():
+                try:
+                    folder.rmdir()  # only when empty: what no sensor of this app knows is left alone
+                except OSError:
+                    pass
+        if removed:
+            log.info("Removed %d moved training images from %s", removed, old_root)
 
     def storage_limits(self) -> dict:
         """Effective history limits (Settings → Storage), with the defaults for what is not set."""
@@ -106,21 +170,21 @@ class HistoryMixin(PublishingMixin, RuntimeBase):
 
     def storage_usage(self) -> dict:
         """Disk use for the Settings page: history, training images and free space."""
-        import shutil
-
         with self.db.session() as s:
             frames = s.scalar(select(func.count()).select_from(Prediction).where(Prediction.frame.is_not(None))) or 0
             oldest = s.scalar(select(func.min(Prediction.created_at)).where(Prediction.frame.is_not(None)))
             images = s.scalar(select(func.count()).select_from(Sample)) or 0
         media = self.settings.media_dir
         media.mkdir(parents=True, exist_ok=True)
+        # History goes to the media folder, training images to the app's storage: the fuller one counts.
+        free = min(shutil.disk_usage(media).free, shutil.disk_usage(self.settings.data_dir).free)
         return {
             "history_bytes": self.storage.history_bytes(),
             "history_frames": frames,
             "oldest_history": oldest,
             "training_bytes": self.storage.samples_bytes(),
             "training_images": images,
-            "free_bytes": shutil.disk_usage(media).free,
+            "free_bytes": free,
             "limited_by_size": self.history_trimmed,
             **self.storage_limits(),
         }

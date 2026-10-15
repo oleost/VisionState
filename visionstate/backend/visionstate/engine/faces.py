@@ -56,13 +56,15 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     # --- The model ------------------------------------------------------------------------------
 
     def face_status(self) -> dict:
-        """The face model for the UI: chosen, loaded, downloading (bytes), or why it failed."""
+        """The face model for the UI: chosen, loaded, downloading (bytes), embedding the taught faces
+        (count), or why it failed."""
         spec = faces.recogniser_spec(self.face_choice)
         return {
             "model": spec.id,
             "loaded": self.face_model is not None and self.face_model.id == spec.id,
             "loading": self._face_task is not None and not self._face_task.done(),
             "progress": self.face_progress,
+            "embedding": self.face_embedding,
             "error": self.face_error,
             "downloaded": self.face_files_present(spec.id),
         }
@@ -127,15 +129,26 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 return
             finally:
                 self.face_progress = None
-            replaced, self.face_model, self.face_error = self.face_model, model, ""
-            log.info("Face model %s loaded", spec.id)
+            replaced, self.face_model, self.face_error = self.face_model, None, ""
         if replaced is not None:
             await asyncio.to_thread(backbones.release_memory)
         sensor_ids = await asyncio.to_thread(self.face_sensor_ids)
         if not sensor_ids:
             # Turned off while it loaded (a check in flight asked for it): let it go again.
-            await self.faces_settled()
+            del model
+            await asyncio.to_thread(backbones.release_memory)
             return
+        # The taught faces are embedded before the model is used (the UI shows how far it is): the
+        # checks meanwhile go on without faces, as while it downloaded, instead of waiting for it.
+        try:
+            await self.face_index_for(model)
+        except Exception:  # noqa: BLE001 - the first check builds it again
+            log.exception("Could not embed the taught faces with %s", spec.id)
+        self.face_model = model
+        log.info("Face model %s loaded", spec.id)
+        sensor_ids = await asyncio.to_thread(self.face_sensor_ids)  # turned off meanwhile: let it go
+        if not sensor_ids:
+            await self.faces_settled()
         for sensor_id in sensor_ids:
             self.wake(sensor_id, force=True)
 
@@ -206,23 +219,40 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 )
             }
         ids, labels, vectors = [], [], []
-        for face_id, key, filename, face in examples:
-            vector = cached.get(face_id)
-            if vector is None:
-                path = self.storage.face_path(filename)
-                if not path.exists():
-                    continue
-                crop = imaging.load(path)
-                aligned = faces.align(crop, faces.face_from_dict(face), model.recogniser.spec.input_size)
-                vector = model.recogniser.embed([aligned])[0]
-                row = {"face_id": face_id, "model": cache_key, "vector": vector.tobytes()}
-                with self.db.session() as s:  # stored once, whoever comes first
-                    s.execute(insert(FaceEmbedding).values(**row).on_conflict_do_nothing())
-            ids.append(face_id)
-            labels.append(key)
-            vectors.append(vector)
+        missing, done = sum(1 for e in examples if e[0] not in cached), 0
+        if missing:
+            self.face_embedding = {"done": 0, "total": missing}  # a new model: the UI shows the progress
+        try:
+            for face_id, key, filename, face in examples:
+                vector = cached.get(face_id)
+                if vector is None:
+                    vector = self._embed_taught(model, cache_key, face_id, filename, face)
+                    done += 1
+                    self.face_embedding = {"done": done, "total": missing}
+                    if vector is None:
+                        continue
+                ids.append(face_id)
+                labels.append(key)
+                vectors.append(vector)
+        finally:
+            self.face_embedding = None
         stacked = np.stack(vectors) if vectors else np.zeros((0, 0), dtype=np.float32)
         return faces.FaceIndex(model.id, ids, labels, stacked, generation)
+
+    def _embed_taught(
+        self, model: faces.FaceModel, cache_key: str, face_id: int, filename: str, face: dict
+    ) -> np.ndarray | None:
+        """A taught face's embedding, stored for the next index (None: its image is gone)."""
+        path = self.storage.face_path(filename)
+        if not path.exists():
+            return None
+        crop = imaging.load(path)
+        aligned = faces.align(crop, faces.face_from_dict(face), model.recogniser.spec.input_size)
+        vector = model.recogniser.embed([aligned])[0]
+        row = {"face_id": face_id, "model": cache_key, "vector": vector.tobytes()}
+        with self.db.session() as s:  # stored once, whoever comes first
+            s.execute(insert(FaceEmbedding).values(**row).on_conflict_do_nothing())
+        return vector
 
     def faces_changed(self) -> None:
         """Taught faces were added, moved or removed: every sensor that recognises faces compares

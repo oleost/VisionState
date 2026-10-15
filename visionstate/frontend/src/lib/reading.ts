@@ -15,12 +15,16 @@ export function readingText(sensor: Sensor): string {
 }
 
 /** Why a reading was rejected, as a sentence fragment. */
+/** The reason while a camera's picture has another size than the region was drawn on: nothing is read. */
+export const CAMERA_CHANGED_REASON = 'camera changed';
+
 export const REJECT_REASONS: Record<string, string> = {
   'nothing read': 'no number found',
   unsure: 'the reader was unsure',
   'went down': 'a counter can not go down',
   'changed too much': 'it changed more than allowed',
   'wrong digit count': 'not the number of digits the counter has',
+  'camera changed': "the camera's picture changed size",
 };
 
 /** The type chosen in the reading editor: a mechanical counter or a digital display. */

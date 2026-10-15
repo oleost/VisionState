@@ -177,10 +177,10 @@ Design rules that follow:
    added to the person's faces by itself (that drifts: one wrong match teaches the next one).
    Unknown faces are not stored as templates; they only live in history frames, under the normal
    history limits (`history_days`, `history_max_gb`).
-3. **Faces are kept where only the app can read them.** Training images live in `/media`, which
-   Home Assistant's media browser shows to every user of the house; taught face crops go to the
-   app's own `/data` instead. That puts them in Home Assistant backups — say so in DOCS.md, and that
-   backups should be encrypted.
+3. **Faces are kept where only the app can read them.** Training images lived in `/media` then,
+   which Home Assistant's media browser shows to every user of the house; taught face crops go to
+   the app's own `/data` instead (training images followed later, see SCOPE.md §11). That puts
+   them in Home Assistant backups — say so in DOCS.md, and that backups should be encrypted.
 4. **Embeddings are biometric data too.** Published attacks rebuild a recognisable face from an
    ArcFace-style template, so the cached embeddings are deleted with the person and never exported
    (an import computes them again).

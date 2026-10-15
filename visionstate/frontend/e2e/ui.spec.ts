@@ -890,8 +890,43 @@ test('a counter has a rate window for its rate entity', async ({ page, request }
     errors.expectNone();
   } finally {
     const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
-    const { value: _v, last: _l, has_image: _h, ...reading } = sensor.reading;
+    const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...reading } = sensor.reading;
     await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, rate_window_min: 15 } } });
+  }
+});
+
+test('a counter learns how fast it may go up, or takes a fixed rate or change per reading', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededReadingSensorId(request);
+  await page.goto(`#/sensors/${id}/settings`);
+  const choice = page.getByLabel('Limit how fast the counter may go up');
+  await expect(choice).toHaveValue('auto');
+  await expect(page.getByText(/Learning from its readings: \d+ of \d+ days/)).toBeVisible();
+  // Until it learned, the standard rate applies, shown and open to change.
+  const config = await (await request.get('api/v1/config')).json();
+  const before = (await (await request.get(`api/v1/sensors/${id}`)).json()).reading;
+  const standard = Number((config.counter_standard_steps_per_min * 10 ** -before.decimals * 60).toPrecision(6));
+  await expect(page.getByLabel('Largest rise per hour')).toHaveValue(String(standard));
+  await expect(page.getByLabel('Largest rise per hour')).toBeEnabled();
+  await choice.selectOption('step');
+  await expect(page.getByLabel('Largest rise per hour')).toHaveCount(0);
+  await expect(page.getByLabel('Largest rise per reading')).not.toHaveValue('0');
+  await choice.selectOption('fixed');
+  await page.getByLabel('Largest rise per hour').fill('2.4');
+  await press(page.getByRole('button', { name: 'Save changes' }), info);
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  try {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    expect([sensor.reading.change_limit, sensor.reading.max_rate]).toEqual(['fixed', 2.4]);
+    expect(sensor.reading.limit.allowed).not.toBeNull();
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-limit.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    const sensor = await (await request.get(`api/v1/sensors/${id}`)).json();
+    const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...reading } = sensor.reading;
+    await request.patch(`api/v1/sensors/${id}`, { data: { reading: { ...reading, change_limit: 'auto', max_rate: 0, max_step: 0 } } });
   }
 });
 
@@ -1306,6 +1341,28 @@ test('an answer in the review queue can be changed from the list', async ({ page
   errors.expectNone();
 });
 
+test('faces: a new face model learning the taught faces shows on the cards, the Faces card and People', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const faceId = await seededFaceSensorId(request);
+  // Switching the face model embeds every taught face again; the status says how far it is.
+  await page.route('**/api/v1/status', async (route) => {
+    const status = await (await route.fetch()).json();
+    status.faces = { ...status.faces, loaded: false, loading: true, embedding: { done: 3, total: 8 } };
+    await route.fulfill({ json: status });
+  });
+  await page.goto('#/');
+  const card = page.locator('.card', { has: page.getByRole('link', { name: 'Crew', exact: true }) });
+  await expect(card.getByText('Learning faces… 3/8')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.goto(`#/sensors/${faceId}/settings`);
+  await expect(page.locator('h1 ~ .chip', { hasText: 'Learning faces… 3/8' })).toBeVisible();
+  await expect(page.getByTestId('faces-card').getByText(/Learning the taught faces .* 3 of 8/)).toBeVisible();
+  await page.goto('#/people');
+  await expect(page.getByTestId('faces-embedding')).toContainText('3 of 8');
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
 test('faces: turned on with a confirmation, a person taught from the Live tab, shown under Quality', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const faceId = await seededFaceSensorId(request);
@@ -1391,4 +1448,48 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .butch');
   errors.expectNone();
+});
+
+test('a camera that changed its picture size holds the readings until the region is checked', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const camera = `size-${info.project.name}`; // its own picture size: the projects run at the same time
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: `Resized ${info.project.name}`,
+      kind: 'reading',
+      source_type: 'http',
+      source: `${COUNTER_URL(89931)}&camera=${camera}`,
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, change_limit: 'off' },
+      interval_s: 3600,
+      debounce: 1,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+  const reading = async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).reading;
+  try {
+    await expect.poll(async () => (await reading()).value, { timeout: 60_000 }).toBe('89.931');
+    await request.get(`${CAMERA_URL}/set?wider=400&camera=${camera}`);
+    await request.post(`api/v1/sensors/${id}/classify`);
+    await expect.poll(async () => (await reading()).camera_changed?.to, { timeout: 30_000 }).toEqual([1200, 360]);
+
+    await page.goto('#/');
+    await expect(page.locator('.sensor', { hasText: `Resized ${info.project.name}` }).getByText('Camera changed')).toBeVisible();
+    await page.goto(`#/sensors/${id}/live`);
+    const notice = page.getByTestId('camera-changed');
+    await expect(notice).toContainText('from 800×360 to 1200×360 pixels');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .chip, .notice');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'camera-changed.png'), fullPage: true });
+    await expect(notice.getByRole('link', { name: 'Adjust the region' })).toHaveAttribute('href', `#/sensors/${id}/settings`);
+
+    await press(notice.getByRole('button', { name: 'The region is right' }), info);
+    await expect(notice).toHaveCount(0, { timeout: 30_000 });
+    expect((await reading()).camera_changed).toBeNull();
+    errors.expectNone();
+  } finally {
+    await request.get(`${CAMERA_URL}/set?wider=0&camera=${camera}`);
+    await request.delete(`api/v1/sensors/${id}`);
+  }
 });

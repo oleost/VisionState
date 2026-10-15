@@ -9,6 +9,8 @@ GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/ass
 GET /display.jpg?text=12.5&style=lcd|led   a drawn seven-segment display (for reading sensors)
 GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter with rolling digits
                                  (value = the number on the wheels; .5 = last wheel half way)
+GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wider (a camera that changed
+                                 its picture size after a restart); wider=0 sets it back
 """
 
 import io
@@ -27,6 +29,7 @@ from displays import STYLES, render_counter  # noqa: E402  (shared with the back
 from displays import render as render_display  # noqa: E402
 
 STATE = {"state": "closed", "night": False}
+WIDER: dict[str, int] = {}  # counter.jpg's "camera" -> pixels added on the right
 DOOR_HEIGHT = {"open": 0.08, "closed": 1.0, "partial": 0.5}
 
 
@@ -69,6 +72,8 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["state"] = query["state"][0]
             if "night" in query:
                 STATE["night"] = query["night"][0] == "1"
+            if "wider" in query:
+                WIDER[query.get("camera", [""])[0]] = int(query["wider"][0])
             self._send(str(STATE).encode(), "text/plain")
         elif url.path == "/display.jpg":
             query = parse_qs(url.query)
@@ -88,6 +93,10 @@ class Handler(BaseHTTPRequestHandler):
 
             digits = int(number("digits", 7, 1, 8))
             image = render_counter(number("value", 0, 0, 10**digits), digits, int(number("decimals", 3, 0, digits)))
+            if wider := WIDER.get(query.get("camera", [""])[0], 0):
+                wide = Image.new("RGB", (image.width + wider, image.height), (40, 40, 40))
+                wide.paste(image, (0, 0))
+                image = wide
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=90)
             self._send(buf.getvalue(), "image/jpeg")

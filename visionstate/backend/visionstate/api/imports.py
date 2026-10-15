@@ -12,7 +12,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 
 from .. import bundle, detectors, faces, imaging
-from ..db import Person, keep_text_reader
+from ..db import Person, keep_change_step, keep_text_reader
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
@@ -70,6 +70,8 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
     manifest = bundle.read_manifest(path)
     data = dict(manifest["sensor"])
     data["reading"] = keep_text_reader(data.get("reading"))  # exported before the wheel reader
+    # exported before a counter had a change limit of its own
+    data["reading"] = keep_change_step(data["reading"])
     # Validate exactly like a sensor created in the UI (kind, limits, source type, states, objects, triggers).
     try:
         spec = SensorIn.model_validate(

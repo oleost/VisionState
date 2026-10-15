@@ -215,12 +215,18 @@ def _end_face_burst(burst: FaceBurst, spent: bool) -> str | None:
 
 
 def reading_verdict(
-    text: readers.Text, value: float | None, last: float | None, threshold: float, settings: dict
+    text: readers.Text,
+    value: float | None,
+    last: float | None,
+    threshold: float,
+    settings: dict,
+    limit: float | None = None,
 ) -> tuple[str | None, bool]:
     """Whether a reading is rejected, and why (None: accepted), and whether it is "settling".
 
     Rejected: nothing read, another number of digits than the counter has wheels, too unsure,
-    or implausible next to the ``last`` published value (see readers.implausible). Settling: one
+    or implausible next to the ``last`` published value (see readers.implausible; ``limit``: how
+    much a counter may go up, change_limit.limit). Settling: one
     step below the last value, the last wheel of a counter turning; the value stays, but that is
     no rejection.
     """
@@ -230,7 +236,7 @@ def reading_verdict(
         return "wrong digit count", False
     if text.score < threshold:
         return "unsure", False
-    reason = readers.implausible(value, last, settings)
+    reason = readers.implausible(value, last, settings, limit)
     if reason == "went down" and readers.settling(value, last, settings):
         return None, True
     return reason, False

@@ -53,7 +53,7 @@
   const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
   const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
   const readingSensor = isReadingSensor(initial);
-  const { value: _v, last: _l, has_image: _h, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
+  const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
@@ -224,10 +224,15 @@
           bind:threshold
           bind:debounce
           bind:maxStep={reading.max_step}
+          bind:changeLimit={reading.change_limit}
+          bind:maxRate={reading.max_rate}
+          limit={sensor.reading?.limit ?? null}
           bind:spotRate={reading.spot_rate}
           bind:rateWindow={reading.rate_window_min}
           mode={reading.mode}
           unit={reading.unit}
+          decimals={reading.decimals}
+          intervalS={interval_s}
         />
       {:else}
         <SensorParams bind:threshold bind:debounce />

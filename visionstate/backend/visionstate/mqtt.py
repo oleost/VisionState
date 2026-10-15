@@ -14,6 +14,7 @@ import httpx
 
 from .settings import (
     APP_SLUG,
+    HA_DEVICE_CLASS_UNITS,
     KIND_OBJECTS,
     KIND_READING,
     KIND_STATES,
@@ -264,6 +265,14 @@ def _reading_entities(d: _Discovery) -> list[tuple[str, dict]]:
         **hidden,
         **d.with_camera,
     }
+    device_class = reading.get("device_class") or ""
+    if reading.get("mode") != "time_left" and device_class and not ha_unit(reading.get("unit") or "", device_class)[1]:
+        log.warning(
+            "%s: Home Assistant does not take the unit %r with the device class %r; sent without the device class",
+            d.sensor.name,
+            reading.get("unit") or "",
+            device_class,
+        )
     entities = [
         d.config("sensor", "state", value),
         d.confidence(),
@@ -285,8 +294,11 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
     not have a measurement state class in Home Assistant, so it gets none.
     """
     mode = reading.get("mode", "value")
-    unit = "min" if mode == "time_left" else reading.get("unit") or None
-    device_class = "duration" if mode == "time_left" else reading.get("device_class") or None
+    if mode == "time_left":
+        unit, device_class = "min", "duration"
+    else:
+        unit, device_class = ha_unit(reading.get("unit") or "", reading.get("device_class") or "")
+    unit, device_class = unit or None, device_class or None
     if mode == "counter":
         state_class = "total_increasing"
     elif device_class == "monetary":
@@ -306,9 +318,29 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
     return {k: v for k, v in payload.items() if v is not None}
 
 
+def ha_unit(unit: str, device_class: str) -> tuple[str, str]:
+    """(unit, device class) as Home Assistant takes them (see settings.HA_DEVICE_CLASS_UNITS).
+
+    A unit its device class does not take is written as Home Assistant writes it when that is
+    clear ("m3" -> "m³", "kwh" -> "kWh"); otherwise the device class is left out, so the entity
+    still appears, only without what the class adds (the Energy dashboard). A unit without a
+    device class, or a class without a unit, is left as it is: Home Assistant takes those, and
+    keeps the entity's history in that unit.
+    """
+    unit = unit.strip()
+    valid = HA_DEVICE_CLASS_UNITS.get(device_class)
+    if valid is None or not unit or unit in valid:
+        return unit, device_class
+    cubed = unit.replace("3", "³")
+    if cubed in valid:
+        return cubed, device_class
+    same = [u for u in valid if u.casefold() == cubed.casefold()]
+    return (same[0], device_class) if len(same) == 1 else (unit, "")
+
+
 def rate_unit(reading: dict) -> tuple[str | None, str | None, float]:
     """(unit, device class, factor from "per hour") of a counter's rate, from the counter's unit."""
-    unit = (reading.get("unit") or "").strip()
+    unit, _ = ha_unit(reading.get("unit") or "", reading.get("device_class") or "")
     if unit in READING_RATE_UNITS:
         return READING_RATE_UNITS[unit]
     return (f"{unit}/h" if unit else None), None, 1.0

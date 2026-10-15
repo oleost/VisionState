@@ -275,6 +275,46 @@ def test_an_index_built_before_an_own_label_existed_is_rebuilt(settings):  # noq
     db.engine.dispose()
 
 
+def test_taught_boxes_without_a_readable_image_are_left_out(settings):  # noqa: F811
+    """Issue #45: one taught box whose image is gone (a backup restored without the images) or
+    broken stopped every check of the sensor. The index is built from the boxes that are left."""
+    import asyncio
+
+    from PIL import Image
+
+    from visionstate.db import Database, Embedding, Sample, Sensor
+    from visionstate.engine import Runtime
+
+    settings.ensure_dirs()
+    db = Database(settings.db_path)
+    db.init()
+    rt = Runtime(settings, db)
+    rt.embedder = FakeEmbedder()
+    with db.session() as s:
+        row = Sensor(slug="drive", name="Drive", kind=KIND_OBJECTS, source_type="http", source="x", interval_s=5,
+                     threshold=0.6, debounce=1, objects={"classes": ["dog"]})  # fmt: skip
+        s.add(row)
+        s.flush()
+        sid = row.id
+    box = [0.1, 0.1, 0.5, 0.5]
+    kept, gone, broken = (
+        rt.add_object_example(sid, Image.new("RGB", (64, 64)), box, "dog", "dog", 0.9, "live") for _ in range(3)
+    )
+    with db.session() as s:
+        rt.storage.sample_path(sid, s.get(Sample, gone).filename).unlink()
+        rt.storage.sample_path(sid, s.get(Sample, broken).filename).write_bytes(b"not a jpeg")
+    index = asyncio.run(rt.taught_index(rt.load_sensor(sid)))
+    assert index is not None and index.ids == [kept]
+    # Every box gone: nothing to compare with, and still no error.
+    with db.session() as s:
+        rt.storage.sample_path(sid, s.get(Sample, kept).filename).unlink()
+    rt.taught_changed(sid)
+    with db.session() as s:  # its cached embedding would keep it in the index
+        s.execute(Embedding.__table__.delete())
+    assert asyncio.run(rt.taught_index(rt.load_sensor(sid))) is None
+    db.engine.dispose()
+
+
 # --- the API, with the real detector and backbone on CC0 photos ----------------------------
 
 

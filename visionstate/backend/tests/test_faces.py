@@ -4,6 +4,7 @@ The photos are NASA portraits (public domain, tests/assets/README.md): Suni Will
 2018, Butch Wilmore, the two of them together, and a crew of nine with both of them in it.
 """
 
+import asyncio
 import io
 import json
 import zipfile
@@ -339,6 +340,33 @@ def test_people_are_taught_recognised_forgotten_exported(settings):  # noqa: F81
             assert all(len(index.ids) == 2 for index in built)
         with rt.db.session() as s:
             assert s.scalar(select(func.count()).select_from(FaceEmbedding)) == 2
+        # Embedding the taught faces again (a new model) shows how far it is, and nothing when done.
+        with rt.db.session() as s:
+            s.execute(delete(FaceEmbedding))
+        progress, embed = [], rt._embed_taught
+        rt._embed_taught = lambda *args: progress.append(rt.face_status()["embedding"]) or embed(*args)
+        try:
+            assert len(rt._build_face_index(rt.face_model, 0).ids) == 2
+        finally:
+            del rt._embed_taught
+        assert progress == [{"done": 0, "total": 2}, {"done": 1, "total": 2}]
+        assert rt.face_status()["embedding"] is None
+        # A newly loaded model embeds them before it is used: the checks go on without faces meanwhile.
+        with rt.db.session() as s:
+            s.execute(delete(FaceEmbedding))
+        unused = []
+        rt._embed_taught = lambda *args: unused.append(rt.face_model is None) or embed(*args)
+
+        async def reload():
+            rt.face_model, rt.face_index, rt._face_task = None, None, asyncio.current_task()
+            await rt._load_faces()
+
+        try:
+            client.portal.call(reload)
+        finally:
+            del rt._embed_taught
+        assert unused == [True, True] and rt.face_model is not None and rt.face_index is not None
+        assert len(rt.face_index.ids) == 2
         # Each person's own entity says where they are seen: on this sensor now.
         assert people["people"][0]["seen"]["now"] == "beach" and people["people"][0]["seen"]["sensor_id"] == sid
         image = client.get(f"/api/v1/faces/{face_id}/image")
@@ -448,14 +476,16 @@ def test_a_face_model_that_cannot_be_downloaded_leaves_the_sensor_working(settin
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime
         assert client.post("/api/v1/faces/retry").status_code == 200
-        assert wait_for(lambda: rt.face_status()["error"], timeout=10)
+        # The error is set inside the loading task, which ends just after it.
+        assert wait_for(lambda: rt.face_status()["error"] and not rt.face_status()["loading"], timeout=10)
         error = rt.face_status()["error"]
         assert faces.DETECTOR.filename in error and "by hand" in error
         assert rt.face_model is None and not rt.face_status()["loading"]
         # No retry by itself: only when asked.
         assert rt.wanted_faces() is None and rt.face_status()["error"] == error
         assert client.post("/api/v1/faces/retry").status_code == 200
-        assert wait_for(lambda: rt.face_status()["error"], timeout=10)
+        # The error is set inside the loading task, which ends just after it.
+        assert wait_for(lambda: rt.face_status()["error"] and not rt.face_status()["loading"], timeout=10)
         settings_view = client.get("/api/v1/settings").json()
         assert [m["id"] for m in settings_view["face_models"]] == list(faces.RECOGNISERS)
         assert all(not m["installed"] and m["data"] for m in settings_view["face_models"])

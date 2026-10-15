@@ -84,6 +84,8 @@ READING_DISPLAYS = ("auto", "led", "lcd", "counter")
 COUNTER_READERS = ("wheels", "ocr")
 # Home Assistant device classes offered for readings ("" = none).
 READING_DEVICE_CLASSES = ("", "energy", "water", "gas", "volume", "monetary", "duration", "power", "temperature")
+# Counters: what limits how fast the value may go up (see READING_DEFAULTS["change_limit"]).
+READING_CHANGE_LIMITS = ("auto", "fixed", "step", "off")
 READING_DEFAULTS = {
     "mode": "counter",
     "decimals": 0,  # digits after the decimal point; the reader's own dots and commas are ignored
@@ -92,7 +94,15 @@ READING_DEFAULTS = {
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
-    "max_step": 0.0,  # largest plausible change between two readings (0 = no limit)
+    # Values and times left: the largest plausible change between two readings (0 = no limit).
+    # Counters use change_limit instead (see COUNTER_LIMIT).
+    "max_step": 0.0,
+    # Counters: how fast the counter may go up. "auto" learns it from the counter's own readings
+    # (max_rate until then; 0: COUNTER_LIMIT["standard_steps_per_min"]), "fixed" takes max_rate
+    # (per hour, in the counter's unit; 0: no limit), "step" takes max_step for every reading,
+    # however long since the last one (0: no limit), "off" sets no limit.
+    "change_limit": "auto",
+    "max_rate": 0.0,
     # Share of accepted readings that is also sent to the review queue, to find misreads that
     # passed every check. Rejected readings always go there.
     "spot_rate": 0.0,
@@ -104,12 +114,43 @@ READING_LIMITS = {
     "decimals": (0, 4),
     "digits": (1, 12),
     "max_step": (0.0, 1e9),
+    "max_rate": (0.0, 1e9),
     "spot_rate": (0.0, 1.0),
     "rate_window_min": (1.0, 1440.0),
 }
+# The limit on how fast a counter may go up (change_limit.py). The time since the last accepted
+# reading allows more change, but only time the counter was not seen: down, or read unsure.
+# Readings that were read with confidence but went over the limit hold that time still, so a
+# misread that repeats can never wait its way through.
+COUNTER_LIMIT = {
+    # "auto": the largest rise over this window per day, and the day's total rise, of the last
+    # learn_days days; the second largest of them (one misread that slipped through does not
+    # count). Learned after min_days days with readings: a whole week, wash day and weekend.
+    "window_s": 600,
+    "learn_days": 14,
+    "min_days": 7,
+    "safety": 2.0,  # "auto": the learned rate and day times this
+    # "auto" until it learned, and what the UI fills in for "fixed" and "step": this many steps of
+    # the counter's last digit a minute (0.04 m³ a minute for a water meter with three decimals).
+    "standard_steps_per_min": 40,
+    "margin_steps": 2,  # always allowed: this many steps of the last digit (a wheel half way)
+    # A gap between two readings longer than gap_checks intervals (at least gap_min_s) is time the
+    # counter was not seen (the app was down, the camera away).
+    "gap_checks": 3,
+    "gap_min_s": 300.0,
+    "relearn_s": 3600.0,  # how often the learned limit is worked out again
+}
 # Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
 # why the last reading was rejected, as a lower-case key.
-READING_PROBLEMS = ("ok", "nothing_read", "unsure", "wrong_digit_count", "went_down", "changed_too_much")
+READING_PROBLEMS = (
+    "ok",
+    "nothing_read",
+    "unsure",
+    "wrong_digit_count",
+    "went_down",
+    "changed_too_much",
+    "camera_changed",
+)
 # Unit of a counter -> (unit of its rate, Home Assistant device class, factor from "per hour").
 # Other units get "<unit>/h" without a device class.
 READING_RATE_UNITS = {
@@ -117,6 +158,18 @@ READING_RATE_UNITS = {
     "Wh": ("W", "power", 1.0),
     "m³": ("m³/h", "volume_flow_rate", 1.0),
     "L": ("L/min", "volume_flow_rate", 1 / 60),
+}
+# The units Home Assistant accepts per device class of READING_DEVICE_CLASSES (its sensor
+# DEVICE_CLASS_UNITS; classes not listed take any unit). MQTT discovery refuses an entity whose
+# unit is not in its class's list, exactly as written: "m3" or "kwh" make the entity disappear.
+HA_DEVICE_CLASS_UNITS = {
+    "energy": ("Wh", "kWh", "MWh", "GWh", "TWh", "mWh", "J", "kJ", "MJ", "GJ", "cal", "kcal", "Mcal", "Gcal", "thm"),
+    "water": ("m³", "L", "gal", "ft³", "CCF", "MCF"),
+    "gas": ("m³", "L", "ft³", "CCF", "MCF"),
+    "volume": ("m³", "L", "mL", "gal", "fl. oz.", "ft³", "CCF", "MCF"),
+    "duration": ("d", "h", "min", "s", "ms", "μs"),
+    "power": ("mW", "W", "kW", "MW", "GW", "TW"),
+    "temperature": ("°C", "°F", "K"),
 }
 READING = {
     "chars": "0123456789.,:-",  # the reader may only output these characters
@@ -148,6 +201,8 @@ READING = {
     "export_max_mb": 24,
     "export_meter_max_chars": 300,  # the optional "What meter is this?" text
     "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
+    # The notification in Home Assistant when a camera's picture changed size (+ the sensor's slug)
+    "camera_notification_id": f"{APP_SLUG}_camera_changed_",
 }
 
 DETECTION = {
@@ -339,7 +394,10 @@ TRIGGER_DEFAULTS = {
     # A light or switch that is turned on before a check takes its frame and off afterwards (a
     # lamp or flash next to the camera). Left alone when it is already on.
     "light_entity": "",
-    "light_delay_s": 1.0,  # wait between switching on and taking the frame
+    # Wait between switching on and taking the frame. Frames are thrown away meanwhile (see
+    # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
+    # threw away only the stale one and the frame read was often dark.
+    "light_delay_s": 2.0,
 }
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
@@ -475,6 +533,14 @@ STORAGE_DEFAULTS = {
 STORAGE_LIMITS = {
     "history_days": (1, 365),
     "history_max_gb": (0.0, 1000.0),
+}
+
+# Training images moved from the media folder to the app's own storage (engine/history.py,
+# move_samples). The copies left in the media folder are removed this many days after the move: until
+# then, restoring the backup Home Assistant made before the update (it holds the app's storage, not
+# the media folder) gives the older version back with every image it knew.
+SAMPLES_MOVE = {
+    "keep_old_days": 30,
 }
 
 # --- Browsing the history (the History page and each sensor's History tab) ---------------
@@ -648,7 +714,19 @@ class Settings:
 
     @property
     def samples_dir(self) -> Path:
+        """Training images (and the boxes taught to object sensors): in the app's own storage, like
+        the database that lists them, so a backup holds both."""
+        return self.data_dir / "samples"
+
+    @property
+    def old_samples_dir(self) -> Path:
+        """Where training images were kept before they moved to ``samples_dir`` (read until moved)."""
         return self.media_dir / "samples"
+
+    @property
+    def sample_thumbs_dir(self) -> Path:
+        """Thumbnails of training images: next to them, left out of backups (made again when asked for)."""
+        return self.data_dir / "thumbs" / "sample"
 
     @property
     def history_dir(self) -> Path:
@@ -669,6 +747,7 @@ class Settings:
             self.heads_dir,
             self.faces_dir,
             self.samples_dir,
+            self.sample_thumbs_dir,
             self.history_dir,
             self.thumbs_dir,
         ):

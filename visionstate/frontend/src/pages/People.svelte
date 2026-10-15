@@ -65,6 +65,12 @@
       No sensor recognises faces yet: turn it on under an object sensor's Settings → Faces (one that looks for Person).
     </div>
   {/if}
+  {#if faces?.embedding}
+    <div class="notice" data-testid="faces-embedding">
+      Learning the taught faces with the face model… {faces.embedding.done} of {faces.embedding.total}. Until then the
+      cameras find people without naming them.
+    </div>
+  {/if}
   {#if room && faces?.sensors}
     <section class="card pad col add" data-testid="add-person">
       <h3>Add a person</h3>

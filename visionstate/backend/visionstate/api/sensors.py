@@ -210,7 +210,7 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             raise HTTPException(400, "Only object sensors have objects")
         if sensor.kind != KIND_READING and body.reading is not None:
             raise HTTPException(400, "Only reading sensors have reading settings")
-        old_roi, old_keys = sensor.roi, [st.key for st in sensor.states]
+        old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
         for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
             value = getattr(body, field)
             if value is not None:
@@ -233,6 +233,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
             check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
         if body.reading is not None:
             sensor.reading = body.reading.model_dump()
+        if sensor.roi != old_roi or sensor.source != old_source:
+            sensor.frame_size = None  # the next frame's size is the one the region is drawn on
         s.flush()
         changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
         retrain = changed and sensor.kind == KIND_STATES
@@ -246,6 +248,8 @@ async def delete_sensor(sensor_id: int, request: Request) -> Response:
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg is None:
         raise HTTPException(404, "Sensor not found")
+    if rt.live_state(sensor_id).camera_changed is not None:
+        await rt.camera_notice(cfg, None)
     with rt.db.session() as s:
         s.delete(get_sensor(s, sensor_id))
     await rt.sensor_deleted(sensor_id, cfg.descriptor)
@@ -300,6 +304,17 @@ async def reading_image(sensor_id: int, request: Request) -> Response:
 @router.post("/{sensor_id}/classify")
 async def classify_now(sensor_id: int, request: Request) -> dict:
     runtime(request).wake(sensor_id, force=True, paused_too=True)
+    return {"ok": True}
+
+
+@router.post("/{sensor_id}/accept-picture")
+async def accept_picture(sensor_id: int, request: Request) -> dict:
+    """A reading sensor's camera changed its picture size and the region is still right: read
+    again, with the next frame's size as the one the region is drawn on."""
+    rt = runtime(request)
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_READING).frame_size = None
+    rt.wake(sensor_id, force=True, paused_too=True)
     return {"ok": True}
 
 
@@ -479,8 +494,8 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "misread_accepted": count(~rejected, Prediction.read_ok.is_(False)),
             "right_accepted": count(~rejected, Prediction.read_ok.is_(True)),
             "waiting": count(Prediction.reviewed.is_(False)),
-            # accepted, nobody checked, the frame kept: they go into the export too
-            "unchecked_accepted": count(~rejected, Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
+            # nobody checked, the frame kept: they go into the export too
+            "unchecked": count(Prediction.read_ok.is_(None), Prediction.frame.is_not(None)),
         }
         items = s.scalars(
             select(Prediction)

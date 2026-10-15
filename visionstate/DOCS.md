@@ -196,7 +196,8 @@ everyone.
   (**Recognise people by their face** under the objects, once Person is picked). A sheet says
   what is stored and which face model is downloaded (once, from Hugging Face), and nothing
   happens until you confirm. While it downloads the sensor keeps working without faces; the card
-  shows the progress, and **Try again** if it failed. Without internet, put the file the message
+  shows the progress, and **Try again** if it failed. The sensor's card on the start page and its
+  page say *Downloading faces…*, *Loading faces…* or *Learning faces…* until faces are named. Without internet, put the file the message
   names in the app's `models` folder by hand.
 - **Does my camera see faces well enough?** The **Live** tab draws a small rounded box around
   each face it finds in a person, and says for each person what it saw: a name, *face too small*,
@@ -263,9 +264,9 @@ everyone.
   stay. Deleting a sensor keeps the faces taught on it. Turned off on every sensor, the face model
   is let go from memory; **Settings → AI model → Compare and manage the models** can then delete
   its file.
-- **Where faces are kept**: in the app's own storage, not in the media folder (which Home
-  Assistant's media browser shows to every user) — so they are in Home Assistant backups: keep
-  those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
+- **Where faces are kept**: in the app's own storage, like training images, not in the media
+  folder (which Home Assistant's media browser shows to every user) — so they are in Home Assistant
+  backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
   person; an export never contains them.
 
 ## Reading sensors
@@ -299,6 +300,11 @@ First choose **what it looks like**:
 | **Value** | Prices and other numbers that go up and down | `measurement` (none for money, as Home Assistant requires) |
 | **Time left** | Countdowns like `1:25` on appliances | minutes (`1:25` = 85 min), device class *duration* |
 
+- **Unit** and **Home Assistant type**: Home Assistant only takes certain units for a type
+  (water: m³, L, gal, ft³, CCF, MCF). VisionState sends `m3` as `m³` and `kwh` as `kWh`; a unit
+  the type does not take at all is sent without the type, so the entity still appears, only not
+  in the Energy dashboard (the app's log says so).
+
 - **Digits after the decimal point** decide where the decimal point is. Dots and commas on the
   display are ignored, because a stray dot is the most common misread. When the test read shows
   a decimal point (for example `1234.5`), VisionState offers to set the matching number.
@@ -308,8 +314,8 @@ First choose **what it looks like**:
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
   five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
   wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
-  a limit on how much the value may change (Settings → Sensor output) catches a misread that is
-  too high. A reading exactly one step of the last digit below the value is the
+  a limit on how fast it may go up (see *Counter limit* below) catches a misread that is too
+  high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
   review queue (the Live tab says *Last wheel turning*). If the last wheel never stands still,
   you can also leave it out of the region and count one digit and one decimal less.
@@ -318,10 +324,36 @@ First choose **what it looks like**:
   choose *Wheel reader* on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
-  mechanical counter is read with the wrong number of digits, or the value changes more than the
-  limit you set. Every rejected reading is listed in the **History** tab with the reason and
-  waits in the **Review** queue. A new value is published after 2 equal readings in a row
-  (adjustable).
+  mechanical counter is read with the wrong number of digits, a counter goes up faster than its
+  limit, or another value changes more than the limit you set. Every rejected reading is listed
+  in the **History** tab with the reason and waits in the **Review** queue. A new value is
+  published after 2 equal readings in a row (adjustable).
+- **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new
+  counters) learns it from the counter's own readings: the fastest it went up over ten minutes
+  and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of
+  readings first; until then a rate per hour applies, which you may change — it starts at a
+  standard one (for a water meter with three decimals 0.04 m³ a minute) — and once learned, the
+  Settings tab shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
+  *Fixed per reading* the largest rise from one reading to the next, the same however long the
+  app was away (after a restart a real rise waits for your answer in Review); *No limit* rejects only a counter that reads lower. Choosing *Fixed rate* or
+  *Fixed per reading* fills in the standard limit to start from.
+  With *Learn it* and *Fixed rate*, the longer the counter was not seen — the app restarted or
+  was updated, the camera was away, the readings were unsure — the more it may have gone up, so
+  a reading after a restart is accepted. Time in which the counter was read clearly but too high does not count: a wheel
+  that is read one digit too high over and over stays rejected.
+  A rise over the limit while the app was watching (say the light failed during a shower) is
+  never accepted by itself, however many readings agree: it waits in the Review queue.
+  Answering *Read correctly*, or *Misread* with the right value, on the newest rejected reading
+  makes that the counter's value, so it goes on from there. Counters set up before the limit
+  could be learned keep the limit they had: *Fixed per reading* with the same change, or no limit.
+- **Camera changed:** the region is kept as a part of the picture, so a camera that comes back
+  from a restart with another picture size (some ESP32 cameras fall back to their default size,
+  and also show another part of what they see) would make the region cover something else.
+  VisionState notices it: the readings are held (the value stays, *problem* is
+  `camera_changed`), the sensor shows a card and Home Assistant a notification. It goes on by
+  itself when the size is back. Otherwise look at the region on the Live tab: **The region is
+  right** reads again at the new size, **Adjust the region** opens Settings, where a new region
+  is drawn on the picture as it is now. Only reading sensors with a region are checked.
 - **Quality** tab: the share of readings that were accepted today, in the last 7 and 30 days, why
   the others were rejected, and a chart per day. Below it the rejected readings with their frame: tell whether the reader read
   the meter right (*Read correctly*) or not (*Misread*, optionally with the value it showed — the
@@ -334,7 +366,7 @@ First choose **what it looks like**:
   The reader does **not** learn from these answers: they show how reliable the reading is and
   which setting to change.
 - **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
-  checked and the accepted ones nobody checked (marked as unchecked) — only the region of each,
+  checked and the ones nobody checked, accepted or rejected (marked as unchecked) — only the region of each,
   not the whole picture — with what was read and what was right, which reader read it and (for
   the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
   made in, so moving the region later does not spoil the readings from before. Write what the
@@ -354,7 +386,7 @@ First choose **what it looks like**:
   | Entity | What it is |
   |---|---|
   | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
-  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`) |
+  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`, `camera_changed`) |
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
   | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
@@ -430,7 +462,7 @@ For a camera in a dark place, such as a meter cabinet: pick a light, switch or h
 the camera (the first step of the wizard, or **Settings → General**). VisionState switches it on:
 
 - **for each check**: before the frame is taken, and off again afterwards. *Wait before taking the
-  frame* (default 1 s) gives the light and the camera time; meanwhile VisionState fetches a frame
+  frame* (default 2 s; longer if the frames still come out dark) gives the light and the camera time; meanwhile VisionState fetches a frame
   every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
   they took earlier, and only adjust their exposure between pictures: this way the frame that is
   read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
@@ -478,10 +510,18 @@ How long history is kept is set under **Settings → Storage** (below).
 
 ## Backup, export and import
 
-- Settings, the database and trained models live in the app's data folder and are part of
-  Home Assistant backups.
-- Training images and history frames are stored in `/media/visionstate` (the beta app uses
-  `/media/visionstate_beta`).
+- Settings, the database, trained models and **training images** (also the boxes taught to object
+  sensors and the taught faces) live in the app's own storage and are part of Home Assistant
+  backups of the app, so a restore brings back what you taught together with its images.
+- **History frames** are stored in `/media/visionstate` (the beta app uses
+  `/media/visionstate_beta`); they are only in a backup that includes the media folder.
+- Older versions kept training images in `/media/visionstate/samples`. They are copied to the
+  app's own storage by themselves after the update; the copies in the media folder are removed
+  30 days later (until then, going back to the backup made before the update still finds them).
+  Images there that no sensor uses are left alone and can be deleted by hand.
+- A training image that has gone missing (for example after restoring a backup made without it)
+  is left out of training and of what an object sensor was taught; the log names it, and the
+  sensor keeps working.
 - **Settings → Storage** shows how much space history frames and training images use and how
   much is free. History is kept for **7 days** but at most **2 GB** by default — whichever is
   reached first; the oldest frames are removed first, frames waiting for review last (they are
@@ -529,7 +569,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   times as slow per face), which tells faces apart better in poor light and at an angle. YuNet
   was trained on a research data set and SFace's paper names research data sets too (their
   terms are not commercial); AuraFace's makers say its data allows commercial use. Switching
-  compares every taught face again with the new model; the people are kept. Only loaded while a
+  computes every taught face again with the new model (*Learning faces… 12/40* on the sensors'
+  cards, the progress on the Faces card and the People page; the sensors find people without
+  naming them until it is done); the people are kept. Only loaded while a
   sensor recognises faces.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,

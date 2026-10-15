@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from functools import partial
 from pathlib import Path
 from typing import IO
 
@@ -222,7 +223,7 @@ def delete_samples(sensor_id: int, body: IdsIn, request: Request) -> dict:
         get_sensor(s, sensor_id)
         samples = s.scalars(select(Sample).where(Sample.sensor_id == sensor_id, Sample.id.in_(body.sample_ids))).all()
         for sample in samples:
-            rt.storage.delete_sample(sensor_id, sample.id, sample.filename)
+            rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, sample.id, sample.filename))
             s.delete(sample)
     _retrain(request, sensor_id)
     return {"deleted": len(samples)}

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from .. import detectors
+from ..change_limit import Watch
 from ..db import Person, Sensor
 from ..mqtt import SensorDescriptor
 from ..settings import (
@@ -52,6 +53,7 @@ class SensorConfig:
     reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
     publish: bool = True  # see db.Sensor.publish
+    frame_size: list | None = None  # see db.Sensor.frame_size
 
     @property
     def state_keys(self) -> list[str]:
@@ -122,6 +124,7 @@ class SensorConfig:
             reading=merge_reading(row.reading),
             entity_prefix=bool(row.entity_prefix),
             publish=bool(row.publish),
+            frame_size=row.frame_size,
         )
 
 
@@ -233,6 +236,11 @@ class LiveState:
     # and (time, value) of accepted readings of a counter for its rate (see readers.counter_rate).
     reads: deque = field(default_factory=deque)
     rate_samples: deque = field(default_factory=deque)
+    watch: Watch = field(default_factory=Watch)  # counters: how much the value may go up next
+    # Reading sensors: the camera's picture has another size than the region was drawn on
+    # ({"from": [w, h], "to": [w, h], "since": epoch seconds}); readings are held until it is
+    # back or the user accepts it (engine/reading.py).
+    camera_changed: dict | None = None
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"

@@ -19,6 +19,18 @@ training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
   - *Only three real meter types tested.* Gas meters, IR or night images and angled cameras are untested.
   - *Confidence is only moderately informative.* A threshold that rejects 4 % of the reads catches
     about half of the wrong ones (Dryad test).
+  - *Wheels at rest sit off their digit, each its own way*, but the decoder allows only one common
+    shift plus ±`wheel_slack_bins`. On oleost1 two black wheels sat at 0.3–0.4 past their digit all
+    day while the others sat at 0.1–0.2. The decoder put them outside the slack, where their
+    probability dropped to 0.02–0.08 although the digit was plain. That one wheel pulled the mean
+    under 0.70, so 22 of the 29 rejected readings were right. A low threshold is not the fix: at 0.56,
+    3–4 of that day's 7 misreads would have passed, one of them too high (585 instead of 565). It can
+    also flip the digit. In one sharp, well-lit frame the black 7 had 0.49 of its mass at 7.2–7.3
+    and 0.21 at 0.2. Only 7.2 fell inside the slack, so the decoder read 032.776 instead of 732.776
+    at confidence 0.84. Only "went down" caught it. See A2.
+  - *Red wheels half way while the water stands still.* All of oleost1's misreads came from the last
+    wheel stopped exactly half way (6½). The neighbouring red 9 or 6 was then read as 8, and the last
+    wheel as 2, 8 or 9. The same hard frame then comes back for as long as nobody draws water.
   - *Every frame is read on its own.* The last value is only used afterwards, by hard checks
     (`went down`, `max_step`, `readers.settling`).
   - *Geometry is assumed:* equal-width cells and a fronto-parallel view.
@@ -51,6 +63,7 @@ repository is CC0 and becomes a test asset):
 | `pedro40` 0001–0017 | issue #40 (CC0) | held out (wheels-v1 was trained on it in the end: hold out the *next* export instead) |
 | `bol_cold`, `bol_warm` | bolausson (GPL-3.0) | test only, never training |
 | `dryad_test` | Dryad (CC0) | test, right way up |
+| `oleost1`, … | the maintainer's water meter (CC0 exports, one per few days from 2026-10-14; ESP32-CAM 1600×1200 with flash, 8 wheels, 3 red) | held out: test only, a meter with wheels sitting off their digits at rest |
 | new shared exports | §5 | **split by meter**: one meter is either training or test, never both |
 
 **Metrics**, reported per set by `tools/wheelreader/evaluate.py`:
@@ -104,7 +117,8 @@ In the decoder the expectation can be tested, explained, set per sensor and used
   - only debounced, published values become L;
   - N readings in a row that clearly disagree with L, *and agree with each other*, release the
     prior. They are treated as a new start, which also covers a replaced or reset meter. This is
-    shown in the History as an event and on the Live tab;
+    shown in the History as an event and on the Live tab. The counter limit decided otherwise for
+    now (readings that agree never override it, `docs/SCOPE.md`): a release would wait for Review;
   - after a restart, L is the last value from the history (as today), but its age counts: an old L
     gives a wide window.
 - **UI and history:** a new reason, `disagrees_with_last` (lower-case key for the "problem" entity),
@@ -123,6 +137,14 @@ In the decoder the expectation can be tested, explained, set per sensor and used
 - **Reading-level confidence:** use the decoder's alternatives: P(best V) / Σ P(top-k V) (a
   normalised margin between the best value and its nearest rivals, typically ±1 on a wheel), not the
   mean per wheel. The k-best come from the DP (keep the top few per state) or from the A1 window.
+- **A wheel at rest counts by its whole digit**, not by the one bin the common shift puts it at: its
+  probability is the mass within about ±0.45 of its digit. The **weakest wheel** also counts on its
+  own, not only through the mean. On oleost1 (§1), with only the exported top three per wheel, the
+  right readings came out at 0.94–0.99 with their weakest wheel mostly ≥ 0.8. The misreads had a
+  weakest wheel of 0.14–0.43. "Weakest wheel under about 0.5 → unsure" would have passed nearly all
+  right readings and caught every misread, including the one that was published (last wheel read
+  as 2 at 0.44). This is to be measured with the full 100-bin output on the whole benchmark, set
+  against the value margin above.
 - **Pick the default threshold** from the risk–coverage curve (§3). The UI text stays "at least
   70 % sure", but 70 % then really means 70 %.
 - **Registry:** T belongs to the model, so a calibrated wheels-v1 is a new entry
@@ -148,8 +170,9 @@ first plan (2026-10-10):
   the sensor's light on) instead of a flag in the dialog;
 - frames are **not** deduplicated in the app — a reading of the same frame is still a reading; the
   training tools remove duplicate images (§B4);
-- the unchecked accepted readings are **always** included (no option, no count limit): the images
-  are what is scarce. Their value is the reader's guess, so the tools use them as labels only after
+- the unchecked readings, accepted and rejected, are **always** included (no option, no count
+  limit): the images are what is scarce, and with the rejected ones a sensor's checks can be
+  replayed in order (`seconds`). Their value is the reader's guess, so the tools use them as labels only after
   a check (§B4);
 - no spot-check button; `spot_rate` is the way to get accepted readings checked;
 - one ZIP of at most 24 MB (GitHub's limit is 25 MB per file), checked readings first, then the
@@ -186,6 +209,10 @@ user looks at the images before sharing (README.txt in the ZIP).
   sequence confirms them (a counter only goes up: a value between two confirmed neighbours that
   fits the rate). Until the tools do that check, they skip them.
 - A label check after every training run (§3).
+- A last wheel stopped half way has two right answers. On oleost1 the same frame was marked right
+  as 596 on some readings and as 597 on others. The tools count either neighbour as right there and
+  keep such cells as interval labels, as the per-sensor labels in §8 do.
+- Collect the half-way red-wheel cells from exports as their own case for wheels-v2 (§7).
 - `VisionStateLocal/README.md` lists the source and licence of every set, as it does now.
 
 ## 6. Phase C — geometry: let the app correct itself
@@ -205,7 +232,9 @@ showing at the side and wheels that sit a little off each other at rest.
   - vertical offset ±10 %;
   - height scale ±10 %;
   - rotation ±3°;
-  - cell borders moved ±10 % one by one, or as a linear stretch (cells of unequal width).
+  - cell borders moved ±10 % one by one, or as a linear stretch (cells of unequal width);
+  - a rest offset per wheel: where each wheel that is not turning sits relative to its digit, found
+    over the K frames (on oleost1 it was +0.3 for two wheels and +0.1 for the rest, the same all day).
 - It keeps the change with the best total decode score over the K frames. Cost: K × changes ×
   about 2 ms; a coarse-to-fine search keeps it to a few seconds on a Pi.
 - **The result** is stored with the sensor (`reading.calibration`, reset when the region or the
@@ -225,6 +254,10 @@ the shift of the region against a reference frame by phase correlation (numpy FF
 OpenCV) and move the region along. AI-on-the-edge does this with two reference marks the user
 picks. Doing it automatically, on the area around the region, needs no user step. It must check
 the correlation peak and skip frames where it is weak (light changes, IR switching).
+A first real case was oleost1: an ESP32-CAM mount moved on its first day, the region was redrawn
+twice, and the digits still sat at different heights in crops of the same size.
+A camera that comes back with another picture size is already caught without this (readings held,
+"camera changed", [`SCOPE.md`](SCOPE.md) §5); C3 is for a picture that moved at the same size.
 
 ### C4. Perspective correction
 
@@ -237,7 +270,7 @@ working), the corner order and orientation, and dragging corners on a phone.
 ## 7. Phase D — wheels-v2
 
 - **Drawn cells:** whole counter rows drawn in perspective and then cut like the app does;
-  monochrome IR; flash reflections on glass; fog and drops; DIN-like narrow fonts (OFL); the failure
+  monochrome IR; flash reflections on glass; red wheels stopped half way; fog and drops; DIN-like narrow fonts (OFL); the failure
   types from phase B.
 - **Context:** the cell plus a strip of each neighbour (or a model that reads the whole row and
   gives one position per wheel), so carries are seen together. Measure against the per-wheel model.

@@ -48,7 +48,7 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
                 select(Sample).where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None)).order_by(Sample.id)
             )
             examples = [x for x in rows if x.object_label is not None and teach.usable(x.object_label, parents)]
-        vectors = self._taught_vectors(cfg, examples)
+        examples, vectors = self._taught_vectors(cfg, examples)
         return teach.build(
             embedder.spec.id,
             [x.id for x in examples],
@@ -59,11 +59,15 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
             generation,
         )
 
-    def _taught_vectors(self, cfg: SensorConfig, examples: list[Sample]) -> np.ndarray:
-        """Embeddings of taught boxes, one image at a time (see teach.embed), cached in the DB."""
+    def _taught_vectors(self, cfg: SensorConfig, examples: list[Sample]) -> tuple[list[Sample], np.ndarray]:
+        """Embeddings of taught boxes, one image at a time (see teach.embed), cached in the DB.
+
+        Returns the boxes that have one: a box whose image is gone or unreadable (issue #45: a
+        backup restored without the images) is left out instead of stopping the sensor.
+        """
         embedder = self.embedder
         if embedder is None or not examples:
-            return np.zeros((0, 0), dtype=np.float32)
+            return [], np.zeros((0, 0), dtype=np.float32)
         backbone_id = embedder.spec.id
         with self.db.session() as s:
             rows = s.scalars(
@@ -74,10 +78,15 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
                 )
             ).all()
             cached = {r.sample_id: np.frombuffer(r.vector, dtype=np.float32) for r in rows}
+        gone = []
         for x in examples:
             if x.id in cached:
                 continue
-            image = imaging.load(self.storage.sample_path(cfg.id, x.filename))
+            try:
+                image = imaging.load(self.storage.sample_path(cfg.id, x.filename))
+            except OSError:  # missing, or not a whole image
+                gone.append(x.id)
+                continue
             vector = teach.embed(embedder, [image])[0]
             with self.db.session() as s:
                 s.merge(
@@ -86,7 +95,14 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
                     )
                 )
             cached[x.id] = vector
-        return np.stack([cached[x.id] for x in examples])
+        if gone:
+            log.warning(
+                "Sensor %s: %d taught boxes have no readable image and are left out: %s", cfg.slug, len(gone), gone
+            )
+            examples = [x for x in examples if x.id in cached]
+        if not examples:
+            return [], np.zeros((0, 0), dtype=np.float32)
+        return examples, np.stack([cached[x.id] for x in examples])
 
     async def apply_taught(
         self,

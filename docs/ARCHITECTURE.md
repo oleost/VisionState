@@ -58,6 +58,7 @@ API as `request.app.state.runtime`.
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
+| `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
@@ -107,7 +108,7 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   └─ by kind:
       state sensor   → checks._run_states  backbone embedding → head → probabilities
       object sensor  → objects._run_objects detector → taught boxes (teaching) → faces → tracks (logic)
-      reading sensor → reading._run_reading reader → parse → plausibility → debounce
+      reading sensor → reading._run_reading reader → parse → plausibility (change_limit) → debounce
         │
         ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image
         └─ history: a Prediction row + frame, when the value changed or the frame goes to review
@@ -120,13 +121,18 @@ error is kept in `LiveState.error` and shown in the UI.
 
 - **SQLite** (`<data>/visionstate.db`): `sensor` (+ `state`), `sample` (+ `sample_label`,
   `embedding` cache), `prediction` (the history and the review queue), `reading_stat`,
-  `model_info` (per sensor), `setting` (global settings as JSON), `person` (+ `face`,
+  `reading_watch` (a counter's limit between readings), `model_info` (per sensor), `setting` (global settings as JSON), `person` (+ `face`,
   `face_embedding` cache: the people taught by face, shared by every sensor).
 - **Faces** (`<data>/faces/`): crops of the people's taught faces — in the app's own storage, not
   the media folder (see `storage.Storage.face_path`).
-- **Files** (`<media>/`): `samples/<sensor>/` (training images; for object sensors the crops of
-  taught boxes), `history/<sensor>/`, `thumbs/`; `<data>/heads/` (trained heads), `<data>/models/`
-  (downloaded models, left out of backups).
+- **Files**: `<data>/samples/<sensor>/` (training images; for object sensors the crops of taught
+  boxes — next to the database that lists them, so a backup holds both), `<data>/thumbs/sample/`,
+  `<data>/heads/` (trained heads), `<data>/models/` (downloaded models; models and thumbnails are
+  left out of backups); `<media>/history/<sensor>/` and `<media>/thumbs/history/`. Versions before
+  the move kept training images in `<media>/samples/`: they are read there until
+  `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed
+  only after the row that lists it (`db.Database.after_commit`), and an image that is gone anyway
+  is left out of training and of the taught boxes instead of stopping the sensor.
 - **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
   `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
   `prediction` rows (see `db.py`).

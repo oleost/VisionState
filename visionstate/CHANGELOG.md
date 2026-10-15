@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.9.1
+
+### Better
+
+- **Counters accept the value after a restart or update.** With *Learn it* or *Fixed rate* (below),
+  how much a counter may go up grows with the time it was not seen — the app was away, or the
+  readings were unsure — so the first reading after an update is no longer rejected as *changed
+  too much*. A wheel read one digit too high over and over still stays out.
+- **Choose how a counter's limit works** (Settings → Sensor output):
+  - **Learn it** — how fast it goes up on a busy day, learned from a week of its readings. Until
+    then a standard rate applies (for a water meter with three decimals, 0.04 m³ a minute), shown
+    there and yours to change.
+  - **Fixed rate** — a rise per hour that you set.
+  - **Fixed per reading** — the largest rise from one reading to the next, the same however long
+    the app was away.
+  - **No limit.**
+
+  Counters you already have keep the limit you set, as *Fixed per reading*: switch to *Learn it*
+  or *Fixed rate* for the value after a restart to be accepted by itself.
+- **Read correctly in Review moves the counter on**: answering it for the newest rejected reading
+  makes that the value — the way on after a real jump over the limit (say the light failed during
+  a shower), and the way out for a counter stuck on a value read too high.
+- **Readings are held when the camera's picture changes size** (a camera that comes back from a
+  restart with another resolution shows something else in the region): *problem* becomes
+  `camera_changed`, Home Assistant gets a notification, and the sensor asks you to check the
+  region — **The region is right** or **Adjust the region**. It reads again by itself when the
+  size comes back.
+- **Training images are kept in the app's own storage**, next to the database that lists them,
+  so a Home Assistant backup of the app holds both. They were in the media folder, which the
+  app's backups — also the one Home Assistant makes before every update — do not include: after a
+  restore, the database could list images that were not there. The media folder is also shown to
+  every Home Assistant user by the media browser. Your images are copied over by themselves after
+  the update; the old copies in `/media/visionstate/samples` are removed 30 days later, so going
+  back to the backup made before the update still works until then. Backups of the app get larger
+  by the size of your training images (Settings → Storage shows it). History frames stay in the
+  media folder.
+- **A light waits 2 seconds before the frame by default** (was 1 second): an ESP32 camera at full
+  size needs about a second per picture, and with 1 second the frame read was often dark. Sensors
+  you already have keep their setting — raise *Wait before taking the frame* to 2 s if readings
+  come out dark.
+- **Export readings** also holds the rejected readings nobody answered, and each reading's
+  picture size, so an export shows the sensor's checks in order.
+- **Switching the face model shows its progress** on the sensors' cards, the Faces card, People and
+  Settings, and the taught faces are learned again right after the new model is loaded.
+
+### Fixed
+
+- **A reading sensor with the unit `m3` now shows its value in Home Assistant.** Home Assistant
+  only takes `m³` for water and gas, and dropped the whole value entity without a word — only the
+  rate and the diagnostics appeared. VisionState now sends the unit the way Home Assistant writes
+  it (`m3` → `m³`, `kwh` → `kWh`); a unit the chosen type does not take at all is sent without the
+  type, so the entity still appears (not in the Energy dashboard; the app's log says so). Sensors
+  whose entities already work are not changed.
+- **An object sensor no longer stops when the image of a taught box is gone** (issue #45, thanks
+  to @terryhonn for the report and @wzd8888 for the first fix). It showed *No such file or
+  directory* on every check. A box, or a state sensor's training image, whose file is missing or
+  unreadable is now left out — the log names it — and the sensor keeps working.
+- **Deleting a training image, a taught box or a face no longer shows an error** when the file
+  cannot be removed (in use, or no permission): it is gone from VisionState, and the log names the
+  file.
+
 ## 0.9.0
 
 ### New

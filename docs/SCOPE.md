@@ -271,14 +271,77 @@ it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-
    (the class indices are stored in the registry, so the dictionary file is not needed).
 3. Parse: only digits count, the configured `decimals` place the decimal point; `time_left`
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
-   going down, a mechanical counter read with another number of digits than it has wheels, or a
-   change above `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   going down, a mechanical counter read with another number of digits than it has wheels, a
+   counter going up faster than its limit (below), or another value changing more than
+   `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
    one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
    value stays, but it is no rejection (no history row, no review item, counted as accepted) —
    seen in a user's export, where one too-high value made every right reading after it a "went
    down" rejection. A right value typed in the review (`readers.right_value`) is taken as written
    with a point or comma, and digits only are placed with the configured decimals.
-   The last published value is restored from the history after a restart.
+   The last published value is restored from the history after a restart (or from
+   `reading_watch`, when that is newer: a counter's, or a value confirmed in Review).
+
+**Counter limit** (`change_limit.py`, `settings.COUNTER_LIMIT`): how much a counter may go up
+since a reading last confirmed its published value is a rate times the time it was *not seen*,
+plus two steps of the last digit. (Confirmed, not merely accepted: a reading still waiting for
+its debounce leaves the published value older than it, and during a long shower that is minutes.) A fixed `max_step` between two readings (what counters had until then) was both
+too loose and too tight: issue #40's water meter (0.04 m³ per one-minute reading = 2.4 m³/h, four
+times its busiest shower) rejected right readings after a 35-minute update.
+- *Not seen* is time the app was down (a pause longer than `gap_checks` intervals), and time the
+  readings were unsure. Once a reading was read with confidence over the limit (`held`), normal
+  pauses stop counting: otherwise a wheel misread over and over would get through after a while,
+  as the allowed rise grows. This is the reason the limit is not simply "rate × time since the
+  last accepted value".
+- *Learn it* (`auto`, the default for new counters): per local day `reading_stat` keeps the
+  largest rise over `window_s` (600 s) and the day's rise, from the accepted readings (each with
+  the lower of its value and the next one's, so one read too high adds nothing; published values
+  would put a whole shower into one step) — only over stretches where the counter was read all
+  the time, so a rise over a pause is never learned. The limit takes the
+  second-largest day of the last `learn_days`, so one misread that slipped through does not count,
+  times `safety`; for a long pause it is capped by that many busy days. It needs `min_days` days
+  (a whole week: wash day and weekend). On issue #40's data, ×2 left room above every right
+  reading (the largest was 1.1 × the learned rate). Replayed three times over with readings every
+  minute, 14 times away (35 min to two days), 15 stretches of unsure readings and six wheels read
+  a digit too high for 20–120 min: the fixed 0.04 per reading kept the value behind the meter for
+  528 hours; learned, 32 hours (the debounce during long showers, as with a fixed rate), it
+  learned 0.82 m³/h for a meter that ran at 0.75 at most, and after its first week no wrong
+  value was published. A wheel read too high right after a long time away does get through —
+  nothing tells it from water used meanwhile — and then the "went down" lock below applies.
+  Until it learned, a rate applies: `max_rate`, or when that is 0 `standard_steps_per_min` steps
+  of the last digit a minute (issue #40's 0.04 m³ a minute, three decimals). It once set no limit
+  until then; on issue #40's meter, switched to *Learn it*, a wheel read two digits off went
+  through as +2.09 m³ in its first week. The UI shows the rate in use, and fills in the standard
+  one when *Fixed rate* or *Fixed per reading* is chosen without a value; 0 there stays "no
+  limit", as it was before.
+- *Fixed per reading* (`step`): `max_step` for every reading, however long since the last one —
+  the limit counters had before the rate, which some users find easier to tune ("how many
+  decimals may move between two checks"). Counters from before keep it unchanged (migration 14,
+  `db.keep_change_step`); after a restart a real rise waits for Review.
+- Readings over the limit are never accepted by themselves, however many agree: only an answer in
+  Review (below) moves the counter on. A beta accepted a jump once readings agreed for five
+  minutes, unless it looked like one misread wheel; the maintainer took it out again —
+  the limit is there so that nothing overrides it without a person, and a camera that moved can
+  misread the same wrong value over and over (issue #40). A real jump while the readings were
+  unsure, or a counter that goes faster than it ever did, waits for Review.
+- Confirmed in Review (*read correctly* for an unsure or implausible reading, or a typed right
+  value) on a rejected reading newer than the last accepted one: that value becomes the last one
+  (`engine.reading.anchor_reading`). It is also the way out for a counter stuck above its real
+  value, the "went down" lock — never automatic, as Home Assistant takes a counter going down
+  for a reset.
+- The limit's state (`reading_watch`) is stored with every reading, so a restart knows how long
+  the app was away. Counters made before the limit (schema v14, and importing an older export:
+  `db.keep_change_step`) keep theirs as `fixed`: the old `max_step` per check interval, as a rate.
+- **Camera changed** (reading sensors with a region): the region is a share of the picture, so a
+  camera back from a restart with another size reads something else (issue #40: an ESP32 camera
+  whose picture moved, nobody near it). The first frame after the region or source changed sets
+  `db.Sensor.frame_size`; a frame of another size is not read (`engine.reading.CAMERA_CHANGED`):
+  the value stays, the frame is kept once in the history (not in Review: the card on the sensor
+  asks), and Home Assistant gets a notification (`READING["camera_notification_id"]`). It ends
+  when the size is back, or when the user says the region is right (`POST
+  /sensors/{id}/accept-picture`) or draws a new one (both clear the size). Held rather than
+  paused, so a camera that comes back at its old size needs nothing. A camera that moved without
+  changing size is not caught by this: that is C3 in `docs/WHEEL_READER_PLAN.md`.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
 `wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
@@ -427,6 +490,11 @@ the version Home Assistant ships) instead of the occupancy class's house icon.
 **Reading sensors** publish the value on `sensor.<name>` with `unit_of_measurement`,
 `device_class` and `state_class` from the mode (counter → `total_increasing`, value →
 `measurement` except `monetary`, time left → `duration` in `min`), plus the confidence sensor.
+Home Assistant's MQTT discovery refuses an entity whose unit its device class does not take (exact
+match: `m3` with `water` made the value entity disappear without a word), so `mqtt.ha_unit` writes a
+unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`) and otherwise leaves the
+device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
+without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
 Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
 them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
@@ -548,9 +616,24 @@ loads.
 |---|---|---|
 | Settings, DB, embeddings, trained heads | `/data` (per app) | Yes |
 | Downloaded backbone models | `/data/models` | Excluded (re-downloadable) |
-| Training images (and boxes taught to object sensors, as crops) | `/media/visionstate/samples/<sensor>/` (beta: `/media/visionstate_beta`) | With the media folder |
-| The people's taught faces (crops, shared by every sensor) | `/data/faces/` — not in the media folder, which every Home Assistant user can browse | Yes |
-| History frames | `/media/…/history/` | Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+| Training images (and boxes taught to object sensors, as crops) | `/data/samples/<sensor>/` | Yes |
+| Thumbnails of training images | `/data/thumbs/sample/` | Excluded (made again when asked for) |
+| The people's taught faces (crops, shared by every sensor) | `/data/faces/` | Yes |
+| History frames | `/media/visionstate/history/` (beta: `/media/visionstate_beta`) | With the media folder. Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+
+What the user taught lives in `/data`, next to the database that lists it: Home Assistant backs up
+an app's `/data` (also by itself before every update) but not the media folder, so training
+images in the media folder came back without their rows, or rows without their images, after a
+restore (issue #45). The media folder is also shown to every Home Assistant user by the media
+browser. Only the history stays there: large, removed by its limits, fine to lose. Training images are
+what the user labelled or taught (a taught box is a small crop, a state sensor's image a whole
+frame), usually tens of MB in all; Settings → Storage shows how much.
+
+Versions up to 0.9.1b2 kept training images in the media folder. They are read there until they
+are copied (`engine.HistoryMixin.move_samples`, in the clean-up loop, so start-up is not held up);
+the old copies stay for `SAMPLES_MOVE["keep_old_days"]` after the first copy, so restoring the
+backup made before the update still gives the older version its images, then they are removed.
+Files no sensor lists are left in the media folder.
 
 History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
 frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
@@ -568,17 +651,17 @@ automatically.
   their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
 - **Readings to share** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor),
-  so reading can be improved: the readings checked by hand (newest first), then the accepted ones
-  nobody checked (newest first, `"answer": "unchecked"`; never used as labels without a check,
+  so reading can be improved: the readings checked by hand (newest first), then the ones nobody
+  checked, accepted or rejected (newest first, `"answer": "unchecked"`; never used as labels without a check,
   see `docs/WHEEL_READER_PLAN.md`), whose frame is kept — each only the region it was read in
   plus `export_margin` (the region is kept with every stored reading since 0.7.1b2,
   `probs["roi"]`; older ones are cut with today's region, `"region": "current"`). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 2` since
-  0.7.1b5: read text, value, rejection reason, confidence, answer, right value, day only and
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 3`; 2 left out
+  the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
-  stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR) and whether
-  the sensor's light was on; for the wheel reader each wheel's position, probability and most
+  stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
+  the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability and most
   likely positions, the common shift and the value with the last wheel's fraction), the reading
   settings without anything that tells where the sensor is (no source, name or region), the
   user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
@@ -621,6 +704,7 @@ is part of backups and needs no restart.
 | **Review reminder** ✅ | A notification in Home Assistant (optionally a push) when frames have waited for review a long time | 0.8.0 (beta 0.7.1b1) |
 | **Larger models, tunable teaching** ✅ | D-FINE M and L, DINOv2 base, a model comparison in Settings, teaching limits globally and per sensor | 0.9.0 (beta 0.8.1b1) |
 | **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
+| **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

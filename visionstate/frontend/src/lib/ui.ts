@@ -13,6 +13,7 @@ export const POLL = {
 export const TOAST_MS = 5_000;
 
 /** Shown on a sensor whose values are not sent to Home Assistant (see PublishSwitch). */
+export const CAMERA_CHANGED = { label: 'Camera changed', help: 'Readings are held: check the region' };
 export const NOT_SENT = { label: 'Not sent to Home Assistant', help: 'Its entities in Home Assistant are unavailable until you turn on “Send to Home Assistant” in its settings.' };
 
 /** Browser storage key of the light switch in views with live frames (a per-viewer convenience). */

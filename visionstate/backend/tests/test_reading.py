@@ -13,11 +13,11 @@ from PIL import Image
 from sqlalchemy import select
 
 from visionstate import readers
-from visionstate.db import Database, Prediction, Sensor, keep_text_reader
+from visionstate.db import Database, Prediction, Sensor, keep_change_step, keep_text_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
-from visionstate.settings import KIND_READING, READING, VERSION, merge_reading
+from visionstate.settings import COUNTER_LIMIT, KIND_READING, READING, VERSION, merge_reading
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, counter_positions, render, render_counter
@@ -51,13 +51,15 @@ def test_parse(text, settings, expected):
 
 
 def test_implausible_readings():
-    counter = cfg(mode="counter", max_step=10)
-    assert implausible(100, None, counter) is None  # nothing to compare with yet
-    assert implausible(99, 100, counter) == "went down"
-    assert implausible(111, 100, counter) == "changed too much"
-    assert implausible(105, 100, counter) is None
+    counter = cfg(mode="counter", max_step=10)  # a counter's limit is change_limit's, not max_step
+    assert implausible(100, None, counter, 10) is None  # nothing to compare with yet
+    assert implausible(99, 100, counter, 10) == "went down"
+    assert implausible(111, 100, counter, 10) == "changed too much"
+    assert implausible(105, 100, counter, 10) is None
+    assert implausible(1000, 100, counter) is None  # no limit
     value = cfg(mode="value")
     assert implausible(1.2, 1.9, value) is None  # values may go down, no step limit set
+    assert implausible(1.2, 1.9, cfg(mode="value", max_step=0.5)) == "changed too much"
 
 
 def test_counter_digit_count():
@@ -127,6 +129,32 @@ def test_discovery_for_reading_sensor():
     )
     price = entity({"mode": "value", "device_class": "monetary", "unit": "NOK"})
     assert "state_class" not in price  # Home Assistant rejects measurement for money
+
+
+def test_discovery_writes_the_unit_as_home_assistant_takes_it():
+    """Home Assistant refuses a unit its device class does not take ("m3" for water): the entity
+    would be missing. Clear spellings are corrected, otherwise the device class is left out."""
+
+    def configs(reading):
+        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading))
+        return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
+
+    water = configs({"mode": "counter", "unit": "m3", "device_class": "water"})
+    assert (water["state"]["unit_of_measurement"], water["state"]["device_class"]) == ("m³", "water")
+    assert (water["rate"]["unit_of_measurement"], water["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
+    energy = configs({"mode": "counter", "unit": " kwh ", "device_class": "energy"})["state"]
+    assert (energy["unit_of_measurement"], energy["device_class"]) == ("kWh", "energy")
+    # "mwh" could be MWh or mWh, "dm³" is no water unit: sent without the device class.
+    for unit, device_class in (("mwh", "energy"), ("dm³", "water")):
+        state = configs({"mode": "counter", "unit": unit, "device_class": device_class})["state"]
+        assert state["unit_of_measurement"] == unit and "device_class" not in state
+        assert state["state_class"] == "total_increasing"
+    # Left alone: what Home Assistant already takes, so no entity changes its unit.
+    plain = configs({"mode": "counter", "unit": "m3"})
+    assert plain["state"]["unit_of_measurement"] == "m3" and plain["rate"]["unit_of_measurement"] == "m3/h"
+    assert configs({"mode": "value", "unit": "kr", "device_class": "monetary"})["state"]["unit_of_measurement"] == "kr"
+    no_unit = configs({"mode": "counter", "device_class": "water"})["state"]
+    assert no_unit["device_class"] == "water" and "unit_of_measurement" not in no_unit
 
 
 def test_diagnostic_entities_of_reading_sensors():
@@ -348,6 +376,35 @@ def test_counters_made_before_the_wheel_reader_keep_the_text_reader(tmp_path):
     assert keep_text_reader(None) is None
 
 
+def test_counters_keep_their_change_limit_as_a_rate(tmp_path):
+    path = tmp_path / "old.db"
+    Database(path).init()
+    con = sqlite3.connect(path)
+    row = (
+        "INSERT INTO sensor (slug, name, kind, source_type, source, interval_s, threshold, debounce, enabled, "
+        "entity_prefix, publish, created_at, reading) VALUES (?, ?, 'reading', 'http', 'x', ?, 0.7, 2, 1, 0, 1, "
+        "'2026-10-01', ?)"
+    )
+    con.execute(row, ("water", "Water", 60, json.dumps({"mode": "counter", "decimals": 3, "max_step": 0.04})))
+    con.execute(row, ("gas", "Gas", 30, json.dumps({"mode": "counter", "max_step": 0})))
+    con.execute(row, ("price", "Price", 60, json.dumps({"mode": "value", "max_step": 5})))
+    con.execute("PRAGMA user_version = 13")  # as a database of 0.9.0
+    con.commit()
+    con.close()
+    db = Database(path)
+    db.init()
+    with db.session() as s:
+        kept = {r.slug: merge_reading(r.reading) for r in s.query(Sensor)}
+    # The change per reading stays exactly that; no limit stays no limit; values keep max_step.
+    assert (kept["water"]["change_limit"], kept["water"]["max_step"]) == ("step", 0.04)
+    assert kept["gas"]["change_limit"] == "off"
+    assert kept["price"]["max_step"] == 5
+    assert keep_change_step({"mode": "counter", "change_limit": "auto"}) == {
+        "mode": "counter",
+        "change_limit": "auto",
+    }
+
+
 def test_darkest_turns_coloured_digits_as_dark_as_black_ones():
     image = Image.new("RGB", (3, 1))
     image.putpixel((0, 0), (200, 30, 35))  # red digit
@@ -373,10 +430,16 @@ class CounterCamera:
 
     def __init__(self, value: float):
         self.value = value
+        self.wider = 0  # pixels added on the right: a camera that came back with another picture size
 
     async def grab(self, source_type, source):
+        image = render_counter(self.value)
+        if self.wider:
+            wide = Image.new("RGB", (image.width + self.wider, image.height), (40, 40, 40))
+            wide.paste(image, (0, 0))
+            image = wide
         buf = io.BytesIO()
-        render_counter(self.value).save(buf, format="JPEG", quality=92)
+        image.save(buf, format="JPEG", quality=92)
         return buf.getvalue()
 
     async def close(self):
@@ -422,7 +485,13 @@ def test_reading_sensor_flow(settings):
             "kind": "reading",
             "source_type": "http",
             "source": "http://fake",
-            "reading": {"mode": "counter", "decimals": 1, "unit": "kWh", "device_class": "energy"},
+            "reading": {
+                "mode": "counter",
+                "decimals": 1,
+                "unit": "kWh",
+                "device_class": "energy",
+                "change_limit": "off",
+            },
             "interval_s": 1,
             "debounce": 1,
         }
@@ -600,6 +669,79 @@ def test_restart_keeps_checking_against_the_last_value(settings):
 
 
 @requires_reader
+def test_counter_limit_over_time(settings):
+    """A counter's limit: a misread that repeats stays out, time the app was down lets the value
+    on, a jump while watching waits for Review however many readings agree, and a value confirmed
+    in Review is the new last value."""
+    camera = DisplayCamera("00500")
+    reading = {"mode": "counter", "change_limit": "fixed", "max_rate": 360}  # 0.1 a second
+    body = {"name": "Meter", "kind": "reading", "source_type": "http", "source": "x", "interval_s": 1, "debounce": 1}
+    body["reading"] = reading
+    sent: dict[str, object] = {}
+
+    async def publish(topic, payload, retain=False):
+        sent[topic] = payload
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = camera
+        rt.mqtt.publish = publish
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]
+
+        def last():
+            return view()["last"] or {}
+
+        assert wait_for(lambda: view()["value"] == "500", timeout=60)
+        assert view()["limit"]["allowed"] is not None and view()["limit"]["needed"] == COUNTER_LIMIT["min_days"]
+
+        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow.
+        camera.text = "00600"
+        assert wait_for(lambda: last().get("value") == "600" and last().get("reason") == "changed too much", 30)
+        held = rt.live[sid].watch.budget_s
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 4, timeout=30)
+        assert view()["value"] == "500" and view()["limit"]["held"]
+        assert rt.live[sid].watch.budget_s == held
+
+        # The app was down for an hour: the counter went on, and that rise is accepted.
+        camera.text = "00650"
+        assert wait_for(lambda: last().get("value") == "650", timeout=30)
+        rt.live[sid].watch.seen_at -= 3600
+        assert wait_for(lambda: view()["value"] == "650", timeout=30)
+
+        # A real jump while it was watching: rejected however many readings agree, until Review.
+        camera.text = "00800"
+        assert wait_for(lambda: last().get("value") == "800", timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["items"][0]["probs"]["value"] == "800", 30)
+        sure = rt.live[sid].watch.seen_at
+        assert wait_for(lambda: rt.live[sid].watch.seen_at >= sure + 5, timeout=30)  # several more readings
+        assert last().get("reason") == "changed too much" and view()["value"] == "650"
+        assert sent.get("visionstate/meter/state") == "650"
+
+        # Read lower (650 < 700 < 800): confirmed in Review, it becomes the last value.
+        camera.text = "00700"
+        assert wait_for(lambda: last().get("value") == "700", timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["items"][0]["probs"]["value"] == "700", 30)
+        newest = client.get("/api/v1/review").json()["items"][0]
+        assert newest["probs"]["reason"] == "changed too much"
+        assert client.post(f"/api/v1/review/{newest['id']}", json={"action": "read_ok"}).status_code == 200
+        assert wait_for(lambda: view()["value"] == "700", timeout=30)
+        assert wait_for(lambda: sent.get("visionstate/meter/state") == "700", timeout=10)
+    # After a restart it goes on from the confirmed value (which is not in the history as a value).
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+
+        def first():  # the first reading after the restart (none yet: {})
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]["last"] or {}
+
+        assert wait_for(lambda: "at" in first(), timeout=60)
+        assert first()["reason"] is None
+        assert client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "700"
+
+
+@requires_reader
 def test_counter_sensor_flow(settings):
     """A counter read as text (OCR): a wrong number of digits is rejected, the export, the preview."""
     camera = CounterCamera(89932)
@@ -610,6 +752,7 @@ def test_counter_sensor_flow(settings):
         "decimals": 3,
         "unit": "m³",
         "counter_reader": "ocr",
+        "change_limit": "off",  # the counter jumps between checks seconds apart
     }
     body = {
         "name": "Water meter",
@@ -690,11 +833,102 @@ def test_counter_sensor_flow(settings):
         assert bad["wrong_digit_count"] is True
 
 
+class NoticeHa:
+    """Home Assistant stand-in that records the notifications."""
+
+    enabled = True
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_service(self, domain, service, data):
+        self.calls.append((service, data))
+
+    async def app_path(self):
+        return "/app/abc_visionstate"
+
+    async def close(self):
+        pass
+
+
+@requires_reader
+def test_camera_changed_holds_readings(settings):
+    """A camera that comes back with another picture size holds the readings until it is checked."""
+    camera = CounterCamera(89931)
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "change_limit": "off"}
+    body = {
+        "name": "Water meter",
+        "kind": "reading",
+        "source_type": "http",
+        "source": "http://fake",
+        "roi": counter_box(7),
+        "reading": reading,
+        "interval_s": 3600,
+        "debounce": 1,
+    }
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber, rt.ha = camera, NoticeHa()
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+        def view():
+            return client.get(f"/api/v1/sensors/{sid}").json()["reading"]
+
+        def check() -> None:
+            at = (view()["last"] or {}).get("at")
+            client.post(f"/api/v1/sensors/{sid}/classify")
+            assert wait_for(lambda: (view()["last"] or {}).get("at") != at, timeout=30)
+
+        def history() -> list[dict]:
+            return client.get("/api/v1/history", params={"sensor": sid}).json()["items"]
+
+        assert wait_for(lambda: view()["value"] == "89.931", timeout=60)
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size == [800, 360]
+
+        # Another size: not read, the value stays, the frame is kept once, Home Assistant is told.
+        camera.wider, camera.value = 400, 89990
+        rows = len(history())
+        check()
+        check()
+        got = view()
+        assert got["value"] == "89.931" and got["last"]["reason"] == "camera changed"
+        assert got["camera_changed"]["from"] == [800, 360] and got["camera_changed"]["to"] == [1200, 360]
+        assert wait_for(lambda: len(history()) == rows + 1)
+        service, data = rt.ha.calls[-1]
+        assert service == "create" and "800×360 to 1200×360" in data["message"]
+        assert data["notification_id"] == READING["camera_notification_id"] + "water_meter"
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["verified"]["waiting"] == 0  # nothing to review: the card on the sensor asks
+
+        # Back to its size: reading again by itself, the notification goes.
+        camera.wider = 0
+        check()
+        assert view()["camera_changed"] is None and view()["value"] == "89.990"
+        assert rt.ha.calls[-1][0] == "dismiss"
+
+        # Changed again, and the user says the region is still right: the new size is the one.
+        camera.wider, camera.value = 400, 89995
+        check()
+        assert view()["camera_changed"] is not None
+        assert client.post(f"/api/v1/sensors/{sid}/accept-picture").status_code == 200
+        assert wait_for(lambda: view()["camera_changed"] is None, timeout=30)
+        assert rt.ha.calls[-1][0] == "dismiss"
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size == [1200, 360]
+
+        # A new region is drawn on the picture as it is now.
+        client.patch(f"/api/v1/sensors/{sid}", json={"roi": {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5}})
+        with rt.db.session() as s:
+            assert s.get(Sensor, sid).frame_size is None
+
+
 @requires_reader
 def test_wheel_counter_sensor_flow(settings):
     """A counter read with the wheel reader (the default): turning wheels, the preview, the export."""
     camera = CounterCamera(89949.8)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³"}
+    # The counter jumps between checks seconds apart: no limit.
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³", "change_limit": "off"}
     body = {
         "name": "Gas meter",
         "kind": "reading",
@@ -754,7 +988,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 2 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 3 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
@@ -762,16 +996,25 @@ def test_wheel_counter_sensor_flow(settings):
         assert (unchecked["answer"], unchecked["value"], unchecked["right_value"]) == ("unchecked", "90.100", None)
         assert entry["reader"] == readers.DEFAULT_WHEEL_READER and entry["app"] == VERSION
         assert entry["answer"] == "read correctly" and entry["seconds"] == 0 <= unchecked["seconds"]
-        assert entry["lamp"] is False and entry["greyscale"] is False
+        assert entry["lamp"] is False and entry["greyscale"] is False and entry["frame_size"] == [800, 360]
         assert round(entry["wheels"]["value"]) == 89950 and len(entry["wheels"]["per_wheel"]) == 7
         assert export(meter="  Gas meter, white on black  ")["meter"] == "Gas meter, white on black"
         verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
-        assert verified["unchecked_accepted"] == 1
+        assert verified["unchecked"] == 1
+
+        # A rejected reading nobody answered goes in too, newest first among the unchecked ones.
+        with client.app.state.runtime.db.session() as s:
+            frame = s.scalars(select(Prediction.frame).where(Prediction.sensor_id == sid)).first()
+            details = {"text": "0099999", "value": "99.999", "reason": "went down"}
+            s.add(Prediction(sensor_id=sid, state_key="reading", confidence=0.5, probs=details, frame=frame))
+        rejected = export()["readings"][1]
+        assert (rejected["answer"], rejected["rejected"], rejected["value"]) == ("unchecked", "went down", "99.999")
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]["unchecked"] == 2
 
         # The ZIP stays small enough for GitHub: what does not fit is left out (the oldest) and counted.
         with patch.dict(READING, {"export_max_mb": 0.0001}):  # room for one image only
             small = export()
-        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 1
+        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 2
 
         # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
         exported = client.get(f"/api/v1/sensors/{sid}/export").content

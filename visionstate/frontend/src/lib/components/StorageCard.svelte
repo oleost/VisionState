@@ -52,7 +52,7 @@
         <span class="faint">{plural(info.training_images, 'image')} · never removed automatically</span>
       </div>
       <div class="row small">
-        <span class="muted label">Free in the media folder</span>
+        <span class="muted label">Free space</span>
         <strong>{size(info.free_bytes)}</strong>
       </div>
     </div>

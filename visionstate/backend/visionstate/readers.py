@@ -500,13 +500,19 @@ def wrong_digit_count(text: str, settings: dict) -> bool:
     return settings["display"] == "counter" and digit_count(text) != int(settings["digits"])
 
 
-def implausible(value: float, last: float | None, settings: dict) -> str | None:
-    """Why a new value can not be right compared with the last accepted one, or None."""
+def implausible(value: float, last: float | None, settings: dict, limit: float | None = None) -> str | None:
+    """Why a new value can not be right compared with the last accepted one, or None.
+
+    A counter may go up by ``limit`` at most (change_limit.limit; None: no limit), any other
+    value change by ``max_step`` either way (0: no limit)."""
     if last is None:
         return None
-    if settings["mode"] == "counter" and value < last:
-        return "went down"
-    step = float(settings["max_step"])
+    if settings["mode"] == "counter":
+        if value < last:
+            return "went down"
+        step = limit or 0.0
+    else:
+        step = float(settings["max_step"])
     if step and abs(value - last) > step:
         return "changed too much"
     return None
