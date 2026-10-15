@@ -669,10 +669,10 @@ def test_restart_keeps_checking_against_the_last_value(settings):
 
 
 @requires_reader
-def test_counter_limit_over_time(settings, monkeypatch):
+def test_counter_limit_over_time(settings):
     """A counter's limit: a misread that repeats stays out, time the app was down lets the value
-    on, readings that agree are accepted, and a value confirmed in Review is the new last value."""
-    monkeypatch.setitem(COUNTER_LIMIT, "agree_s", 2.0)
+    on, a jump while watching waits for Review however many readings agree, and a value confirmed
+    in Review is the new last value."""
     camera = DisplayCamera("00500")
     reading = {"mode": "counter", "change_limit": "fixed", "max_rate": 360}  # 0.1 a second
     body = {"name": "Meter", "kind": "reading", "source_type": "http", "source": "x", "interval_s": 1, "debounce": 1}
@@ -701,7 +701,7 @@ def test_counter_limit_over_time(settings, monkeypatch):
         camera.text = "00600"
         assert wait_for(lambda: last().get("value") == "600" and last().get("reason") == "changed too much", 30)
         held = rt.live[sid].watch.budget_s
-        assert wait_for(lambda: len(rt.live[sid].watch.pending) >= 4, timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 4, timeout=30)
         assert view()["value"] == "500" and view()["limit"]["held"]
         assert rt.live[sid].watch.budget_s == held
 
@@ -711,23 +711,21 @@ def test_counter_limit_over_time(settings, monkeypatch):
         rt.live[sid].watch.seen_at -= 3600
         assert wait_for(lambda: view()["value"] == "650", timeout=30)
 
-        # A real jump while it was watching (no whole step of a digit): accepted once readings agree.
+        # A real jump while it was watching: rejected however many readings agree, until Review.
         camera.text = "00800"
-        assert wait_for(lambda: view()["value"] == "800", timeout=30)
-        assert wait_for(lambda: sent.get("visionstate/meter/state") == "800", timeout=10)  # sent just after
+        assert wait_for(lambda: last().get("value") == "800", timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["items"][0]["probs"]["value"] == "800", 30)
+        sure = rt.live[sid].watch.seen_at
+        assert wait_for(lambda: rt.live[sid].watch.seen_at >= sure + 5, timeout=30)  # several more readings
+        assert last().get("reason") == "changed too much" and view()["value"] == "650"
+        assert sent.get("visionstate/meter/state") == "650"
 
-        def agreed():
-            items = client.get("/api/v1/history", params={"sensor": sid, "limit": 50}).json()["items"]
-            return [h for h in items if h["published_key"] == "800" and h["probs"].get("agreed")]
-
-        assert wait_for(lambda: len(agreed()) == 1, timeout=10)  # the row is written after publishing
-
-        # Read lower (the 800 was wrong, say): confirmed in Review, it becomes the last value.
+        # Read lower (650 < 700 < 800): confirmed in Review, it becomes the last value.
         camera.text = "00700"
-        assert wait_for(lambda: last().get("reason") == "went down", timeout=30)
-        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 1, timeout=30)
+        assert wait_for(lambda: last().get("value") == "700", timeout=30)
+        assert wait_for(lambda: client.get("/api/v1/review").json()["items"][0]["probs"]["value"] == "700", 30)
         newest = client.get("/api/v1/review").json()["items"][0]
-        assert newest["probs"]["reason"] == "went down"
+        assert newest["probs"]["reason"] == "changed too much"
         assert client.post(f"/api/v1/review/{newest['id']}", json={"action": "read_ok"}).status_code == 200
         assert wait_for(lambda: view()["value"] == "700", timeout=30)
         assert wait_for(lambda: sent.get("visionstate/meter/state") == "700", timeout=10)

@@ -173,8 +173,6 @@ export interface ReadingResult {
   reason: string | null;
   /** A counter read one step below its value: the last wheel turning; the value stays, no rejection. */
   settling?: boolean;
-  /** A counter's readings over its limit agreed with each other: accepted after all. */
-  agreed?: boolean;
   at: number;
 }
 

@@ -88,9 +88,6 @@
       {:else if last?.reason}
         <span class="chip warn">Last reading rejected: {REJECT_REASONS[last.reason] ?? last.reason}</span>
         <span class="xsmall muted">Read “{last.text || '—'}”{last.value ? ` (${last.value} ${readingUnit(reading)})` : ''}; the value above stays.</span>
-      {:else if last?.agreed}
-        <span class="chip ok">Jump accepted</span>
-        <span class="xsmall muted">The counter went up faster than its limit, and several readings in a row agreed.</span>
       {:else if last?.settling}
         <span class="chip info">Last wheel turning</span>
         <span class="xsmall muted">Read “{last.text || '—'}”, one step below; the value above stays until the counter gets there.</span>

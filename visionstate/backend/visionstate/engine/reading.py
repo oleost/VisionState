@@ -66,13 +66,9 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             await asyncio.to_thread(self._learn_limit, cfg.id, watch, now)
             limit = change_limit.limit(settings, watch.learned, watch.budget_s)
         reason, settling = reading_verdict(text, value, last, cfg.threshold, settings, limit)
-        agreed = False
-        if counter:
-            if reason in change_limit.IMPLAUSIBLE and value is not None and last is not None:
-                agreed = change_limit.hold(watch, now, value, reason, last, settings)
-                if agreed:
-                    log.info("%s: %d readings in a row agree on %s: accepted", cfg.name, len(watch.pending), value)
-                    reason = None
+        # Over the limit stays rejected, however many readings agree: only an answer in Review moves it on.
+        if counter and reason in change_limit.IMPLAUSIBLE and value is not None and last is not None:
+            change_limit.hold(watch)
         shown = readers.format_value(value, settings)
         live.reading = {
             "text": text.text,
@@ -80,17 +76,13 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             "value": shown,
             "reason": reason,
             "settling": settling,
-            "agreed": agreed,
             "at": now,
         }
         live.reading_image = reader_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
         live.top, live.confidence = shown, text.score
 
         changed = False
-        if agreed and shown is not None:  # the agreeing readings were the debounce
-            changed = shown != live.debouncer.published
-            live.debouncer.published, live.debouncer.candidate, live.debouncer.count = shown, shown, cfg.debounce
-        elif reason is None and not settling and shown is not None:  # never let a lower reading through
+        if reason is None and not settling and shown is not None:  # never let a lower reading through
             changed = live.debouncer.update(shown, cfg.debounce)
         if changed:
             live.changes.append(now)
@@ -101,7 +93,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if counter and reason is None and value is not None:
             if published is not None and (changed or settling or shown == published):
                 change_limit.accept(watch, now)
-            learned = change_limit.observe(watch, now, value, cfg.interval_s, agreed)
+            learned = change_limit.observe(watch, now, value, cfg.interval_s)
         await self._publish_reading(cfg, image, reader_jpeg, text, shown, reason, now)
         await self._keep_reading(cfg, image, text, shown, reason, changed, lit, learned)
 
@@ -244,7 +236,6 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 **(text.details or {}),
                 "app": VERSION,
                 "lamp": lit,
-                **({"agreed": True} if (live.reading or {}).get("agreed") else {}),
             }
             review = "rejected" if reason is not None else "spot_check" if spot else None
             await asyncio.to_thread(
@@ -355,7 +346,6 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         watch.accepted_at = _epoch(at)
         watch.budget_s, watch.held = max(0.0, now - watch.accepted_at), False
         watch.seen_at, watch.sample = now, None  # nothing learned across it
-        watch.pending.clear()
         await asyncio.to_thread(self._save_watch, sensor_id, watch, value)
         cfg = self.load_sensor(sensor_id)
         if cfg is not None:

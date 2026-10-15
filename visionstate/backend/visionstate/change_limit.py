@@ -2,9 +2,8 @@
 
 The limit grows with the time the counter was not seen: the app down, the camera away, or the
 readings unsure. Time in which the counter was read with confidence but went over the limit does
-not count, so a wheel misread over and over never waits its way through. Such readings are
-accepted once enough of them agree — unless the jump is what one wheel or digit read one step
-wrong gives; those wait for an answer in Review.
+not count, so a wheel misread over and over never waits its way through. Such readings are never
+accepted by themselves, however many agree: they wait for an answer in Review.
 
 "auto" learns the limit from the counter's own accepted readings: the largest rise over a few
 minutes per day and the rise per day (db.ReadingStat ``peak`` and ``total``), only over stretches
@@ -42,7 +41,6 @@ class Watch:
     accepted_at: float | None = None  # the last accepted reading
     budget_s: float = 0.0  # time since then that counts towards the limit
     held: bool = False  # read with confidence over the limit since then: its time no longer counts
-    pending: list[tuple[float, float]] = field(default_factory=list)  # (time, value) over the limit, agreeing
     # Learning: accepted readings over the last window (time, value), and the newest one, which
     # counts once the next one says it was no misread (see observe).
     window: deque[tuple[float, float]] = field(default_factory=deque)
@@ -118,22 +116,18 @@ def advance(watch: Watch, now: float, interval_s: float) -> None:
 def accept(watch: Watch, now: float) -> None:
     """A reading confirmed the published value (or made it): the limit starts again."""
     watch.accepted_at, watch.budget_s, watch.held = now, 0.0, False
-    watch.pending.clear()
 
 
-def observe(
-    watch: Watch, now: float, value: float, interval_s: float, agreed: bool = False
-) -> tuple[float, float] | None:
+def observe(watch: Watch, now: float, value: float, interval_s: float) -> tuple[float, float] | None:
     """An accepted reading, for learning. Returns what the one before it adds to the day — (rise
     over the window up to it, rise since the one before) — or None.
 
     A reading counts with the lower of its value and the next one's, so one read too high adds
     nothing. A pause longer than a normal one (down, unsure, rejected) starts again: a rise over
-    a pause says nothing about how fast the counter goes up. ``agreed``: accepted because
-    readings over the limit agreed — read all along, so it counts (and the limit can grow)."""
+    a pause says nothing about how fast the counter goes up."""
     before = watch.sample
     watch.sample = (now, value)
-    if before is None or (not agreed and now - before[0] > gap(interval_s)):
+    if before is None or now - before[0] > gap(interval_s):
         watch.window.clear()
         return None
     at, earlier = before[0], min(before[1], value)
@@ -153,46 +147,7 @@ def observe(
     return max(0.0, earlier - base), max(0.0, rise)
 
 
-def looks_misread(jump: float, tolerance: float, settings: dict) -> bool:
-    """Whether a rise is what one wheel (or digit) read wrong gives, plus a plausible rise.
-
-    A wheel read one step off adds that wheel's step — or nine of them, 0 read as 9; a digit on a
-    display can be read as any other. Only steps above ``tolerance`` count: smaller ones pass the
-    limit anyway."""
-    step = 10 ** -int(settings["decimals"])
-    multiples = (1, 9) if settings["display"] == "counter" else range(1, 10)
-    wheel = step * 10
-    while wheel <= jump + step:
-        if wheel > tolerance:
-            for m in multiples:
-                if -margin(settings) <= jump - m * wheel <= tolerance:
-                    return True
-        wheel *= 10
-    return False
-
-
-def hold(watch: Watch, now: float, value: float, reason: str, last: float, settings: dict) -> bool:
-    """A reading read with confidence but rejected (``reason``, one of IMPLAUSIBLE).
-
-    Returns whether it is to be accepted after all: enough readings over the limit in a row
-    agree with each other, and the jump does not look like a misread wheel."""
+def hold(watch: Watch) -> None:
+    """A reading read with confidence but over the limit: from now on, normal pauses no longer
+    count towards the limit (see advance), so it does not grow until the counter was away."""
     watch.held = True
-    pending = watch.pending
-    if reason != "changed too much":
-        pending.clear()
-        return False
-    if pending:
-        at, before = pending[-1]
-        step = limit(settings, watch.learned, now - at)
-        if value < before or (step is not None and value - before > step):
-            pending.clear()
-    pending.append((now, value))
-    # The series may go on long: keep its start (the jump is measured from there, or the time
-    # since would make room for a misread wheel) and the last readings (the next step from there).
-    del pending[1 : -COUNTER_LIMIT["agree_readings"]]
-    first_at, first = pending[0]
-    if len(pending) < COUNTER_LIMIT["agree_readings"] or now - first_at < COUNTER_LIMIT["agree_s"]:
-        return False
-    since = first_at - watch.accepted_at if watch.accepted_at is not None else 0.0
-    tolerance = limit(settings, watch.learned, since)
-    return tolerance is not None and not looks_misread(first - last, tolerance, settings)

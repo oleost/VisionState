@@ -117,7 +117,8 @@ In the decoder the expectation can be tested, explained, set per sensor and used
   - only debounced, published values become L;
   - N readings in a row that clearly disagree with L, *and agree with each other*, release the
     prior. They are treated as a new start, which also covers a replaced or reset meter. This is
-    shown in the History as an event and on the Live tab;
+    shown in the History as an event and on the Live tab. The counter limit decided otherwise for
+    now (readings that agree never override it, `docs/SCOPE.md`): a release would wait for Review;
   - after a restart, L is the last value from the history (as today), but its age counts: an old L
     gives a wide window.
 - **UI and history:** a new reason, `disagrees_with_last` (lower-case key for the "problem" entity),

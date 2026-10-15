@@ -317,12 +317,13 @@ times its busiest shower) rejected right readings after a 35-minute update.
 - *Fixed per reading* (`step`): `max_step` for every reading, however long since the last one —
   the limit counters had before the rate, which some users find easier to tune ("how many
   decimals may move between two checks"). Counters from before keep it unchanged (migration 14,
-  `db.keep_change_step`); after a restart a real rise waits for readings that agree, or Review.
-- Readings over the limit that agree (`agree_readings` in a row over `agree_s`, never lower, each
-  step within the limit) are accepted, and learned from: a real jump while the readings were
-  unsure, or a counter that goes faster than it ever did. Not when the jump is one wheel's step
-  (or nine of them) plus a plausible rise — what a misread wheel gives (on a digital display any
-  digit, 1–9 steps): those wait for an answer in Review.
+  `db.keep_change_step`); after a restart a real rise waits for Review.
+- Readings over the limit are never accepted by themselves, however many agree: only an answer in
+  Review (below) moves the counter on. A beta accepted a jump once readings agreed for five
+  minutes, unless it looked like one misread wheel; the maintainer took it out again —
+  the limit is there so that nothing overrides it without a person, and a camera that moved can
+  misread the same wrong value over and over (issue #40). A real jump while the readings were
+  unsure, or a counter that goes faster than it ever did, waits for Review.
 - Confirmed in Review (*read correctly* for an unsure or implausible reading, or a typed right
   value) on a rejected reading newer than the last accepted one: that value becomes the last one
   (`engine.reading.anchor_reading`). It is also the way out for a counter stuck above its real

@@ -58,7 +58,7 @@ API as `request.app.state.runtime`.
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
-| `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen, readings that agree (pure logic; the engine keeps a `Watch` per sensor) |
+| `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |

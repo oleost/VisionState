@@ -138,11 +138,6 @@ COUNTER_LIMIT = {
     # counter was not seen (the app was down, the camera away).
     "gap_checks": 3,
     "gap_min_s": 300.0,
-    # Readings over the limit are accepted when this many in a row, over at least agree_s, agree
-    # with each other (never lower, each step within the limit) — unless the jump looks like one
-    # wheel or digit read wrong (a whole step of a higher digit): those wait for an answer in Review.
-    "agree_readings": 3,
-    "agree_s": 300.0,
     "relearn_s": 3600.0,  # how often the learned limit is worked out again
 }
 # Diagnostic entities of a reading sensor (off by default in Home Assistant). "problem" is "ok" or
