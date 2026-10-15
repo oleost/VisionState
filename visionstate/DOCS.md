@@ -327,7 +327,8 @@ First choose **what it looks like**:
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
   limit, or another value changes more than the limit you set. Every rejected reading is listed
   in the **History** tab with the reason and waits in the **Review** queue. A new value is
-  published after 2 equal readings in a row (adjustable).
+  published as soon as it is read (new sensors). You can ask for more equal readings in a row,
+  but a counter that keeps turning (water running) then shows no new value until it stops.
 - **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new
   counters) learns it from the counter's own readings: the fastest it went up over ten minutes
   and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of

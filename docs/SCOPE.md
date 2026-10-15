@@ -273,7 +273,12 @@ it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
    going down, a mechanical counter read with another number of digits than it has wheels, a
    counter going up faster than its limit (below), or another value changing more than
-   `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   `max_step`; otherwise publish after `debounce` equal reads (new sensors publish the first
+   one: the checks above are what catch misreads — a misread from glare or a wheel between two
+   digits comes back the same in the next reading, so equal reads let it through anyway — while a
+   counter in use changes every reading, and waiting for two equal ones published nothing until
+   the water stopped).
+   A counter read exactly
    one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
    value stays, but it is no rejection (no history row, no review item, counted as accepted) —
    seen in a user's export, where one too-high value made every right reading after it a "went
