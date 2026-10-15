@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1b6
+
+### Changed
+
+- **A jump over a counter's limit waits for you in Review**, however many readings agree. Since
+  0.9.1b1 such a jump was accepted by itself once readings agreed for five minutes; a camera that
+  moved can read the same wrong value over and over, and the limit is there so that nothing gets
+  past it without you. Answer *Read correctly* (or *Misread* with the right value) on the newest
+  rejected reading to move the counter on. *Jump accepted* is gone from the Live tab.
+
 ## 0.9.1b5
 
 ### Fixed
