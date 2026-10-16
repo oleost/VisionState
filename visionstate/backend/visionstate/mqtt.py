@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import unicodedata
 from collections.abc import Awaitable, Callable
@@ -346,6 +347,15 @@ def rate_unit(reading: dict) -> tuple[str | None, str | None, float]:
     return (f"{unit}/h" if unit else None), None, 1.0
 
 
+def rate_precision(reading: dict) -> int:
+    """Decimals that show a counter's smallest rise over the rate window as a rate: without them
+    Home Assistant may show a rate such as 0.03 m³/h as 0."""
+    _, _, factor = rate_unit(reading)
+    hours = float(reading.get("rate_window_min") or 60) / 60
+    step = 10 ** -int(reading.get("decimals", 0)) / hours * factor
+    return max(0, math.ceil(-math.log10(step) - 1e-9))
+
+
 def rate_entity(reading: dict, t: dict[str, str]) -> dict:
     """Discovery fields of a counter's rate: how fast it goes up (off by default in Home Assistant)."""
     unit, device_class, _ = rate_unit(reading)
@@ -355,6 +365,7 @@ def rate_entity(reading: dict, t: dict[str, str]) -> dict:
         "unit_of_measurement": unit,
         "device_class": device_class,
         "state_class": "measurement",
+        "suggested_display_precision": rate_precision(reading),
         "enabled_by_default": False,
         "icon": "mdi:speedometer",
     }

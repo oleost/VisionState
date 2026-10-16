@@ -176,6 +176,13 @@ def test_diagnostic_entities_of_reading_sensors():
     assert counter["accepted"]["unit_of_measurement"] == "%"
     assert (counter["rate"]["unit_of_measurement"], counter["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
     assert "entity_category" not in counter["rate"]  # a measurement for automations, not a diagnostic
+    # Decimals down to the smallest rise over the window (0.001 m³ in 15 min = 0.004 m³/h), so
+    # Home Assistant does not show a slow flow as 0.
+    assert counter["rate"]["suggested_display_precision"] == 0
+    precise = configs({"mode": "counter", "unit": "m³", "decimals": 3, "rate_window_min": 15})["rate"]
+    assert precise["suggested_display_precision"] == 3
+    litres = configs({"mode": "counter", "unit": "L", "decimals": 0, "rate_window_min": 15})["rate"]
+    assert litres["suggested_display_precision"] == 2  # 1 L in 15 min = 0.067 L/min
     kwh = configs({"mode": "counter", "unit": "kWh"})["rate"]
     assert (kwh["unit_of_measurement"], kwh["device_class"]) == ("kW", "power")
     assert configs({"mode": "counter", "unit": "L"})["rate"]["unit_of_measurement"] == "L/min"
