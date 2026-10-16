@@ -173,6 +173,34 @@ test('swiping on a camera frame scrolls the page', async ({ page, request }, inf
   }
 });
 
+test('long camera names stay inside their boxes', async ({ page }) => {
+  const long = 'garasje_bod_1_etg_esp32cam_watermeter_esp32_watermeter_camera';
+  await page.route('**/api/v1/cameras', (route) =>
+    route.fulfill({
+      json: [
+        { entity_id: `camera.${long}`, name: `esp32cam-watermeter ${long}`, state: 'idle' },
+        { entity_id: 'camera.reolink', name: 'Reolink', state: 'unavailable' },
+      ],
+    }),
+  );
+  await page.goto('#/sensors/new');
+  await expect(page.getByText(`camera.${long}`)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.cam');
+});
+
+test('the buttons of the sensor cards line up along the bottom', async ({ page }) => {
+  await page.goto('#/');
+  const actions = page.locator('.sensor .actions');
+  await expect(actions.first()).toBeVisible();
+  const buttons = await actions.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().bottom));
+  const cards = await page.locator('.sensor').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+  // Cards side by side (the same top) have their buttons at the same height.
+  for (let i = 0; i < cards.length; i++)
+    for (let j = i + 1; j < cards.length; j++)
+      if (Math.abs(cards[i] - cards[j]) < 1) expect(Math.abs(buttons[i] - buttons[j])).toBeLessThan(1);
+});
+
 test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');

@@ -54,7 +54,7 @@
           checked={sourceType === 'ha_camera' && source === cam.entity_id}
           onchange={() => pickCamera(cam.entity_id)}
         />
-        <span class="col" style="gap:2px">
+        <span class="col cam-text">
           <span>{cam.name}</span>
           <span class="mono xsmall muted">{cam.entity_id}</span>
         </span>
@@ -108,6 +108,11 @@
     background: var(--c-bg);
     border: 1px solid var(--c-border);
     cursor: pointer;
+  }
+  .cam-text {
+    gap: 2px;
+    min-width: 0; /* long names and entity IDs wrap inside the box */
+    overflow-wrap: anywhere;
   }
   .cam.active {
     border-color: var(--c-accent);
