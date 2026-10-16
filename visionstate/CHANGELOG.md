@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.2b1
+
+### Better
+
+- **A counter's value is sent at its first reading**: new reading sensors no longer wait for two
+  equal readings, which a counter in use seldom gives (a running tap published nothing until the
+  water stopped). The checks on each reading still keep misreads out. Sensors you already have
+  keep their setting.
+- **A counter's rate shows its decimals in Home Assistant**: a slow flow such as 0.03 m³/h was
+  shown as 0. A display precision you chose in Home Assistant still wins.
+
+### Fixed
+
+- Long camera names no longer run out of their boxes when picking the image source.
+- The Live / History / Settings buttons of the sensor cards line up with the cards next to them.
+
 ## 0.9.1
 
 ### Better
