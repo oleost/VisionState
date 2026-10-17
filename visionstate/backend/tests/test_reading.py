@@ -704,13 +704,29 @@ def test_counter_limit_over_time(settings):
         assert wait_for(lambda: view()["value"] == "500", timeout=60)
         assert view()["limit"]["allowed"] is not None and view()["limit"]["needed"] == COUNTER_LIMIT["min_days"]
 
-        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow.
+        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow. It
+        # waits in Review once, counting the repeats; every one is counted in the quality tab.
         camera.text = "00600"
         assert wait_for(lambda: last().get("value") == "600" and last().get("reason") == "changed too much", 30)
         held = rt.live[sid].watch.budget_s
-        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 4, timeout=30)
+
+        def queue():
+            return client.get("/api/v1/review").json()
+
+        assert wait_for(lambda: queue()["total"] and queue()["items"][0]["probs"].get("repeats", 0) >= 3, 30)
+        waiting = queue()
+        assert waiting["total"] == 1 and waiting["items"][0]["probs"]["value"] == "600"
+        assert waiting["items"][0]["probs"]["last_seen"] > waiting["items"][0]["created_at"]
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]
+        assert quality["by_reason"]["changed too much"] >= 4
+        history = client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
+        assert sum(1 for h in history if (h["probs"] or {}).get("value") == "600") == 1
         assert view()["value"] == "500" and view()["limit"]["held"]
         assert rt.live[sid].watch.budget_s == held
+        # Skipped, it no longer waits: the next one is queued again.
+        first = waiting["items"][0]["id"]
+        assert client.post(f"/api/v1/review/{first}", json={"action": "skip"}).status_code == 200
+        assert wait_for(lambda: queue()["total"] == 1 and queue()["items"][0]["id"] != first, timeout=30)
 
         # The app was down for an hour: the counter went on, and that rise is accepted.
         camera.text = "00650"

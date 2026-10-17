@@ -2,7 +2,7 @@
   // A history row of a reading sensor: a new value or a rejected reading, opening to its frame.
   import { api } from '../../api';
   import { dateTime, pct } from '../../format';
-  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit } from '../../reading';
+  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit, repeatedNote } from '../../reading';
   import type { Prediction, Sensor } from '../../types';
   import Icon from '../Icon.svelte';
   import RoiEditor from '../RoiEditor.svelte';
@@ -33,6 +33,7 @@
       </span>
       <span class="xsmall faint">{dateTime(p.created_at)}</span>
       <span class="xsmall muted">Read “{d.text || '—'}”</span>
+      {#if repeatedNote(p)}<span class="xsmall muted">{repeatedNote(p)}</span>{/if}
     </span>
     <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
   </button>

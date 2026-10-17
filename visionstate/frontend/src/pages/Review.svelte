@@ -9,7 +9,7 @@
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
   import { objectName } from '../lib/objects';
-  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit } from '../lib/reading';
+  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit, repeatedNote } from '../lib/reading';
   import type { ObjectQuestion, ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
@@ -254,6 +254,7 @@
             {#if d.reason}Rejected: {REJECT_REASONS[d.reason] ?? d.reason} — the last value was kept.
             {:else}Accepted and published. A random check to find misreads that pass every test.{/if}
           </p>
+          {#if repeatedNote(current)}<p class="small muted">{repeatedNote(current)}</p>{/if}
           {#key current.id}
             <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}

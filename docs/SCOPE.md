@@ -459,7 +459,12 @@ the pixels are decoded.
 - **Review queue** (global rules in the DB, per-sensor overrides in `sensor.review`, defaults in
   `settings.REVIEW_DEFAULTS`): frames below 85 % (never below the sensor threshold), frames
   where the state flip-flops (3 changes in 10 min) and optional random spot checks (default 0 %);
-  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown).
+  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown), but only
+  once while the same one waits: a reading rejected for the same reason with the same value is
+  counted on the waiting item (`repeats`, `last_seen`; `engine.reading._repeat_rejected`) and not stored
+  again. A meter standing still on a rejected value all night filled the queue with one frame per
+  check, all with the same answer. The waiting item keeps its first frame and time, so a value
+  confirmed there counts from when it was first read; after *Skip* the next one is queued again.
   **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
   waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
   up; given answers and the reading counts stay.
@@ -603,6 +608,7 @@ loads.
   (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
+  (one while the same reading waits for review, see §7)
   (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
   readings are excluded from the history clean-up — they are the data a later reader
   improvement would learn from (schema v7). Object events are `prediction` rows (class or own

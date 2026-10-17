@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.2b2
+
+### Better
+
+- **A meter that stands still no longer fills the review queue**: when the same reading is
+  rejected again for the same reason (a water meter that is read lower than before, all night
+  long), it waits in Review once instead of once per check. The item says how many more times it
+  was read and when last; it is still counted in the Quality tab. A new value, or the same one
+  after *Skip*, is queued as before.
+
 ## 0.9.2b1
 
 ### Better

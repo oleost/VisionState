@@ -325,8 +325,11 @@ First choose **what it looks like**:
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
-  limit, or another value changes more than the limit you set. Every rejected reading is listed
-  in the **History** tab with the reason and waits in the **Review** queue. A new value is
+  limit, or another value changes more than the limit you set. A rejected reading is listed in
+  the **History** tab with the reason and waits in the **Review** queue. When the same reading is
+  rejected again for the same reason while it still waits there (a meter that stands still all
+  night), it is not added again: the waiting one says how many more times it was read, and when
+  last. A new value is
   published as soon as it is read (new sensors). You can ask for more equal readings in a row,
   but a counter that keeps turning (water running) then shows no new value until it stops.
 - **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new

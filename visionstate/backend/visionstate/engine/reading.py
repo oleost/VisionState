@@ -36,7 +36,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         implausible readings (a counter going down or up faster than its limit, change_limit.py;
         another value changing more than ``max_step``; a mechanical counter read with another
         number of digits than it has wheels) are rejected: the last value stays and the rejected
-        reading is kept in the history and sent to the review queue, every one of them. A
+        reading is kept in the history and sent to the review queue — once while the same one waits
+        there (same reason and value: _repeat_rejected). A
         counter's readings over its limit are accepted after all when enough of them agree.
         Every reading is counted per day (Quality tab).
         ``lit``: the frame was taken with the sensor's light switched on (kept with the reading).
@@ -216,7 +217,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         learned: tuple[float, float] | None = None,
     ) -> None:
         """Count the reading for the day, and keep it in the history when the value changed, it was
-        rejected (it goes to review) or it was picked for a spot check.
+        rejected (it goes to review, unless the same one already waits there: _repeat_rejected) or
+        it was picked for a spot check.
 
         With it go what the reader told about it (which reader, the wheels) and the app version,
         so an export says how each reading was made. Counters: ``learned`` is what the reading
@@ -238,6 +240,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 "lamp": lit,
             }
             review = "rejected" if reason is not None else "spot_check" if spot else None
+            if reason is not None and await asyncio.to_thread(self._repeat_rejected, cfg.id, reason, shown):
+                return
             await asyncio.to_thread(
                 self._record_reading, cfg.id, image, published, text.score, details, changed, review
             )
@@ -354,6 +358,30 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     def _save_watch(self, sensor_id: int, watch: change_limit.Watch, value: str) -> None:
         with self.db.session() as s:
             _store_watch(s, sensor_id, watch, value)
+
+    def _repeat_rejected(self, sensor_id: int, reason: str, value: str | None) -> bool:
+        """Count a rejected reading on the one waiting in Review with the same reason and value.
+
+        A meter that stands still on a rejected value (a night without water used) would otherwise
+        queue one frame per check, all with the same answer. The waiting item keeps its first frame
+        and time (a value confirmed in Review counts from when it was first read) and gets
+        ``repeats`` and ``last_seen``. Returns whether there was one; a skipped item is no longer
+        waiting, so the next reading is queued again."""
+        with self.db.session() as s:
+            waiting = s.scalars(
+                select(Prediction).where(
+                    Prediction.sensor_id == sensor_id,
+                    Prediction.review_reason == "rejected",
+                    Prediction.reviewed.is_(False),
+                )
+            )
+            for row in waiting:
+                probs = row.probs or {}
+                if probs.get("reason") == reason and probs.get("value") == value:
+                    seen = {"repeats": int(probs.get("repeats", 0)) + 1, "last_seen": datetime.now(UTC).isoformat()}
+                    row.probs = {**probs, **seen}
+                    return True
+        return False
 
     def _record_reading(
         self,
