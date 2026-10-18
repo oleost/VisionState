@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.2b3
+
+### Better
+
+- **Review shows a reading's region, large**: for reading sensors the Review page shows only the
+  part of the frame that was read — the same cut as the *Last frame* image in Home Assistant — as
+  large as fits, so the digits can be checked without opening anything, also on a phone. *Whole
+  frame* shows all of it. The list beside it shows the whole region too.
+
 ## 0.9.2b2
 
 ### Better

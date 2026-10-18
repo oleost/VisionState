@@ -1000,6 +1000,17 @@ def test_wheel_counter_sensor_flow(settings):
             row = s.scalars(select(Prediction).where(Prediction.sensor_id == sid)).first()
             assert row is not None
             row.read_ok = True
+            row_id = row.id
+        # Review shows only the region of a reading's frame, cut like the Last frame image.
+        region = Image.open(
+            io.BytesIO(client.get(f"/api/v1/history/{row_id}/image", params={"size": "region"}).content)
+        )
+        box = counter_box(7)
+        assert region.size == (
+            int((box["x"] + box["w"]) * 800) - int(box["x"] * 800),
+            int((box["y"] + box["h"]) * 360) - int(box["y"] * 360),
+        )
+        assert client.get(f"/api/v1/history/{row_id}/image", params={"size": "huge"}).status_code == 422
 
         def export(meter: str = "") -> dict:
             with zipfile.ZipFile(

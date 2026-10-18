@@ -997,6 +997,13 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     }
     await expect(ours).toBeVisible();
     await expect(page.getByText('Rejected: a counter can not go down')).toBeVisible();
+    // Only the region is shown, large; the whole frame is one tap away.
+    const region = page.locator('.main img.region');
+    await expect.poll(() => region.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+    await press(page.getByRole('button', { name: 'Whole frame' }), info);
+    await expect(page.locator('.main .frame')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Only the region' }), info);
+    await expect(region).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-reading.png'), fullPage: true });
     await press(page.getByRole('button', { name: 'Misread' }), info);

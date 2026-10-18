@@ -21,6 +21,7 @@
   let answers = $state<Record<number, string>>({});
   let given = $state<Record<number, string | null>>({}); // state answered per item (null: skipped)
   let busy = $state(false);
+  let wholeFrame = $state(false); // a reading shows only its region unless asked for the whole frame
 
   async function load() {
     try {
@@ -214,7 +215,12 @@
             {@const reason = item.review_reason ? REVIEW_REASONS[item.review_reason] : null}
             <li class:current={i === shown} class:done={i < index}>
               {#snippet entry()}
-                <img src={api.historyImageUrl(item.id, 'thumb')} alt="" loading="lazy" />
+                <img
+                  src={api.historyImageUrl(item.id, isReading(item) ? 'region' : 'thumb')}
+                  class:whole={isReading(item)}
+                  alt=""
+                  loading="lazy"
+                />
                 <span class="col" style="gap:2px;min-width:0">
                   <strong class="small">{item.sensor.name}</strong>
                   <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
@@ -243,9 +249,17 @@
       {:else if current && isReading(current)}
         {@const d = readingDetail(current)}
         {@render header(current)}
-        <div class="frame">
-          <RoiEditor src={api.historyImageUrl(current.id)} roi={readingRoi(current, current.sensor)} />
-        </div>
+        <!-- Only the region, as large as fits: the numbers are what is checked here. -->
+        {#if wholeFrame}
+          <div class="frame">
+            <RoiEditor src={api.historyImageUrl(current.id)} roi={readingRoi(current, current.sensor)} />
+          </div>
+        {:else}
+          <img class="region" src={api.historyImageUrl(current.id, 'region')} alt="The region that was read" />
+        {/if}
+        <button class="btn sm ghost frame-toggle" onclick={() => (wholeFrame = !wholeFrame)}>
+          <Icon name={wholeFrame ? 'eye' : 'frame'} size={13} /> {wholeFrame ? 'Only the region' : 'Whole frame'}
+        </button>
         <div class="col center">
           <p class="question">
             Did it read <span class="mono">“{d.text || '—'}”</span>{d.value ? ` (${d.value}${unitOf(current) ? ` ${unitOf(current)}` : ''})` : ''} right?
@@ -405,6 +419,11 @@
     border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
+  li img.whole {
+    /* A region is often a narrow strip: all of it, not the middle. */
+    object-fit: contain;
+    background: var(--c-sunken);
+  }
   .main {
     display: flex;
     flex-direction: column;
@@ -415,6 +434,19 @@
     align-self: center;
     border-radius: var(--radius-lg);
     overflow: hidden;
+  }
+  .region {
+    display: block;
+    width: min(100%, 800px);
+    max-height: min(50vh, 420px);
+    object-fit: contain;
+    align-self: center;
+    border-radius: var(--radius-lg);
+    background: var(--c-sunken);
+  }
+  .frame-toggle {
+    align-self: center;
+    margin-top: calc(-1 * var(--space-3));
   }
   .center {
     align-items: center;

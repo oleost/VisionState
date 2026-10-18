@@ -222,7 +222,8 @@ export const api = {
       `history?${listQs({ ...filter, order: page.order, limit: page.limit, cursor: page.cursor, newer_than: page.newerThan })}`,
     ),
   historyFacets: (filter: HistoryFilter) => request<HistoryFacets>(`history/facets?${listQs({ ...filter })}`),
-  historyImageUrl: (predictionId: number, size: 'thumb' | 'full' = 'full') =>
+  /** region: only what the sensor looked at (a reading: the region it was read in). */
+  historyImageUrl: (predictionId: number, size: 'thumb' | 'full' | 'region' = 'full') =>
     `${BASE}history/${predictionId}/image?size=${size}`,
   exportUrl: (id: number, faces = false) => `${BASE}sensors/${id}/export${faces ? '?faces=true' : ''}`,
 

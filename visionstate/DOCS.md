@@ -326,7 +326,9 @@ First choose **what it looks like**:
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
   limit, or another value changes more than the limit you set. A rejected reading is listed in
-  the **History** tab with the reason and waits in the **Review** queue. When the same reading is
+  the **History** tab with the reason and waits in the **Review** queue, which shows only the
+  region it was read in, as large as fits (like the *Last frame* image; *Whole frame* shows all
+  of it). When the same reading is
   rejected again for the same reason while it still waits there (a meter that stands still all
   night), it is not added again: the waiting one says how many more times it was read, and when
   last. A new value is
