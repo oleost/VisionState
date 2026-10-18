@@ -616,6 +616,10 @@ def test_reading_sensor_flow(settings):
         assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") is None, timeout=30)
         queue = client.get("/api/v1/review").json()
         assert queue["sensors"] == [{"id": sid, "name": "Power meter", "count": queue["total"]}]
+        # One sensor's items only; the counts per sensor stay those of the whole queue.
+        assert client.get("/api/v1/review", params={"sensor": sid}).json() == {**queue, "sensor_name": "Power meter"}
+        other = client.get("/api/v1/review", params={"sensor": 9999}).json()
+        assert other == {"total": 0, "items": [], "sensors": queue["sensors"], "sensor_name": None}
         assert client.post("/api/v1/review/sensors/9999/dismiss").status_code == 404
         dismissed = client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"]
         assert dismissed == queue["total"]

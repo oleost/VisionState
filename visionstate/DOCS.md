@@ -418,7 +418,9 @@ First choose **what it looks like**:
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
-  shows how many items wait per sensor; **Dismiss all** next to a sensor skips all of them at once.
+  shows how many items wait per sensor: tap a sensor to see only its items (handy when two sensors
+  look at the same spot), **All sensors** to see them all again; the Quality tab's links to the
+  queue open it for that sensor. **Dismiss all** next to a sensor skips all of them at once.
   Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
   again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
   it is not added a second time.

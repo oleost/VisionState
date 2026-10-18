@@ -1070,10 +1070,28 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await expect(row).toContainText('1 waiting');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
+    // A tap on a sensor shows only its items, and the page keeps that filter in its address.
+    await press(row.locator('.pick'), info);
+    await expect(page).toHaveURL(new RegExp(`#/review\\?sensor=${id}$`));
+    await expect(row.locator('.pick')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.main')).toContainText(/Did it read/);
+    await expect(page.locator('.main .mono').first()).toHaveText('1 / 1');
+    await page.reload();
+    await expect(row.locator('.pick')).toHaveAttribute('aria-pressed', 'true');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dismiss.png'), fullPage: true });
     await press(row.getByRole('button', { name: 'Dismiss all' }), info);
     await press(row.getByRole('button', { name: 'Press again' }), info);
     await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeVisible();
+    // Nothing left for this sensor, while others still wait: it stays chosen, one tap shows them all.
+    await expect(row).toContainText('0 waiting');
+    await expect(row.getByRole('button', { name: 'Dismiss all' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'All caught up for Gas meter' })).toBeVisible();
+    await expectNoClipping(page, '.btn, .card');
+    // On a phone the toast lies over the button: a finger waits for it too.
+    await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeHidden({ timeout: 10_000 });
+    await press(page.getByRole('button', { name: /Show all sensors · \d+ waiting/ }), info);
+    await expect(page).toHaveURL(/#\/review$/);
+    await expect(page.getByRole('button', { name: /All sensors/ })).toHaveAttribute('aria-pressed', 'true');
     await expect(row).toHaveCount(0);
     expect(await waiting()).toBe(0);
     errors.expectNone();

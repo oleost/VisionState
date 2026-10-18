@@ -236,8 +236,14 @@ export const api = {
   /** Sends a reminder now with these settings (saved or not); push_error: '' = pushed or no push chosen. */
   testReviewReminder: (rules: ReminderRules) => request<{ push_error: string }>('review-reminder/test', send('POST', rules)),
   notifyServices: () => request<string[]>('notify-services'),
-  review: () =>
-    request<{ total: number; items: ReviewItem[]; sensors: { id: number; name: string; count: number }[] }>('review'),
+  /** sensor: only that sensor's items (and total); `sensors` always counts the whole queue. */
+  review: (sensor: number | null = null) =>
+    request<{
+      total: number;
+      items: ReviewItem[];
+      sensors: { id: number; name: string; count: number }[];
+      sensor_name?: string | null; // with a sensor: its name (null: no such sensor)
+    }>(sensor === null ? 'review' : `review?sensor=${sensor}`),
   /** Take every waiting item of one sensor out of the queue (as if each was skipped). */
   dismissReview: (sensorId: number) => request<{ dismissed: number }>(`review/sensors/${sensorId}/dismiss`, send('POST')),
   answerReview: (predictionId: number, action: 'confirm' | 'label' | 'skip', stateKey?: string) =>

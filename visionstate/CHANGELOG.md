@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.2b4
+
+### Better
+
+- **Review one sensor at a time**: tap a sensor under *Waiting per sensor* on the Review page to
+  see only its items — no more mixing up two sensors that look at the same spot. *All sensors*
+  shows everything again. The choice stays after a reload, and the links to the review queue on
+  a sensor's Quality tab open it for that sensor.
+
 ## 0.9.2b3
 
 ### Better

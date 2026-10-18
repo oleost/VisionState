@@ -452,6 +452,7 @@ REVIEW_DEFAULTS = {
     "flip_window_s": 600,  # ... within this window counts as flip-flopping
     "spot_rate": 0.0,  # share of confident frames sent for a random spot check
 }
+REVIEW_QUEUE = {"page_size": 50}  # items the Review page loads at once (the newest, or one sensor's)
 REVIEW_LIMITS = {
     "below": (0.0, 1.0),
     "cooldown_s": (0, 86_400),

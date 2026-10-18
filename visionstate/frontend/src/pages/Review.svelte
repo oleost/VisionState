@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app, refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
   import ConfirmButton from '../lib/components/ConfirmButton.svelte';
@@ -10,6 +11,7 @@
   import { dateTime, pct } from '../lib/format';
   import { objectName } from '../lib/objects';
   import { REJECT_REASONS, readingDetail, readingRoi, readingUnit, repeatedNote } from '../lib/reading';
+  import { route, setQuery } from '../lib/router.svelte';
   import type { ObjectQuestion, ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
@@ -22,13 +24,32 @@
   let given = $state<Record<number, string | null>>({}); // state answered per item (null: skipped)
   let busy = $state(false);
   let wholeFrame = $state(false); // a reading shows only its region unless asked for the whole frame
+  let names = $state<Record<number, string>>({}); // sensor names, kept when a sensor has nothing left
+
+  // Only one sensor's items (#/review?sensor=3): two look-alike sensors are easy to mix up.
+  const filter = $derived(Number(route.query.sensor) || null);
+  const filterName = $derived(filter === null ? '' : (names[filter] ?? 'this sensor'));
+  const waitingAll = $derived(waiting.reduce((sum, w) => sum + w.count, 0));
+  // The chosen sensor stays listed (and marked) when nothing of it is left.
+  const waitingShown = $derived(
+    filter === null || waiting.some((w) => w.id === filter) ? waiting : [...waiting, { id: filter, name: filterName, count: 0 }],
+  );
+  const waitingOthers = $derived(waiting.filter((w) => w.id !== filter).reduce((sum, w) => sum + w.count, 0));
+
+  function pick(sensorId: number | null) {
+    if (sensorId === filter) return;
+    setQuery(sensorId === null ? {} : { sensor: String(sensorId) });
+  }
 
   async function load() {
     try {
-      const result = await api.review();
+      const result = await api.review(filter);
       items = result.items;
       total = result.total;
       waiting = result.sensors;
+      for (const w of result.sensors) names[w.id] = w.name;
+      for (const item of result.items) names[item.sensor.id] = item.sensor.name;
+      if (filter !== null && result.sensor_name) names[filter] = result.sensor_name;
       index = 0;
       editing = null;
       refreshStatus(); // keep the nav badge in step with the list
@@ -38,7 +59,11 @@
       toastError(err);
     }
   }
-  load();
+  // Loads again when the filter changes; load() reads and sets state of its own (see CLAUDE.md).
+  $effect(() => {
+    void filter;
+    untrack(load);
+  });
 
   const shown = $derived(editing ?? index);
   const current = $derived(items?.[shown] ?? null);
@@ -193,17 +218,24 @@
       </div>
       {#if waiting.length}
         <div class="card pad col waiting">
-          <span class="small muted">Waiting per sensor</span>
-          {#each waiting as w (w.id)}
+          <span class="small muted">Waiting per sensor — tap one to see only its frames</span>
+          <div class="row wait-row">
+            <button type="button" class="pick" aria-pressed={filter === null} onclick={() => pick(null)}>
+              <strong class="small name">All sensors</strong>
+              <span class="xsmall faint">{waitingAll} waiting</span>
+            </button>
+          </div>
+          {#each waitingShown as w (w.id)}
             <div class="row wait-row">
-              <span class="col" style="gap:0;min-width:0">
+              <button type="button" class="pick" aria-pressed={filter === w.id} onclick={() => pick(w.id)}>
                 <strong class="small name">{w.name}</strong>
                 <span class="xsmall faint">{w.count} waiting</span>
-              </span>
-              <span class="spacer"></span>
-              <ConfirmButton class="btn sm" disabled={busy} confirmLabel="Press again" onconfirm={() => dismissAll(w)}>
-                Dismiss all
-              </ConfirmButton>
+              </button>
+              {#if w.count}
+                <ConfirmButton class="btn sm" disabled={busy} confirmLabel="Press again" onconfirm={() => dismissAll(w)}>
+                  Dismiss all
+                </ConfirmButton>
+              {/if}
             </div>
           {/each}
           <span class="xsmall faint">Dismiss all takes them out of the queue. Answers already given and the counts in Quality are kept.</span>
@@ -343,9 +375,14 @@
       {:else}
         <div class="col center empty">
           <span class="done-icon"><Icon name="check" size={30} strokeWidth={2} /></span>
-          <h2>All caught up</h2>
+          <h2>{filter === null ? 'All caught up' : `All caught up for ${filterName}`}</h2>
           <p class="muted">Your answers were added to the datasets and the models retrained. New uncertain frames will show up here.</p>
-          <button class="btn" onclick={load}><Icon name="refresh" size={14} /> Check again</button>
+          <div class="row wrap center-row">
+            {#if filter !== null && waitingOthers}
+              <button class="btn primary" onclick={() => pick(null)}>Show all sensors · {waitingOthers} waiting</button>
+            {/if}
+            <button class="btn" onclick={load}><Icon name="refresh" size={14} /> Check again</button>
+          </div>
         </div>
       {/if}
     </section>
@@ -372,6 +409,26 @@
   }
   .wait-row {
     gap: var(--space-3);
+  }
+  .pick {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex: 1;
+    min-width: 0;
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .pick[aria-pressed='true'] {
+    background: var(--c-surface-3);
+    border-color: var(--c-accent-line);
   }
   .name {
     overflow-wrap: anywhere;
