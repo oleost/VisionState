@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0b3
+
+### Fixed
+
+- **Restoring a backup with the media folder on network storage**: the history is now unpacked
+  on the disk it goes to, so the app is stopped only for a moment while the backup is put in
+  place — copying it over the network then could take long enough for Home Assistant to restart
+  the app, which put the old data back.
+- A rare "ResizeObserver loop" error on the dashboard in Safari and the Home Assistant app on iPhone.
+
 ## 0.10.0b2
 
 ### Fixed
