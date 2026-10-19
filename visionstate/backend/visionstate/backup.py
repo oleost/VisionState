@@ -221,7 +221,7 @@ def stream(settings: Settings, parts: set[str], credentials: bool) -> Iterator[b
 
 @dataclass
 class Staged:
-    """A checked backup, extracted to ``root`` (``root/<Settings folder>``, ``root/visionstate.db``)."""
+    """A checked backup: its database in ``root``, each folder next to where it goes (``_stage_root``)."""
 
     root: Path
     manifest: dict
@@ -234,8 +234,23 @@ def stage_dir(settings: Settings) -> Path:
     return settings.data_dir / STAGE
 
 
-def _member_target(name: str, known: dict[str, Path], root: Path) -> Path | None:
-    """Where a member of the archive goes in the staging folder; None for one a backup never has."""
+def _stage_root(settings: Settings, folder: str) -> Path:
+    """Where a folder of the backup is extracted: on the same disk as the folder it replaces, so
+    the swap only renames — the media folder may be network storage, and copying the history
+    there would hold the stopped app for minutes (long enough for Home Assistant's watchdog)."""
+    target = getattr(settings, folder)
+    base = settings.media_dir if settings.media_dir in target.parents else settings.data_dir
+    return base / STAGE / "new"
+
+
+def clear_stage(settings: Settings) -> None:
+    """Removes the staging folders (the data folder's and the media folder's)."""
+    for base in (settings.data_dir, settings.media_dir):
+        shutil.rmtree(base / STAGE, ignore_errors=True)
+
+
+def _member_target(name: str, known: dict[str, Path], root: Path, settings: Settings) -> Path | None:
+    """Where a member of the archive goes in a staging folder; None for one a backup never has."""
     if name in (MANIFEST, DATABASE):
         return root / name if name == DATABASE else None
     if not name.startswith(FILES) or "\\" in name:
@@ -246,7 +261,7 @@ def _member_target(name: str, known: dict[str, Path], root: Path) -> Path | None
     folder = path.parts[0]
     if folder not in known or folder in BACKUP_LEFT_OUT:
         return None
-    return root.joinpath(*path.parts)
+    return _stage_root(settings, folder).joinpath(*path.parts)
 
 
 def read_manifest(archive: zipfile.ZipFile) -> dict:
@@ -279,7 +294,8 @@ def stage(settings: Settings, upload: Path) -> Staged:
     on that copy, so nothing live is touched until ``swap``. Raises ValueError when it is not a
     backup this version can restore."""
     root = stage_dir(settings) / "new"
-    shutil.rmtree(root, ignore_errors=True)
+    for base in (settings.data_dir, settings.media_dir):
+        shutil.rmtree(base / STAGE / "new", ignore_errors=True)
     root.mkdir(parents=True)
     known = folders(settings)
     limit = BACKUP["max_restore_gb"] * 1_000_000_000
@@ -291,7 +307,7 @@ def stage(settings: Settings, upload: Path) -> Staged:
         if DATABASE not in archive.namelist():
             raise ValueError("The backup has no database")
         for info in members:
-            target = _member_target(info.filename, known, root)
+            target = _member_target(info.filename, known, root, settings)
             if target is None:
                 if info.filename != MANIFEST:
                     log.warning("Restore: left out %s (not something a backup holds)", info.filename[:200])
@@ -299,7 +315,7 @@ def stage(settings: Settings, upload: Path) -> Staged:
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info) as src, target.open("wb") as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
-    _keep_known_models(root / "models_dir")
+    _keep_known_models(_stage_root(settings, "models_dir") / "models_dir")
     db_path = root / DATABASE
     try:
         con = sqlite3.connect(db_path)
@@ -411,7 +427,7 @@ def swap(settings: Settings, staged: Staged) -> list[tuple[Path, Path]]:
         shutil.move(staged.root / DATABASE, settings.db_path)
         for part in BACKUP_PARTS.values():
             for folder in part["folders"]:
-                source = staged.root / folder
+                source = _stage_root(settings, folder) / folder
                 if not source.is_dir():
                     continue
                 target = getattr(settings, folder)
@@ -458,7 +474,7 @@ def discard(settings: Settings, moved: list[tuple[Path, Path]]) -> None:
     (stage_dir(settings) / DONE).touch()  # from here on, a start-up finishes this instead of undoing
     for _, aside in moved:
         _remove(aside)
-    shutil.rmtree(stage_dir(settings), ignore_errors=True)
+    clear_stage(settings)
 
 
 def clean_leftovers(settings: Settings) -> None:
@@ -480,4 +496,4 @@ def clean_leftovers(settings: Settings) -> None:
         else:
             _remove(path)
             aside.rename(path)
-    shutil.rmtree(stage_dir(settings), ignore_errors=True)
+    clear_stage(settings)

@@ -262,7 +262,7 @@ def test_restore_replaces_everything(tmp_path, removed):
     assert not (target.models_dir / "downloaded.onnx").exists()  # not a model of the registries
     assert not (target.sample_thumbs_dir / "1.jpg").exists()
     assert (target.heads_dir / "1.joblib").exists()  # restored (and retrained here: the test file is no model)
-    assert not backup.stage_dir(target).exists()
+    assert not backup.stage_dir(target).exists() and not (target.media_dir / backup.STAGE).exists()
     assert not list(target.data_dir.glob("*.restore-old")) and not list(target.media_dir.glob("*.restore-old"))
 
 
@@ -451,6 +451,33 @@ def test_a_restore_cut_off_is_undone_at_start(tmp_path):
     (backup.stage_dir(settings) / backup.DONE).touch()
     backup.clean_leftovers(settings)
     assert not aside.exists() and any(settings.history_dir.rglob("*.jpg"))
+
+
+def test_each_folder_is_staged_on_the_disk_it_goes_to(tmp_path):
+    """The media folder may be network storage: the history is extracted there, so the swap (with
+    the app stopped) only renames instead of copying it."""
+    settings = make_settings(tmp_path)
+    populate(settings)
+    staged = backup.stage(settings, make(tmp_path / "b.zip"))
+    media_stage = settings.media_dir / backup.STAGE / "new"
+    assert any((media_stage / "history_dir").rglob("*.jpg"))
+    assert not (staged.root / "history_dir").exists()
+    assert any((staged.root / "samples_dir").rglob("*.jpg")) and (staged.root / backup.DATABASE).exists()
+    moves = []
+    real_move = backup.shutil.move
+
+    def move(src, dst):
+        moves.append((Path(src), Path(dst)))
+        return real_move(src, dst)
+
+    backup.shutil.move = move
+    try:
+        backup.swap(settings, staged)
+    finally:
+        backup.shutil.move = real_move
+    for src, dst in moves:  # never from one disk's folder to the other's
+        assert (settings.media_dir in src.parents) == (settings.media_dir in dst.parents), (src, dst)
+    assert any(settings.history_dir.rglob("*.jpg"))
 
 
 def test_a_restore_cut_off_before_the_database_moved_keeps_it(tmp_path):

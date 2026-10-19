@@ -725,7 +725,9 @@ installations is much code for a rare need.
   streamed (`ingress_stream: true` in `config.yaml`): without it the Supervisor reads a request
   into memory and refuses one over 16 MB, which had also kept videos and sensor bundles under that.
   The database files are moved aside first, so a restore cut off before that leaves the live
-  database alone. The staging folder is left out of Home Assistant's backups (`backup_exclude`).
+  database alone. Each folder is extracted on the disk it goes to (`<media>/.restore` for the
+  history, `backup._stage_root`): the media folder may be network storage, and copying the history
+  there while the app is stopped could outlast Home Assistant's watchdog; the swap only renames. The staging folder is left out of Home Assistant's backups (`backup_exclude`).
 - **A backup is not trusted more than a sensor bundle**: every sensor in it is validated like a
   bundle import (`api.imports.validated_sensor`, shared by both), which also catches a setting of a
   newer version that needed no new database version (a new reading mode, a new display); its

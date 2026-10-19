@@ -83,7 +83,7 @@ async def _restore(request: Request) -> dict:
             507, f"Not enough free disk space: a restore of this backup needs about {need // 1_000_000} MB"
         )
     folder = backup.stage_dir(settings)
-    await asyncio.to_thread(shutil.rmtree, folder, True)
+    await asyncio.to_thread(backup.clear_stage, settings)
     upload = folder / "upload.zip"
     try:
         folder.mkdir(parents=True)
@@ -102,7 +102,7 @@ async def _restore(request: Request) -> dict:
         upload.unlink(missing_ok=True)
         await _swap(request, old, staged, after)
     finally:
-        await asyncio.to_thread(shutil.rmtree, folder, True)
+        await asyncio.to_thread(backup.clear_stage, settings)
     manifest = staged.manifest
     return {
         "sensors": len(staged.slugs),
