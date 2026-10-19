@@ -1,34 +1,6 @@
 # Changelog
 
-## 0.9.2b4
-
-### Better
-
-- **Review one sensor at a time**: tap a sensor under *Waiting per sensor* on the Review page to
-  see only its items — no more mixing up two sensors that look at the same spot. *All sensors*
-  shows everything again. The choice stays after a reload, and the links to the review queue on
-  a sensor's Quality tab open it for that sensor.
-
-## 0.9.2b3
-
-### Better
-
-- **Review shows a reading's region, large**: for reading sensors the Review page shows only the
-  part of the frame that was read — the same cut as the *Last frame* image in Home Assistant — as
-  large as fits, so the digits can be checked without opening anything, also on a phone. *Whole
-  frame* shows all of it. The list beside it shows the whole region too.
-
-## 0.9.2b2
-
-### Better
-
-- **A meter that stands still no longer fills the review queue**: when the same reading is
-  rejected again for the same reason (a water meter that is read lower than before, all night
-  long), it waits in Review once instead of once per check. The item says how many more times it
-  was read and when last; it is still counted in the Quality tab. A new value, or the same one
-  after *Skip*, is queued as before.
-
-## 0.9.2b1
+## 0.9.2
 
 ### Better
 
@@ -38,6 +10,19 @@
   keep their setting.
 - **A counter's rate shows its decimals in Home Assistant**: a slow flow such as 0.03 m³/h was
   shown as 0. A display precision you chose in Home Assistant still wins.
+- **A meter that stands still no longer fills the review queue**: when the same reading is
+  rejected again for the same reason (a water meter that is read lower than before, all night
+  long), it waits in Review once instead of once per check. The item says how many more times it
+  was read and when last; it is still counted in the Quality tab. A new value, or the same one
+  after *Skip*, is queued as before.
+- **Review shows a reading's region, large**: for reading sensors the Review page shows only the
+  part of the frame that was read — the same cut as the *Last frame* image in Home Assistant — as
+  large as fits, so the digits can be checked without opening anything, also on a phone. *Whole
+  frame* shows all of it. The list beside it shows the whole region too.
+- **Review one sensor at a time**: tap a sensor under *Waiting per sensor* on the Review page to
+  see only its items — no more mixing up two sensors that look at the same spot. *All sensors*
+  shows everything again. The choice stays after a reload, and the links to the review queue on
+  a sensor's Quality tab open it for that sensor.
 
 ### Fixed
 
