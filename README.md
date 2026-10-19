@@ -35,7 +35,7 @@
 |---|---|---|
 | 🚪 **States** | *Garage door open, closed or halfway*, gate shut, lights on in the shed | Click a few examples of each state; it learns in about a second |
 | 🧍 **Objects & people** | *Emma is home*, *our car is in the driveway*, a cat on the lawn, an unknown person at the door | Pick from 80 objects — no training. Name people by their face once; every camera knows them |
-| 🔢 **Readings** | The water, gas or power meter, the minutes left on the washer | Draw a box around the number. Counters only go up and land in the Energy dashboard |
+| 🔢 **Readings** | The water, gas or power meter — a cheap ESP32-CAM above it is enough —, the minutes left on the washer | Draw a box around the number. Counters only go up and land in the Energy dashboard |
 
 <p align="center">
   <img src="docs/promo/objects.png" alt="An object sensor recognising Emma by her face and telling our car from any car" width="900">
@@ -52,11 +52,20 @@
   </tr>
 </table>
 
+## Read a water, gas or power meter with an ESP32-CAM
+
+Put an ESP32-CAM (or any camera) above the meter, add it to Home Assistant with ESPHome or use its
+snapshot URL, and draw a box around the digits. VisionState reads the rolling wheels of a
+mechanical water or gas meter and the digits of an LCD or LED power meter, checks every value
+before it is published (a counter never goes down or jumps), and the total lands in the Energy
+dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
+on for each reading; a battery camera can trigger a check when it has a new picture.
+
 ## Highlights
 
 - 🧠 **100 % local on any CPU** — Intel, AMD, Raspberry Pi 4/5. No cloud, no GPU, no subscription, no telemetry.
 - 🏠 **Native Home Assistant** — a sidebar app; every sensor is a normal device through MQTT discovery.
-- 🎥 **Any camera** — every `camera.*` entity, or an RTSP / HTTP snapshot URL.
+- 🎥 **Any camera** — every `camera.*` entity (an ESP32-CAM with ESPHome, Reolink, Frigate …), or an RTSP / HTTP snapshot URL.
 - 🎯 **Watch only what matters** — draw a region around the door or the driveway; the rest is ignored.
 - ⚡ **Checks when something happens** — on motion, a door contact or a change in the image, and can switch on a light for a camera in the dark.
 - 🔁 **Gets better as you use it** — unsure frames go to a review queue, wrong boxes are fixed with a tap, and suspicious labels are flagged.
