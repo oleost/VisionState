@@ -26,13 +26,14 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
+from .bundle import BACKUP_MANIFEST as MANIFEST
+from .bundle import MANIFEST as BUNDLE_MANIFEST
 from .db import SCHEMA_VERSION, Database
-from .redact import MASK, redact
+from .redact import MASK, has_credentials, redact
 from .settings import BACKUP, BACKUP_LEFT_OUT, BACKUP_PARTS, VERSION, Settings
 
 log = logging.getLogger(__name__)
 
-MANIFEST = "backup.json"
 DATABASE = "visionstate.db"
 FILES = "files/"
 STAGE = ".restore"  # in the data folder: the uploaded archive and what it holds
@@ -106,7 +107,7 @@ def snapshot(db_path: Path, target: Path, parts: set[str], credentials: bool) ->
                     copy.execute(f'DELETE FROM "{table}"')
         masked = []
         for sensor_id, name, source_url in copy.execute("SELECT id, name, source FROM sensor").fetchall():
-            if not credentials and redact(source_url) != source_url:
+            if not credentials and has_credentials(source_url):
                 copy.execute("UPDATE sensor SET source = ? WHERE id = ?", (redact(source_url), sensor_id))
                 masked.append(name)
         sensors = [{"name": n, "kind": k} for n, k in copy.execute("SELECT name, kind FROM sensor ORDER BY id")]
@@ -250,6 +251,8 @@ def _member_target(name: str, known: dict[str, Path], root: Path) -> Path | None
 
 def read_manifest(archive: zipfile.ZipFile) -> dict:
     if MANIFEST not in archive.namelist():
+        if BUNDLE_MANIFEST in archive.namelist():
+            raise ValueError("This is the export of one sensor: add it with Import a sensor")
         raise ValueError("This is not a VisionState backup (backup.json is missing)")
     info = archive.getinfo(MANIFEST)
     if info.file_size > 5_000_000:
@@ -296,12 +299,16 @@ def stage(settings: Settings, upload: Path) -> Staged:
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info) as src, target.open("wb") as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
+    _keep_known_models(root / "models_dir")
     db_path = root / DATABASE
     try:
         con = sqlite3.connect(db_path)
         try:
             if con.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise ValueError("The backup's database is damaged")
+            # VisionState makes only tables and indexes: a trigger or view would run with the app's writes.
+            if con.execute("SELECT count(*) FROM sqlite_master WHERE type NOT IN ('table', 'index')").fetchone()[0]:
+                raise ValueError("The backup's database holds triggers or views VisionState never makes")
             con.execute("SELECT count(*) FROM sensor").fetchone()
         finally:
             con.close()
@@ -322,6 +329,21 @@ def stage(settings: Settings, upload: Path) -> Staged:
     finally:
         con.close()
     return Staged(root, manifest, slugs, people, masked)
+
+
+def _keep_known_models(folder: Path) -> None:
+    """Only the models of the registries, as downloaded (SHA-256 checked like a download): the app
+    loads a model file it finds without checking it again, so a backup must not bring another."""
+    from .backbones import all_specs, sha256_file
+
+    known = {spec.filename: spec.sha256 for spec in all_specs()}
+    for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
+        if not path.is_file():
+            continue
+        name = path.relative_to(folder).as_posix()
+        if name not in known or sha256_file(path) != known[name]:
+            log.warning("Restore: left out the model file %s (not a known model, or changed)", name[:200])
+            path.unlink()
 
 
 def single_file(db_path: Path) -> None:
@@ -358,15 +380,19 @@ def _rename(path: Path, target: Path) -> None:
 
 
 def _replaced(settings: Settings) -> list[Path]:
-    """What a restore moves aside: the database and every folder it empties (see BACKUP_PARTS)."""
-    paths = [*_db_files(settings.db_path)]
-    for part in BACKUP_PARTS.values():
-        if part["restore"] == "replace":
-            paths += [getattr(settings, name) for name in part["folders"]]
-    paths += [getattr(settings, name) for name in BACKUP_LEFT_OUT]
+    """What a restore moves aside, in this order: the database files, then every folder it empties
+    (see BACKUP_PARTS). The database goes first, so a restore cut off at any point has either
+    left it in place or moved it aside (``clean_leftovers`` relies on it)."""
+    folders = [
+        getattr(settings, name)
+        for part in BACKUP_PARTS.values()
+        if part["restore"] == "replace"
+        for name in part["folders"]
+    ]
+    folders += [getattr(settings, name) for name in BACKUP_LEFT_OUT]
     # A folder inside another one is moved with the outer one.
-    unique = sorted(set(paths), key=lambda p: len(p.parts))
-    return [p for p in unique if not any(q in p.parents for q in unique)]
+    unique = list(dict.fromkeys(folders))
+    return [*_db_files(settings.db_path), *(p for p in unique if not any(q in p.parents for q in unique))]
 
 
 def swap(settings: Settings, staged: Staged) -> list[tuple[Path, Path]]:
@@ -437,14 +463,17 @@ def discard(settings: Settings, moved: list[tuple[Path, Path]]) -> None:
 
 def clean_leftovers(settings: Settings) -> None:
     """At start-up, after a restore that was cut off (the app stopped halfway): the data moved
-    aside is put back, unless the restored data had already started (then it is removed)."""
+    aside is put back, unless the restored data had already started (then it is removed). What
+    was never moved aside is the data from before and is left alone — the live database above all."""
     finished = (stage_dir(settings) / DONE).exists()
     candidates = [*_db_files(settings.db_path), *folders(settings).values()]
     asides = [(path, _aside(path)) for path in candidates if _aside(path).exists()]
     if asides and not finished:
         log.warning("A restore was cut off: the data from before it is put back")
-        for path in _db_files(settings.db_path):
-            path.unlink(missing_ok=True)
+        if _aside(settings.db_path).exists():
+            # The database was moved aside: what is in its place (if anything) is the restored one.
+            for path in _db_files(settings.db_path):
+                path.unlink(missing_ok=True)
     for path, aside in asides:
         if finished:
             _remove(aside)

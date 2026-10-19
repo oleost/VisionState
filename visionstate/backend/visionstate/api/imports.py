@@ -7,6 +7,7 @@ import logging
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
@@ -30,6 +31,9 @@ from .common import (
 )
 from .faces import add_face_row, new_person, taken_keys
 from .samples import copy_limited
+
+if TYPE_CHECKING:
+    from .sensors import SensorIn
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix=API_PREFIX, tags=["import"])
@@ -63,44 +67,15 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
 def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
     """Creates the sensor of a bundle; returns its ID, how many of its images were unreadable and
     whether face recognition, on where it was exported, was turned off."""
-    from pydantic import ValidationError
-
-    from .sensors import SensorIn
-
     manifest = bundle.read_manifest(path)
     data = dict(manifest["sensor"])
     data["reading"] = keep_text_reader(data.get("reading"))  # exported before the wheel reader
     # exported before a counter had a change limit of its own
     data["reading"] = keep_change_step(data["reading"])
-    # Validate exactly like a sensor created in the UI (kind, limits, source type, states, objects, triggers).
     try:
-        spec = SensorIn.model_validate(
-            {
-                key: data[key]
-                for key in (
-                    "name",
-                    "kind",
-                    "source_type",
-                    "source",
-                    "roi",
-                    "states",
-                    "objects",
-                    "reading",
-                    "interval_s",
-                    "threshold",
-                    "debounce",
-                    "triggers",
-                    "review",
-                    "publish",
-                )
-                if data.get(key) is not None
-            }
-        )
-        spec.checked()
-    except ValidationError as err:
-        raise ValueError(f"invalid sensor in bundle: {err.errors()[0].get('msg')}") from err
-    except HTTPException as err:
-        raise ValueError(f"invalid sensor in bundle: {err.detail}") from err
+        spec = validated_sensor(data)
+    except ValueError as err:
+        raise ValueError(f"invalid sensor in bundle: {err}") from err
     faces_off = False
     if spec.objects is not None and spec.objects.faces is not None:
         # Taught faces come along, face recognition does not: it is turned on there, with its
@@ -143,6 +118,42 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
             skipped += 1
             log.warning("Import: skipping a face: %s", getattr(err, "detail", err))
     return sensor_id, skipped, faces_off
+
+
+SENSOR_FIELDS = (
+    "name",
+    "kind",
+    "source_type",
+    "source",
+    "roi",
+    "states",
+    "objects",
+    "reading",
+    "interval_s",
+    "threshold",
+    "debounce",
+    "triggers",
+    "review",
+    "publish",
+)
+
+
+def validated_sensor(data: dict) -> SensorIn:
+    """A sensor's settings validated exactly like a sensor made in the UI (kind, limits, source
+    type, states, objects, readings, triggers): a sensor bundle and every sensor of a restored
+    backup (api/backup.py). ValueError says what is wrong — often a setting of a newer version."""
+    from pydantic import ValidationError
+
+    from .sensors import SensorIn
+
+    try:
+        return SensorIn.model_validate({k: data[k] for k in SENSOR_FIELDS if data.get(k) is not None}).checked()
+    except ValidationError as err:
+        error = err.errors()[0]
+        where = ".".join(str(part) for part in error.get("loc", ()))
+        raise ValueError(f"{where}: {error.get('msg')}" if where else str(error.get("msg"))) from err
+    except HTTPException as err:
+        raise ValueError(str(err.detail)) from err
 
 
 def _import_face(rt: Runtime, path: Path, sensor_id: int, item: dict) -> None:

@@ -724,6 +724,17 @@ installations is much code for a rare need.
   the restore needs the upload and its contents on disk for a moment. Uploads reach the app
   streamed (`ingress_stream: true` in `config.yaml`): without it the Supervisor reads a request
   into memory and refuses one over 16 MB, which had also kept videos and sensor bundles under that.
+  The database files are moved aside first, so a restore cut off before that leaves the live
+  database alone. The staging folder is left out of Home Assistant's backups (`backup_exclude`).
+- **A backup is not trusted more than a sensor bundle**: every sensor in it is validated like a
+  bundle import (`api.imports.validated_sensor`, shared by both), which also catches a setting of a
+  newer version that needed no new database version (a new reading mode, a new display); its
+  database may hold only tables and indexes (a trigger would run with the app's writes); model
+  files come back only when they are a registry's file with its SHA-256 (`_keep_known_models`:
+  the app loads a model it finds without checking it again). Not validated: the global settings
+  in `setting` (read through `merge_*` with defaults, like those of an older version).
+- **Bundle or backup**: the two archives tell each other apart (`manifest.json` / `backup.json`)
+  and say where the other one goes (Import a sensor / Settings → Backup).
 - **Home Assistant**: sensors and people that are only in the app before the restore have their
   entities removed; those in the backup keep their unique IDs and so their entity IDs.
 
@@ -759,7 +770,7 @@ is part of backups and needs no restart.
 | **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
-| **Backup of everything** | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress | beta 0.10.0b1 |
+| **Backup of everything** | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress | betas 0.10.0b1–b2 |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

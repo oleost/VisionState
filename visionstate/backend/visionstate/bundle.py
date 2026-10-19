@@ -16,6 +16,7 @@ from .storage import Storage
 
 BUNDLE_SCHEMA = 1
 MANIFEST = "manifest.json"
+BACKUP_MANIFEST = "backup.json"  # a backup of everything (backup.py), not a sensor
 
 
 def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, include_faces: bool = False) -> str:
@@ -263,6 +264,8 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
 def read_manifest(path: Path) -> dict:
     with zipfile.ZipFile(path) as archive:
         if MANIFEST not in archive.namelist():
+            if BACKUP_MANIFEST in archive.namelist():
+                raise ValueError("This is a backup of everything: restore it under Settings → Backup")
             raise ValueError("Not a VisionState bundle (manifest.json missing)")
         info = archive.getinfo(MANIFEST)
         if info.file_size > UPLOAD_LIMITS["max_manifest_mb"] * 1_000_000:

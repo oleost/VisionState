@@ -219,16 +219,27 @@ class Embedder:
         return np.concatenate([hidden[:, 0], hidden[:, 1:].mean(axis=1)], axis=1)
 
 
-if __name__ == "__main__":
+def all_specs() -> list:
+    """Every model of every registry: backbones (states), detectors (objects), readers and wheel
+    readers (readings), the face detector and recognisers."""
     from . import detectors, faces, readers
 
+    return [
+        *BACKBONES.values(),
+        *detectors.DETECTORS.values(),
+        *readers.READERS.values(),
+        *readers.WHEEL_READERS.values(),
+        faces.DETECTOR,
+        *faces.RECOGNISERS.values(),
+    ]
+
+
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     args = [a for a in sys.argv[1:] if a != "--all"]
     destination = Path(args[0] if args else "models")
-    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers
-    # (readings); with --all also the ones downloaded on first use (the face models are never
-    # bundled), for the tests of every model.
-    specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
-    for spec in [*specs, *readers.WHEEL_READERS.values(), faces.DETECTOR, *faces.RECOGNISERS.values()]:
+    # Every bundled model; with --all also the ones downloaded on first use (the face models are
+    # never bundled), for the tests of every model.
+    for spec in all_specs():
         if spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

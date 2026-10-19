@@ -536,7 +536,10 @@ a known point:
   without its "last seen" and past frames; a meter keeps its last value.
 - If camera passwords were left out, the result lists the sensors to enter them for again.
 - A backup made by an older version is upgraded when it is restored. A backup from a newer
-  version is refused: update the app first (the beta app is often newer than the stable one).
+  version is refused when it holds something this version does not know (a newer database, or a
+  sensor with a setting added later — the message names it): update the app first (the beta app
+  is often newer than the stable one).
+- Only the AI models VisionState itself downloads come back from a backup, and only unchanged.
 - The backup is checked before anything is replaced; if the restore fails, the app keeps (or puts
   back) what it had. It needs about twice the backup's size of free disk space for a moment.
 - Stop the other VisionState app (stable or beta) before you restore into this one: both publish

@@ -258,7 +258,8 @@ def test_restore_replaces_everything(tmp_path, removed):
         "history": 3,
         "history_missing": 0,
     }
-    assert (target.models_dir / "here-already.onnx").exists() and (target.models_dir / "downloaded.onnx").exists()
+    assert (target.models_dir / "here-already.onnx").exists()  # models are added, never removed
+    assert not (target.models_dir / "downloaded.onnx").exists()  # not a model of the registries
     assert not (target.sample_thumbs_dir / "1.jpg").exists()
     assert (target.heads_dir / "1.joblib").exists()  # restored (and retrained here: the test file is no model)
     assert not backup.stage_dir(target).exists()
@@ -304,9 +305,84 @@ def test_restore_refuses_what_it_cannot_restore(tmp_path):
         bundle = io.BytesIO()
         with zipfile.ZipFile(bundle, "w") as z:
             z.writestr("manifest.json", "{}")  # a sensor bundle, not a backup
-        assert "not a VisionState backup" in restore(client, bundle.getvalue()).json()["detail"]
+        assert (
+            "export of one sensor: add it with Import a sensor" in restore(client, bundle.getvalue()).json()["detail"]
+        )
+        # A setting a newer version added (no new database version for it) is caught like in a
+        # sensor import, before anything is stopped.
+        future = with_db(
+            good, tmp_path, "UPDATE sensor SET reading = json_set(reading, '$.mode', 'hologram') WHERE kind = 'reading'"
+        )
+        refused = restore(client, future).json()["detail"]
+        assert "'Water meter'" in refused and "hologram" in refused and "update this app first" in refused
+        # A database with something VisionState never makes.
+        trigger = with_db(good, tmp_path, "CREATE TRIGGER t AFTER INSERT ON prediction BEGIN DELETE FROM sensor; END")
+        assert "triggers or views" in restore(client, trigger).json()["detail"]
         assert sorted(s["name"] for s in client.get("/api/v1/sensors").json()) == before
         assert not backup.stage_dir(settings).exists()
+
+
+def with_db(data: bytes, tmp_path: Path, sql: str) -> bytes:
+    """The backup ``data`` with ``sql`` run on its database."""
+    db = tmp_path / "edit.db"
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(out, "w") as dst:
+        for item in src.infolist():
+            body = src.read(item)
+            if item.filename == "visionstate.db":
+                db.write_bytes(body)
+                con = sqlite3.connect(db)
+                con.execute(sql)
+                con.commit()
+                con.close()
+                body = db.read_bytes()
+            dst.writestr(item, body)
+    return out.getvalue()
+
+
+def test_a_sensor_export_and_a_backup_say_where_they_go(tmp_path):
+    settings = make_settings(tmp_path)
+    data = make(tmp_path / "b.zip").read_bytes()
+    with TestClient(create_app(settings)) as client:
+        made = client.post(
+            "/api/v1/sensors",
+            json={
+                "name": "Door",
+                "source_type": "http",
+                "source": "http://x",
+                "states": [{"name": "A"}, {"name": "B"}],
+            },
+        )
+        resp = client.post("/api/v1/import", files={"file": ("b.zip", data, "application/zip")})
+        assert resp.status_code == 400 and "restore it under Settings → Backup" in resp.json()["detail"]
+        exported = client.get(f"/api/v1/sensors/{made.json()['id']}/export").content
+        assert "add it with Import a sensor" in restore(client, exported).json()["detail"]
+
+
+def test_only_known_models_come_back(tmp_path):
+    """The app loads a model file it finds without checking it again: a restore takes only the
+    files of the registries, unchanged (SHA-256), like a download."""
+    from visionstate.backbones import all_specs
+
+    spec = next((s for s in sorted(all_specs(), key=lambda s: s.size) if (MODEL_DIR / s.filename).exists()), None)
+    if spec is None:
+        pytest.skip("no model downloaded")
+    source = make_settings(tmp_path / "a")
+    populate(source)
+    (source.models_dir / spec.filename).write_bytes((MODEL_DIR / spec.filename).read_bytes())
+    changed = next(s for s in all_specs() if s.filename != spec.filename)
+    (source.models_dir / changed.filename).write_bytes(b"not the model")
+    out = io.BytesIO()
+    backup.write(source, out, set(BACKUP_PARTS), credentials=False)
+    staged = backup.stage(make_settings(tmp_path / "b"), _saved(tmp_path, out.getvalue()))
+    kept = sorted(p.name for p in (staged.root / "models_dir").iterdir())
+    assert kept == [spec.filename]
+
+
+def _saved(tmp_path: Path, data: bytes) -> Path:
+    path = tmp_path / "upload.zip"
+    path.write_bytes(data)
+    return path
 
 
 def test_restore_ignores_paths_outside_its_folders(tmp_path):
@@ -375,6 +451,20 @@ def test_a_restore_cut_off_is_undone_at_start(tmp_path):
     (backup.stage_dir(settings) / backup.DONE).touch()
     backup.clean_leftovers(settings)
     assert not aside.exists() and any(settings.history_dir.rglob("*.jpg"))
+
+
+def test_a_restore_cut_off_before_the_database_moved_keeps_it(tmp_path):
+    """The database is moved aside first; cut off before that, the live database is the one from
+    before and must be left alone (an early version deleted it at the next start)."""
+    settings = make_settings(tmp_path)
+    populate(settings)
+    order = backup._replaced(settings)
+    assert order[:3] == backup._db_files(settings.db_path)
+    settings.heads_dir.rename(settings.heads_dir.with_name("heads.restore-old"))  # one folder, then cut off
+    size = settings.db_path.stat().st_size
+    backup.clean_leftovers(settings)
+    assert settings.db_path.exists() and settings.db_path.stat().st_size == size
+    assert (settings.heads_dir / "1.joblib").exists()
 
 
 def test_a_newer_database_keeps_its_version(tmp_path):

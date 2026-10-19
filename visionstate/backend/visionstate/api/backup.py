@@ -20,6 +20,7 @@ from ..mqtt import SensorDescriptor
 from ..redact import redact
 from ..settings import BACKUP, BACKUP_PARTS
 from .common import API_PREFIX, runtime
+from .imports import SENSOR_FIELDS, validated_sensor
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix=API_PREFIX, tags=["backup"])
@@ -95,10 +96,11 @@ async def _restore(request: Request) -> dict:
                 await asyncio.to_thread(file.write, chunk)
         try:
             staged = await asyncio.to_thread(backup.stage, settings, upload)
+            after = await asyncio.to_thread(_staged_sensors, staged)
         except (ValueError, KeyError, OSError, zipfile.BadZipFile) as err:
             raise HTTPException(400, f"Restore failed: {redact(str(err))}") from err
         upload.unlink(missing_ok=True)
-        await _swap(request, old, staged)
+        await _swap(request, old, staged, after)
     finally:
         await asyncio.to_thread(shutil.rmtree, folder, True)
     manifest = staged.manifest
@@ -112,15 +114,14 @@ async def _restore(request: Request) -> dict:
     }
 
 
-async def _swap(request: Request, old: Runtime, staged: backup.Staged) -> None:
+async def _swap(request: Request, old: Runtime, staged: backup.Staged, after: dict[str, SensorDescriptor]) -> None:
     """Stops the runtime, swaps the data and starts a runtime on it; puts the old data back and
-    starts on that when anything fails."""
+    starts on that when anything fails. ``after``: the entities of the backup's sensors."""
     app = request.app
     settings = old.settings
     # The entities of sensors and people the backup does not have go away in Home Assistant;
     # the others keep their unique IDs, and with them their entity IDs.
     before = await asyncio.to_thread(_descriptors, old.db)
-    after = await asyncio.to_thread(_staged_descriptors, staged)
     for slug, descriptor in before.items():
         if slug in after:
             await old.mqtt.remove_stale(descriptor, after[slug])
@@ -157,10 +158,26 @@ def _descriptors(db: Database) -> dict[str, SensorDescriptor]:
         return {row.slug: SensorConfig.from_row(row).descriptor for row in s.scalars(select(Sensor))}
 
 
-def _staged_descriptors(staged: backup.Staged) -> dict[str, SensorDescriptor]:
+def _staged_sensors(staged: backup.Staged) -> dict[str, SensorDescriptor]:
+    """The entities of the backup's sensors, by slug. Each sensor is checked like a sensor import
+    (imports.validated_sensor): a setting this version does not know refuses the restore before
+    anything is stopped (the database version alone does not show a new choice in a setting)."""
     db = Database(staged.root / backup.DATABASE)
     try:
-        return _descriptors(db)
+        with db.session() as s:
+            rows = s.scalars(select(Sensor)).all()
+            for row in rows:
+                data = {key: getattr(row, key) for key in SENSOR_FIELDS if key != "states"}
+                data["states"] = [{"key": st.key, "name": st.name, "color": st.color} for st in row.states]
+                try:
+                    validated_sensor(data)
+                except ValueError as err:
+                    raise ValueError(
+                        f"the sensor {row.name!r} has a setting this version does not know ({err}). "
+                        f"The backup was made by VisionState {staged.manifest.get('app_version', '?')}: "
+                        "update this app first"
+                    ) from err
+            return {row.slug: SensorConfig.from_row(row).descriptor for row in rows}
     finally:
         db.engine.dispose()
         backup.single_file(staged.root / backup.DATABASE)

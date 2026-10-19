@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0b2
+
+### Fixed
+
+- **A restore cut off at the wrong moment could lose the database**: if the app stopped while a
+  backup was being restored, its next start could remove the database instead of putting it back.
+  The database is now always moved first, and one that was never moved is left alone.
+- A backup from a newer version that adds a setting to a sensor (a new reading mode, say) is now
+  refused with the sensor's name, like a sensor export from a newer version, instead of being
+  restored into an app that does not know the setting.
+- Only the AI models VisionState itself downloads come back from a backup, and only unchanged.
+- Restoring a sensor export, or importing a backup as a sensor, now says where the file goes.
+
 ## 0.10.0b1
 
 ### New
