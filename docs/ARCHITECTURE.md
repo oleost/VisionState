@@ -147,7 +147,7 @@ error is kept in `LiveState.error` and shown in the UI.
 |---|---|
 | `lib/api.ts` | The only place that builds API URLs; one function per endpoint |
 | `lib/types.ts` | Types of what the API returns |
-| `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling |
+| `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling, the last restored backup (Settings is made again with it) |
 | `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |

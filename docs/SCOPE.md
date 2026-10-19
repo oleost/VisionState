@@ -222,7 +222,8 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   `face` rows (`db.Face`: {box, points, score} in the crop, and the sensor it was taught on, null
   once that sensor is deleted — the face stays). The crop (the face with a margin, not aligned, so
   another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
-  embeddings are cached per face model (`face_embedding`), deleted with the face, never exported.
+  embeddings are cached per face model (`face_embedding`), deleted with the face, never in a sensor
+  bundle; a full backup holds them with the faces (the database goes along whole, see §12).
   A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
   stored on the sensor): its entities, and a name its faces can get. One index of all taught
   faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
@@ -565,7 +566,7 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
-    global review rules, storage (disk use and history limits), import.
+    global review rules, storage (disk use and history limits), backup and restore, import.
 11. **History** — every sensor's history rows in one list, filtered by sensors, *what* (state,
     object class or own label — the row's `state_key`; never a reading), event, time window and
     *waiting for review*, newest or oldest first. Each filter takes several values (any of them

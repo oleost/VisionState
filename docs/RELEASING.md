@@ -77,13 +77,17 @@ all of it and tell the maintainer what was checked and what was found.
    - restart Home Assistant, reboot the host and restart the MQTT broker: the app and its entities
      come back by themselves;
    - make a backup of the app and restore it: the sensors are back, with their training images;
+   - move a VisionState backup (Settings → Backup) between the beta app and another app (the dev
+     app, or the stable app once it has the feature) both ways: the sensors, people, training
+     images and history come along, and the entities keep their IDs;
    - **soak for 1 hour** with the sensors checking: the app's memory (Supervisor app stats) and its
      data on disk level off instead of growing, the log stays quiet;
    - open the app in Home Assistant at desktop width and on a phone (Ingress);
    - prepare the **update from the last stable release**: the stable app is installed there too. It
      shares MQTT topics and unique IDs with the beta app, so never run both: stop the beta app,
      start the stable one, and give it one sensor of each kind (exports of the standing test sensors,
-     or `scripts/seed_demo.py --app <slug>` once the stable release can teach faces from photos).
+     `scripts/seed_demo.py --app <slug>`, or a backup of the beta app once the stable release can
+     restore one).
 3. **What changed since the last stable release**: new or upgraded dependencies have a licence that
    fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
    visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest Home

@@ -267,7 +267,8 @@ everyone.
 - **Where faces are kept**: in the app's own storage, like training images, not in the media
   folder (which Home Assistant's media browser shows to every user) — so they are in Home Assistant
   backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
-  person; an export never contains them.
+  person; a sensor's export never contains them. A backup from Settings → Backup holds the faces and
+  these numbers too (untick *People and their faces* to leave them out): keep it somewhere safe.
 
 ## Reading sensors
 

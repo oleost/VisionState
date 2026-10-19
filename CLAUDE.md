@@ -44,7 +44,8 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - **No telemetry, nothing "phones home".** Download counts on GHCR are the only usage signal.
 - **Only reachable through Home Assistant Ingress** (requests from other addresses are refused);
   outside Home Assistant the app has no login — documented, keep it that way.
-- **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports.
+- **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports (a full
+  backup holds them only when the user ticks *Camera passwords*, unticked by default).
 - **No hard-coded defaults** outside `settings.py` / the registries; the UI reads them from
   `GET /api/v1/config`.
 - **A backup holds everything:** every table and data folder belongs to a part of
@@ -121,7 +122,7 @@ itself (`__main__.py`).
   and `VISIONSTATE_MEDIA` folder. Home Assistant then builds the Dockerfile itself, the same image
   as a release (*Local apps* in the app store; after a change: *Rebuild*). It shares MQTT topics and
   unique IDs with an installed VisionState, so never run both at once; it has its own data (move
-  sensors with export/import). This is how changes are tried on Home Assistant during development;
+  everything with Settings → Backup, or single sensors with export/import). This is how changes are tried on Home Assistant during development;
   a beta is released when the maintainer asks for one.
 
 ## UI testing routine

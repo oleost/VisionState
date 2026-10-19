@@ -108,8 +108,8 @@ with the **MQTT** integration, and a camera.
    fresh frame right away.
 
 New features come to a separate **beta** app first: add `https://github.com/oleost/VisionState#beta`
-instead. Run only one of the two at a time (they publish the same sensors); move sensors with
-**Export** and **Import**.
+instead. Run only one of the two at a time (they publish the same sensors); move everything with
+**Settings → Backup**, or single sensors with **Export** and **Import**.
 
 The user guide — every entity, triggers, faces, readings, review — is on the app's
 *Documentation* tab ([`visionstate/DOCS.md`](visionstate/DOCS.md)).
@@ -135,9 +135,10 @@ camera ─► your region ─► pretrained model (ONNX, CPU) ─► small per-s
 
 - Nothing leaves your machine; there is no telemetry.
 - Only reachable through Home Assistant Ingress (a Home Assistant login).
-- Camera passwords are hidden in logs and removed from exports.
+- Camera passwords are hidden in logs and removed from exports; a backup holds them only if you
+  tick it.
 - Face recognition is off until you turn it on for a camera; faces are kept in the app's own
-  storage and exported only if you tick it.
+  storage and exported only if you tick it (a backup holds them unless you untick it).
 
 ## Contributing
 
