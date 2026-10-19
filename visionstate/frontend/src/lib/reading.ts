@@ -1,4 +1,5 @@
 // Helpers for reading sensors: how a value and its unit are shown.
+import { dateTime, plural } from './format';
 import type { Prediction, ReadingSettings, ReadingType, Roi, Sensor } from './types';
 
 /** The unit shown next to a value ("min" for time left). */
@@ -46,11 +47,26 @@ export function decimalsSeen(text: string | null | undefined): number | null {
 export const isReadingSensor = (sensor: Pick<Sensor, 'kind'>) => sensor.kind === 'reading';
 
 /**
- * What a stored reading holds: the text read, its value, why it was rejected (null = accepted) and
- * the region it was read in (null = the whole frame; missing in readings from before 0.7.1b2).
+ * What a stored reading holds: the text read, its value, why it was rejected (null = accepted), the
+ * region it was read in (null = the whole frame; missing in readings from before 0.7.1b2) and, on a
+ * rejected one waiting for review, how often the same reading came again since (not stored again).
  */
 export const readingDetail = (p: Prediction) =>
-  p.probs as unknown as { text?: string; value?: string | null; reason?: string | null; roi?: Roi | null };
+  p.probs as unknown as {
+    text?: string;
+    value?: string | null;
+    reason?: string | null;
+    roi?: Roi | null;
+    repeats?: number;
+    last_seen?: string;
+  };
+
+/** "Read the same 3 more times, last …" for a rejected reading that came again, or null. */
+export function repeatedNote(p: Prediction): string | null {
+  const { repeats, last_seen } = readingDetail(p);
+  if (!repeats) return null;
+  return `Read the same ${plural(repeats, 'more time')}${last_seen ? `, last ${dateTime(last_seen)}` : ''}.`;
+}
 
 /** The region a stored reading was read in, or the sensor's region for readings that did not keep it. */
 export function readingRoi(p: Prediction, sensor: Pick<Sensor, 'roi'>): Roi | null {

@@ -68,7 +68,7 @@ OBJECT_MAX_CLASSES = 20  # two Home Assistant entities per class
 READING_SENSOR_DEFAULTS = {
     "interval_s": 30.0,
     "threshold": 0.70,  # clean LCDs read at ~0.99, LED displays at ~0.8
-    "debounce": 2,
+    "debounce": 1,  # a counter in use changes every reading: 2 held it back until the water stopped
 }
 # counter: only goes up (energy/water/gas meters); value: any number (prices);
 # time_left: "h:mm" or minutes on an appliance display, reported in minutes.
@@ -452,6 +452,7 @@ REVIEW_DEFAULTS = {
     "flip_window_s": 600,  # ... within this window counts as flip-flopping
     "spot_rate": 0.0,  # share of confident frames sent for a random spot check
 }
+REVIEW_QUEUE = {"page_size": 50}  # items the Review page loads at once (the newest, or one sensor's)
 REVIEW_LIMITS = {
     "below": (0.0, 1.0),
     "cooldown_s": (0, 86_400),

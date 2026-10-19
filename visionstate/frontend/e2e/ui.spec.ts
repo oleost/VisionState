@@ -173,6 +173,34 @@ test('swiping on a camera frame scrolls the page', async ({ page, request }, inf
   }
 });
 
+test('long camera names stay inside their boxes', async ({ page }) => {
+  const long = 'garasje_bod_1_etg_esp32cam_watermeter_esp32_watermeter_camera';
+  await page.route('**/api/v1/cameras', (route) =>
+    route.fulfill({
+      json: [
+        { entity_id: `camera.${long}`, name: `esp32cam-watermeter ${long}`, state: 'idle' },
+        { entity_id: 'camera.reolink', name: 'Reolink', state: 'unavailable' },
+      ],
+    }),
+  );
+  await page.goto('#/sensors/new');
+  await expect(page.getByText(`camera.${long}`)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.cam');
+});
+
+test('the buttons of the sensor cards line up along the bottom', async ({ page }) => {
+  await page.goto('#/');
+  const actions = page.locator('.sensor .actions');
+  await expect(actions.first()).toBeVisible();
+  const buttons = await actions.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().bottom));
+  const cards = await page.locator('.sensor').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+  // Cards side by side (the same top) have their buttons at the same height.
+  for (let i = 0; i < cards.length; i++)
+    for (let j = i + 1; j < cards.length; j++)
+      if (Math.abs(cards[i] - cards[j]) < 1) expect(Math.abs(buttons[i] - buttons[j])).toBeLessThan(1);
+});
+
 test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');
@@ -969,6 +997,13 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     }
     await expect(ours).toBeVisible();
     await expect(page.getByText('Rejected: a counter can not go down')).toBeVisible();
+    // Only the region is shown, large; the whole frame is one tap away.
+    const region = page.locator('.main img.region');
+    await expect.poll(() => region.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+    await press(page.getByRole('button', { name: 'Whole frame' }), info);
+    await expect(page.locator('.main .frame')).toBeVisible();
+    await press(page.getByRole('button', { name: 'Only the region' }), info);
+    await expect(region).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-reading.png'), fullPage: true });
     await press(page.getByRole('button', { name: 'Misread' }), info);
@@ -1035,10 +1070,28 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await expect(row).toContainText('1 waiting');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
+    // A tap on a sensor shows only its items, and the page keeps that filter in its address.
+    await press(row.locator('.pick'), info);
+    await expect(page).toHaveURL(new RegExp(`#/review\\?sensor=${id}$`));
+    await expect(row.locator('.pick')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.main')).toContainText(/Did it read/);
+    await expect(page.locator('.main .mono').first()).toHaveText('1 / 1');
+    await page.reload();
+    await expect(row.locator('.pick')).toHaveAttribute('aria-pressed', 'true');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dismiss.png'), fullPage: true });
     await press(row.getByRole('button', { name: 'Dismiss all' }), info);
     await press(row.getByRole('button', { name: 'Press again' }), info);
     await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeVisible();
+    // Nothing left for this sensor, while others still wait: it stays chosen, one tap shows them all.
+    await expect(row).toContainText('0 waiting');
+    await expect(row.getByRole('button', { name: 'Dismiss all' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'All caught up for Gas meter' })).toBeVisible();
+    await expectNoClipping(page, '.btn, .card');
+    // On a phone the toast lies over the button: a finger waits for it too.
+    await expect(page.getByText('Dismissed 1 item of Gas meter')).toBeHidden({ timeout: 10_000 });
+    await press(page.getByRole('button', { name: /Show all sensors · \d+ waiting/ }), info);
+    await expect(page).toHaveURL(/#\/review$/);
+    await expect(page.getByRole('button', { name: /All sensors/ })).toHaveAttribute('aria-pressed', 'true');
     await expect(row).toHaveCount(0);
     expect(await waiting()).toBe(0);
     errors.expectNone();

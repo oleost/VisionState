@@ -192,12 +192,14 @@
     bottom: 12px;
   }
   .body {
+    flex: 1;
     padding: var(--space-4) 18px 18px;
   }
   h2 a {
     color: var(--c-text);
   }
   .actions {
+    margin-top: auto; /* the buttons line up along the bottom of a row of cards */
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: var(--space-2);

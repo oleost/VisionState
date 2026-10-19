@@ -273,7 +273,12 @@ it read 297 of 329 right, tiny 304 and small 316; it took 9 for 3 or 8 on seven-
    reads `h:mm` → minutes. Reject when empty, below the threshold (default 70 %), a counter
    going down, a mechanical counter read with another number of digits than it has wheels, a
    counter going up faster than its limit (below), or another value changing more than
-   `max_step`; otherwise publish after `debounce` equal reads. A counter read exactly
+   `max_step`; otherwise publish after `debounce` equal reads (new sensors publish the first
+   one: the checks above are what catch misreads — a misread from glare or a wheel between two
+   digits comes back the same in the next reading, so equal reads let it through anyway — while a
+   counter in use changes every reading, and waiting for two equal ones published nothing until
+   the water stopped).
+   A counter read exactly
    one step of its last digit below the value (`readers.settling`) is the last wheel turning: the
    value stays, but it is no rejection (no history row, no review item, counted as accepted) —
    seen in a user's export, where one too-high value made every right reading after it a "went
@@ -454,7 +459,12 @@ the pixels are decoded.
 - **Review queue** (global rules in the DB, per-sensor overrides in `sensor.review`, defaults in
   `settings.REVIEW_DEFAULTS`): frames below 85 % (never below the sensor threshold), frames
   where the state flip-flops (3 changes in 10 min) and optional random spot checks (default 0 %);
-  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown).
+  at most one per sensor per 5 minutes. Rejected readings always go there (no cooldown), but only
+  once while the same one waits: a reading rejected for the same reason with the same value is
+  counted on the waiting item (`repeats`, `last_seen`; `engine.reading._repeat_rejected`) and not stored
+  again. A meter standing still on a rejected value all night filled the queue with one frame per
+  check, all with the same answer. The waiting item keeps its first frame and time, so a value
+  confirmed there counts from when it was first read; after *Skip* the next one is queued again.
   **Dismiss all** (per sensor, on the Review page and a reading sensor's Quality tab) marks every
   waiting item of that sensor as skipped — for clearing out what piled up while setting a sensor
   up; given answers and the reading counts stay.
@@ -503,7 +513,9 @@ memory and starting over after a restart) and, for counters only, *Rate* (`rate`
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
 readings far apart give the average since the previous one; unit and device class from the
 counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/h and L → L/min volume
-flow rate, else `<unit>/h`). A sensor that stops being a counter loses its rate entity. A fifth,
+flow rate, else `<unit>/h`; `suggested_display_precision` from `mqtt.rate_precision`: enough
+decimals for the counter's smallest rise over the window, as Home Assistant otherwise showed
+0.03 m³/h as 0). A sensor that stops being a counter loses its rate entity. A fifth,
 *Reader image* (`image`, `reader_image`, diagnostic, also off by default), is the image the reader
 saw at the last reading (the region after display processing), as on the Live tab.
 
@@ -596,6 +608,7 @@ loads.
   (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
+  (one while the same reading waits for review, see §7)
   (spot checks: "spot_check"), and `read_ok` / `correct_value` hold the user's verdict. Verified
   readings are excluded from the history clean-up — they are the data a later reader
   improvement would learn from (schema v7). Object events are `prediction` rows (class or own
@@ -705,6 +718,7 @@ is part of backups and needs no restart.
 | **Larger models, tunable teaching** ✅ | D-FINE M and L, DINOv2 base, a model comparison in Settings, teaching limits globally and per sensor | 0.9.0 (beta 0.8.1b1) |
 | **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
+| **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

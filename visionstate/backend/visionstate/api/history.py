@@ -11,10 +11,11 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 
+from .. import imaging
 from ..db import Prediction, Sensor
 from ..settings import HISTORY, HISTORY_EVENTS, KIND_READING, SENSOR_KINDS
 from .common import API_PREFIX, iso, runtime
@@ -223,15 +224,23 @@ def history_facets(params: Annotated[HistoryFilter, Query()], request: Request) 
 
 
 @router.get("/history/{prediction_id}/image")
-def history_image(prediction_id: int, request: Request, size: str = "full") -> FileResponse:
+def history_image(prediction_id: int, request: Request, size: Literal["full", "thumb", "region"] = "full") -> Response:
+    """A stored frame: whole, as a thumbnail, or only its region (what the sensor looked at, like
+    the *Last frame* image in Home Assistant; a reading is cut with the region it was read in)."""
     rt = runtime(request)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
         if row is None or not row.frame:
             raise HTTPException(404, "Frame not found")
         path = rt.storage.history_path(row.sensor_id, row.frame)
+        sensor = s.get(Sensor, row.sensor_id)
+        details = (row.probs or {}) if sensor and sensor.kind == KIND_READING else {}  # a state's probs are not details
+        roi = details["roi"] if "roi" in details else sensor.roi if sensor else None
     if not path.exists():
         raise HTTPException(404, "Frame file missing")
+    if size == "region":
+        image = imaging.crop_box(imaging.load(path), imaging.region_box(roi))
+        return Response(imaging.encode_jpeg(image), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     if size == "thumb":
         path = rt.storage.thumbnail("history", prediction_id, path)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})

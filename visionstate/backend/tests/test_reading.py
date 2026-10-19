@@ -176,6 +176,13 @@ def test_diagnostic_entities_of_reading_sensors():
     assert counter["accepted"]["unit_of_measurement"] == "%"
     assert (counter["rate"]["unit_of_measurement"], counter["rate"]["device_class"]) == ("m³/h", "volume_flow_rate")
     assert "entity_category" not in counter["rate"]  # a measurement for automations, not a diagnostic
+    # Decimals down to the smallest rise over the window (0.001 m³ in 15 min = 0.004 m³/h), so
+    # Home Assistant does not show a slow flow as 0.
+    assert counter["rate"]["suggested_display_precision"] == 0
+    precise = configs({"mode": "counter", "unit": "m³", "decimals": 3, "rate_window_min": 15})["rate"]
+    assert precise["suggested_display_precision"] == 3
+    litres = configs({"mode": "counter", "unit": "L", "decimals": 0, "rate_window_min": 15})["rate"]
+    assert litres["suggested_display_precision"] == 2  # 1 L in 15 min = 0.067 L/min
     kwh = configs({"mode": "counter", "unit": "kWh"})["rate"]
     assert (kwh["unit_of_measurement"], kwh["device_class"]) == ("kW", "power")
     assert configs({"mode": "counter", "unit": "L"})["rate"]["unit_of_measurement"] == "L/min"
@@ -609,6 +616,10 @@ def test_reading_sensor_flow(settings):
         assert wait_for(lambda: (view()["reading"]["last"] or {}).get("reason") is None, timeout=30)
         queue = client.get("/api/v1/review").json()
         assert queue["sensors"] == [{"id": sid, "name": "Power meter", "count": queue["total"]}]
+        # One sensor's items only; the counts per sensor stay those of the whole queue.
+        assert client.get("/api/v1/review", params={"sensor": sid}).json() == {**queue, "sensor_name": "Power meter"}
+        other = client.get("/api/v1/review", params={"sensor": 9999}).json()
+        assert other == {"total": 0, "items": [], "sensors": queue["sensors"], "sensor_name": None}
         assert client.post("/api/v1/review/sensors/9999/dismiss").status_code == 404
         dismissed = client.post(f"/api/v1/review/sensors/{sid}/dismiss").json()["dismissed"]
         assert dismissed == queue["total"]
@@ -697,13 +708,29 @@ def test_counter_limit_over_time(settings):
         assert wait_for(lambda: view()["value"] == "500", timeout=60)
         assert view()["limit"]["allowed"] is not None and view()["limit"]["needed"] == COUNTER_LIMIT["min_days"]
 
-        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow.
+        # The 100 wheel read a step on, again and again: rejected, and the limit does not grow. It
+        # waits in Review once, counting the repeats; every one is counted in the quality tab.
         camera.text = "00600"
         assert wait_for(lambda: last().get("value") == "600" and last().get("reason") == "changed too much", 30)
         held = rt.live[sid].watch.budget_s
-        assert wait_for(lambda: client.get("/api/v1/review").json()["total"] >= 4, timeout=30)
+
+        def queue():
+            return client.get("/api/v1/review").json()
+
+        assert wait_for(lambda: queue()["total"] and queue()["items"][0]["probs"].get("repeats", 0) >= 3, 30)
+        waiting = queue()
+        assert waiting["total"] == 1 and waiting["items"][0]["probs"]["value"] == "600"
+        assert waiting["items"][0]["probs"]["last_seen"] > waiting["items"][0]["created_at"]
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["periods"][0]
+        assert quality["by_reason"]["changed too much"] >= 4
+        history = client.get("/api/v1/history", params={"sensor": sid, "limit": 200}).json()["items"]
+        assert sum(1 for h in history if (h["probs"] or {}).get("value") == "600") == 1
         assert view()["value"] == "500" and view()["limit"]["held"]
         assert rt.live[sid].watch.budget_s == held
+        # Skipped, it no longer waits: the next one is queued again.
+        first = waiting["items"][0]["id"]
+        assert client.post(f"/api/v1/review/{first}", json={"action": "skip"}).status_code == 200
+        assert wait_for(lambda: queue()["total"] == 1 and queue()["items"][0]["id"] != first, timeout=30)
 
         # The app was down for an hour: the counter went on, and that rise is accepted.
         camera.text = "00650"
@@ -977,6 +1004,17 @@ def test_wheel_counter_sensor_flow(settings):
             row = s.scalars(select(Prediction).where(Prediction.sensor_id == sid)).first()
             assert row is not None
             row.read_ok = True
+            row_id = row.id
+        # Review shows only the region of a reading's frame, cut like the Last frame image.
+        region = Image.open(
+            io.BytesIO(client.get(f"/api/v1/history/{row_id}/image", params={"size": "region"}).content)
+        )
+        box = counter_box(7)
+        assert region.size == (
+            int((box["x"] + box["w"]) * 800) - int(box["x"] * 800),
+            int((box["y"] + box["h"]) * 360) - int(box["y"] * 360),
+        )
+        assert client.get(f"/api/v1/history/{row_id}/image", params={"size": "huge"}).status_code == 422
 
         def export(meter: str = "") -> dict:
             with zipfile.ZipFile(

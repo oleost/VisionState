@@ -325,9 +325,15 @@ First choose **what it looks like**:
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
-  limit, or another value changes more than the limit you set. Every rejected reading is listed
-  in the **History** tab with the reason and waits in the **Review** queue. A new value is
-  published after 2 equal readings in a row (adjustable).
+  limit, or another value changes more than the limit you set. A rejected reading is listed in
+  the **History** tab with the reason and waits in the **Review** queue, which shows only the
+  region it was read in, as large as fits (like the *Last frame* image; *Whole frame* shows all
+  of it). When the same reading is
+  rejected again for the same reason while it still waits there (a meter that stands still all
+  night), it is not added again: the waiting one says how many more times it was read, and when
+  last. A new value is
+  published as soon as it is read (new sensors). You can ask for more equal readings in a row,
+  but a counter that keeps turning (water running) then shows no new value until it stops.
 - **Counter limit** (Settings → Sensor output): how fast a counter may go up. *Learn it* (new
   counters) learns it from the counter's own readings: the fastest it went up over ten minutes
   and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of
@@ -388,7 +394,7 @@ First choose **what it looks like**:
   | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
   | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`, `camera_changed`) |
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
-  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak |
+  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak. It shows as many decimals as the counter's smallest step over those 15 minutes needs; change it under the entity's settings in Home Assistant |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
@@ -412,7 +418,9 @@ First choose **what it looks like**:
   Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
-  shows how many items wait per sensor; **Dismiss all** next to a sensor skips all of them at once.
+  shows how many items wait per sensor: tap a sensor to see only its items (handy when two sensors
+  look at the same spot), **All sensors** to see them all again; the Quality tab's links to the
+  queue open it for that sensor. **Dismiss all** next to a sensor skips all of them at once.
   Picked the wrong answer? On a wide screen, click the frame in the list on the left and answer
   again: the image in the dataset gets the new state (or, with **Skip**, is taken out of it) —
   it is not added a second time.

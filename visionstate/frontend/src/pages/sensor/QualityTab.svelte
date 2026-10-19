@@ -173,7 +173,7 @@
         {#if tip.action === 'suspects'}
           <button class="linkish small" onclick={() => document.getElementById('suspects')?.scrollIntoView({ behavior: 'smooth' })}>Show</button>
         {:else if link}
-          <a class="small" href={href(link.review ? paths.review() : paths.sensor(sensor.id, link.tab))}>{link.label}</a>
+          <a class="small" href={href(link.review ? paths.review(sensor.id) : paths.sensor(sensor.id, link.tab))}>{link.label}</a>
         {/if}
       </div>
     {:else}

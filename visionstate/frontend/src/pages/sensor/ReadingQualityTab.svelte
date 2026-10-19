@@ -98,7 +98,7 @@
       <span class="value">{v ? v.misread_rejected + v.misread_accepted : 0}</span>
       <span class="xsmall faint">
         {#if v && v.waiting}
-          {v.waiting} waiting in the <a href={href(paths.review())}>review queue</a>
+          {v.waiting} waiting in the <a href={href(paths.review(sensor.id))}>review queue</a>
         {:else}
           {verifiedTotal} reading{verifiedTotal === 1 ? '' : 's'} verified
         {/if}

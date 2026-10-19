@@ -22,7 +22,8 @@ export const paths = {
   /** Without a tab: the sensor's first tab (see TABS_BY_KIND). */
   sensor: (id: number, tab: SensorTab | '' = '') => (tab ? `sensors/${id}/${tab}` : `sensors/${id}`),
   sensorHome: (id: number, kind: SensorKind) => `sensors/${id}/${TABS_BY_KIND[kind][0]}`,
-  review: () => 'review',
+  /** With a sensor: only its items (the filter of the Review page). */
+  review: (sensorId: number | null = null) => withQuery('review', sensorId === null ? '' : `sensor=${sensorId}`),
   people: () => 'people',
   /** `query`: a history filter (lib/history.ts toQuery). */
   history: (query = '') => withQuery('history', query),

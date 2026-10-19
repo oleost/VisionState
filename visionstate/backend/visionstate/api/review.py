@@ -6,9 +6,9 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from functools import partial
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .. import imaging, readers
 from ..db import Face, Prediction, ReadingWatch, Sample, SampleLabel, Sensor
 from ..engine import Runtime, with_people
-from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, KIND_READING, merge_objects, merge_reading
+from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, KIND_READING, REVIEW_QUEUE, merge_objects, merge_reading
 from .common import (
     API_PREFIX,
     get_sensor,
@@ -42,11 +42,19 @@ class ReviewIn(BaseModel):
 
 
 @router.get("/review")
-def review_queue(request: Request, limit: int = 50) -> dict:
-    """The newest ``limit`` items waiting for review, and how many wait per sensor."""
+def review_queue(
+    request: Request,
+    limit: int = REVIEW_QUEUE["page_size"],
+    sensor_id: Annotated[int | None, Query(alias="sensor")] = None,
+) -> dict:
+    """The newest ``limit`` items waiting for review (with ``sensor``: only that sensor's, ``total``
+    counts only those and ``sensor_name`` names it, also when nothing of it waits), and how many
+    wait per sensor (always all sensors)."""
     rt = runtime(request)
     with rt.db.session() as s:
         query = select(Prediction).where(Prediction.reviewed.is_(False))
+        if sensor_id is not None:
+            query = query.where(Prediction.sensor_id == sensor_id)
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         rows = s.scalars(query.order_by(Prediction.created_at.desc()).limit(limit)).all()
         # Waiting items per sensor, most first (the list itself only holds the newest `limit`).
@@ -78,10 +86,12 @@ def review_queue(request: Request, limit: int = 50) -> dict:
                     },
                 }
             )
+        chosen = s.get(Sensor, sensor_id) if sensor_id is not None else None
         return {
             "total": total,
             "items": items,
             "sensors": [{"id": sid, "name": name, "count": n} for sid, name, n in waiting],
+            **({"sensor_name": chosen.name if chosen else None} if sensor_id is not None else {}),
         }
 
 

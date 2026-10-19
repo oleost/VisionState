@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app, refreshStatus, stateInfo, toast, toastError } from '../lib/app.svelte';
   import ConfirmButton from '../lib/components/ConfirmButton.svelte';
@@ -9,7 +10,8 @@
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
   import { objectName } from '../lib/objects';
-  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit } from '../lib/reading';
+  import { REJECT_REASONS, readingDetail, readingRoi, readingUnit, repeatedNote } from '../lib/reading';
+  import { route, setQuery } from '../lib/router.svelte';
   import type { ObjectQuestion, ReviewItem } from '../lib/types';
   import { REVIEW_REASONS, TONE_COLOR } from '../lib/ui';
 
@@ -21,13 +23,33 @@
   let answers = $state<Record<number, string>>({});
   let given = $state<Record<number, string | null>>({}); // state answered per item (null: skipped)
   let busy = $state(false);
+  let wholeFrame = $state(false); // a reading shows only its region unless asked for the whole frame
+  let names = $state<Record<number, string>>({}); // sensor names, kept when a sensor has nothing left
+
+  // Only one sensor's items (#/review?sensor=3): two look-alike sensors are easy to mix up.
+  const filter = $derived(Number(route.query.sensor) || null);
+  const filterName = $derived(filter === null ? '' : (names[filter] ?? 'this sensor'));
+  const waitingAll = $derived(waiting.reduce((sum, w) => sum + w.count, 0));
+  // The chosen sensor stays listed (and marked) when nothing of it is left.
+  const waitingShown = $derived(
+    filter === null || waiting.some((w) => w.id === filter) ? waiting : [...waiting, { id: filter, name: filterName, count: 0 }],
+  );
+  const waitingOthers = $derived(waiting.filter((w) => w.id !== filter).reduce((sum, w) => sum + w.count, 0));
+
+  function pick(sensorId: number | null) {
+    if (sensorId === filter) return;
+    setQuery(sensorId === null ? {} : { sensor: String(sensorId) });
+  }
 
   async function load() {
     try {
-      const result = await api.review();
+      const result = await api.review(filter);
       items = result.items;
       total = result.total;
       waiting = result.sensors;
+      for (const w of result.sensors) names[w.id] = w.name;
+      for (const item of result.items) names[item.sensor.id] = item.sensor.name;
+      if (filter !== null && result.sensor_name) names[filter] = result.sensor_name;
       index = 0;
       editing = null;
       refreshStatus(); // keep the nav badge in step with the list
@@ -37,7 +59,11 @@
       toastError(err);
     }
   }
-  load();
+  // Loads again when the filter changes; load() reads and sets state of its own (see CLAUDE.md).
+  $effect(() => {
+    void filter;
+    untrack(load);
+  });
 
   const shown = $derived(editing ?? index);
   const current = $derived(items?.[shown] ?? null);
@@ -192,17 +218,24 @@
       </div>
       {#if waiting.length}
         <div class="card pad col waiting">
-          <span class="small muted">Waiting per sensor</span>
-          {#each waiting as w (w.id)}
+          <span class="small muted">Waiting per sensor — tap one to see only its frames</span>
+          <div class="row wait-row">
+            <button type="button" class="pick" aria-pressed={filter === null} onclick={() => pick(null)}>
+              <strong class="small name">All sensors</strong>
+              <span class="xsmall faint">{waitingAll} waiting</span>
+            </button>
+          </div>
+          {#each waitingShown as w (w.id)}
             <div class="row wait-row">
-              <span class="col" style="gap:0;min-width:0">
+              <button type="button" class="pick" aria-pressed={filter === w.id} onclick={() => pick(w.id)}>
                 <strong class="small name">{w.name}</strong>
                 <span class="xsmall faint">{w.count} waiting</span>
-              </span>
-              <span class="spacer"></span>
-              <ConfirmButton class="btn sm" disabled={busy} confirmLabel="Press again" onconfirm={() => dismissAll(w)}>
-                Dismiss all
-              </ConfirmButton>
+              </button>
+              {#if w.count}
+                <ConfirmButton class="btn sm" disabled={busy} confirmLabel="Press again" onconfirm={() => dismissAll(w)}>
+                  Dismiss all
+                </ConfirmButton>
+              {/if}
             </div>
           {/each}
           <span class="xsmall faint">Dismiss all takes them out of the queue. Answers already given and the counts in Quality are kept.</span>
@@ -214,7 +247,12 @@
             {@const reason = item.review_reason ? REVIEW_REASONS[item.review_reason] : null}
             <li class:current={i === shown} class:done={i < index}>
               {#snippet entry()}
-                <img src={api.historyImageUrl(item.id, 'thumb')} alt="" loading="lazy" />
+                <img
+                  src={api.historyImageUrl(item.id, isReading(item) ? 'region' : 'thumb')}
+                  class:whole={isReading(item)}
+                  alt=""
+                  loading="lazy"
+                />
                 <span class="col" style="gap:2px;min-width:0">
                   <strong class="small">{item.sensor.name}</strong>
                   <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
@@ -243,9 +281,17 @@
       {:else if current && isReading(current)}
         {@const d = readingDetail(current)}
         {@render header(current)}
-        <div class="frame">
-          <RoiEditor src={api.historyImageUrl(current.id)} roi={readingRoi(current, current.sensor)} />
-        </div>
+        <!-- Only the region, as large as fits: the numbers are what is checked here. -->
+        {#if wholeFrame}
+          <div class="frame">
+            <RoiEditor src={api.historyImageUrl(current.id)} roi={readingRoi(current, current.sensor)} />
+          </div>
+        {:else}
+          <img class="region" src={api.historyImageUrl(current.id, 'region')} alt="The region that was read" />
+        {/if}
+        <button class="btn sm ghost frame-toggle" onclick={() => (wholeFrame = !wholeFrame)}>
+          <Icon name={wholeFrame ? 'eye' : 'frame'} size={13} /> {wholeFrame ? 'Only the region' : 'Whole frame'}
+        </button>
         <div class="col center">
           <p class="question">
             Did it read <span class="mono">“{d.text || '—'}”</span>{d.value ? ` (${d.value}${unitOf(current) ? ` ${unitOf(current)}` : ''})` : ''} right?
@@ -254,6 +300,7 @@
             {#if d.reason}Rejected: {REJECT_REASONS[d.reason] ?? d.reason} — the last value was kept.
             {:else}Accepted and published. A random check to find misreads that pass every test.{/if}
           </p>
+          {#if repeatedNote(current)}<p class="small muted">{repeatedNote(current)}</p>{/if}
           {#key current.id}
             <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}
@@ -328,9 +375,14 @@
       {:else}
         <div class="col center empty">
           <span class="done-icon"><Icon name="check" size={30} strokeWidth={2} /></span>
-          <h2>All caught up</h2>
+          <h2>{filter === null ? 'All caught up' : `All caught up for ${filterName}`}</h2>
           <p class="muted">Your answers were added to the datasets and the models retrained. New uncertain frames will show up here.</p>
-          <button class="btn" onclick={load}><Icon name="refresh" size={14} /> Check again</button>
+          <div class="row wrap center-row">
+            {#if filter !== null && waitingOthers}
+              <button class="btn primary" onclick={() => pick(null)}>Show all sensors · {waitingOthers} waiting</button>
+            {/if}
+            <button class="btn" onclick={load}><Icon name="refresh" size={14} /> Check again</button>
+          </div>
         </div>
       {/if}
     </section>
@@ -357,6 +409,26 @@
   }
   .wait-row {
     gap: var(--space-3);
+  }
+  .pick {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex: 1;
+    min-width: 0;
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .pick[aria-pressed='true'] {
+    background: var(--c-surface-3);
+    border-color: var(--c-accent-line);
   }
   .name {
     overflow-wrap: anywhere;
@@ -404,6 +476,11 @@
     border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
+  li img.whole {
+    /* A region is often a narrow strip: all of it, not the middle. */
+    object-fit: contain;
+    background: var(--c-sunken);
+  }
   .main {
     display: flex;
     flex-direction: column;
@@ -414,6 +491,19 @@
     align-self: center;
     border-radius: var(--radius-lg);
     overflow: hidden;
+  }
+  .region {
+    display: block;
+    width: min(100%, 800px);
+    max-height: min(50vh, 420px);
+    object-fit: contain;
+    align-self: center;
+    border-radius: var(--radius-lg);
+    background: var(--c-sunken);
+  }
+  .frame-toggle {
+    align-self: center;
+    margin-top: calc(-1 * var(--space-3));
   }
   .center {
     align-items: center;
