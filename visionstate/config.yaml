@@ -1,5 +1,5 @@
 name: VisionState (beta)
-version: "0.9.2b4"
+version: "0.10.0b1"
 slug: visionstate
 description: Teach a local AI to recognise states (open, closed, …), find objects (people, cars, pets) or read numbers in your camera images
 url: https://github.com/oleost/VisionState
@@ -12,6 +12,9 @@ arch:
   - aarch64
 ingress: true
 ingress_port: 8099
+# Uploads (videos, sensor bundles, backups) are streamed to the app: without it the Supervisor reads
+# a request into memory and refuses one over 16 MB.
+ingress_stream: true
 panel_icon: mdi:eye-check-outline
 panel_title: VisionState β
 homeassistant_api: true

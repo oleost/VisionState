@@ -52,7 +52,7 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, thumbnails |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `system.py` (UI config, status, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
@@ -64,6 +64,7 @@ API as `request.app.state.runtime`.
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
 | `imaging.py` | Decoding, regions (ROI), crops, change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
+| `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
 
 ### `engine/`
@@ -172,7 +173,13 @@ config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_enti
 in Home Assistant hang on them).
 
 **A new column**: the field in `db.py`, a new `SCHEMA_VERSION` with its entry in `MIGRATIONS`, and
-a test that an old database is upgraded (see `tests/test_entity_ids.py`).
+a test that an old database is upgraded (see `tests/test_entity_ids.py`). Then a backup made by the
+new version: `python -m tests.backup_fixture` (in `visionstate/backend`), committed —
+`tests/test_backup.py` asks for it.
+
+**A new table or folder of data**: its part in `settings.BACKUP_PARTS` (a folder that is made again
+by itself: `BACKUP_LEFT_OUT`), so backups hold it; `tests/test_backup.py` fails until it is there.
+A folder is a `Settings` property under the data or media folder.
 
 **A new API endpoint**: in the `api/` file of its topic, input as a pydantic model, its function
 in `lib/api.ts`, its type in `lib/types.ts`.

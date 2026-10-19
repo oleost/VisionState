@@ -1180,6 +1180,41 @@ test('the wheel reader shows in Settings and is offered to counters read as text
   }
 });
 
+test('a backup of everything is downloaded and restored', async ({ page, request }, info) => {
+  test.setTimeout(180_000); // the restore stops and starts every sensor
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  const card = page.getByTestId('backup');
+  await card.scrollIntoViewIfNeeded();
+  // Everything ticked, the sensors always; camera passwords only when ticked.
+  await expect(card.getByRole('checkbox', { name: /Sensors and settings/ })).toBeChecked();
+  await expect(card.getByRole('checkbox', { name: /Sensors and settings/ })).toBeDisabled();
+  await expect(card.getByRole('checkbox', { name: /History/ })).toBeChecked();
+  await expect(card.getByRole('checkbox', { name: /Camera passwords/ })).not.toBeChecked();
+  const download = card.getByRole('link', { name: /Download backup/ });
+  await press(card.getByRole('checkbox', { name: /Downloaded AI models/ }), info);
+  await expect(download).toHaveAttribute('href', /leave_out=models/);
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=backup] .btn, [data-testid=backup] .check');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-backup.png'), fullPage: true });
+  test.skip(info.project.name !== 'desktop', 'the restore itself once (it restarts every sensor)');
+
+  const before = (await (await request.get('api/v1/sensors')).json()).map((s: { name: string }) => s.name).sort();
+  const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
+  expect(file.suggestedFilename()).toMatch(/^visionstate-backup-.*\.zip$/);
+  const saved = info.outputPath('backup.zip');
+  await file.saveAs(saved);
+  await card.locator('#backup-restore').setInputFiles(saved);
+  await expect(card.getByText(/Replace everything here with backup\.zip/)).toBeVisible();
+  const replace = card.getByRole('button', { name: 'Replace everything' });
+  await press(replace, info);
+  await press(card.getByRole('button', { name: 'Click again to replace everything' }), info);
+  await expect(card.getByText(new RegExp(`Restored ${before.length} sensors`))).toBeVisible({ timeout: 120_000 });
+  const after = (await (await request.get('api/v1/sensors')).json()).map((s: { name: string }) => s.name).sort();
+  expect(after).toEqual(before);
+  errors.expectNone();
+});
+
 test('the AI models can be compared, and the teaching and face limits set for all object sensors', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   try {

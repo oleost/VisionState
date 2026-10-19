@@ -41,3 +41,7 @@ The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
 | `demo_garage.jpg` | A garage door from inside, cut; the script draws it open and half open | [Utility building interior view of wood panel overhead garage doors](https://commons.wikimedia.org/wiki/File:UTILITY_BUILDING_INTERIOR_VIEW_OF_WOOD_PANEL_OVERHEAD_GARAGE_DOORS,_LOOKING_NORTHWEST._-_Tucson_Plant_Materials_Center,_General_Utility_Building,_3241_North_Romero_Road,_HABS_ARIZ,10-TUCSO,32C-7.tif), HABS (public domain) |
 
 "Emma" is a made-up name. The water meter is `counter_turning.jpg` above.
+
+`backups/` holds a backup made by each database version and backup format (`backup-format<F>-schema<S>.zip`),
+drawn by our own code (`tests/backup_fixture.py`): every later version's tests restore each of
+them. Never change or remove one; add the next with `python -m tests.backup_fixture`.

@@ -89,6 +89,17 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await self.grabber.close()
         await self.ha.close()
 
+    def release(self) -> None:
+        """After ``stop``, when another runtime takes over in this process (a restored backup):
+        let go of the models, the sensors' heads and the frames kept in memory, and give the
+        memory back, so two sets of models are never loaded at once."""
+        self.embedder = self.detector = self.reader = self.wheel_reader = None
+        self.face_model = self.face_index = None
+        self.heads.clear()
+        self.taught.clear()
+        self.live.clear()
+        backbones.release_memory()
+
     async def _entity_registry_loop(self) -> None:
         """Keeps ha_entity_ids up to date: now and then, and shortly after discovery was published."""
         last_error = ""

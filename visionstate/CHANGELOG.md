@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.0b1
+
+### New
+
+- **Backup of everything** (Settings → Backup): one file with your sensors and settings, training
+  images, people and their faces, history and downloaded AI models — to move VisionState to
+  another Home Assistant, or between the stable and the beta app. Everything is ticked; untick what
+  you do not need (each shows its size). Camera passwords are left out unless you tick them.
+- **Restore** replaces everything in the app with a backup. Sensors keep their entities and entity
+  IDs in Home Assistant; what is only in the app before is removed. The backup is checked first,
+  and if anything goes wrong the app keeps what it had. A backup from an older version is upgraded;
+  one from a newer version is refused (update the app first). The sensors whose camera password
+  must be entered again are listed.
+
+### Fixed
+
+- Uploads larger than 16 MB (videos, sensor exports) were refused when the app was opened in
+  Home Assistant.
+- An older version started on a newer database (going back to a backup made before an update) no
+  longer makes the next update repeat its database upgrade.
+
 ## 0.9.2
 
 ### Better

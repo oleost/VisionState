@@ -47,6 +47,9 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports.
 - **No hard-coded defaults** outside `settings.py` / the registries; the UI reads them from
   `GET /api/v1/config`.
+- **A backup holds everything:** every table and data folder belongs to a part of
+  `settings.BACKUP_PARTS` (tests fail otherwise), and a new database version gets a kept backup in
+  `tests/assets/backups/` (`python -m tests.backup_fixture`) that every later version restores.
 - Home Assistant state values stay lower-case keys (`open`, `car_parked`); unique IDs and topics
   never change once released.
 - Marketing text (README, release notes) promotes VisionState on its own merits — no comparisons

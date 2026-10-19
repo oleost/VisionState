@@ -1,13 +1,20 @@
 // Global app state: server config, status and toasts.
 import { api } from './api';
 import { plural } from './format';
-import type { AppConfig, ImportResult, Sensor, StateDef, Status } from './types';
+import type { AppConfig, ImportResult, RestoreResult, Sensor, StateDef, Status } from './types';
 import { TOAST_MAX, TOAST_MS } from './ui';
 
-export const app = $state<{ config: AppConfig | null; status: Status | null; error: string }>({
+export const app = $state<{
+  config: AppConfig | null;
+  status: Status | null;
+  error: string;
+  /** The last backup restored here: Settings is made again with what came back, and shows this. */
+  restored: RestoreResult | null;
+}>({
   config: null,
   status: null,
   error: '',
+  restored: null,
 });
 
 export async function loadConfig(): Promise<void> {

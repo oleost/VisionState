@@ -684,8 +684,47 @@ automatically.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
   `manifest.json` is capped (`UPLOAD_LIMITS["max_manifest_mb"]`); an unreadable image in a bundle
   is skipped and counted (the response's `skipped`), so an import never stops halfway.
-- Not implemented: full export of all sensors + global settings, merge/replace import modes,
-  exporting trained heads (retraining is faster than shipping them).
+- Not implemented: a sensor bundle with its trained head (retraining is faster than shipping it).
+
+### Backup of everything (`backup.py`, `api/backup.py`, Settings → Backup)
+
+For moving between installations and between the stable, beta and dev apps (which have their own
+data and share entities): one ZIP with everything, and a restore that **replaces** everything.
+Adding to what is there is left to the sensor bundle above: merging people, IDs and history of two
+installations is much code for a rare need.
+
+- **A copy of the database, not an export of its rows**: SQLite's backup of the live database,
+  with the rows of the parts left out deleted from the copy. A new table or column is in every
+  backup without code; `settings.BACKUP_PARTS` names each table's and each folder's part, and
+  `tests/test_backup.py` fails for one that is in none, so nothing added later goes missing.
+  Files go along by folder (`files/<Settings folder>/…`), thumbnails never (made again).
+- **Parts** (all ticked at export): sensors and settings (always: rows, trained heads), training
+  images, people and faces, history (with `reading_stat`), downloaded models. A restore empties
+  the folders of every part but the models, also when the backup does not have the part (its rows
+  are gone); models are only added (a missing one is downloaded again).
+- **Camera passwords** are masked like in a bundle unless the user ticks them (unticked by
+  default, `BACKUP["credentials"]`): a full backup is for moving one's own installation, where
+  typing every password again is the usual pain, but the file then holds them. A restore lists
+  the sensors whose password was masked.
+- **Versions**: `backup.json` has the archive's `format` and the database's `schema`. An older
+  backup is migrated by the usual migrations; a newer one (format or schema) is refused with what
+  to do — an older version cannot know what a newer one stored. A backup made by every database
+  version and format is kept in `tests/assets/backups/` (`tests/backup_fixture.py`, a test fails
+  when the current one is missing), and every one is restored by every later version's tests.
+  `Database.init` never lowers `user_version`, so a rollback or such a refused case never makes
+  data migrations run twice.
+- **Safety**: the upload is checked and extracted next to the live data and its database migrated
+  there first; only then is the runtime stopped, its database closed (its worker threads must not
+  write into the restored one: `Database.close`, waited for), the live data moved aside and the
+  restored moved in, and a new runtime started. Any failure puts the old data back; a restore cut
+  off by a stop is undone (or finished) at the next start (`backup.clean_leftovers`). Requests made
+  meanwhile wait for the new runtime (`BACKUP["hold_requests_s"]`) instead of failing. Archive paths
+  outside the known folders are ignored. The download is streamed (no temporary file of its size);
+  the restore needs the upload and its contents on disk for a moment. Uploads reach the app
+  streamed (`ingress_stream: true` in `config.yaml`): without it the Supervisor reads a request
+  into memory and refuses one over 16 MB, which had also kept videos and sensor bundles under that.
+- **Home Assistant**: sensors and people that are only in the app before the restore have their
+  entities removed; those in the backup keep their unique IDs and so their entity IDs.
 
 ## 13. Configuration
 
@@ -719,6 +758,7 @@ is part of backups and needs no restart.
 | **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
+| **Backup of everything** | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress | beta 0.10.0b1 |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
