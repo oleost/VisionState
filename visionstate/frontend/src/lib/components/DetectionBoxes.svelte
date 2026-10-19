@@ -29,6 +29,28 @@
   let width = $state(0);
   let height = $state(0);
 
+  /** The layer's size in px, for placing the labels. Read in a task of its own, not in the
+   * ResizeObserver's callback (as bind:clientWidth does): a state change there flushes every
+   * update the page has waiting while the browser is still delivering size changes, and a card
+   * that changes size with it (a status poll) made WebKit report "ResizeObserver loop completed
+   * with undelivered notifications" on the dashboard. A timeout, not the next animation frame:
+   * that one never comes in a hidden tab. */
+  function measure(node: HTMLElement) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        width = node.clientWidth;
+        height = node.clientHeight;
+      });
+    });
+    observer.observe(node);
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }
+
   const TAG_H = 17; // px, matches .tag (font-size xs + padding)
   const CHAR_W = 6.6; // px per character at font-size xs, a safe estimate
 
@@ -64,7 +86,7 @@
   });
 </script>
 
-<div class="layer" bind:clientWidth={width} bind:clientHeight={height}>
+<div class="layer" {@attach measure}>
   {#each detections as d, i (i)}
     {@const color = d.filtered ? 'var(--c-unknown)' : objectColor(classes, d.label ?? d.key)}
     {@const left = `${d.box[0] * 100}%`}

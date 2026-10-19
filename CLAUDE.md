@@ -177,5 +177,10 @@ Many users run Home Assistant on phones and tablets.
   `untrack`, name the real dependencies with `void x`, and give a polling loop a counter so a
   restart ends the old loop. The e2e test "no page asks the server more often than it polls"
   counts requests per page.
+- State set in a ResizeObserver's callback — which is what `bind:clientWidth` does — flushes every
+  update the page has waiting while the browser is still delivering size changes; when one of
+  them resizes what is observed, WebKit reports "ResizeObserver loop completed with undelivered
+  notifications" (seen once in CI on the dashboard, never locally). Measure in a timeout instead,
+  like `measure` in `DetectionBoxes.svelte` (not the next animation frame: none comes in a hidden tab).
 - The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only poll
   while visible look fine there. Use `setVisibility` (e2e) or override it by hand.
