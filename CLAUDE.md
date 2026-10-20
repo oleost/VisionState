@@ -155,7 +155,7 @@ Many users run Home Assistant on phones and tablets.
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.
 - **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
   broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
-  `visionstate/frontend` (1440 px wide, device scale 1.2, one row of the README the same height).
+  `visionstate/frontend` (1440 px wide, device scale 1.2).
   The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
   maintainer before publishing.
 

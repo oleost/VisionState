@@ -31,26 +31,33 @@
 
 ## Three kinds of sensor
 
-| | What you get | How |
-|---|---|---|
-| 🚪 **States** | *Garage door open, closed or halfway*, gate shut, lights on in the shed | Click a few examples of each state; it learns in about a second |
-| 🧍 **Objects & people** | *Emma is home*, *our car is in the driveway*, a cat on the lawn, an unknown person at the door | Pick from 80 objects — no training. Name people by their face once; every camera knows them |
-| 🔢 **Readings** | The water, gas or power meter — a cheap ESP32-CAM above it is enough —, the minutes left on the washer | Draw a box around the number. Counters only go up and land in the Energy dashboard |
+### 🚪 States
+
+*Garage door open, closed or halfway*, the gate shut, the lights on in the shed.
+
+Click a few examples of each state; it learns in about a second.
+
+### 🧍 Objects & people
+
+*Emma is home*, *our car is in the driveway*, a cat on the lawn, an unknown person at the door.
+
+Pick from 80 objects — no training. Name people by their face once; every camera knows them.
 
 <p align="center">
-  <img src="docs/promo/objects.png" alt="An object sensor recognising Emma by her face and telling our car from any car" width="900">
+  <img src="docs/promo/objects.png" alt="An object sensor recognising Emma by her face and telling our car from any car" width="900"><br>
+  <em>Emma recognised by her face, and our own car told apart from any other car.</em>
 </p>
 
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="docs/promo/reading.png" alt="A reading sensor reading the wheels of a real water meter" width="100%"></td>
-    <td width="50%" valign="top"><img src="docs/promo/people.png" alt="The People page with the faces taught for Emma" width="100%"></td>
-  </tr>
-  <tr>
-    <td valign="top"><b>Real meters</b> — the rolling wheels of a water meter, read right even while a wheel is half way between two digits.</td>
-    <td valign="top"><b>People</b> — a few photos from your phone are enough to start; faces never leave your Home Assistant.</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/promo/people.png" alt="The People page with the faces taught for Emma" width="900"><br>
+  <em>A few photos from your phone are enough to start; faces never leave your Home Assistant.</em>
+</p>
+
+### 🔢 Readings
+
+*The water, gas or power meter*, the minutes left on the washer.
+
+Draw a box around the number. Counters only go up and land in the Energy dashboard.
 
 ## Read a water, gas or power meter with an ESP32-CAM
 
@@ -60,6 +67,11 @@ mechanical water or gas meter and the digits of an LCD or LED power meter, check
 before it is published (a counter never goes down or jumps), and the total lands in the Energy
 dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
 on for each reading; a battery camera can trigger a check when it has a new picture.
+
+<p align="center">
+  <img src="docs/promo/reading.png" alt="A reading sensor reading the wheels of a real water meter" width="900"><br>
+  <em>The rolling wheels of a real water meter, read right even while a wheel is half way between two digits.</em>
+</p>
 
 ## Highlights
 
@@ -72,28 +84,27 @@ on for each reading; a battery camera can trigger a check when it has a new pict
 
 ## In Home Assistant
 
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="docs/promo/ha-states.png" alt="A garage door state sensor as a Home Assistant device" width="100%"></td>
-    <td width="50%" valign="top"><img src="docs/promo/ha-objects.png" alt="The driveway object sensor as a Home Assistant device, with Emma and our car" width="100%"></td>
-  </tr>
-  <tr>
-    <td valign="top"><b>State sensor</b> — the state with its confidence, the last frame, a button to check now and a switch to pause it.</td>
-    <td valign="top"><b>Object sensor</b> — an on/off sensor and a count for every object, person and own label.</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/promo/ha-states.png" alt="A garage door state sensor as a Home Assistant device" width="340">
+  <img src="docs/promo/ha-objects.png" alt="The driveway object sensor as a Home Assistant device, with Emma and our car" width="340">
+</p>
+
+- **State sensor** — the state with its confidence, the last frame, a button to check now and a switch to pause it.
+- **Object sensor** — an on/off sensor and a count for every object, person and own label.
+
+Use them like any other sensor — for example, tell me when the garage door has been open for
+10 minutes:
 
 ```yaml
-# Example: tell me when the garage door has been open for 10 minutes
 triggers:
   - trigger: state
     entity_id: sensor.garage_door
     to: open
     for: "00:10:00"
 actions:
-  - action: notify.mobile_app_phone
+  - action: notify.notify
     data:
-      message: The garage door has been open for 10 minutes.
+      message: Garage door open!
 ```
 
 ## Install
@@ -117,7 +128,13 @@ The user guide — every entity, triggers, faces, readings, review — is on the
 ## How it works
 
 ```
-camera ─► your region ─► pretrained model (ONNX, CPU) ─► small per-sensor model ─► debounce ─► MQTT ─► Home Assistant
+camera
+ ▼  your region
+ ▼  pretrained model (ONNX, CPU)
+ ▼  small per-sensor model
+ ▼  debounce
+ ▼  MQTT
+Home Assistant
 ```
 
 - **States:** [DINOv2](https://github.com/facebookresearch/dinov2) turns the region into a feature
