@@ -117,8 +117,12 @@ so retraining only runs the backbone on new or changed samples.
   trained the heads until 0.10 — importing scikit-learn and SciPy cost about 90 MB of memory on Home
   Assistant OS. The problem is convex: on real embeddings the heads matched a fully converged
   scikit-learn to within 0.05 percentage points (scikit-learn's own default stopping point is
-  less exact). Its old heads (pickles, `<id>.joblib`) are retrained once and left in place, so an
-  older version the app is taken back to still finds them.
+  less exact). Its old heads (pickles, `<id>.joblib`) are retrained once. Each training puts
+  `classifier.LEGACY_MARKER` in that file: an older version the app is taken back to (or that
+  restores its backup) cannot read it and retrains from the stored images, as it does with a broken
+  head — finding no file, it would call the sensor untrained until the next label, and an old pickle
+  lacks the newer labels. Coming forward again, a head older than the sensor's model
+  (`ModelInfo.version`, which the older version raised) is retrained too.
 - **Quality check:** after each training, cross-validated predictions give the accuracy, the
   confusion matrix and a list of *possibly mislabelled* samples (label ≠ out-of-fold prediction).
 - Not implemented: training-time augmentation (not needed so far), fine-tuning.

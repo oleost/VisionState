@@ -21,8 +21,9 @@ EMBED_BATCH = 16
 
 class TrainingMixin(RuntimeBase):
     def heads_load(self, sensor_id: int) -> bool:
-        """Loads a sensor's head. Returns True when it must be retrained (unreadable, outdated or
-        from before HEAD_FORMAT); False also for a sensor that has none (untrained)."""
+        """Loads a sensor's head. Returns True when it must be retrained (unreadable, outdated, from
+        before HEAD_FORMAT, or older than the sensor's model); False also for a sensor that has none
+        (untrained)."""
         path = classifier.head_path(self.settings.heads_dir, sensor_id)
         head = classifier.load(path)
         if head is not None:
@@ -30,7 +31,17 @@ class TrainingMixin(RuntimeBase):
         backbone = self.embedder.spec.id if self.embedder else None
         if not path.exists():
             return classifier.legacy_path(self.settings.heads_dir, sensor_id).exists()
-        return head is None or not classifier.is_current(head, backbone)
+        if head is None or not classifier.is_current(head, backbone):
+            return True
+        # An older version the app was taken back to trained the sensor since (into its own file).
+        with self.db.session() as s:
+            info = s.get(ModelInfo, sensor_id)
+        if info is not None and info.version != head.version:
+            return True
+        legacy = classifier.legacy_path(self.settings.heads_dir, sensor_id)
+        if not legacy.exists() or legacy.read_bytes() != classifier.LEGACY_MARKER:  # trained before the marker
+            legacy.write_bytes(classifier.LEGACY_MARKER)
+        return False
 
     def schedule_retrain(self, sensor_id: int, delay: float | None = None) -> None:
         """Retrain soon; repeated calls within the delay are coalesced into one run."""
@@ -97,8 +108,10 @@ class TrainingMixin(RuntimeBase):
         if result.head is None:
             self.heads.pop(sensor_id, None)
             head_path.unlink(missing_ok=True)
+            classifier.legacy_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
         else:
             classifier.save(result.head, head_path)
+            classifier.legacy_path(self.settings.heads_dir, sensor_id).write_bytes(classifier.LEGACY_MARKER)
             self.heads[sensor_id] = result.head
         with self.db.session() as s:
             info = s.get(ModelInfo, sensor_id) or ModelInfo(sensor_id=sensor_id)

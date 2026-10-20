@@ -20,9 +20,11 @@ from .settings import CLASSIFIER, QUALITY
 # Kept in each head file; a head of another format is retrained (from the stored embeddings).
 HEAD_FORMAT = 1
 # Heads before HEAD_FORMAT were scikit-learn pickles (<sensor id>.joblib): retrained from the stored
-# embeddings. The old file is left (a few kB) for an older version the app may be taken back to;
-# deleting the sensor removes it.
+# embeddings. Every training puts LEGACY_MARKER in that file: an older version the app is taken back to
+# cannot read it and retrains from the stored images (as it does with a broken head), instead of
+# finding no head (untrained until the next label) or an old one (without the newer labels).
 LEGACY_SUFFIX = ".joblib"
+LEGACY_MARKER = b"VisionState: this sensor's model is in <sensor id>.npz; older versions retrain it.\n"
 
 
 def head_path(heads_dir: Path, sensor_id: int) -> Path:
