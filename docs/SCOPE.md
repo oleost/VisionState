@@ -89,6 +89,12 @@ so retraining only runs the backbone on new or changed samples.
   (`backbones.Footprint`: extra memory, time per check on 4 threads of a desktop CPU, an accuracy
   rank within its kind), measured when the model was added. Texts and footprint may be updated in a
   released entry; its file and inputs never change.
+- Memory before speed, since many run Home Assistant on small machines: ONNX Runtime runs without its
+  memory arena (`backbones.cpu_session`), which kept the largest working memory any image had needed
+  for the rest of the run (D-FINE S about 150 MB on Home Assistant OS), and every check ends with
+  `backbones.trim_memory`, as glibc kept the freed memory as well. With the default models the app
+  is about 190 MB smaller (a test installation with nine sensors and faces: 943 → 677 MB) for
+  about 6 % more time per check. The footprints of the detectors were measured again this way.
 - DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
   also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
   object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base

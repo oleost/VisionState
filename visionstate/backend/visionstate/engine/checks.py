@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from PIL import Image
 
-from .. import imaging
+from .. import backbones, imaging
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
@@ -66,6 +66,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             try:
                 if forced or kind == "full":
                     await self.run_once(cfg)
+                    await asyncio.to_thread(backbones.trim_memory)
                 else:
                     await self.probe(cfg)
                 live.failure = ""

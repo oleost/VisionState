@@ -508,7 +508,7 @@
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-small-coco",
       "bundled": true,
-      "ram_mb": 230,
+      "ram_mb": 85,
       "time_ms": 100,
       "accuracy": 3
     },
@@ -523,7 +523,7 @@
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-nano-coco",
       "bundled": false,
-      "ram_mb": 100,
+      "ram_mb": 60,
       "time_ms": 40,
       "accuracy": 2
     },
@@ -538,7 +538,7 @@
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-medium-coco",
       "bundled": false,
-      "ram_mb": 300,
+      "ram_mb": 125,
       "time_ms": 290,
       "accuracy": 4
     },
@@ -553,7 +553,7 @@
       "license": "Apache-2.0",
       "source": "https://huggingface.co/ustc-community/dfine-large-coco",
       "bundled": false,
-      "ram_mb": 350,
+      "ram_mb": 170,
       "time_ms": 420,
       "accuracy": 5
     }
