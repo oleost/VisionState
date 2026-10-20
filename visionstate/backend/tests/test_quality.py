@@ -1,7 +1,9 @@
 """Possibly mislabelled samples and the app-wide review queue entity."""
 
+import pytest
 from fastapi.testclient import TestClient
 
+from visionstate import classifier
 from visionstate.main import create_app
 from visionstate.mqtt import REVIEW_TOPICS, hub_discovery_messages
 from visionstate.settings import Settings
@@ -114,10 +116,10 @@ def test_relabel_and_delete_retrain_without_errors(tmp_path, model_dir):
 
 
 @requires_model
-def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir):
-    """A head pickled by another scikit-learn version is retrained automatically at startup."""
-    import joblib
-
+@pytest.mark.parametrize("outdated", ["legacy", "format"])
+def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir, outdated):
+    """A head from before HEAD_FORMAT (a scikit-learn pickle, <id>.joblib) or of another format is
+    retrained automatically at startup; the pickle stays for an older version."""
     settings = Settings(
         data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
     )
@@ -133,13 +135,19 @@ def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir):
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"] is not None)
         version = client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"]
 
-    # Pretend the stored head came from an older scikit-learn.
-    path = settings.heads_dir / f"{sid}.joblib"
-    head = joblib.load(path)
-    head.sklearn_version = "0.0-old"
-    joblib.dump(head, path)
+    path = classifier.head_path(settings.heads_dir, sid)
+    if outdated == "legacy":
+        path.rename(classifier.legacy_path(settings.heads_dir, sid))  # no .npz: what 0.10.0b3 left
+    else:
+        head = classifier.load(path)
+        assert head is not None
+        head.format = 0
+        classifier.save(head, path)
 
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] > version)
         assert client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok"
+    head = classifier.load(path)
+    assert head is not None and head.format == classifier.HEAD_FORMAT
+    assert classifier.legacy_path(settings.heads_dir, sid).exists() == (outdated == "legacy")

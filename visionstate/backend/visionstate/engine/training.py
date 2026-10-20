@@ -21,13 +21,16 @@ EMBED_BATCH = 16
 
 class TrainingMixin(RuntimeBase):
     def heads_load(self, sensor_id: int) -> bool:
-        """Loads a sensor's head. Returns True when it must be retrained (missing, unreadable or outdated)."""
-        path = self.settings.heads_dir / f"{sensor_id}.joblib"
+        """Loads a sensor's head. Returns True when it must be retrained (unreadable, outdated or
+        from before HEAD_FORMAT); False also for a sensor that has none (untrained)."""
+        path = classifier.head_path(self.settings.heads_dir, sensor_id)
         head = classifier.load(path)
         if head is not None:
             self.heads[sensor_id] = head  # keep using it until the retrain finishes
         backbone = self.embedder.spec.id if self.embedder else None
-        return path.exists() and (head is None or not classifier.is_current(head, backbone))
+        if not path.exists():
+            return classifier.legacy_path(self.settings.heads_dir, sensor_id).exists()
+        return head is None or not classifier.is_current(head, backbone)
 
     def schedule_retrain(self, sensor_id: int, delay: float | None = None) -> None:
         """Retrain soon; repeated calls within the delay are coalesced into one run."""
@@ -90,7 +93,7 @@ class TrainingMixin(RuntimeBase):
             {"sample_id": samples[item["index"]].id, **{k: v for k, v in item.items() if k != "index"}}
             for item in result.suspects
         ]
-        head_path = self.settings.heads_dir / f"{sensor_id}.joblib"
+        head_path = classifier.head_path(self.settings.heads_dir, sensor_id)
         if result.head is None:
             self.heads.pop(sensor_id, None)
             head_path.unlink(missing_ok=True)

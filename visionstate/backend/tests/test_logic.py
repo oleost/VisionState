@@ -1,11 +1,12 @@
 import numpy as np
+import pytest
 from PIL import Image
 
 from visionstate import classifier, imaging
 from visionstate.api.sensors import quality_tips
 from visionstate.engine import Debouncer, review_reason
 from visionstate.mqtt import SensorDescriptor, discovery_messages, topics
-from visionstate.settings import REVIEW_DEFAULTS, UNKNOWN_STATE, merge_review
+from visionstate.settings import CLASSIFIER, REVIEW_DEFAULTS, UNKNOWN_STATE, merge_review
 
 
 def test_debouncer_publishes_first_value_immediately_then_waits():
@@ -89,6 +90,36 @@ def test_classifier_trains_and_predicts_with_missing_states():
     probs = result.head.predict(a[:1], ["open", "closed", "partial"])[0]
     assert probs["partial"] == 0.0
     assert max(probs, key=probs.get) == "open"
+
+
+@pytest.mark.parametrize("states", [2, 4])
+def test_classifier_reaches_the_optimum(tmp_path, states):
+    """The head is the optimum of scikit-learn's objective (balanced weights, L2 on the weights
+    only): its gradient vanishes there. Two states have one weight vector, more a softmax."""
+    rng = np.random.default_rng(states)
+    centres = rng.normal(0, 1, (states, 16))
+    labels = np.repeat([f"s{k}" for k in range(states)], [12 + 7 * k for k in range(states)])  # unbalanced
+    target = np.searchsorted(sorted(set(labels)), labels)
+    vectors = centres[target] + rng.normal(0, 1.2, (len(labels), 16))
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+    keys, coef, intercept = classifier.fit(vectors, labels)
+    assert keys == sorted(set(labels)) and coef.shape == (1 if states == 2 else states, 16)
+    n = len(labels)
+    weight = (n / (states * np.bincount(target)))[target] / n
+    _, grad = classifier._objective(
+        np.concatenate([coef.ravel(), intercept]), vectors, target, weight, coef.shape[0], 1 / (CLASSIFIER["C"] * n)
+    )
+    assert np.abs(grad).max() <= CLASSIFIER["tol"]
+    head = classifier.Head("test", keys, coef, intercept, version=3)
+    probs = head.probabilities(vectors)
+    assert np.allclose(probs.sum(axis=1), 1) and (probs.argmax(axis=1) == target).mean() > 0.6
+    path = classifier.head_path(tmp_path, 1)
+    classifier.save(head, path)
+    loaded = classifier.load(path)
+    assert loaded is not None and loaded.keys == keys and loaded.version == 3 and loaded.backbone == "test"
+    assert np.array_equal(loaded.probabilities(vectors), probs) and classifier.is_current(loaded, "test")
+    path.write_bytes(b"not a head")
+    assert classifier.load(path) is None
 
 
 def test_classifier_needs_two_states():

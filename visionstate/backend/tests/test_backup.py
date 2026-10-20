@@ -261,7 +261,7 @@ def test_restore_replaces_everything(tmp_path, removed):
     assert (target.models_dir / "here-already.onnx").exists()  # models are added, never removed
     assert not (target.models_dir / "downloaded.onnx").exists()  # not a model of the registries
     assert not (target.sample_thumbs_dir / "1.jpg").exists()
-    assert (target.heads_dir / "1.joblib").exists()  # restored (and retrained here: the test file is no model)
+    assert (target.heads_dir / "1.npz").exists()  # restored (and retrained here: the test file is no model)
     assert not backup.stage_dir(target).exists() and not (target.media_dir / backup.STAGE).exists()
     assert not list(target.data_dir.glob("*.restore-old")) and not list(target.media_dir.glob("*.restore-old"))
 
@@ -491,7 +491,7 @@ def test_a_restore_cut_off_before_the_database_moved_keeps_it(tmp_path):
     size = settings.db_path.stat().st_size
     backup.clean_leftovers(settings)
     assert settings.db_path.exists() and settings.db_path.stat().st_size == size
-    assert (settings.heads_dir / "1.joblib").exists()
+    assert (settings.heads_dir / "1.npz").exists()
 
 
 def test_a_newer_database_keeps_its_version(tmp_path):

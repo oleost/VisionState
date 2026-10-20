@@ -508,7 +508,8 @@ THUMB_SIZE = 320
 
 # Logistic regression on L2-normalised embeddings. Higher C = more confident probabilities;
 # 30 keeps clear frames well above the default threshold while ambiguous frames stay near 50%.
-CLASSIFIER = {"C": 30.0, "max_iter": 3000}
+# Training stops when no gradient component exceeds tol (or after max_iter steps).
+CLASSIFIER = {"C": 30.0, "max_iter": 3000, "tol": 1e-6}
 
 # --- Quality hints ----------------------------------------------------------
 

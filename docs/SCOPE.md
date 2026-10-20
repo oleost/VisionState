@@ -70,7 +70,7 @@ of a meter. Neither needs training.
 
 1. Grab frame → crop ROI → letterbox to a square → normalise.
 2. Backbone (ONNX Runtime) → L2-normalised embedding (CLS token + mean of patch tokens).
-3. Per-sensor head: scikit-learn logistic regression (`C=30`, class-balanced) → probability per state.
+3. Per-sensor head: logistic regression (`C=30`, class-balanced) → probability per state.
 4. Post-processing → published state (§7).
 
 Why: training takes about a second even on a Raspberry Pi, works with few samples, and every
@@ -109,8 +109,16 @@ so retraining only runs the backbone on new or changed samples.
   Azure provider, are never offered or used). GPU/Coral
   were assessed and deliberately not pursued (little gain for this workload; Coral cannot run
   the transformer model and is often in use by other software).
-- Heads trained by another scikit-learn version, or for another backbone, are retrained
-  automatically at startup.
+- Heads of another format (`classifier.HEAD_FORMAT`), or for another backbone, are retrained
+  automatically at startup, from the stored embeddings. Until a sensor has a head again its checks
+  publish nothing (no "unknown" after an update).
+- The head is logistic regression in NumPy (`classifier.fit`, L-BFGS): the objective of
+  scikit-learn's `LogisticRegression` (lbfgs, L2 on the weights, balanced class weights), which
+  trained the heads until 0.10 — importing scikit-learn and SciPy cost about 90 MB of memory on Home
+  Assistant OS. The problem is convex: on real embeddings the heads matched a fully converged
+  scikit-learn to within 0.05 percentage points (scikit-learn's own default stopping point is
+  less exact). Its old heads (pickles, `<id>.joblib`) are retrained once and left in place, so an
+  older version the app is taken back to still finds them.
 - **Quality check:** after each training, cross-validated predictions give the accuracy, the
   confusion matrix and a list of *possibly mislabelled* samples (label ≠ out-of-fold prediction).
 - Not implemented: training-time augmentation (not needed so far), fine-tuning.

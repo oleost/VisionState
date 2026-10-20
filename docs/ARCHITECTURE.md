@@ -21,7 +21,7 @@ docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PL
 ```
 
 **Stack:** Python 3.14, FastAPI, uvicorn, SQLAlchemy (SQLite), asyncio; ONNX Runtime (CPU only),
-NumPy, Pillow, PyAV (bundled FFmpeg), scikit-learn; aiomqtt, websockets, httpx. Frontend: Svelte 5 +
+NumPy, Pillow, PyAV (bundled FFmpeg); aiomqtt, websockets, httpx. Frontend: Svelte 5 +
 Vite + TypeScript, plain CSS with design tokens, a hash router (Ingress-safe), bundled fonts. Docker
 image `python:3.14-slim`, built by GitHub Actions and published on GHCR. Quality: pytest (with a fake
 camera, Home Assistant and MQTT), ruff, pyright, svelte-check, Playwright, an image smoke test.
@@ -128,7 +128,7 @@ error is kept in `LiveState.error` and shown in the UI.
   the media folder (see `storage.Storage.face_path`).
 - **Files**: `<data>/samples/<sensor>/` (training images; for object sensors the crops of taught
   boxes — next to the database that lists them, so a backup holds both), `<data>/thumbs/sample/`,
-  `<data>/heads/` (trained heads), `<data>/models/` (downloaded models; models and thumbnails are
+  `<data>/heads/` (trained heads, `<sensor id>.npz`), `<data>/models/` (downloaded models; models and thumbnails are
   left out of backups); `<media>/history/<sensor>/` and `<media>/thumbs/history/`. Versions before
   the move kept training images in `<media>/samples/`: they are read there until
   `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed

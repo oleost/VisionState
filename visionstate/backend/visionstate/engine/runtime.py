@@ -8,7 +8,7 @@ import time
 
 from sqlalchemy import select
 
-from .. import backbones, detectors, faces, readers
+from .. import backbones, classifier, detectors, faces, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, fetch_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
@@ -160,7 +160,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.taught.pop(sensor_id, None)
         self._person_last = {k: v for k, v in self._person_last.items() if v[1] != sensor_id}
         self._published_classes.pop(sensor_id, None)
-        (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
+        classifier.head_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
+        classifier.legacy_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
         await asyncio.to_thread(self.storage.delete_sensor, sensor_id)
         await self.publish_review_count()

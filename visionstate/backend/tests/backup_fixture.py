@@ -119,7 +119,7 @@ def populate(settings) -> dict:  # noqa: ANN001
             s.add(ModelInfo(sensor_id=door.id, backbone="test", n_samples=4))
             ids = {"door": door.id, "drive": drive.id, "meter": meter.id}
         db.set_setting("storage", {"history_days": 9})
-        (settings.heads_dir / f"{ids['door']}.joblib").write_bytes(b"head")
+        (settings.heads_dir / f"{ids['door']}.npz").write_bytes(b"head")
         (settings.models_dir / "downloaded.onnx").write_bytes(b"model")
     finally:
         db.engine.dispose()
