@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0b4
+
+### Better
+
+- **Uses much less memory**: memory an AI model needed for one image is now given back after
+  each check instead of being held for the rest of the run, and the state classifier no longer
+  loads scikit-learn. On a test installation with nine sensors and face recognition the app went
+  from about 940 MB to about 580 MB. A check takes a few percent longer.
+- State sensors are retrained once after the update, from their stored training images (it takes
+  a moment, and the sensors keep their last state meanwhile).
+
 ## 0.10.0b3
 
 ### Fixed
