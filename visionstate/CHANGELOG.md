@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0b5
+
+### Fixed
+
+- **An older version on data from 0.10.0b4** (a backup made by 0.10.0b4 restored in an older
+  beta, or an older image started on its data): state sensors were shown as untrained until their
+  next label. The older version now trains them again from their stored images when it starts,
+  and coming back to the newer one does the same.
+
 ## 0.10.0b4
 
 ### Better
