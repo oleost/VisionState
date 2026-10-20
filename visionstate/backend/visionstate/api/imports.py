@@ -138,10 +138,30 @@ SENSOR_FIELDS = (
 )
 
 
+# Pydantic's errors for a value outside a limit (a number, a length), not one this version does not know.
+LIMIT_ERRORS = frozenset(
+    {
+        "greater_than",
+        "greater_than_equal",
+        "less_than",
+        "less_than_equal",
+        "too_short",
+        "too_long",
+        "string_too_short",
+        "string_too_long",
+    }
+)
+
+
+class OutOfLimits(ValueError):
+    """Every setting is one this version knows, but a value is outside today's limits."""
+
+
 def validated_sensor(data: dict) -> SensorIn:
     """A sensor's settings validated exactly like a sensor made in the UI (kind, limits, source
     type, states, objects, readings, triggers): a sensor bundle and every sensor of a restored
-    backup (api/backup.py). ValueError says what is wrong — often a setting of a newer version."""
+    backup (api/backup.py). ValueError says what is wrong — often a setting of a newer version;
+    OutOfLimits (a ValueError too) when it is only a value outside the limits."""
     from pydantic import ValidationError
 
     from .sensors import SensorIn
@@ -149,9 +169,13 @@ def validated_sensor(data: dict) -> SensorIn:
     try:
         return SensorIn.model_validate({k: data[k] for k in SENSOR_FIELDS if data.get(k) is not None}).checked()
     except ValidationError as err:
-        error = err.errors()[0]
+        errors = err.errors()
+        error = errors[0]
         where = ".".join(str(part) for part in error.get("loc", ()))
-        raise ValueError(f"{where}: {error.get('msg')}" if where else str(error.get("msg"))) from err
+        message = f"{where}: {error.get('msg')}" if where else str(error.get("msg"))
+        if all(e.get("type") in LIMIT_ERRORS for e in errors):
+            raise OutOfLimits(message) from err
+        raise ValueError(message) from err
     except HTTPException as err:
         raise ValueError(str(err.detail)) from err
 

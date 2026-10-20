@@ -734,12 +734,16 @@ installations is much code for a rare need.
   data migrations run twice.
 - **Safety**: the upload is checked and extracted next to the live data and its database migrated
   there first; only then is the runtime stopped, its database closed (its worker threads must not
-  write into the restored one: `Database.close`, waited for), the live data moved aside and the
+  write into the restored one: `Database.close`, waited for — counted before its pool is disposed
+  of, which counts none afterwards), the live data moved aside and the
   restored moved in, and a new runtime started. Any failure puts the old data back; a restore cut
   off by a stop is undone (or finished) at the next start (`backup.clean_leftovers`). Requests made
-  meanwhile wait for the new runtime (`BACKUP["hold_requests_s"]`) instead of failing. Archive paths
+  meanwhile wait for the new runtime (`BACKUP["hold_requests_s"]`) instead of failing — not Home
+  Assistant's watchdog, which asks `/api/v1/alive` and gives up after a few seconds. Archive paths
   outside the known folders are ignored. The download is streamed (no temporary file of its size);
-  the restore needs the upload and its contents on disk for a moment. Uploads reach the app
+  the restore needs the upload and its contents on disk for a moment: free space is checked on the
+  data folder's disk and on the media folder's when that is another one, before the upload when
+  its size is given and again once it is in. Uploads reach the app
   streamed (`ingress_stream: true` in `config.yaml`): without it the Supervisor reads a request
   into memory and refuses one over 16 MB, which had also kept videos and sensor bundles under that.
   The database files are moved aside first, so a restore cut off before that leaves the live
@@ -748,15 +752,21 @@ installations is much code for a rare need.
   there while the app is stopped could outlast Home Assistant's watchdog; the swap only renames. The staging folder is left out of Home Assistant's backups (`backup_exclude`).
 - **A backup is not trusted more than a sensor bundle**: every sensor in it is validated like a
   bundle import (`api.imports.validated_sensor`, shared by both), which also catches a setting of a
-  newer version that needed no new database version (a new reading mode, a new display); its
+  newer version that needed no new database version (a new reading mode, a new display). A value
+  that is only outside today's limits (`api.imports.OutOfLimits`: a limit narrowed since) is kept,
+  as an update keeps it, so it never keeps anyone from restoring their own backup. Its
   database may hold only tables and indexes (a trigger would run with the app's writes); model
   files come back only when they are a registry's file with its SHA-256 (`_keep_known_models`:
-  the app loads a model it finds without checking it again). Not validated: the global settings
+  the app loads a model it finds without checking it again), and the heads folder keeps only
+  `<id>.npz` and the marker files (`backup._keep_heads`; an old pickle becomes the marker, so no
+  version ever unpickles a file from a backup). Not validated: the global settings
   in `setting` (read through `merge_*` with defaults, like those of an older version).
 - **Bundle or backup**: the two archives tell each other apart (`manifest.json` / `backup.json`)
   and say where the other one goes (Import a sensor / Settings → Backup).
 - **Home Assistant**: sensors and people that are only in the app before the restore have their
-  entities removed; those in the backup keep their unique IDs and so their entity IDs.
+  entities removed — once the restored data runs and MQTT is connected (the runtime's
+  `on_first_connect`), so a restore that fails keeps them; those in the backup keep their unique
+  IDs and so their entity IDs.
 
 ## 13. Configuration
 

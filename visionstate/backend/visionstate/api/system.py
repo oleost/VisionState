@@ -148,6 +148,13 @@ def ui_config() -> dict:
     }
 
 
+@router.get("/alive")
+async def alive() -> dict:
+    """Home Assistant's watchdog (config.yaml): answers at once, also while a restore swaps the
+    data (main.py does not hold it), so the watchdog never restarts the app in the middle of one."""
+    return {"version": VERSION}
+
+
 @router.get("/status")
 async def status(request: Request) -> dict:
     """The header and the Settings page: version, counts, MQTT, Home Assistant and model state."""

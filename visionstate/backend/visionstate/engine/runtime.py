@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
@@ -33,6 +34,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         super().__init__(settings, db)
         self.mqtt = MqttBridge(settings, self._on_command, self._on_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
+        # Done once MQTT is connected (a restored backup: the entities the data before it had).
+        self.on_first_connect: list[Callable[[MqttBridge], Awaitable[None]]] = []
 
     async def start(self) -> None:
         """Load the settings and the backbone, retrain outdated heads, start every sensor's loop,
@@ -78,6 +81,9 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         """MQTT (re)connected: every sensor's entities, then each person's own entity."""
         await self._on_mqtt_connect()
         await self.publish_people()
+        actions, self.on_first_connect = self.on_first_connect, []
+        for action in actions:
+            await action(self.mqtt)
 
     async def stop(self) -> None:
         for handle in self._retrain_handles.values():

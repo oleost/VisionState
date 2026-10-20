@@ -238,6 +238,9 @@ def test_restore_replaces_everything(tmp_path, removed):
         result = resp.json()
         assert result["sensors"] == 3 and result["people"] == 1
         assert [m["name"] for m in result["masked"]] == ["Garage door", "Water meter"]
+        # Entities go once the restored data runs and MQTT is connected, not before.
+        assert removed == {"sensors": [], "people": [], "classes": []}
+        connected(client)
         assert removed["sensors"] == ["old_one"]  # its entities go; the others keep theirs
         assert removed["classes"] == ["driveway/dog"]
         sensors = client.get("/api/v1/sensors").json()
@@ -274,10 +277,17 @@ def test_restore_without_history_removes_the_history_here(tmp_path, removed):
         # Into the same app: its own history is gone with the rows that listed it.
         assert restore(client, data).status_code == 200
         assert client.get("/api/v1/people").json()["people"] == []
+        connected(client)
     assert removed["people"] == ["emma"]
     assert files_listed(source)["history"] == 0
     assert not any(source.history_dir.rglob("*.jpg"))
     assert files_listed(source)["samples"] == 5
+
+
+def connected(client) -> None:
+    """The runtime running now connects to MQTT (the tests have no broker)."""
+    assert client.portal is not None
+    client.portal.call(client.app.state.runtime._on_connect)
 
 
 def test_restore_refuses_what_it_cannot_restore(tmp_path):
@@ -320,6 +330,38 @@ def test_restore_refuses_what_it_cannot_restore(tmp_path):
         assert "triggers or views" in restore(client, trigger).json()["detail"]
         assert sorted(s["name"] for s in client.get("/api/v1/sensors").json()) == before
         assert not backup.stage_dir(settings).exists()
+
+
+def test_a_value_outside_todays_limits_is_restored(tmp_path):
+    """A limit made narrower in a later version must not keep anyone from restoring their own
+    backup: the value is kept, as an update keeps it."""
+    settings = make_settings(tmp_path)
+    good = make(tmp_path / "good.zip").read_bytes()
+    wider = with_db(good, tmp_path, "UPDATE sensor SET threshold = 1.5 WHERE kind = 'single_state'")
+    with TestClient(create_app(settings)) as client:
+        resp = restore(client, wider)
+        assert resp.status_code == 200, resp.text
+        sensors = client.get("/api/v1/sensors").json()
+        assert [s["threshold"] for s in sensors if s["kind"] == "single_state"] == [1.5]
+
+
+def test_restore_checks_free_space(tmp_path, monkeypatch):
+    """Also an upload that does not say its size (no Content-Length) is checked once it is in."""
+    from collections import namedtuple
+
+    from visionstate.api import backup as backup_api
+
+    settings = make_settings(tmp_path)
+    data = make(tmp_path / "b.zip").read_bytes()
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(backup_api.shutil, "disk_usage", lambda _: usage(1, 1, 1_000))
+    with TestClient(create_app(settings)) as client:
+        assert restore(client, data).status_code == 507
+        chunked = client.post(
+            "/api/v1/backup/restore", content=iter([data]), headers={"content-type": "application/zip"}
+        )
+        assert chunked.status_code == 507 and "Not enough free disk space" in chunked.json()["detail"]
+    assert not backup.stage_dir(settings).exists()
 
 
 def with_db(data: bytes, tmp_path: Path, sql: str) -> bytes:
@@ -379,6 +421,48 @@ def test_only_known_models_come_back(tmp_path):
     assert kept == [spec.filename]
 
 
+def test_only_heads_come_back(tmp_path):
+    """The sensors' heads load without pickles; a pickle from before them (<id>.joblib) becomes the
+    marker, so neither this version nor an older one taken back to ever unpickles a backup's file."""
+    from visionstate.classifier import LEGACY_MARKER
+
+    data = make(tmp_path / "b.zip").read_bytes()
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(out, "w") as dst:
+        for item in src.infolist():
+            dst.writestr(item, src.read(item))
+        dst.writestr("files/heads_dir/7.joblib", b"a pickle")
+        dst.writestr("files/heads_dir/8.joblib", LEGACY_MARKER)
+        dst.writestr("files/heads_dir/lib.so", b"x")
+        dst.writestr("files/heads_dir/1.npz.py", b"x")
+        dst.writestr("files/heads_dir/sub/2.npz", b"x")
+    staged = backup.stage(make_settings(tmp_path / "t"), _saved(tmp_path, out.getvalue()))
+    heads = staged.root / "heads_dir"
+    assert sorted(p.relative_to(heads).as_posix() for p in heads.rglob("*") if p.is_file()) == [
+        "1.npz",
+        "7.joblib",
+        "8.joblib",
+    ]
+    assert (heads / "7.joblib").read_bytes() == (heads / "8.joblib").read_bytes() == LEGACY_MARKER
+
+
+def test_closing_waits_for_connections_in_use(tmp_path):
+    """A restore waits for the stopped runtime's threads to let go of the database: the count of
+    connections still in use must be right (a pool disposed of first counted none)."""
+    db = Database(tmp_path / "x.db")
+    db.init()
+    first, second = db.engine.connect(), db.engine.connect()
+    in_use = db.close()
+    assert in_use() == 2
+    with pytest.raises(RuntimeError):
+        with db.session():
+            pass
+    first.close()
+    second.close()
+    assert in_use() == 0
+    db.engine.dispose()
+
+
 def _saved(tmp_path: Path, data: bytes) -> Path:
     path = tmp_path / "upload.zip"
     path.write_bytes(data)
@@ -402,7 +486,7 @@ def test_restore_ignores_paths_outside_its_folders(tmp_path):
     assert not (settings.thumbs_dir / "1.jpg").exists()
 
 
-def test_a_failed_start_puts_the_old_data_back(tmp_path, monkeypatch):
+def test_a_failed_start_puts_the_old_data_back(tmp_path, monkeypatch, removed):
     settings = make_settings(tmp_path)
     data = make(tmp_path / "b.zip").read_bytes()
     from visionstate.engine import Runtime
@@ -430,6 +514,8 @@ def test_a_failed_start_puts_the_old_data_back(tmp_path, monkeypatch):
         resp = restore(client, data)
         assert resp.status_code == 500 and "broken" in resp.json()["detail"]
         assert [s["name"] for s in client.get("/api/v1/sensors").json()] == ["Mine"]
+        connected(client)
+        assert removed == {"sensors": [], "people": [], "classes": []}  # the old data keeps its entities
     assert not list(settings.data_dir.glob("*.restore-old"))
 
 
@@ -560,6 +646,8 @@ def test_requests_wait_while_the_data_is_swapped(tmp_path):
         asking.start()
         time.sleep(0.5)
         assert answers == []  # still waiting
+        # The watchdog is answered at once: it would restart the app in the middle of a restore.
+        assert client.get("/api/v1/alive").status_code == 200
         client.portal.call(ready.set)
         asking.join(10)
         assert answers == [200]

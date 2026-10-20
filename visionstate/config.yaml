@@ -28,7 +28,7 @@ backup_exclude:
   - "models/*"
   - "thumbs/*"
   - ".restore/*" # a VisionState backup being restored (Settings → Backup)
-watchdog: "http://[HOST]:[PORT:8099]/api/v1/status"
+watchdog: "http://[HOST]:[PORT:8099]/api/v1/alive"
 options:
   log_level: info
   discovery_prefix: homeassistant

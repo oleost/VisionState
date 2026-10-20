@@ -13,11 +13,14 @@ from fastapi.staticfiles import StaticFiles
 from . import backup
 from .api import backup as backup_api
 from .api import cameras, faces, history, imports, review, samples, sensors, system, teach
+from .api.common import API_PREFIX
 from .db import Database
 from .engine import Runtime
 from .settings import BACKUP, INGRESS_PROXY_IP, VERSION, Settings, load_settings
 
 log = logging.getLogger("visionstate")
+
+WATCHDOG_PATH = f"{API_PREFIX}/alive"  # config.yaml "watchdog"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,9 +48,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def while_restoring(request: Request, call_next):
         # A restore swaps the data under a stopped runtime for a few seconds: requests wait for
-        # the new runtime instead of failing.
+        # the new runtime instead of failing. Not the watchdog's: it gives up after a few seconds.
         ready: asyncio.Event = request.app.state.ready
-        if not ready.is_set() and request.url.path.startswith("/api/"):
+        path = request.url.path
+        if not ready.is_set() and path.startswith("/api/") and path != WATCHDOG_PATH:
             try:
                 await asyncio.wait_for(ready.wait(), BACKUP["hold_requests_s"])
             except TimeoutError:

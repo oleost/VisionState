@@ -316,6 +316,7 @@ def stage(settings: Settings, upload: Path) -> Staged:
             with archive.open(info) as src, target.open("wb") as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
     _keep_known_models(_stage_root(settings, "models_dir") / "models_dir")
+    _keep_heads(_stage_root(settings, "heads_dir") / "heads_dir")
     db_path = root / DATABASE
     try:
         con = sqlite3.connect(db_path)
@@ -360,6 +361,25 @@ def _keep_known_models(folder: Path) -> None:
         if name not in known or sha256_file(path) != known[name]:
             log.warning("Restore: left out the model file %s (not a known model, or changed)", name[:200])
             path.unlink()
+
+
+def _keep_heads(folder: Path) -> None:
+    """Only the sensors' heads (``<id>.npz``, loaded without pickles) and the marker files next to
+    them. A head from before HEAD_FORMAT (a pickle, ``<id>.joblib``) becomes the marker: this version
+    retrains that sensor all the same, and an older version the app is taken back to never unpickles
+    what a backup brought."""
+    from .classifier import LEGACY_MARKER, LEGACY_SUFFIX
+
+    for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
+        if not path.is_file():
+            continue
+        name = path.relative_to(folder).as_posix()
+        stem, dot, suffix = name.partition(".")
+        if not (stem.isascii() and stem.isdigit()) or dot + suffix not in (".npz", LEGACY_SUFFIX):
+            log.warning("Restore: left out %s from the sensors' models (not a model VisionState makes)", name[:200])
+            path.unlink()
+        elif dot + suffix == LEGACY_SUFFIX and path.read_bytes() != LEGACY_MARKER:
+            path.write_bytes(LEGACY_MARKER)
 
 
 def single_file(db_path: Path) -> None:

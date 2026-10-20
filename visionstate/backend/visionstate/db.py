@@ -367,10 +367,10 @@ class Database:
     def close(self) -> Callable[[], int]:
         """No session after this (a backup is restored under it: a worker thread of the stopped
         runtime must not write into the restored database). Returns how many connections are
-        still in use, as a function to wait on."""
+        still in use, as a function to wait on; dispose of the engine once it is 0. Not before:
+        a pool disposed of counts nothing, and a connection handed back to it afterwards stays open."""
         self.closed = True
         pool = self.engine.pool
-        self.engine.dispose()
         return pool.checkedout if isinstance(pool, QueuePool) else lambda: 0
 
     def init(self) -> None:
