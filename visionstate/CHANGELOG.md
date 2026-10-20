@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0b6
+
+### Fixed
+
+- **Restoring a backup**:
+  - Home Assistant's watchdog is answered at once while the backup is put in place, so it no
+    longer risks restarting the app in the middle of a restore.
+  - Entities of sensors and people that are not in the backup are removed only once the restored
+    data runs; if the restore fails they stay as they were.
+  - A sensor setting outside today's limits (a limit made narrower in a later version) no longer
+    refuses the restore of your own backup.
+  - Free disk space is also checked where the history goes when the media folder is on another
+    disk (network storage), and for uploads that do not say their size.
+  - The restore waits properly for the app's background work to let go of the old data.
+  - Only the trained sensor models VisionState itself makes come back from a backup.
+
 ## 0.10.0b5
 
 ### Fixed
