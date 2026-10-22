@@ -1,72 +1,6 @@
 # Changelog
 
-## 0.10.0b7
-
-### Fixed
-
-- Pillow, the library that reads and writes the camera images, is updated to 13.0.0 for 24
-  security fixes.
-
-## 0.10.0b6
-
-### Fixed
-
-- **Restoring a backup**:
-  - Home Assistant's watchdog is answered at once while the backup is put in place, so it no
-    longer risks restarting the app in the middle of a restore.
-  - Entities of sensors and people that are not in the backup are removed only once the restored
-    data runs; if the restore fails they stay as they were.
-  - A sensor setting outside today's limits (a limit made narrower in a later version) no longer
-    refuses the restore of your own backup.
-  - Free disk space is also checked where the history goes when the media folder is on another
-    disk (network storage), and for uploads that do not say their size.
-  - The restore waits properly for the app's background work to let go of the old data.
-  - Only the trained sensor models VisionState itself makes come back from a backup.
-
-## 0.10.0b5
-
-### Fixed
-
-- **An older version on data from 0.10.0b4** (a backup made by 0.10.0b4 restored in an older
-  beta, or an older image started on its data): state sensors were shown as untrained until their
-  next label. The older version now trains them again from their stored images when it starts,
-  and coming back to the newer one does the same.
-
-## 0.10.0b4
-
-### Better
-
-- **Uses much less memory**: memory an AI model needed for one image is now given back after
-  each check instead of being held for the rest of the run, and the state classifier no longer
-  loads scikit-learn. On a test installation with nine sensors and face recognition the app went
-  from about 940 MB to about 580 MB. A check takes a few percent longer.
-- State sensors are retrained once after the update, from their stored training images (it takes
-  a moment, and the sensors keep their last state meanwhile).
-
-## 0.10.0b3
-
-### Fixed
-
-- **Restoring a backup with the media folder on network storage**: the history is now unpacked
-  on the disk it goes to, so the app is stopped only for a moment while the backup is put in
-  place — copying it over the network then could take long enough for Home Assistant to restart
-  the app, which put the old data back.
-- A rare "ResizeObserver loop" error on the dashboard in Safari and the Home Assistant app on iPhone.
-
-## 0.10.0b2
-
-### Fixed
-
-- **A restore cut off at the wrong moment could lose the database**: if the app stopped while a
-  backup was being restored, its next start could remove the database instead of putting it back.
-  The database is now always moved first, and one that was never moved is left alone.
-- A backup from a newer version that adds a setting to a sensor (a new reading mode, say) is now
-  refused with the sensor's name, like a sensor export from a newer version, instead of being
-  restored into an app that does not know the setting.
-- Only the AI models VisionState itself downloads come back from a backup, and only unchanged.
-- Restoring a sensor export, or importing a backup as a sensor, now says where the file goes.
-
-## 0.10.0b1
+## 0.10.0
 
 ### New
 
@@ -75,10 +9,23 @@
   another Home Assistant, or between the stable and the beta app. Everything is ticked; untick what
   you do not need (each shows its size). Camera passwords are left out unless you tick them.
 - **Restore** replaces everything in the app with a backup. Sensors keep their entities and entity
-  IDs in Home Assistant; what is only in the app before is removed. The backup is checked first,
-  and if anything goes wrong the app keeps what it had. A backup from an older version is upgraded;
-  one from a newer version is refused (update the app first). The sensors whose camera password
-  must be entered again are listed.
+  IDs in Home Assistant; sensors and people that are not in the backup are removed only once the
+  restored data runs. The backup is checked first (its version, every sensor's settings, and the
+  free disk space, also where the history goes when the media folder is on network storage), and
+  if anything goes wrong, even if the app is stopped in the middle, it keeps what it had. A backup
+  from an older version is upgraded; one from a newer version is refused (update the app first).
+  The sensors whose camera password must be entered again are listed. Only the AI models and
+  trained sensor models VisionState itself makes come back from a backup.
+
+### Better
+
+- **Uses much less memory**: memory an AI model needed for one image is now given back after
+  each check instead of being held for the rest of the run, and the state classifier no longer
+  loads scikit-learn. On a test installation with nine sensors and face recognition the app went
+  from about 940 MB to about 580 MB. A check takes a few percent longer.
+- State sensors are retrained once after the update, from their stored training images (it takes
+  a moment, and the sensors keep their last state meanwhile). Going back to 0.9.2 afterwards
+  works too: it retrains them the same way.
 
 ### Fixed
 
@@ -86,6 +33,16 @@
   Home Assistant.
 - An older version started on a newer database (going back to a backup made before an update) no
   longer makes the next update repeat its database upgrade.
+- A rare "ResizeObserver loop" error on the dashboard in Safari and the Home Assistant app on iPhone.
+- Pillow, the library that reads and writes the camera images, is updated to 13.0.0 for 24
+  security fixes.
+
+### Help wanted: Raspberry Pi and other ARM boards
+
+The lower memory use may cost a little more CPU. On an x86 PC the difference is negligible, but on
+ARM it has not been measured yet. If you run VisionState on a Raspberry Pi or another ARM board,
+please share in [issue #52](https://github.com/oleost/VisionState/issues/52) how memory and CPU
+compare with 0.9.2. Even rough numbers or "no difference I can see" help.
 
 ## 0.9.2
 
