@@ -1,6 +1,9 @@
 // Typed client for the backend. Every URL the UI uses is built here.
 import type {
   AppConfig,
+  BackupInfo,
+  BackupPart,
+  RestoreResult,
   ObjectSettings,
   FaceLimitsInfo,
   FaceOverrides,
@@ -303,6 +306,31 @@ export const api = {
   /** Delete a downloaded AI model that is not in use; `kind` is its list in GET /settings. */
   deleteModel: (kind: ModelKind, id: string) =>
     request<SettingsInfo>(`models/${kind}/${encodeURIComponent(id)}`, send('DELETE')),
+
+  backup: () => request<BackupInfo>('backup'),
+  backupUrl: (leaveOut: BackupPart[], credentials: boolean) =>
+    `${BASE}backup/export?${qs({ leave_out: leaveOut.join(','), credentials: credentials || undefined })}`,
+  /** Replaces everything with a backup; XMLHttpRequest for the upload's progress (0–1), which fetch does not give. */
+  restoreBackup(file: File, progress: (done: number) => void): Promise<RestoreResult> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${BASE}backup/restore`);
+      xhr.setRequestHeader('Content-Type', 'application/zip');
+      xhr.upload.onprogress = (e) => e.lengthComputable && progress(e.loaded / e.total);
+      xhr.onload = () => {
+        let body: { detail?: unknown } & Partial<RestoreResult> = {};
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          /* not JSON */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body as RestoreResult);
+        else reject(new ApiError(xhr.status, typeof body.detail === 'string' ? body.detail : xhr.statusText || 'Restore failed'));
+      };
+      xhr.onerror = () => reject(new ApiError(0, 'The upload was interrupted'));
+      xhr.send(file);
+    });
+  },
 
   importBundle(file: File) {
     const form = new FormData();

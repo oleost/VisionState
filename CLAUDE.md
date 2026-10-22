@@ -44,9 +44,13 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - **No telemetry, nothing "phones home".** Download counts on GHCR are the only usage signal.
 - **Only reachable through Home Assistant Ingress** (requests from other addresses are refused);
   outside Home Assistant the app has no login — documented, keep it that way.
-- **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports.
+- **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports (a full
+  backup holds them only when the user ticks *Camera passwords*, unticked by default).
 - **No hard-coded defaults** outside `settings.py` / the registries; the UI reads them from
   `GET /api/v1/config`.
+- **A backup holds everything:** every table and data folder belongs to a part of
+  `settings.BACKUP_PARTS` (tests fail otherwise), and a new database version gets a kept backup in
+  `tests/assets/backups/` (`python -m tests.backup_fixture`) that every later version restores.
 - Home Assistant state values stay lower-case keys (`open`, `car_parked`); unique IDs and topics
   never change once released.
 - Marketing text (README, release notes) promotes VisionState on its own merits — no comparisons
@@ -118,7 +122,7 @@ itself (`__main__.py`).
   and `VISIONSTATE_MEDIA` folder. Home Assistant then builds the Dockerfile itself, the same image
   as a release (*Local apps* in the app store; after a change: *Rebuild*). It shares MQTT topics and
   unique IDs with an installed VisionState, so never run both at once; it has its own data (move
-  sensors with export/import). This is how changes are tried on Home Assistant during development;
+  everything with Settings → Backup, or single sensors with export/import). This is how changes are tried on Home Assistant during development;
   a beta is released when the maintainer asks for one.
 
 ## UI testing routine
@@ -151,7 +155,7 @@ Many users run Home Assistant on phones and tablets.
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.
 - **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
   broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
-  `visionstate/frontend` (1440 px wide, device scale 1.2, one row of the README the same height).
+  `visionstate/frontend` (1440 px wide, device scale 1.2).
   The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
   maintainer before publishing.
 
@@ -173,5 +177,10 @@ Many users run Home Assistant on phones and tablets.
   `untrack`, name the real dependencies with `void x`, and give a polling loop a counter so a
   restart ends the old loop. The e2e test "no page asks the server more often than it polls"
   counts requests per page.
+- State set in a ResizeObserver's callback — which is what `bind:clientWidth` does — flushes every
+  update the page has waiting while the browser is still delivering size changes; when one of
+  them resizes what is observed, WebKit reports "ResizeObserver loop completed with undelivered
+  notifications" (seen once in CI on the dashboard, never locally). Measure in a timeout instead,
+  like `measure` in `DetectionBoxes.svelte` (not the next animation frame: none comes in a hidden tab).
 - The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only poll
   while visible look fine there. Use `setVisibility` (e2e) or override it by hand.

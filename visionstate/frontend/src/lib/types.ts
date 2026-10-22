@@ -537,6 +537,8 @@ export interface AppConfig {
   reminder_defaults: ReminderRules;
   reminder_limits: Record<'after_days' | 'min_items' | 'repeat_days', [number, number]>;
   sensor_kinds: SensorKind[];
+  /** Settings → Backup: the parts (the ones not optional are always in it), camera passwords ticked by default or not. */
+  backup: { parts: { key: BackupPart; optional: boolean }[]; credentials: boolean; max_restore_gb: number };
   object_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   object_defaults: ObjectSettings;
   object_limits: Record<'min_size' | 'clear_after_s', [number, number]>;
@@ -728,6 +730,24 @@ export interface BackboneInfo {
 export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'readers';
 
 /** GET /storage: disk use and the history limits (whichever is reached first applies). */
+export type BackupPart = 'sensors' | 'samples' | 'faces' | 'history' | 'models';
+
+/** GET /backup: bytes on disk per part, and the free space. */
+export interface BackupInfo {
+  parts: Record<BackupPart, number>;
+  free: number;
+}
+
+/** POST /backup/restore: what came back; `masked`: sensors whose camera password must be entered again. */
+export interface RestoreResult {
+  sensors: number;
+  people: number;
+  parts: BackupPart[];
+  app_version: string | null;
+  exported_at: string | null;
+  masked: { id: number; name: string }[];
+}
+
 export interface StorageInfo {
   history_bytes: number;
   history_frames: number;

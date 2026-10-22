@@ -70,7 +70,7 @@ of a meter. Neither needs training.
 
 1. Grab frame → crop ROI → letterbox to a square → normalise.
 2. Backbone (ONNX Runtime) → L2-normalised embedding (CLS token + mean of patch tokens).
-3. Per-sensor head: scikit-learn logistic regression (`C=30`, class-balanced) → probability per state.
+3. Per-sensor head: logistic regression (`C=30`, class-balanced) → probability per state.
 4. Post-processing → published state (§7).
 
 Why: training takes about a second even on a Raspberry Pi, works with few samples, and every
@@ -89,6 +89,12 @@ so retraining only runs the backbone on new or changed samples.
   (`backbones.Footprint`: extra memory, time per check on 4 threads of a desktop CPU, an accuracy
   rank within its kind), measured when the model was added. Texts and footprint may be updated in a
   released entry; its file and inputs never change.
+- Memory before speed, since many run Home Assistant on small machines: ONNX Runtime runs without its
+  memory arena (`backbones.cpu_session`), which kept the largest working memory any image had needed
+  for the rest of the run (D-FINE S about 150 MB on Home Assistant OS), and every check ends with
+  `backbones.trim_memory`, as glibc kept the freed memory as well. With the default models the app
+  is about 190 MB smaller (a test installation with nine sensors and faces: 943 → 677 MB) for
+  about 6 % more time per check. The footprints of the detectors were measured again this way.
 - DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
   also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
   object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base
@@ -103,8 +109,20 @@ so retraining only runs the backbone on new or changed samples.
   Azure provider, are never offered or used). GPU/Coral
   were assessed and deliberately not pursued (little gain for this workload; Coral cannot run
   the transformer model and is often in use by other software).
-- Heads trained by another scikit-learn version, or for another backbone, are retrained
-  automatically at startup.
+- Heads of another format (`classifier.HEAD_FORMAT`), or for another backbone, are retrained
+  automatically at startup, from the stored embeddings. Until a sensor has a head again its checks
+  publish nothing (no "unknown" after an update).
+- The head is logistic regression in NumPy (`classifier.fit`, L-BFGS): the objective of
+  scikit-learn's `LogisticRegression` (lbfgs, L2 on the weights, balanced class weights), which
+  trained the heads until 0.10 — importing scikit-learn and SciPy cost about 90 MB of memory on Home
+  Assistant OS. The problem is convex: on real embeddings the heads matched a fully converged
+  scikit-learn to within 0.05 percentage points (scikit-learn's own default stopping point is
+  less exact). Its old heads (pickles, `<id>.joblib`) are retrained once. Each training puts
+  `classifier.LEGACY_MARKER` in that file: an older version the app is taken back to (or that
+  restores its backup) cannot read it and retrains from the stored images, as it does with a broken
+  head — finding no file, it would call the sensor untrained until the next label, and an old pickle
+  lacks the newer labels. Coming forward again, a head older than the sensor's model
+  (`ModelInfo.version`, which the older version raised) is retrained too.
 - **Quality check:** after each training, cross-validated predictions give the accuracy, the
   confusion matrix and a list of *possibly mislabelled* samples (label ≠ out-of-fold prediction).
 - Not implemented: training-time augmentation (not needed so far), fine-tuning.
@@ -222,7 +240,8 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   `face` rows (`db.Face`: {box, points, score} in the crop, and the sensor it was taught on, null
   once that sensor is deleted — the face stays). The crop (the face with a margin, not aligned, so
   another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
-  embeddings are cached per face model (`face_embedding`), deleted with the face, never exported.
+  embeddings are cached per face model (`face_embedding`), deleted with the face, never in a sensor
+  bundle; a full backup holds them with the faces (the database goes along whole, see §12).
   A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
   stored on the sensor): its entities, and a name its faces can get. One index of all taught
   faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
@@ -565,7 +584,7 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
    export, delete.
 9. **Review** — the review queue across sensors, keyboard driven.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
-    global review rules, storage (disk use and history limits), import.
+    global review rules, storage (disk use and history limits), backup and restore, import.
 11. **History** — every sensor's history rows in one list, filtered by sensors, *what* (state,
     object class or own label — the row's `state_key`; never a reading), event, time window and
     *waiting for review*, newest or oldest first. Each filter takes several values (any of them
@@ -684,8 +703,70 @@ automatically.
 - Import always creates a new sensor and retrains it; bundles are validated like API input.
   `manifest.json` is capped (`UPLOAD_LIMITS["max_manifest_mb"]`); an unreadable image in a bundle
   is skipped and counted (the response's `skipped`), so an import never stops halfway.
-- Not implemented: full export of all sensors + global settings, merge/replace import modes,
-  exporting trained heads (retraining is faster than shipping them).
+- Not implemented: a sensor bundle with its trained head (retraining is faster than shipping it).
+
+### Backup of everything (`backup.py`, `api/backup.py`, Settings → Backup)
+
+For moving between installations and between the stable, beta and dev apps (which have their own
+data and share entities): one ZIP with everything, and a restore that **replaces** everything.
+Adding to what is there is left to the sensor bundle above: merging people, IDs and history of two
+installations is much code for a rare need.
+
+- **A copy of the database, not an export of its rows**: SQLite's backup of the live database,
+  with the rows of the parts left out deleted from the copy. A new table or column is in every
+  backup without code; `settings.BACKUP_PARTS` names each table's and each folder's part, and
+  `tests/test_backup.py` fails for one that is in none, so nothing added later goes missing.
+  Files go along by folder (`files/<Settings folder>/…`), thumbnails never (made again).
+- **Parts** (all ticked at export): sensors and settings (always: rows, trained heads), training
+  images, people and faces, history (with `reading_stat`), downloaded models. A restore empties
+  the folders of every part but the models, also when the backup does not have the part (its rows
+  are gone); models are only added (a missing one is downloaded again).
+- **Camera passwords** are masked like in a bundle unless the user ticks them (unticked by
+  default, `BACKUP["credentials"]`): a full backup is for moving one's own installation, where
+  typing every password again is the usual pain, but the file then holds them. A restore lists
+  the sensors whose password was masked.
+- **Versions**: `backup.json` has the archive's `format` and the database's `schema`. An older
+  backup is migrated by the usual migrations; a newer one (format or schema) is refused with what
+  to do — an older version cannot know what a newer one stored. A backup made by every database
+  version and format is kept in `tests/assets/backups/` (`tests/backup_fixture.py`, a test fails
+  when the current one is missing), and every one is restored by every later version's tests.
+  `Database.init` never lowers `user_version`, so a rollback or such a refused case never makes
+  data migrations run twice.
+- **Safety**: the upload is checked and extracted next to the live data and its database migrated
+  there first; only then is the runtime stopped, its database closed (its worker threads must not
+  write into the restored one: `Database.close`, waited for — counted before its pool is disposed
+  of, which counts none afterwards), the live data moved aside and the
+  restored moved in, and a new runtime started. Any failure puts the old data back; a restore cut
+  off by a stop is undone (or finished) at the next start (`backup.clean_leftovers`). Requests made
+  meanwhile wait for the new runtime (`BACKUP["hold_requests_s"]`) instead of failing — not Home
+  Assistant's watchdog, which asks `/api/v1/alive` and gives up after a few seconds. Archive paths
+  outside the known folders are ignored. The download is streamed (no temporary file of its size);
+  the restore needs the upload and its contents on disk for a moment: free space is checked on the
+  data folder's disk and on the media folder's when that is another one, before the upload when
+  its size is given and again once it is in. Uploads reach the app
+  streamed (`ingress_stream: true` in `config.yaml`): without it the Supervisor reads a request
+  into memory and refuses one over 16 MB, which had also kept videos and sensor bundles under that.
+  The database files are moved aside first, so a restore cut off before that leaves the live
+  database alone. Each folder is extracted on the disk it goes to (`<media>/.restore` for the
+  history, `backup._stage_root`): the media folder may be network storage, and copying the history
+  there while the app is stopped could outlast Home Assistant's watchdog; the swap only renames. The staging folder is left out of Home Assistant's backups (`backup_exclude`).
+- **A backup is not trusted more than a sensor bundle**: every sensor in it is validated like a
+  bundle import (`api.imports.validated_sensor`, shared by both), which also catches a setting of a
+  newer version that needed no new database version (a new reading mode, a new display). A value
+  that is only outside today's limits (`api.imports.OutOfLimits`: a limit narrowed since) is kept,
+  as an update keeps it, so it never keeps anyone from restoring their own backup. Its
+  database may hold only tables and indexes (a trigger would run with the app's writes); model
+  files come back only when they are a registry's file with its SHA-256 (`_keep_known_models`:
+  the app loads a model it finds without checking it again), and the heads folder keeps only
+  `<id>.npz` and the marker files (`backup._keep_heads`; an old pickle becomes the marker, so no
+  version ever unpickles a file from a backup). Not validated: the global settings
+  in `setting` (read through `merge_*` with defaults, like those of an older version).
+- **Bundle or backup**: the two archives tell each other apart (`manifest.json` / `backup.json`)
+  and say where the other one goes (Import a sensor / Settings → Backup).
+- **Home Assistant**: sensors and people that are only in the app before the restore have their
+  entities removed — once the restored data runs and MQTT is connected (the runtime's
+  `on_first_connect`), so a restore that fails keeps them; those in the backup keep their unique
+  IDs and so their entity IDs.
 
 ## 13. Configuration
 
@@ -719,11 +800,12 @@ is part of backups and needs no restart.
 | **Recognising faces** ✅ | Faces in person boxes (YuNet), people taught by face and shared by every camera (SFace, or AuraFace for a fast PC), a People page, an entity per person saying where they are, unknown person, review questions, export opt-in — phases 1–3 of [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md), and teaching a face from photos | 0.9.0 (betas 0.8.1b3–b5) |
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
+| **Backup of everything** ✅ | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress; much less memory (no ONNX Runtime arena, classifier without scikit-learn) | 0.10.0 (betas 0.10.0b1–b7) |
 | **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
-summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); full
-export/import of everything; merge/replace import;
+summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
+import of a backup;
 less MQTT/camera traffic (throttle frame publishing, reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
 Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer

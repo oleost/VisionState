@@ -161,10 +161,15 @@ def cpu_session(model_path: Path):
     Only the CPU provider is passed, so nothing else ONNX Runtime ships with (such as its
     Azure provider) is ever used. Only errors are logged: SFace's file lists its weights as graph
     inputs too, and ONNX Runtime warned about every one of them (174 lines) each time it loaded.
+
+    No memory arena: with it, each session keeps the largest working memory any image ever
+    needed (D-FINE S alone held about 265 MB after a few detections) for the rest of the run; without
+    it that memory is freed after every run, for about 6 % more time per check.
     """
     import onnxruntime as ort
 
     options = ort.SessionOptions()
+    options.enable_cpu_mem_arena = False
     options.log_severity_level = 3
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
@@ -177,6 +182,14 @@ def release_memory() -> None:
     switching models left the app hundreds of MB larger every time (until a restart).
     ``malloc_trim`` returns it; on other C libraries (Windows, macOS) there is nothing to do."""
     gc.collect()
+    trim_memory()
+
+
+def trim_memory() -> None:
+    """Give memory freed after a model run back to the system (``malloc_trim``, about 1 ms).
+
+    Without it glibc keeps what the largest image needed: on Home Assistant OS the app stayed about
+    190 MB larger with the default models. Only glibc has it; elsewhere this does nothing."""
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except OSError, AttributeError:
@@ -219,16 +232,27 @@ class Embedder:
         return np.concatenate([hidden[:, 0], hidden[:, 1:].mean(axis=1)], axis=1)
 
 
-if __name__ == "__main__":
+def all_specs() -> list:
+    """Every model of every registry: backbones (states), detectors (objects), readers and wheel
+    readers (readings), the face detector and recognisers."""
     from . import detectors, faces, readers
 
+    return [
+        *BACKBONES.values(),
+        *detectors.DETECTORS.values(),
+        *readers.READERS.values(),
+        *readers.WHEEL_READERS.values(),
+        faces.DETECTOR,
+        *faces.RECOGNISERS.values(),
+    ]
+
+
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     args = [a for a in sys.argv[1:] if a != "--all"]
     destination = Path(args[0] if args else "models")
-    # Every bundled model: backbones (states), detectors (objects), readers and wheel readers
-    # (readings); with --all also the ones downloaded on first use (the face models are never
-    # bundled), for the tests of every model.
-    specs = [*BACKBONES.values(), *detectors.DETECTORS.values(), *readers.READERS.values()]
-    for spec in [*specs, *readers.WHEEL_READERS.values(), faces.DETECTOR, *faces.RECOGNISERS.values()]:
+    # Every bundled model; with --all also the ones downloaded on first use (the face models are
+    # never bundled), for the tests of every model.
+    for spec in all_specs():
         if spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

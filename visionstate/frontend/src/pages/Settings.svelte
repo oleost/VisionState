@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app, refreshStatus, toast, toastError, toastImported } from '../lib/app.svelte';
+  import BackupCard from '../lib/components/BackupCard.svelte';
   import FaceLimitsEditor from '../lib/components/FaceLimitsEditor.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import ModelCompare from '../lib/components/ModelCompare.svelte';
@@ -365,6 +366,8 @@
     <ReminderCard />
 
     <StorageCard />
+
+    <BackupCard />
 
     <section class="card pad col">
       <h3>Import a sensor</h3>

@@ -17,6 +17,8 @@ from .. import backbones, detectors, faces, readers
 from ..db import Person, Prediction, Sensor
 from ..redact import redact
 from ..settings import (
+    BACKUP,
+    BACKUP_PARTS,
     COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
@@ -108,6 +110,11 @@ def ui_config() -> dict:
         "reminder_defaults": REMINDER_DEFAULTS,
         "reminder_limits": REMINDER_LIMITS,
         "sensor_kinds": SENSOR_KINDS,
+        "backup": {
+            "parts": [{"key": k, "optional": v["optional"]} for k, v in BACKUP_PARTS.items()],
+            "credentials": BACKUP["credentials"],
+            "max_restore_gb": BACKUP["max_restore_gb"],
+        },
         "object_sensor_defaults": OBJECT_SENSOR_DEFAULTS,
         "object_defaults": OBJECT_DEFAULTS,
         "object_limits": OBJECT_LIMITS,
@@ -139,6 +146,13 @@ def ui_config() -> dict:
         "history": HISTORY,
         "history_events": HISTORY_EVENTS,
     }
+
+
+@router.get("/alive")
+async def alive() -> dict:
+    """Home Assistant's watchdog (config.yaml): answers at once, also while a restore swaps the
+    data (main.py does not hold it), so the watchdog never restarts the app in the middle of one."""
+    return {"version": VERSION}
 
 
 @router.get("/status")

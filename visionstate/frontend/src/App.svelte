@@ -43,7 +43,7 @@
   {:else if section === 'people'}
     <People />
   {:else if section === 'settings'}
-    <Settings />
+    {#key app.restored}<Settings />{/key}
   {:else}
     <Dashboard />
   {/if}

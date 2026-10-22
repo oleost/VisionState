@@ -647,6 +647,19 @@ class MqttBridge:
         for key, *_ in sensor.objects:
             await self.remove_object_class(sensor.slug, key, discovery=False)
 
+    async def remove_stale(self, before: SensorDescriptor, after: SensorDescriptor) -> None:
+        """The same sensor (slug) with other entities: forget the ones it no longer has (a restored
+        backup); the others are left alone, so Home Assistant keeps what the user changed on them."""
+        prefix = self.settings.discovery_prefix
+        kept = {topic for topic, _ in discovery_messages(prefix, after)}
+        for topic, _ in discovery_messages(prefix, before):
+            if topic not in kept:
+                await self.publish(topic, "", retain=True)
+        kept_keys = {key for key, *_ in after.objects}
+        for key, *_ in before.objects:
+            if key not in kept_keys:
+                await self.remove_object_class(before.slug, key)
+
     async def remove_rate(self, slug: str) -> None:
         """Forget the rate entity of a reading sensor that is no longer a counter."""
         uid = f"{APP_SLUG}_{slug}"

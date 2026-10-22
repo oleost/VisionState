@@ -27,6 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import QueuePool
 
 log = logging.getLogger(__name__)
 
@@ -361,6 +362,16 @@ class Database:
             cur.close()
 
         self._factory = sessionmaker(self.engine, expire_on_commit=False)
+        self.closed = False
+
+    def close(self) -> Callable[[], int]:
+        """No session after this (a backup is restored under it: a worker thread of the stopped
+        runtime must not write into the restored database). Returns how many connections are
+        still in use, as a function to wait on; dispose of the engine once it is 0. Not before:
+        a pool disposed of counts nothing, and a connection handed back to it afterwards stays open."""
+        self.closed = True
+        pool = self.engine.pool
+        return pool.checkedout if isinstance(pool, QueuePool) else lambda: 0
 
     def init(self) -> None:
         fresh = not inspect(self.engine).has_table("sensor")
@@ -379,7 +390,9 @@ class Database:
             for table in Base.metadata.sorted_tables:
                 for index in table.indexes:
                     index.create(conn, checkfirst=True)
-            conn.execute(text(f"PRAGMA user_version = {SCHEMA_VERSION}"))
+            # Never lowered: an older version on a newer database (a rollback, a backup restored)
+            # must not make the next update run that database's data migrations again.
+            conn.execute(text(f"PRAGMA user_version = {max(version, SCHEMA_VERSION)}"))
 
     @staticmethod
     def after_commit(session: Session, action: Callable[[], None]) -> None:
@@ -397,6 +410,8 @@ class Database:
 
     @contextmanager
     def session(self) -> Iterator[Session]:
+        if self.closed:
+            raise RuntimeError("The database was closed (a backup is being restored)")
         session = self._factory()
         try:
             yield session

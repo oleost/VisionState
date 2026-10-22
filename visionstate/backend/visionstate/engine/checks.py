@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from PIL import Image
 
-from .. import imaging
+from .. import backbones, imaging
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
@@ -66,6 +66,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             try:
                 if forced or kind == "full":
                     await self.run_once(cfg)
+                    await asyncio.to_thread(backbones.trim_memory)
                 else:
                     await self.probe(cfg)
                 live.failure = ""
@@ -265,6 +266,10 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
         """One check of a state sensor: classify the region, debounce, publish, keep history."""
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
+        if cfg.id not in self.heads and cfg.id in self.training:
+            # Its first model is being trained, or a head of an older format retrained after an
+            # update: "unknown" until then would be wrong. The training checks again when done.
+            return
         probs = await self.classify_image(cfg, image)
         if probs:
             top, confidence = max(probs.items(), key=lambda kv: kv[1])

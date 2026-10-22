@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
-from .. import backbones, detectors, faces, readers
+from .. import backbones, classifier, detectors, faces, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, fetch_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
@@ -33,6 +34,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         super().__init__(settings, db)
         self.mqtt = MqttBridge(settings, self._on_command, self._on_connect)
         self.ha_events = HaEventListener(settings, self._on_ha_state)
+        # Done once MQTT is connected (a restored backup: the entities the data before it had).
+        self.on_first_connect: list[Callable[[MqttBridge], Awaitable[None]]] = []
 
     async def start(self) -> None:
         """Load the settings and the backbone, retrain outdated heads, start every sensor's loop,
@@ -78,6 +81,9 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         """MQTT (re)connected: every sensor's entities, then each person's own entity."""
         await self._on_mqtt_connect()
         await self.publish_people()
+        actions, self.on_first_connect = self.on_first_connect, []
+        for action in actions:
+            await action(self.mqtt)
 
     async def stop(self) -> None:
         for handle in self._retrain_handles.values():
@@ -88,6 +94,17 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await self.ha_events.stop()
         await self.grabber.close()
         await self.ha.close()
+
+    def release(self) -> None:
+        """After ``stop``, when another runtime takes over in this process (a restored backup):
+        let go of the models, the sensors' heads and the frames kept in memory, and give the
+        memory back, so two sets of models are never loaded at once."""
+        self.embedder = self.detector = self.reader = self.wheel_reader = None
+        self.face_model = self.face_index = None
+        self.heads.clear()
+        self.taught.clear()
+        self.live.clear()
+        backbones.release_memory()
 
     async def _entity_registry_loop(self) -> None:
         """Keeps ha_entity_ids up to date: now and then, and shortly after discovery was published."""
@@ -149,7 +166,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.taught.pop(sensor_id, None)
         self._person_last = {k: v for k, v in self._person_last.items() if v[1] != sensor_id}
         self._published_classes.pop(sensor_id, None)
-        (self.settings.heads_dir / f"{sensor_id}.joblib").unlink(missing_ok=True)
+        classifier.head_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
+        classifier.legacy_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
         await self.mqtt.remove_discovery(descriptor)
         await asyncio.to_thread(self.storage.delete_sensor, sensor_id)
         await self.publish_review_count()

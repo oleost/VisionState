@@ -1,5 +1,5 @@
 // UI constants: polling intervals, labels and tones. Change behaviour of the UI here.
-import type { CounterReader, ReadingDisplay, ReadingMode, ReadingType, SensorKind, SensorStatus } from './types';
+import type { BackupPart, CounterReader, ReadingDisplay, ReadingMode, ReadingType, SensorKind, SensorStatus } from './types';
 
 /** Refresh intervals in milliseconds. */
 export const POLL = {
@@ -20,6 +20,15 @@ export const NOT_SENT = { label: 'Not sent to Home Assistant', help: 'Its entiti
 export const LIGHT_HOLD_STORAGE_KEY = 'visionstate.lightWhileViewing';
 /** At most this many toasts on screen; older ones make room (labelling fast stacked them over the page). */
 export const TOAST_MAX = 2;
+
+/** Settings → Backup: what each part of a backup holds. */
+export const BACKUP_PARTS: Record<BackupPart, { label: string; help: string }> = {
+  sensors: { label: 'Sensors and settings', help: 'Every sensor, its trained model and the app’s settings (always included)' },
+  samples: { label: 'Training images', help: 'Labelled images and taught boxes' },
+  faces: { label: 'People and their faces', help: 'Everyone taught by face, with their face images' },
+  history: { label: 'History', help: 'Stored frames, readings and the review queue' },
+  models: { label: 'Downloaded AI models', help: 'Downloaded again when needed if left out' },
+};
 
 export type Tone = 'ok' | 'warn' | 'danger' | 'muted' | 'info';
 

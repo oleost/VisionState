@@ -64,25 +64,9 @@ def _pillow():
     return PIL.__version__
 
 
-@step("scipy")
-def _scipy():
+@step("classifier (train and cross-validate a head)")
+def _classifier():
     import numpy as np
-    import scipy
-    from scipy import linalg, optimize, sparse, special
-
-    a = np.random.default_rng(1).normal(size=(120, 120))
-    linalg.svd(a)
-    linalg.solve(a @ a.T + np.eye(120), np.ones(120))
-    optimize.minimize(lambda x: ((x - 3) ** 2).sum(), np.zeros(8), method="L-BFGS-B")
-    sparse.random(200, 200, density=0.05, random_state=1).tocsr() @ np.ones(200)
-    special.expit(a)
-    return scipy.__version__
-
-
-@step("scikit-learn (train and cross-validate a head)")
-def _sklearn():
-    import numpy as np
-    import sklearn
 
     from visionstate import classifier
 
@@ -91,7 +75,7 @@ def _sklearn():
     labels = ["open"] * 30 + ["closed"] * 30
     result = classifier.train(vectors, labels, "probe", 1, ["open", "closed"])
     result.head.predict(vectors[:4], ["open", "closed"])
-    return sklearn.__version__
+    return f"accuracy {result.accuracy:.2f}"
 
 
 @step("onnxruntime: state backbone")
@@ -216,7 +200,7 @@ def _app():
 def _others():
     import importlib
 
-    names = ["httptools", "websockets", "yaml", "watchfiles", "google.protobuf", "pydantic_core", "sqlalchemy", "joblib", "aiomqtt"]
+    names = ["httptools", "websockets", "yaml", "watchfiles", "google.protobuf", "pydantic_core", "sqlalchemy", "aiomqtt"]
     missing = []
     for name in names:
         try:

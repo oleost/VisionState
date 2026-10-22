@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.10.0
+
+### New
+
+- **Backup of everything** (Settings → Backup): one file with your sensors and settings, training
+  images, people and their faces, history and downloaded AI models — to move VisionState to
+  another Home Assistant, or between the stable and the beta app. Everything is ticked; untick what
+  you do not need (each shows its size). Camera passwords are left out unless you tick them.
+- **Restore** replaces everything in the app with a backup. Sensors keep their entities and entity
+  IDs in Home Assistant; sensors and people that are not in the backup are removed only once the
+  restored data runs. The backup is checked first (its version, every sensor's settings, and the
+  free disk space, also where the history goes when the media folder is on network storage), and
+  if anything goes wrong, even if the app is stopped in the middle, it keeps what it had. A backup
+  from an older version is upgraded; one from a newer version is refused (update the app first).
+  The sensors whose camera password must be entered again are listed. Only the AI models and
+  trained sensor models VisionState itself makes come back from a backup.
+
+### Better
+
+- **Uses much less memory**: memory an AI model needed for one image is now given back after
+  each check instead of being held for the rest of the run, and the state classifier no longer
+  loads scikit-learn. On a test installation with nine sensors and face recognition the app went
+  from about 940 MB to about 580 MB. A check takes a few percent longer.
+- State sensors are retrained once after the update, from their stored training images (it takes
+  a moment, and the sensors keep their last state meanwhile). Going back to 0.9.2 afterwards
+  works too: it retrains them the same way.
+
+### Fixed
+
+- Uploads larger than 16 MB (videos, sensor exports) were refused when the app was opened in
+  Home Assistant.
+- An older version started on a newer database (going back to a backup made before an update) no
+  longer makes the next update repeat its database upgrade.
+- A rare "ResizeObserver loop" error on the dashboard in Safari and the Home Assistant app on iPhone.
+- Pillow, the library that reads and writes the camera images, is updated to 13.0.0 for 24
+  security fixes.
+
+### Help wanted: Raspberry Pi and other ARM boards
+
+The lower memory use may cost a little more CPU. On an x86 PC the difference is negligible, but on
+ARM it has not been measured yet. If you run VisionState on a Raspberry Pi or another ARM board,
+please share in [issue #52](https://github.com/oleost/VisionState/issues/52) how memory and CPU
+compare with 0.9.2. Even rough numbers or "no difference I can see" help.
+
 ## 0.9.2
 
 ### Better

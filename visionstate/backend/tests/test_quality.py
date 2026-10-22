@@ -1,7 +1,10 @@
 """Possibly mislabelled samples and the app-wide review queue entity."""
 
+import pytest
 from fastapi.testclient import TestClient
 
+from visionstate import classifier
+from visionstate.db import ModelInfo
 from visionstate.main import create_app
 from visionstate.mqtt import REVIEW_TOPICS, hub_discovery_messages
 from visionstate.settings import Settings
@@ -114,10 +117,12 @@ def test_relabel_and_delete_retrain_without_errors(tmp_path, model_dir):
 
 
 @requires_model
-def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir):
-    """A head pickled by another scikit-learn version is retrained automatically at startup."""
-    import joblib
-
+@pytest.mark.parametrize("outdated", ["legacy", "format", "older version trained"])
+def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir, outdated):
+    """A head from before HEAD_FORMAT (a scikit-learn pickle, <id>.joblib), of another format, or
+    older than the sensor's model (an older version the app was taken back to trained it since) is
+    retrained automatically at startup. The .joblib then holds the marker that makes an older
+    version retrain too."""
     settings = Settings(
         data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
     )
@@ -132,14 +137,52 @@ def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir):
                 client.post(f"/api/v1/sensors/{sid}/capture", json={"state_key": state})
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"] is not None)
         version = client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"]
+        legacy = classifier.legacy_path(settings.heads_dir, sid)
+        assert legacy.read_bytes() == classifier.LEGACY_MARKER
+        if outdated == "older version trained":
+            with client.app.state.runtime.db.session() as s:
+                s.get(ModelInfo, sid).version = version = version + 1
 
-    # Pretend the stored head came from an older scikit-learn.
-    path = settings.heads_dir / f"{sid}.joblib"
-    head = joblib.load(path)
-    head.sklearn_version = "0.0-old"
-    joblib.dump(head, path)
+    path = classifier.head_path(settings.heads_dir, sid)
+    if outdated == "legacy":
+        path.replace(legacy)  # no .npz: what 0.10.0b3 left
+    elif outdated == "format":
+        head = classifier.load(path)
+        assert head is not None
+        head.format = 0
+        classifier.save(head, path)
 
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] > version)
         assert client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok"
+    head = classifier.load(path)
+    assert head is not None and head.format == classifier.HEAD_FORMAT
+    assert legacy.read_bytes() == classifier.LEGACY_MARKER
+
+
+@requires_model
+def test_a_head_without_the_marker_gets_it_at_startup(tmp_path, model_dir):
+    """A head trained before the .joblib marker existed is kept (no retrain); the marker is added so an
+    older version the app is taken back to retrains instead of finding no head or an old one."""
+    settings = Settings(
+        data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=model_dir
+    )
+    camera = FakeCamera()
+    body = {"name": "Door", "source_type": "http", "source": "x", "states": [{"name": "Open"}, {"name": "Closed"}]}
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        for state in ("open", "closed"):
+            camera.state = state
+            for _ in range(3):
+                client.post(f"/api/v1/sensors/{sid}/capture", json={"state_key": state})
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"] is not None)
+        version = client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"]
+    legacy = classifier.legacy_path(settings.heads_dir, sid)
+    legacy.write_bytes(b"an old scikit-learn pickle")
+
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        assert legacy.read_bytes() == classifier.LEGACY_MARKER
+        assert client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] == version

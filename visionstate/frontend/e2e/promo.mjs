@@ -1,6 +1,6 @@
 // The README screenshots (docs/promo/), from an app seeded with scripts/seed_demo.py.
 //   node e2e/promo.mjs [app URL, default http://127.0.0.1:8099] [output folder, default ../../docs/promo]
-// 1440 px wide at device scale 1.2; images in one row of the README get the same height.
+// 1440 px wide at device scale 1.2.
 import { chromium } from '@playwright/test';
 import path from 'node:path';
 

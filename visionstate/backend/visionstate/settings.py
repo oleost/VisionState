@@ -508,7 +508,8 @@ THUMB_SIZE = 320
 
 # Logistic regression on L2-normalised embeddings. Higher C = more confident probabilities;
 # 30 keeps clear frames well above the default threshold while ambiguous frames stay near 50%.
-CLASSIFIER = {"C": 30.0, "max_iter": 3000}
+# Training stops when no gradient component exceeds tol (or after max_iter steps).
+CLASSIFIER = {"C": 30.0, "max_iter": 3000, "tol": 1e-6}
 
 # --- Quality hints ----------------------------------------------------------
 
@@ -671,6 +672,54 @@ def merge_triggers(stored: dict | None) -> dict:
 SECRET_QUERY_KEYS = ("user", "username", "password", "pass", "pwd", "token", "access_token", "key", "apikey", "auth")
 # Remove camera credentials from exported sensor bundles (the importer re-enters them).
 EXPORT_STRIP_CREDENTIALS = True
+
+# --- Backup (export and restore everything, backup.py) ------------------------
+
+# What a backup holds, in parts the user can leave out at export (the ticks in Settings → Backup).
+# Every table of db.py and every folder of Settings belongs to exactly one part, or is named in
+# BACKUP_LEFT_OUT: tests/test_backup.py fails for a new table or folder that is not, so nothing
+# added later is silently missing from a backup. The database goes along whole (new columns
+# need nothing here); a left-out part's rows are deleted from the copy.
+# "restore": "replace" — a restore empties the part's folders here, also when the backup does not
+# hold the part (its rows are gone); "add" — the backup's files are added, nothing here is removed.
+BACKUP_PARTS: dict[str, dict] = {
+    "sensors": {
+        "optional": False,
+        "tables": ("sensor", "state", "model_info", "reading_watch", "setting"),
+        "folders": ("heads_dir",),
+        "restore": "replace",
+    },
+    "samples": {
+        "optional": True,
+        "tables": ("sample", "sample_label", "embedding"),
+        "folders": ("samples_dir", "old_samples_dir"),
+        "restore": "replace",
+    },
+    "faces": {
+        "optional": True,
+        "tables": ("person", "face", "face_embedding"),
+        "folders": ("faces_dir",),
+        "restore": "replace",
+    },
+    "history": {
+        "optional": True,
+        "tables": ("prediction", "reading_stat"),
+        "folders": ("history_dir",),
+        "restore": "replace",
+    },
+    "models": {"optional": True, "tables": (), "folders": ("models_dir",), "restore": "add"},
+}
+# Folders never in a backup: made again when asked for. A restore empties them (they are keyed by row IDs).
+BACKUP_LEFT_OUT = ("sample_thumbs_dir", "thumbs_dir")
+BACKUP = {
+    "format": 1,  # the archive's layout (backup.json "format"); a restore refuses a newer one
+    "credentials": False,  # camera passwords in the backup: off unless the user ticks it
+    "max_restore_gb": 50,  # largest backup a restore takes
+    "free_margin_mb": 200,  # free disk space kept on top of what a restore needs
+    "chunk_kb": 1024,  # streamed download: size of each piece
+    "hold_requests_s": 120,  # requests made while a restore swaps the data wait this long for it
+    "release_wait_s": 60,  # a restore waits this long for the stopped runtime's work to let go of the database
+}
 
 SUPERVISOR_URL = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"

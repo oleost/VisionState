@@ -267,7 +267,8 @@ everyone.
 - **Where faces are kept**: in the app's own storage, like training images, not in the media
   folder (which Home Assistant's media browser shows to every user) — so they are in Home Assistant
   backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
-  person; an export never contains them.
+  person; a sensor's export never contains them. A backup from Settings → Backup holds the faces and
+  these numbers too (untick *People and their faces* to leave them out): keep it somewhere safe.
 
 ## Reading sensors
 
@@ -518,11 +519,39 @@ How long history is kept is set under **Settings → Storage** (below).
 
 ## Backup, export and import
 
+**Settings → Backup** puts everything in one file and restores it — to move VisionState to
+another Home Assistant, from the stable app to the beta app (or back), or to start again from
+a known point:
+
+- **Download backup**: sensors and the app's settings (always), training images, people and
+  their faces, history and the downloaded AI models — all ticked; untick what you do not want
+  (each shows its size). Camera passwords are left out unless you tick **Camera passwords**
+  (anyone with the file can then read them). Large histories make large files.
+- **Restore** replaces *everything* in the app with the backup: sensors, people, training images
+  and history. Sensors in the backup keep their entities (and entity IDs) in Home Assistant; the
+  sensors and people that are only here are removed. It asks twice before it starts. Download a
+  backup of the app first if you may want it back.
+- What is left out of the backup is gone after a restore, except the AI models: those already
+  here stay, and missing ones are downloaded again when needed. Without history, a sensor starts
+  without its "last seen" and past frames; a meter keeps its last value.
+- If camera passwords were left out, the result lists the sensors to enter them for again.
+- A backup made by an older version is upgraded when it is restored. A backup from a newer
+  version is refused when it holds something this version does not know (a newer database, or a
+  sensor with a setting added later — the message names it): update the app first (the beta app
+  is often newer than the stable one).
+- Only the AI models VisionState itself downloads come back from a backup, and only unchanged.
+- The backup is checked before anything is replaced; if the restore fails, the app keeps (or puts
+  back) what it had. It needs about twice the backup's size of free disk space for a moment.
+- Stop the other VisionState app (stable or beta) before you restore into this one: both publish
+  the same entities.
+- The app options (MQTT broker, log level) belong to each app and are not in a backup.
+
 - Settings, the database, trained models and **training images** (also the boxes taught to object
   sensors and the taught faces) live in the app's own storage and are part of Home Assistant
   backups of the app, so a restore brings back what you taught together with its images.
 - **History frames** are stored in `/media/visionstate` (the beta app uses
-  `/media/visionstate_beta`); they are only in a backup that includes the media folder.
+  `/media/visionstate_beta`); they are only in a Home Assistant backup that includes the media
+  folder (a VisionState backup from Settings → Backup has them).
 - Older versions kept training images in `/media/visionstate/samples`. They are copied to the
   app's own storage by themselves after the update; the copies in the media folder are removed
   30 days later (until then, going back to the backup made before the update still finds them).
@@ -552,8 +581,8 @@ How long history is kept is set under **Settings → Storage** (below).
 
 New versions are released as beta first. To test them, add
 `https://github.com/oleost/VisionState#beta` as a repository and install **VisionState (beta)**.
-It is a separate app with its own data: move sensors with Export/Import, and run only one of the
-two apps at a time (both publish the same entities).
+It is a separate app with its own data: move everything with Settings → Backup (or single sensors
+with Export/Import), and run only one of the two apps at a time (both publish the same entities).
 
 ## AI models
 
