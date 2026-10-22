@@ -77,9 +77,14 @@ all of it and tell the maintainer what was checked and what was found.
    - restart Home Assistant, reboot the host and restart the MQTT broker: the app and its entities
      come back by themselves;
    - make a backup of the app and restore it: the sensors are back, with their training images;
-   - move a VisionState backup (Settings → Backup) between the beta app and another app (the dev
-     app, or the stable app once it has the feature) both ways: the sensors, people, training
-     images and history come along, and the entities keep their IDs;
+   - **backup round trip** (Settings → Backup): first give the standing test sensors what the
+     release adds (a new setting, a new kind of data, a person…), so that the backup has to carry
+     it. Download a full backup from the beta app (camera passwords ticked), restore it into a
+     freshly installed app (a local app with its data and media folder emptied first) and back into
+     the beta app. Compare both sides: every sensor with all its settings, its training images and
+     what it was taught, people and their faces, the app's settings and limits, downloaded models,
+     history, and the Home Assistant entities with their IDs. Anything that does not come back
+     blocks the release;
    - **soak for 1 hour** with the sensors checking: the app's memory (Supervisor app stats) and its
      data on disk level off instead of growing, the log stays quiet;
    - open the app in Home Assistant at desktop width and on a phone (Ingress);

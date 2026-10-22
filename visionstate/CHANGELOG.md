@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0b7
+
+### Fixed
+
+- Pillow, the library that reads and writes the camera images, is updated to 13.0.0 for 24
+  security fixes.
+
 ## 0.10.0b6
 
 ### Fixed
