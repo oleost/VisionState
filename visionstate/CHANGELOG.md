@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.1b1
+
+### Better
+
+- **Exported readings say where the region is in each image** (Export readings on a reading
+  sensor's Quality tab), also for readings made before this version (since 0.8.0). The margin
+  around the region is cut off at the picture's edge, so the region was not always in the middle.
+- Each counter now keeps the wheel reader it reads with, so a better one can come later without
+  changing how your counters read today. There is nothing to choose yet.
+
 ## 0.10.0
 
 ### New
