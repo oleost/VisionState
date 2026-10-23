@@ -257,6 +257,10 @@ most:
 | UniData / ud-smart-city water meter sets | CC BY-NC-ND 4.0 / commercial | not usable |
 | UFPR-AMR, Copel-AMR (Laroca et al.) | no open licence found (given out on request for research) | not usable |
 | AI-on-the-edge data and models | no licence (data); non-commercial (project) | ideas only, no data or code |
+| MR-AMR (Mendeley, 140,000 digits of Moroccan water and electricity meters, whole and half-turned) | CC BY-NC 3.0 | not usable, though the closest match |
+| Dig21000 (IEEE DataPort, 21,000 rotary meter digits, partly from Roboflow) | no licence stated; behind a subscription | not usable |
+| NRC-GAMMA (28,883 gas meter images, Ottawa) | CC BY 4.0 | not usable: pointer dials of one meter model, not wheels |
+| Photos on Openverse (Flickr, Wikimedia Commons) of water, gas and electricity meters | CC0, public domain or CC BY per photo | **possible as a test set of meters the model has not seen**: hundreds of photos per search term, of which only some show a legible counter; each picked and labelled by eye, CC BY credited in the model card, only CC0 into the repository |
 
 ## 7. Tried and dropped
 
