@@ -9,12 +9,11 @@ import math
 from collections import Counter
 
 import numpy as np
-import torch
 
 from common import cell_input, decode, decode_shifted, split_cells
 from items import SETS
 from paths import LOCAL, WORK
-from train import DEV, WheelNet, predict
+from train import load_model, predict
 
 HERE = WORK
 DEFAULT = ["pedro40", "pedro_esp", "pedro32", "bol_cold", "bol_warm"]
@@ -59,8 +58,7 @@ def main():
     args = ap.parse_args()
     global SHIFT
     SHIFT = args.shift
-    model = WheelNet(args.width).to(DEV)
-    model.load_state_dict(torch.load(args.model, map_location=DEV))
+    model = load_model(args.model, args.width)
     model.eval()
     base = {}
     for rid in ("ppocrv6-small", "ppocrv6-tiny"):

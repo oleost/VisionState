@@ -56,9 +56,10 @@ def jitter(c: tuple[int, int, int], amount: int) -> tuple[int, int, int]:
 
 
 def wheel_strip(
-    position: float, w: int, h: int, scheme, fnt, digit_h: float, pitch: float, curve: float
+    position: float, w: int, h: int, scheme, fnt, digit_h: float, pitch: float, curve: float, crossed: bool = False
 ) -> Image.Image:
-    """The visible part of one wheel, ``h`` tall, digits rolling by ``position``."""
+    """The visible part of one wheel, ``h`` tall, digits rolling by ``position``. ``crossed``: sevens
+    with a bar across the stem, as on many European meters."""
     bg, fg = scheme
     big_h = int(h * 2.2)
     strip = Image.new("RGB", (w, big_h), bg)
@@ -69,6 +70,9 @@ def wheel_strip(
         digit = (base + step) % 10
         y = cy + (base + step - position) * pitch
         d.text((w / 2, y), str(digit), font=fnt, fill=fg, anchor="mm")
+        if crossed and digit == 7:
+            bar = max(1, round(digit_h * 0.08))
+            d.line((w / 2 - digit_h * 0.2, y, w / 2 + digit_h * 0.12, y), fill=fg, width=bar)
     # cylinder: rows far from the centre are compressed (sample with arcsin)
     arr = np.asarray(strip)
     out_h = h

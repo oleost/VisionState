@@ -1,9 +1,16 @@
 """Train the wheel position model.
 
 python train.py <out-name> <set>:<weight> [<set>:<weight> ...] [--epochs N] [--dryad-orient model.pt]
+                [--input 32|64] [--width 16] [--ema 0.999] [--seed 0] [--teacher tag --alpha 0.5]
 
 Sets are data/<set>.npz. A weight is the share of each batch drawn from that set.
-"dryad_train" needs --dryad-orient (a model that picks each crop's orientation) or uses upright.
+Dryad sets need --dryad-orient (a model that picks each crop's orientation) or use upright; the
+orientation is picked on the one-cell set dryad_train and kept for dryad_train_ctx too.
+--input 64: cells with context (context.py); --ema keeps an exponential average of the weights.
+--teacher: distillation (distill.py wrote data/<set>_t_<tag>.npz; a _ctx set reads its one-cell
+twin's); the loss is alpha x the label's interval loss + (1 - alpha) x cross entropy with the
+teacher's probabilities. A set without targets trains on its labels only.
+Saves runs/<out-name>.pt: {"state", "width", "input"}.
 """
 
 import argparse
@@ -21,7 +28,7 @@ DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class WheelNet(nn.Module):
-    def __init__(self, width: int = 32):
+    def __init__(self, width: int = 32, input_w: int = 32):
         super().__init__()
         c = width
 
@@ -45,7 +52,7 @@ class WheelNet(nn.Module):
             block(4 * c, 4 * c),
         )
         self.head = nn.Sequential(
-            nn.Flatten(), nn.Dropout(0.2), nn.Linear(4 * c * 6 * 4, 256), nn.ReLU(inplace=True), nn.Linear(256, BINS)
+            nn.Flatten(), nn.Dropout(0.2), nn.Linear(4 * c * 6 * (input_w // 8), 256), nn.ReLU(inplace=True), nn.Linear(256, BINS)
         )
 
     def forward(self, x):  # x: N x 1 x H x W in 0..1
@@ -106,16 +113,28 @@ def interval_logp(logp: np.ndarray, mid: np.ndarray, half: np.ndarray) -> np.nda
     return np.log(np.maximum(1e-12, (np.exp(logp) * mask).sum(axis=1)))
 
 
-def orient_dryad(d: dict, model) -> dict:
-    """Keep the orientation of each crop the model finds more likely."""
+def load_model(path, width: int | None = None, device: str = DEV) -> "WheelNet":
+    """A model saved by train.py (or a plain state dict of the given width, as wheels-v1's)."""
+    state = torch.load(path, map_location=device)
+    if "state" in state:
+        model = WheelNet(state["width"], state["input"])
+        state = state["state"]
+    else:
+        model = WheelNet(width or 32)
+    model.load_state_dict(state)
+    return model.to(device).eval()
+
+
+def dryad_turned(model) -> np.ndarray:
+    """Per Dryad training photo, whether the model finds it more likely turned (1) than upright."""
+    d = load("dryad_train")
     lp = interval_logp(predict(model, d["X"]), d["mid"], d["half"])
     keys = d["img"] * 2 + d["rot"]
     score = np.bincount(keys, weights=lp, minlength=keys.max() + 1)
     n_img = d["img"].max() + 1
     best_rot = (score[1::2][:n_img] > score[0::2][:n_img]).astype(int)
-    keep = d["rot"] == best_rot[d["img"]]
     print(f"dryad: {best_rot.mean():.1%} of crops turned")
-    return {k: v[keep] for k, v in d.items()}
+    return best_rot
 
 
 def main():
@@ -127,28 +146,43 @@ def main():
     ap.add_argument("--batch", type=int, default=512)
     ap.add_argument("--width", type=int, default=32)
     ap.add_argument("--dryad-orient")
+    ap.add_argument("--input", type=int, default=32)
+    ap.add_argument("--ema", type=float, default=0.0)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--teacher")
+    ap.add_argument("--alpha", type=float, default=0.5)
     args = ap.parse_args()
-    torch.manual_seed(0)
-    np.random.seed(0)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     sets = []
+    turned = None
     for spec in args.sets:
         name, w = spec.split(":")
         d = load(name)
+        if args.teacher and (t := HERE / "data" / f"{name.removesuffix('_ctx')}_t_{args.teacher}.npz").exists():
+            d["T"] = np.load(t)["T"]
         if "rot" in d:
             if args.dryad_orient:
-                m = WheelNet(32).to(DEV)  # the orienting model
-                m.load_state_dict(torch.load(args.dryad_orient, map_location=DEV))
-                d = orient_dryad(d, m)
+                if turned is None:
+                    turned = dryad_turned(load_model(args.dryad_orient, 32))
+                d = {k: v[d["rot"] == turned[d["img"]]] for k, v in d.items()}
             else:
                 d = {k: v[d["rot"] == 0] for k, v in d.items()}
+        assert d["X"].shape[2] == args.input, (name, d["X"].shape)
         x = torch.from_numpy(d["X"]).to(DEV)
-        sets.append((name, float(w), x, torch.from_numpy(d["mid"]).to(DEV), torch.from_numpy(d["half"]).to(DEV)))
-        print(name, len(x), w)
+        target = torch.from_numpy(d["T"]).to(DEV) if "T" in d else None
+        sets.append((name, float(w), x, torch.from_numpy(d["mid"]).to(DEV), torch.from_numpy(d["half"]).to(DEV), target))
+        print(name, len(x), w, "teacher" if target is not None else "")
     total_w = sum(s[1] for s in sets)
 
-    model = WheelNet(args.width).to(DEV)
+    model = WheelNet(args.width, args.input).to(DEV)
     print("params", sum(p.numel() for p in model.parameters()))
+    ema = None
+    if args.ema:
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(args.ema), use_buffers=True)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
     total = args.epochs * args.steps
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=total, pct_start=0.1)
@@ -157,23 +191,39 @@ def main():
         model.train()
         losses = []
         for _ in range(args.steps):
-            xs, ms, hs = [], [], []
-            for _name, w, x, m, h in sets:
+            xs, ms, hs, ts = [], [], [], []
+            for _name, w, x, m, h, t in sets:
                 k = max(1, round(args.batch * w / total_w))
                 idx = torch.randint(0, len(x), (k,), device=DEV)
                 xs.append(x[idx])
                 ms.append(m[idx])
                 hs.append(h[idx])
+                ts.append(t[idx].float() if t is not None else None)
             xb = augment(torch.cat(xs).float().div(255)[:, None])
-            loss = interval_loss(model(xb), torch.cat(ms), torch.cat(hs))
+            logits = model(xb)
+            if any(t is not None for t in ts):
+                # rows without targets learn from their labels only
+                has = torch.cat([torch.full((len(x),), t is not None, device=DEV) for x, t in zip(xs, ts, strict=True)])
+                target = torch.cat([t if t is not None else torch.zeros(len(x), BINS, device=DEV) for x, t in zip(xs, ts, strict=True)])
+                logp = F.log_softmax(logits, dim=1)
+                mask = interval_mask(torch.cat(ms), torch.cat(hs))
+                own = -torch.logsumexp(logp.masked_fill(~mask, -1e9), dim=1)
+                soft = -(target * logp).sum(dim=1)
+                loss = torch.where(has, args.alpha * own + (1 - args.alpha) * soft, own).mean()
+            else:
+                loss = interval_loss(logits, torch.cat(ms), torch.cat(hs))
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
             sched.step()
+            if ema is not None:
+                ema.update_parameters(model)
             step += 1
             losses.append(loss.item())
         print(f"epoch {epoch + 1}/{args.epochs} loss {np.mean(losses):.4f}", flush=True)
-    torch.save(model.state_dict(), HERE / "runs" / f"{args.out}.pt")
+    if ema is not None:
+        model = ema.module
+    torch.save({"state": model.state_dict(), "width": args.width, "input": args.input}, HERE / "runs" / f"{args.out}.pt")
 
 
 if __name__ == "__main__":

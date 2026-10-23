@@ -28,7 +28,8 @@ BOL_LABELS = {
 }  # fmt: skip
 
 
-def pedromfa(folder: str, only: set[int] | None = None):
+def pedromfa(folder: str, only: set[int] | None = None, whole: bool = False):
+    """``whole``: the exported image and where the region is in it, instead of the region."""
     data = json.loads((LOCAL / folder / "readings.json").read_text(encoding="utf-8"))
     for r in data["readings"]:
         i = int(r["file"][-8:-4])
@@ -39,12 +40,14 @@ def pedromfa(folder: str, only: set[int] | None = None):
         v = float(r["right_value"] or r["value"])
         if v > 10000:
             v /= 1000
-        yield (
-            f"{folder}/{i:04d}",
-            7,
-            float(round(v * 1000)),
-            export_region(Image.open(LOCAL / folder / r["file"]).convert("RGB"), r.get("box")),
-        )
+        image = Image.open(LOCAL / folder / r["file"]).convert("RGB")
+        if whole:
+            from context import centre_box
+
+            region = (image, r.get("box") or centre_box(image))
+        else:
+            region = export_region(image, r.get("box"))
+        yield f"{folder}/{i:04d}", 7, float(round(v * 1000)), region
 
 
 def bolausson(meter: str, first_only: bool = True):

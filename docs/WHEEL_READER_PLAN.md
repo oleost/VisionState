@@ -88,9 +88,10 @@ finds most likely (§7: it made things worse).
 
 ## 3. The benchmark
 
-Built in `VisionStateLocal/wheel/v2/` (data and scripts never go into the repository; a set's
-images may only become test assets when they are CC0). To be moved into
-[`tools/wheelreader`](../tools/wheelreader/README.md) with the next model.
+The scripts are in [`tools/wheelreader`](../tools/wheelreader/README.md) (`bench.py`,
+`exports.py`); the sets live in `VisionStateLocal/wheel/` and never go into the repository (a
+set's images may only become test assets when they are CC0). The sets of the new exports are
+`ole_a`, `ole_b`, `ped_a` and `ped_b`, and their twins with labels read by eye (`_eye`, §4.1).
 
 | Set | Source | Use |
 |---|---|---|
@@ -159,6 +160,23 @@ only a little better and worse on any point). What was learnt on the way:
 - **Run-to-run spread is as large as most differences** (3–5 points on the hard period), and the
   counts that decide (wrong published values) are small (2 against 3–5): three runs cannot tell
   them apart well (§4.2, step 1).
+
+**On the new exports** (the maintainer's and pedromfa's of 2026-10-23, from 0.8.0 on, each split
+in two periods `a` and `b`; leaving one meter out):
+
+- **Labels read by eye.** The chain labels of §5 were too wide to judge a model by (median 8
+  steps, 3–18 % exact). All 1,305 test frames were read by eye instead: one value, or two
+  neighbours when the last wheel stands between digits; 4 frames nobody can read are left out.
+  Five of these readings were wrong at first, all caught where the readers were sure and the
+  frame, zoomed in, agreed with them.
+- **One network pair is still not steady.** Five training runs trained on chain labels published
+  16, 3, 2, 0 and 0 wrong values on the maintainer's first period (wheels-v1: 3); trained on the
+  labels read by eye, three runs published 1, 3 and 0, and one run was worse than wheels-v1 on two
+  of the four sets.
+- **An ensemble is.** The average of five runs (or three) published **no wrong value on any of the
+  four sets** (wheels-v1: 3, 2, 1 and 0), read more frames right (maintainer `a`: 97.8 % of the
+  runs of frames against 93.0 %; the paired interval +1.5 to +8.5 points) and published more.
+  It costs one pair per run, hence distillation (§4.2, step 4).
 
 ### 4.2 How the next model is trained
 
@@ -275,6 +293,8 @@ most:
 - **Weight averaging (EMA)** for the context net: no steadier.
 - **Averaging shifted crops** at read time: no gain on most sets, 3–8× the work.
 - **A wider model, and drawn off-centre cells without context**: no gain.
+- **Decoding over the time series** (§4.2, step 2; `temporal.py`): no gain for the pair; the gain
+  it showed for wheels-v1 came from tuning its cost on the same frames it was measured on.
 - **Weakest-wheel confidence for wheels-v1 on its own:** it works (§1), but it comes with
   the next model instead of as a separate setting for v1 (the maintainer's call, 2026-10-23).
 
@@ -301,13 +321,15 @@ most:
 | Step | Builds on | Size | Gives | Status |
 |---|---|---|---|---|
 | Export: where the region is in the image (`"box"`) | — | small | correct cells from every export | **done** |
-| Benchmark, labels, replay, geometry cases (§3) | — | small | a fair measure | **done** locally; into `tools/wheelreader` with the next model |
+| Benchmark, labels, replay, geometry cases (§3) | — | small | a fair measure | **done** (`tools/wheelreader`) |
 | Counters name their wheel reader; context and confidence kinds in the app (§4.3) | — | medium | a new model without changing existing counters | **done** (0.10.1b1) |
 | wheels-v2 pair, leaving one meter out (§4.1) | benchmark | medium | robust to regions that do not fit | **done**, not released (wrong published values) |
-| New exports from 0.8.0 on, maintainer and pedromfa (§4.2) | 0.10.1b1 | small | correct cells, fresh frames to test on | next |
-| Measurement: five runs, paired comparison, repeats once (§4.2, 1) | benchmark | small | decisions that are not noise | planned |
-| Decoder over the time series (§4.2, 2) | measurement | medium | fewer wrong published values, for v1 too | planned |
-| Labels, loss, calibration; distillation; cylinder wheels (§4.2, 3–5) | measurement | medium | the next model | planned |
+| New exports from 0.8.0 on, maintainer and pedromfa (§4.2) | 0.10.1b1 | small | correct cells, fresh frames to test on | **done**; test labels read by eye (§4.1) |
+| Measurement: five runs, paired comparison, repeats once (§4.2, 1) | benchmark | small | decisions that are not noise | **done** |
+| Decoder over the time series (§4.2, 2) | measurement | medium | fewer wrong published values, for v1 too | **dropped** (§7) |
+| Ensemble of training runs (§4.1) | measurement | small | no wrong published value on any set | **done**, too slow to ship as it is |
+| Distillation of the ensemble into one pair (§4.2, 4) | ensemble | medium | the ensemble's results at the app's cost | **in progress** (`distill.py`) |
+| Labels, loss, calibration; cylinder wheels (§4.2, 3, 5) | measurement | medium | the next model | planned |
 | Ask for shared meters (§6) | export | ongoing | the data everything else is limited by | next |
 | The rest of §8 | real cases | — | — | when a case asks for it |
 

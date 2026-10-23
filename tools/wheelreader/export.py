@@ -9,12 +9,10 @@ import onnxruntime as ort
 import torch
 
 from common import CELL_H, CELL_W
-from train import WheelNet
+from train import load_model
 
 pt, width = Path(sys.argv[1]), int(sys.argv[2])
-m = WheelNet(width)
-m.load_state_dict(torch.load(pt, map_location="cpu"))
-m.eval()
+m = load_model(pt, width, "cpu")
 out = pt.with_suffix(".onnx")
 torch.onnx.export(
     m,

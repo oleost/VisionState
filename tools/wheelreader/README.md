@@ -70,6 +70,25 @@ $PY evaluate.py ../../VisionStateLocal/wheel/runs/wheels.pt --width 16 --shift 2
   `items.py` also knows local test-only sets that are not redistributable (GPL), which are
   skipped when they are missing.
 
+## Candidates and the benchmark
+
+The next model (a one-cell net and a context net read together, `context.py`) is built and
+measured with these; each script's docstring says how to run it:
+
+| Script | Does |
+|---|---|
+| `rows.py` | drawn rows of wheels, so a cell can sit off-centre with its neighbour in view |
+| `exports.py` | labels and cells from a shared export (only readings with `"box"`); `eye.json` and `frames.json` in the export folder hold labels read by eye |
+| `bench.py` | the benchmark: `eval` (with a replay through *went down* and the change limit), `geometry` (the region's edges moved) and `compare` (paired, with a bootstrap interval); a model spec of several `.pt` files joined with `+` is an ensemble |
+| `distill.py` | an ensemble's probabilities on the training sets, for `train.py --teacher` |
+| `temporal.py` | decoding over the time series instead of frame by frame |
+| `fit_boxes.py` | regions fitted to the labels (dropped: the export says where the region was) |
+| `export_v2.py` | the pair as one ONNX file with a second output, the embedding |
+
+A candidate is measured **leaving one meter out**: trained without the meter it is tested on,
+several training runs (`--seed`), each compared with wheels-v1 on the same frames. Results and
+what was tried are in the plan.
+
 What is planned next (benchmark, wheels-v2 and more): [`docs/WHEEL_READER_PLAN.md`](../../docs/WHEEL_READER_PLAN.md).
 
 A new model is a new registry entry (`readers.json`, `wheel_readers`) with a new id, hosted on
