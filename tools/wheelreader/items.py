@@ -43,7 +43,7 @@ def pedromfa(folder: str, only: set[int] | None = None):
             f"{folder}/{i:04d}",
             7,
             float(round(v * 1000)),
-            export_region(Image.open(LOCAL / folder / r["file"]).convert("RGB")),
+            export_region(Image.open(LOCAL / folder / r["file"]).convert("RGB"), r.get("box")),
         )
 
 

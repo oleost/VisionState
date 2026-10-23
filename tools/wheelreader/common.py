@@ -28,7 +28,11 @@ def split_cells(region: Image.Image, digits: int) -> list[Image.Image]:
 MARGIN = 0.15  # export margin around the region (settings.READING["export_margin"])
 
 
-def export_region(image: Image.Image) -> Image.Image:
+def export_region(image: Image.Image, box: list[int] | None = None) -> Image.Image:
+    """The region read, out of an exported image: ``box`` from readings.json (format 4), or the
+    middle without the margin (older exports; wrong where the margin was cut off at the frame's edge)."""
+    if box:
+        return image.crop(tuple(box))
     w = image.width / (1 + 2 * MARGIN)
     h = image.height / (1 + 2 * MARGIN)
     x = (image.width - w) / 2

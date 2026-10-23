@@ -107,8 +107,8 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 3  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
-# 3: unchecked rejected readings too, the camera picture's size
+READINGS_FORMAT = 4  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+# 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -144,7 +144,9 @@ https://github.com/oleost/VisionState — say what the display or meter is, if i
 readings.json ("meter"). Look through the images first; share only what you are happy to make
 public. By sharing it you release the images and data as public domain (see LICENSE.txt).
 
-Each image is cut with the region the reading was made in ("region": "as read"). Readings
+Each image is cut with the region the reading was made in ("region": "as read"), with a margin
+that is cut off where the region comes near the edge of the camera picture: "box" is the region
+inside the image, in pixels (left, top, right, bottom). Readings
 from before VisionState 0.8.0 (beta 0.7.1b2) are cut with the region the sensor has now ("region":
 "current"): if the region was moved since, those images may not show the display at all.
 """
@@ -201,8 +203,13 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             frame = imaging.decode(path.read_bytes())
             # Cut with the region it was read in; rows from before that was kept use today's region.
             region_then = "roi" in details
-            box = imaging.region_box(details["roi"] if region_then else current, READING["export_margin"])
+            roi = details["roi"] if region_then else current
+            box = imaging.region_box(roi, READING["export_margin"])
             image = imaging.encode_jpeg(imaging.crop_box(frame, box))
+            # Where the region read sits in the image: the margin is cut off at the frame's edges.
+            width, height = frame.size
+            read, scale = imaging.region_box(roi), (width, height, width, height)
+            inside = [int(read[i] * scale[i]) - int(box[i % 2] * scale[i]) for i in range(4)]
             # Room for readings.json still to come: it compresses to well under a fifth.
             if items and file.tell() + len(image) + listed // 4 + 100_000 > budget:
                 left_out += 1
@@ -221,6 +228,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "date": row.created_at.date().isoformat(),  # the day only
                     "seconds": round((row.created_at - oldest).total_seconds()) if oldest else 0,
                     "region": "as read" if region_then else "current",
+                    "box": inside,
                     "reader": details.get("reader"),
                     "app": details.get("app"),
                     "greyscale": imaging.is_night(frame),

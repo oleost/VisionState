@@ -829,6 +829,10 @@ def test_counter_sensor_flow(settings):
         box = counter_box(7)
         assert crop.width < frame.width * box["w"] * 1.4 and crop.height < frame.height * box["h"] * 1.4
         assert entry["region"] == "as read"
+        # "box" is the region inside the image: the margin around it on every side.
+        left, top, right, bottom = entry["box"]
+        assert 0 < left < right < crop.width and 0 < top < bottom < crop.height
+        assert abs((right - left) - frame.width * box["w"]) <= 1 and abs((bottom - top) - frame.height * box["h"]) <= 1
 
         # Moving the region later does not change how earlier readings are cut: they keep theirs.
         assert item["probs"]["roi"] == view()["roi"]
@@ -851,6 +855,7 @@ def test_counter_sensor_flow(settings):
             row.probs = {k: v for k, v in row.probs.items() if k != "roi"}
         old, size = export_entry()
         assert old["region"] == "current" and size[0] < crop.size[0]
+        assert old["box"][0] == 0  # the region starts at the frame's edge: no margin on the left
         assert client.patch(f"/api/v1/sensors/{sid}", json={"roi": box}).status_code == 200
 
         preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
@@ -1026,7 +1031,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 3 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 4 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.

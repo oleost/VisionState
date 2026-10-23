@@ -1,196 +1,212 @@
 # Wheel reader: plan for better counter readings
 
-The design for improving how VisionState reads **mechanical counters** (rolling digit wheels on
-water and gas meters); what is done and what is next is in the table in §9. It applies to reading sensors with the *counter* display and the wheel reader
-(`counter_reader: "wheels"`). The general design is in [`SCOPE.md`](SCOPE.md), and the model and its
-training are in [`tools/wheelreader`](../tools/wheelreader/README.md).
+How VisionState is to read **mechanical counters** (rolling digit wheels on water and gas meters)
+better: what the shared data shows, what was tried, and what comes next, with its status in §9.
+It applies to reading sensors with the *counter* display and the wheel reader
+(`counter_reader: "wheels"`). The general design is in [`SCOPE.md`](SCOPE.md); the model and how
+to train it are in [`tools/wheelreader`](../tools/wheelreader/README.md).
 
-## 1. Where we are (wheels-v1)
+## 1. What the data shows
 
-- **How it reads.** The region is split into one cell per wheel. A small CNN (565 k parameters,
-  2.2 MB, about 2 ms for 8 wheels on one CPU thread) gives each wheel's position as a distribution
-  over 100 bins (0.0–9.9). `readers.wheel_value` then finds the most likely value whose wheels fit
-  together, from right to left, with one common shift of up to ±2 bins. The last wheel is rounded,
-  and the confidence is the mean probability per wheel.
-- **Training data and results:** [`tools/wheelreader/README.md`](../tools/wheelreader/README.md).
-- **Known weaknesses, with evidence:**
-  - *±1 on the last digit* when the last wheel is about half way. The rounding moves with the
-    per-frame shift (pedro32: 81 exact + 12 at +1).
-  - *Only three real meter types tested.* Gas meters, IR or night images and angled cameras are untested.
-  - *Confidence is only moderately informative.* A threshold that rejects 4 % of the reads catches
-    about half of the wrong ones (Dryad test).
-  - *Wheels at rest sit off their digit, each its own way*, but the decoder allows only one common
-    shift plus ±`wheel_slack_bins`. On oleost1 two black wheels sat at 0.3–0.4 past their digit all
-    day while the others sat at 0.1–0.2. The decoder put them outside the slack, where their
-    probability dropped to 0.02–0.08 although the digit was plain. That one wheel pulled the mean
-    under 0.70, so 22 of the 29 rejected readings were right. A low threshold is not the fix: at 0.56,
-    3–4 of that day's 7 misreads would have passed, one of them too high (585 instead of 565). It can
-    also flip the digit. In one sharp, well-lit frame the black 7 had 0.49 of its mass at 7.2–7.3
-    and 0.21 at 0.2. Only 7.2 fell inside the slack, so the decoder read 032.776 instead of 732.776
-    at confidence 0.84. Only "went down" caught it. See A2.
-  - *Red wheels half way while the water stands still.* All of oleost1's misreads came from the last
-    wheel stopped exactly half way (6½). The neighbouring red 9 or 6 was then read as 8, and the last
-    wheel as 2, 8 or 9. The same hard frame then comes back for as long as nobody draws water.
-  - *Every frame is read on its own.* The last value is only used afterwards, by hard checks
-    (`went down`, `max_step`, `readers.settling`).
-  - *Geometry is assumed:* equal-width cells and a fronto-parallel view.
-  - *A wrong label can hide in the training data* (pedro32/0120 is labelled 628596; the wheels show 7–8).
+**How wheels-v1 reads.** The region is split into one equal cell per wheel. A small CNN (565 k
+parameters, 2.2 MB, about 2 ms for 8 wheels on one CPU thread) gives each wheel's position as a
+distribution over 100 bins (0.0–9.9). `readers.wheel_value` finds the most likely value whose
+wheels fit together, with one common shift of up to ±2 bins; the confidence is the geometric mean
+of the decoded bins.
+
+**The benchmark** (§3) holds about 6,000 readings of four real meters and the Dryad test photos:
+the maintainer's water meter (8 wheels, 3 red, ESP32-CAM; 8 days), pedromfa's (7 wheels, ESP32;
+8 days, shared in issue #40), two bolausson meters and Dryad's 5- and 6-digit meters. Results of
+wheels-v1, region as drawn:
+
+| Set | Right (±1 on the last wheel) | Too high | Note |
+|---|---|---|---|
+| pedromfa, 2 periods | 99.0–99.7 % | 4 + 1 | the replay (§3) of the first period: 3 too high published, 5.3 h blocked |
+| maintainer, 19–22 Oct | 98.0 % | 1 | |
+| maintainer, 14–18 Oct | 86.6 % | 9 | 6.7 h blocked over the 8 days (5 stretches) |
+| bolausson cold / warm | 100 % / 100 % | 0 | |
+| Dryad 5 digits / 6 digits | 99.4 % / 90.2 % | 6 / 26 | right way up |
+
+What goes wrong, in order of harm:
+
+1. **A region that does not fit the wheels.** v1 reads the middle of equal cells, so a region a
+   little wider, narrower or off makes the outer cells show half a wheel. On pedromfa's frames
+   (99–100 % as drawn), with the region's right edge half a cell short v1 read 43–69 % right;
+   with half a cell more on each side, 0–94 % depending on the training run; 10 % taller added up
+   to 9 too-high readings. The maintainer's region cut the last wheel, which caused most of the
+   misreads of 14–18 Oct.
+2. **The last (red) wheel half way, on a meter the model has not seen.** On the maintainer's meter
+   a red wheel between 5 and 6 was read as 7.8–8.0 (two steps too high) or as 2.0; the
+   second-to-last wheel half way between 1 and 2 was read as 5 (734.156 published for about
+   734.120). When the water then stands still, the same hard frame comes back for hours, and a
+   too-high value blocks the sensor until the meter catches up. Three of the five blocked stretches
+   came from a too-high value. In the other two the value was right and the readings after it
+   misread lower.
+3. **A confidence that hides one bad wheel.** The mean over wheels stays high when one wheel is
+   unclear. The weakest wheel's mass within ±0.4 of where the value puts it ("weakest wheel") is a
+   much better signal. Replayed through the counter checks at 0.70, it published 2 wrong instead
+   of 5 on the maintainer's meter (436 instead of 419 published), and 0 instead of 3 on
+   pedromfa's. With 1 % of the accepted readings wrong, 82 % instead of 42 % of the maintainer's
+   readings were accepted; risk–coverage (AURC) was better on Dryad and pedromfa #32 too.
+4. **Dark, striped or noisy frames** (camera glitches) were read as noise; the checks stopped them
+   all, two above the threshold.
+5. **Dryad 6-digit meters** (dirt, blur, fog) are read 83 % exactly.
+
+**Trained candidates** (same recipe, 25 epochs, three training runs each where it mattered; the
+benchmark differs by 3–5 points on the maintainer's hard period and 2 on Dryad 6 between runs of
+the *same* recipe, so smaller differences mean nothing):
+
+| Candidate | Result |
+|---|---|
+| **Cell with context**: each cell plus half a cell on each side, 64×48 input, drawn rows of wheels with the region off by up to 38 % of a cell | **robust to a region that does not fit**: 99–100 % on pedromfa's frames with the region half a cell short or wide, or 10 % taller (v1: 0–94 %); as drawn the same as v1 (within run-to-run spread); 958 k parameters, 3.7 MB, 4.7 ms for 8 wheels on one thread |
+| The same, model twice as wide | no better |
+| One cell, drawn cells with the wheel off-centre and neighbours' digits | no better than v1 |
+| Shared exports as training data (labels: §5) | on the meter's own other period: small gain at most (14–18 Oct 83–89 % → 91 % with 19–22 Oct in training; the other way round no gain) |
+
+**Tried without training, and dropped:** reading 3–8 slightly shifted crops and averaging (a
+small gain on one meter, none on the others); letting the app tune the region by what the model
+finds most likely (§7: it made things worse).
 
 ## 2. Principles
 
-1. **The base model stays general and stable.** Per-sensor tuning is a fallback on top of it, never
-   instead of it, and it can always be switched off.
-2. **Every change is measured** on a fixed benchmark (§3) before it ships. Nothing that adds a
-   reading that is *too high* ships: a too-high value passes the counter checks and blocks the
-   sensor until the meter catches up.
-3. **Only human answers are labels.** The model never trains on its own guesses (confirmation bias:
-   self-training on its own pseudo-labels makes wrong predictions stronger, especially when the
-   images differ from the training data).
+1. **The base model stays general and stable.** Anything per sensor is a fallback on top of it,
+   never instead of it, and it can always be switched off.
+2. **Every change is measured** on the benchmark (§3) before it ships, with at least three training
+   runs. Nothing that adds a reading that is *too high* ships: a too-high value passes the counter
+   checks and blocks the sensor until the meter catches up.
+3. **Labels come from people or from other frames, never from the reading itself.** A reading's
+   label is a person's answer, or the interval between the readings next to it in time that the
+   sequence confirms (§5). A model never trains on its own value for a frame (confirmation bias:
+   self-training on its own pseudo-labels makes wrong predictions stronger).
 4. **Licences:** training data must allow any use (CC0, or CC BY with attribution in the model card
    and a verified source). No NC/ND sets, no sets without a licence.
 5. **No telemetry.** Data only arrives when a user exports it and shares it on purpose.
-6. **The registry rules stay.** A changed model, or changed calibration of a model, gets a new
+6. **The registry rules stay.** A new model, or a changed way to compute its confidence, gets a new
    registry id. Existing sensors keep their behaviour until the user picks the new one, as in
    0.8.0 (counters made before the wheel reader kept the text reader).
 
-## 3. Phase 0 — benchmark and metrics (the base for everything else)
+## 3. The benchmark
 
-**Benchmark** (in `VisionStateLocal/`, never in the repository; any image that can go into the
-repository is CC0 and becomes a test asset):
+Built in `VisionStateLocal/wheel/v2/` (data and scripts never go into the repository; a set's
+images may only become test assets when they are CC0). To be moved into
+[`tools/wheelreader`](../tools/wheelreader/README.md) with wheels-v2.
 
 | Set | Source | Use |
 |---|---|---|
-| `pedro40` 0001–0017 | issue #40 (CC0) | held out (wheels-v1 was trained on it in the end: hold out the *next* export instead) |
+| `ole2_a`, `ole2_b` | the maintainer's export of 2026-10-22 (CC0), split by date: 14–18 Oct / 19–22 Oct | test; `a` may train a candidate that is then tested on `b` only |
+| `ped18_a`, `ped18_b` | pedromfa's export of 2026-10-18 (#40, CC0), up to / after 15 Oct | the same |
+| `pedro40`, `pedro32`, `pedro_esp` | pedromfa's earlier exports (#32, #40) | wheels-v1 was trained on them |
 | `bol_cold`, `bol_warm` | bolausson (GPL-3.0) | test only, never training |
-| `dryad_test` | Dryad (CC0) | test, right way up |
-| `oleost1`, … | the maintainer's water meter (CC0 exports, one per few days from 2026-10-14; ESP32-CAM 1600×1200 with flash, 8 wheels, 3 red) | held out: test only, a meter with wheels sitting off their digits at rest |
-| new shared exports | §5 | **split by meter**: one meter is either training or test, never both |
+| `dryad5`, `dryad6` | Dryad test set (CC0); a third of the photos is upside down, the right way up is kept | test |
+| new shared exports | §6 | **split by meter** (or by date for one meter) |
 
-**Metrics**, reported per set by `tools/wheelreader/evaluate.py`:
+**Labels:**
 
-- **exact** (last digit rounded), **±1**, **too high** (above +1), **too low**.
-- **Risk–coverage:** sort the readings by confidence and plot the error rate of the accepted
-  readings against the share accepted. The default threshold is then picked for a target such as
-  "at most 1 % of accepted readings wrong", and its coverage (how many are accepted) is reported.
-  The area under the curve (AURC) gives one number to compare models and decoders.
-- **Calibration:** expected calibration error (ECE). Readings are grouped by confidence, and in
-  each group the share that is right is compared with the mean confidence.
-- **Sequence metrics** for exports that are a time series: published value right, number of
-  rejections, longest stretch blocked by a too-high value.
+- A person's answer (checked readings) gives the value.
+- Every other reading gets the interval between the trusted readings before and after it in time.
+  Trusted readings are the checked ones, plus the accepted readings on the longest non-decreasing
+  chain of checked and accepted values (checked ones weigh most).
+- Where a stretch was blocked (a run of "went down"), the frames were looked at and labelled by
+  eye.
 
-**Gate for a new model or decoder:** no set gets more too-high readings, the exact rate on unseen
-meters does not drop, and AURC on the benchmark is lower.
+The export now says where the region is in each image (`"box"`). Before, a margin cut off at the
+frame's edge put the cells in the wrong place in 94 % of the maintainer's images.
 
-**Label hygiene:** a reading whose label the model strongly disagrees with (very likely value ≠
-label, high confidence) is listed for a person to look at again. That is how pedro32/0120 was
-found. The label is corrected or the image is dropped, never silently.
+**Metrics** per set:
 
-## 4. Phase A — safer decoding (no new training)
+- right (within ±1 on the last wheel), exact, too high;
+- risk–coverage: AURC, and the share accepted at 1 % wrong — for the mean and for the
+  weakest-wheel confidence;
+- for the time series: a **replay** through *went down* and the change limit at threshold 0.70.
+  It counts published values, wrong ones and the hours a too-high value stood;
+- **geometry**: the same frames read with the region's edges moved (half a cell short or wide, a
+  quarter cell off, 10 % up, down, taller, shorter).
 
-### A1. The last value as a soft expectation
+**Gate for a model or decoder:** over three training runs, no set gets more too-high readings and
+none drops by more than the run-to-run spread. The geometry cases must not get worse. AURC must
+not rise.
 
-**Why in the decoder and not in the network:** the network sees one wheel. Teaching it time would
-need sequences we do not have, and it could learn to repeat the last value instead of looking.
-In the decoder the expectation can be tested, explained, set per sensor and used with every model.
+## 4. wheels-v2: a cell with context
 
-**Design:**
+**Model.** Each wheel's cell plus half a cell on each side (from the picture around the region,
+not only the region; beyond the picture the edge is repeated), grey from the darkest channel as
+v1, scaled to 64×48 with autocontrast. The CNN is v1's with a wider head, and the output is the
+same 100 position bins, so `readers.wheel_decode` and the counter checks stay. The neighbours in
+view let it find the wheel nearest the middle when the cell is off, and see a wheel that the
+region cuts. A second output gives each cell's embedding (the layer before the bins), so
+*learning per sensor* (§8) can later be built in the app without a new model.
 
-- `wheel_value` gets an optional *prior* over the value V (in last-wheel units, with the fraction):
-  `score(V) = Σ wheels log p(position_i(V)) + log prior(V)`.
-- The prior comes from the last **published** (debounced) value L at time t₀, with elapsed time Δt:
-  - V < L − settling tolerance: −∞ in practice (a very large penalty, so it can still be inspected);
-  - L ≤ V ≤ L + R·Δt + slack: flat, with a mild preference for small steps (an exponential
-    in V − L);
-  - above that, a steep penalty.
-- **R (largest plausible rate):** the sensor's `max_step` per interval when it is set, otherwise
-  learned from its own history (for example 3× the 99th percentile of the accepted rate over 30
-  days, at least a default in `settings.READING`). It is never learned from rejected readings.
-- **Search:** the window [L, L + R·Δt + slack] is usually small (a few hundred last-wheel steps).
-  Every V in it is scored directly (wheels × candidates, microseconds), and also the free
-  optimum without the prior (today's DP). Result:
-  - the free optimum is inside the window: same as today, with a better confidence;
-  - outside the window, but the window's best explains the image almost as well (log-likelihood
-    ratio below a threshold): take the window's best (an unclear wheel settled by the expectation);
-  - outside and clearly better: **do not publish**. Mark the reading as "disagrees with the last
-    value", send it to review and count it.
-- **Protection against lock-in** (a wrong value used as the expectation):
-  - only debounced, published values become L;
-  - N readings in a row that clearly disagree with L, *and agree with each other*, release the
-    prior. They are treated as a new start, which also covers a replaced or reset meter. This is
-    shown in the History as an event and on the Live tab. The counter limit decided otherwise for
-    now (readings that agree never override it, `docs/SCOPE.md`): a release would wait for Review;
-  - after a restart, L is the last value from the history (as today), but its age counts: an old L
-    gives a wide window.
-- **UI and history:** a new reason, `disagrees_with_last` (lower-case key for the "problem" entity),
-  and the Live tab shows "read as … (expected … – …)".
-- **Tests:** a pure unit test of the prior and the window decision (drawn positions); integration
-  tests that replay sequences (one blurry wheel settled by the prior; a meter that is replaced
-  releases the prior after N readings; a too-high value is never published).
-- **Measure:** the sequence metrics on the exports, before and after.
+**Data:**
 
-### A2. A confidence that means what it says
+- drawn rows of five wheels, cut as the app cuts a region that is off by up to 38 % of a cell,
+  with dividers, neighbours in other colours and printed text above or below the windows; the
+  photometric steps of `synth.py`;
+- Dryad training crops (each photo's orientation as for v1);
+- pedromfa #32/#40 and every shared export with labels as in §3, split by meter;
+- still to add: red wheels half way (the maintainer's frames of 14–18 Oct are the cases), IR and
+  night frames, and fogged glass.
 
-- **Problem:** the mean per-wheel probability is not the chance that the whole reading is right.
-  Networks are also often over-confident (Guo et al. 2017).
-- **Temperature scaling:** divide the logits by one temperature T, fitted on the benchmark's
-  held-out real images. This changes the confidence, not the reading.
-- **Reading-level confidence:** use the decoder's alternatives: P(best V) / Σ P(top-k V) (a
-  normalised margin between the best value and its nearest rivals, typically ±1 on a wheel), not the
-  mean per wheel. The k-best come from the DP (keep the top few per state) or from the A1 window.
-- **A wheel at rest counts by its whole digit**, not by the one bin the common shift puts it at: its
-  probability is the mass within about ±0.45 of its digit. The **weakest wheel** also counts on its
-  own, not only through the mean. On oleost1 (§1), with only the exported top three per wheel, the
-  right readings came out at 0.94–0.99 with their weakest wheel mostly ≥ 0.8. The misreads had a
-  weakest wheel of 0.14–0.43. "Weakest wheel under about 0.5 → unsure" would have passed nearly all
-  right readings and caught every misread, including the one that was published (last wheel read
-  as 2 at 0.44). This is to be measured with the full 100-bin output on the whole benchmark, set
-  against the value margin above.
-- **Pick the default threshold** from the risk–coverage curve (§3). The UI text stays "at least
-  70 % sure", but 70 % then really means 70 %.
-- **Registry:** T belongs to the model, so a calibrated wheels-v1 is a new entry
-  (`wheels-v1c`, same file and SHA-256, plus `"temperature"`). Sensors keep their old behaviour until chosen
-  (registry rule; `confidence: "wheel-mean"` versus `"value-margin"`).
+**Confidence:** the weakest wheel (§1, point 3), part of the registry entry
+(`"confidence": "weakest"`), with the threshold picked from the risk–coverage curve so that the
+UI's "at least 70 % sure" means about that. v1 keeps its mean.
 
-### A3. The last wheel's fraction
+**App:**
 
-- The decoder already knows the last wheel is at, say, 9.8. A sensor option "**one more decimal from the last
-  wheel**" (wheel reader only) publishes V with one decimal more, for a smoother rate entity and
-  earlier leak detection.
-- The settling rule (`readers.settling`) and the "went down" check work on V with a tolerance of a
-  few tenths, not one whole step.
-- Off by default (entity precision and the Energy dashboard change), with a hint in the reading editor.
+- The cells are cut from the frame, not from the cropped region. `engine.models` passes the frame
+  and the region today's code crops, and the new cutting takes the context from the frame.
+- New registry fields for the input and context (`cell_width` 64, a context share), and the
+  confidence kind. `readers.wheel_cells` stays for v1.
+- "What the reader saw" shows the cells with their context dimmed.
+- The wheel model becomes a per-sensor setting. Today every counter uses
+  `readers.DEFAULT_WHEEL_READER`. A counter stored without the setting is read as wheels-v1 (a
+  database step, as for `counter_reader`), a new counter gets v2, and the reading editor offers
+  the switch (as for the text reader → wheel reader in 0.8.0). The setting goes into sensor
+  exports too.
+- Both models are bundled: v2 as the default (3.7 MB), and v1 because released entries never
+  change and counters still use it (2.2 MB). Bundled only means the file is in the image. A model
+  is loaded into memory when the first counter that uses it reads, and released when the last
+  one is deleted or switched.
 
-## 5. Phase B — better data in
+**Before release:**
 
-### B1. The export ("Export readings") — done
+- three training runs pass the gate;
+- the model is checked against real photos in the tests (registry rule: the drawn e2e counter
+  and the CC0 test images);
+- timed on a real Raspberry Pi 4 (v1 2.3 ms and v2 4.7 ms for 8 wheels on one desktop thread;
+  the Pi is slower);
+- a model card with the data and its licences.
 
-Built in 0.8.0; what it contains is in [`SCOPE.md`](SCOPE.md) §12. Decisions that differ from the
-first plan (2026-10-10):
-- the light is recorded per reading automatically (greyscale picture, and whether VisionState had
-  the sensor's light on) instead of a flag in the dialog;
-- frames are **not** deduplicated in the app — a reading of the same frame is still a reading; the
-  training tools remove duplicate images (§B4);
-- the unchecked readings, accepted and rejected, are **always** included (no option, no count
-  limit): the images are what is scarce, and with the rejected ones a sensor's checks can be
-  replayed in order (`seconds`). Their value is the reader's guess, so the tools use them as labels only after
-  a check (§B4);
-- no spot-check button; `spot_rate` is the way to get accepted readings checked;
-- one ZIP of at most 24 MB (GitHub's limit is 25 MB per file), checked readings first, then the
-  newest unchecked ones; what does not fit is counted in `left_out`. Splitting into parts was built
-  and dropped as more than we need now. Images are not scaled down.
+## 5. Labels from shared exports
 
-Privacy: only the region with a small margin, no camera, name or position, and the day only. The
-user looks at the images before sharing (README.txt in the ZIP).
+- An export holds the checked readings and all unchecked ones, accepted or rejected, with
+  `seconds` (`SCOPE.md` §12). From those, every reading gets an interval of values from its
+  neighbours (§3). Every wheel then gets the interval of positions it passes through, widened a
+  little for a wheel at rest. A wheel that may have turned more than half way gets no label (zero
+  loss).
+- The intervals come from other frames, so a reading's own misread never teaches the model
+  (principle 3). The chain can still hold an accepted misread of a step or two. Such a misread
+  only widens the intervals around it.
+- Label check after every training run: a reading whose label the model strongly disagrees with
+  (very likely value ≠ label, high confidence) is listed for a person to look at. That is how
+  pedro32/0120 was found (labelled 628596; the wheels show 7–8). The label is corrected or the
+  image dropped, never silently.
+- Deduplicate a still meter's repeats when they dominate a set, and split by meter (or by date for
+  one meter).
 
-### B2. Collecting
+## 6. Data: the biggest limit
 
-- A pinned GitHub Discussion, "Share your meter", that explains why exports help, how they are
-  used (split by meter; credited in the model card) and that CC0 applies.
-- A Discussions form (or an issue template) with the meter type, camera and light.
-- Most wanted: gas meters (often white on black), electricity meters with a rolling counter, IR or
-  night frames, angled cameras and fogged glass.
+Four real meters are not enough to measure "a meter the model has not seen" well. On the
+maintainer's meter every candidate reads the hard period at 81–89 %, whatever its design. Wanted
+most:
 
-### B3. External data (checked 2026-10)
+- more meters, each exported after a week or two: gas meters (often white on black), electricity
+  meters with a rolling counter, red decimal wheels, IR or night frames, angled cameras, fogged
+  glass;
+- sharing already works (*Quality* → *Export readings*, then a GitHub Discussion; `visionstate/DOCS.md`
+  says how). What is missing is asking for it: a pinned Discussion, "Share your meter", saying
+  which meters are wanted most and how exports are used (split by meter, credited in the model
+  card);
+- external sets checked so far (2026-10):
 
 | Source | Licence | Verdict |
 |---|---|---|
@@ -201,152 +217,64 @@ user looks at the images before sharing (README.txt in the ZIP).
 | UFPR-AMR, Copel-AMR (Laroca et al.) | no open licence found (given out on request for research) | not usable |
 | AI-on-the-edge data and models | no licence (data); non-commercial (project) | ideas only, no data or code |
 
-### B4. Data hygiene
+## 7. Tried and dropped
 
-- Deduplicate by frame. Split by meter (or by date for one meter, as for #40).
-- **Unchecked readings** (`"answer": "unchecked"`) are the reader's own value, so they are never a
-  label as they are (principle 3). They become one after a check: a person looks at them, or the
-  sequence confirms them (a counter only goes up: a value between two confirmed neighbours that
-  fits the rate). Until the tools do that check, they skip them.
-- A label check after every training run (§3).
-- A last wheel stopped half way has two right answers. On oleost1 the same frame was marked right
-  as 596 on some readings and as 597 on others. The tools count either neighbour as right there and
-  keep such cells as interval labels, as the per-sensor labels in §8 do.
-- Collect the half-way red-wheel cells from exports as their own case for wheels-v2 (§7).
-- `VisionStateLocal/README.md` lists the source and licence of every set, as it does now.
+- **Tuning the region by the model's own likelihood** (the region's edges moved until the last K
+  frames decode most likely). On the maintainer's meter it raised the too-high readings from 9 to
+  30. A model is often most sure on a crop it reads wrong, so its likelihood cannot steer the
+  geometry. The context model makes the geometry matter less instead.
+- **Averaging shifted crops** at read time: no gain on most sets, 3–8× the work.
+- **A wider model, and drawn off-centre cells without context**: no gain.
+- **Weakest-wheel confidence for wheels-v1 on its own:** it works (§1), but it comes with
+  wheels-v2 instead of as a separate setting for v1 (the maintainer's call, 2026-10-23).
 
-## 6. Phase C — geometry: let the app correct itself
+## 8. Later, when a case asks for it
 
-The goal: a region that is drawn a little off, or a camera that moves a little, does not hurt.
+- **The last value as a soft expectation** (decoder prior): the window [last value, last + rate ×
+  time] is scored directly; a reading far outside it that the image explains clearly better is
+  not published but sent to Review. It would have stopped 734.156 (+36 steps in four minutes).
+  Two risks: a wrong last value that locks the prior in, and a meter that was replaced. Both need
+  tests that replay sequences.
+- **One more decimal from the last wheel's fraction**: a smoother rate, earlier leak detection;
+  off by default.
+- **Camera drift:** a picture that moved at the same size (phase correlation against a reference
+  frame, numpy FFT). A picture of another size is already caught (readings held, "camera
+  changed", `SCOPE.md` §5).
+- **Four-point perspective correction** for strongly angled cameras: waits for a real angled meter.
+- **Learning per sensor** from checked readings (nearest neighbours on an embedding output): the
+  data so far shows a meter's own frames from another period help little. It waits until shared
+  data says otherwise.
+- **Refuse a frame that is too dark or flat** before reading it, instead of stretching noise into
+  digits.
 
-### C1. A more robust model (training, in wheels-v2)
+## 9. Order and status
 
-Drawn cells with perspective, rotation of ±5°, cells of unequal width, a neighbouring wheel
-showing at the side and wheels that sit a little off each other at rest.
-
-### C2. Calibration per sensor (no training)
-
-- In the background, every so often (for example after 50 readings, and after the region is
-  changed), the app takes the last K frames of the sensor and tries small changes to how the region
-  is read:
-  - vertical offset ±10 %;
-  - height scale ±10 %;
-  - rotation ±3°;
-  - cell borders moved ±10 % one by one, or as a linear stretch (cells of unequal width);
-  - a rest offset per wheel: where each wheel that is not turning sits relative to its digit, found
-    over the K frames (on oleost1 it was +0.3 for two wheels and +0.1 for the rest, the same all day).
-- It keeps the change with the best total decode score over the K frames. Cost: K × changes ×
-  about 2 ms; a coarse-to-fine search keeps it to a few seconds on a Pi.
-- **The result** is stored with the sensor (`reading.calibration`, reset when the region or the
-  number of digits changes).
-  - A small change is used straight away and shown on the Live tab.
-  - A large change is offered: "The digits sit a little lower than the region. Adjust?", with a
-    before/after image.
-- It **replaces the per-frame shift** in time: a fixed offset per sensor gives a stable last digit
-  and removes most ±1 readings (§1).
-- Tests: drawn counters with a known offset, rotation and cell stretch, where the calibration
-  must find them again; e2e for the suggestion on all three devices.
-
-### C3. Camera drift
-
-For a camera that moves a little over days (a bracket that sags, a door being closed): estimate
-the shift of the region against a reference frame by phase correlation (numpy FFT, sub-pixel, no
-OpenCV) and move the region along. AI-on-the-edge does this with two reference marks the user
-picks. Doing it automatically, on the area around the region, needs no user step. It must check
-the correlation peak and skip frames where it is weak (light changes, IR switching).
-A first real case was oleost1: an ESP32-CAM mount moved on its first day, the region was redrawn
-twice, and the digits still sat at different heights in crops of the same size.
-A camera that comes back with another picture size is already caught without this (readings held,
-"camera changed", [`SCOPE.md`](SCOPE.md) §5); C3 is for a picture that moved at the same size.
-
-### C4. Perspective correction
-
-The manual 4-point correction stays planned for strongly angled cameras (see the earlier
-decision: measure the read rate at real angles first, for example with the user's ESP32 camera, or
-with `fake_camera` given a perspective parameter). C2 can later suggest the four points. Open
-questions: reuse the 4-corner polygon region or a new corner tool (existing sensors must keep
-working), the corner order and orientation, and dragging corners on a phone.
-
-## 7. Phase D — wheels-v2
-
-- **Drawn cells:** whole counter rows drawn in perspective and then cut like the app does;
-  monochrome IR; flash reflections on glass; red wheels stopped half way; fog and drops; DIN-like narrow fonts (OFL); the failure
-  types from phase B.
-- **Context:** the cell plus a strip of each neighbour (or a model that reads the whole row and
-  gives one position per wheel), so carries are seen together. Measure against the per-wheel model.
-- **Test-time augmentation:** read 2–3 slightly shifted crops and average them (a few ms). A small
-  ensemble only if the benchmark shows a clear gain.
-- **Dryad position labels:** fit positions for the Dryad crops with v1 (inside each crop's
-  nearest-digit interval, offline) and train v2 on the sharper labels. This is only for that public
-  training set, anchored by the exactly known drawn wheels, never for user data.
-- **An embedding output** (the layer before the last) as a second ONNX output, for phase E.
-- **Limits:** under 5 MB and under 10 ms per reading on a Raspberry Pi 4. Measure on a real Pi
-  (CI's QEMU check only shows that it runs).
-- **Release:** new id `wheels-v2`, the benchmark gate (§3), and a model card with the data and its licences.
-
-## 8. Phase E — learning per sensor
-
-- **What already exists:** the review queue asks "read correctly / misread, what was it?", and the
-  answer is stored with the frame and the region it was read in (`prediction.read_ok`,
-  `correct_value`, `probs.roi`). The reader does not learn from it today.
-- **Design (like object sensors' taught boxes):**
-  - From every reading checked by hand, the wheels at rest give exact labels (digit d at d.0), and
-    the last wheel gives a ±0.5 interval.
-  - Their embeddings (v2's second output) are kept per sensor.
-  - A new wheel's position probabilities are mixed with a nearest-neighbour vote among that
-    sensor's own wheels. The weight grows with the number of examples and with how well it did on
-    the sensor's own checked readings.
-  - The base model is never changed. The adaptation can be dropped and rebuilt at any time, and
-    it is part of the sensor's data (backup and export).
-- **Safety net:** a leave-one-out check on the sensor's checked readings. The adaptation is used
-  only when it beats the base model there. Otherwise it is off, and the Quality tab says so
-  ("adapted from 23 checked readings · 21 → 23 right").
-- **Asking at the right moment:** a reading where the base model and the adaptation disagree, or
-  the confidence is low (A2), goes to review as "Read as 632.59, not sure — right?". That is the
-  same queue and the same answers, used only for that sensor.
-- **No self-training** on the sensor's own unchecked readings (principle 3).
-
-## 9. Order, size and dependencies
-
-| Phase | Builds on | Size | Gives | Status |
+| Step | Builds on | Size | Gives | Status |
 |---|---|---|---|---|
-| 0 Benchmark | — | small | a fair measure for everything after | planned |
-| A1 Expectation | 0 | medium | far fewer too-high and unclear readings | planned |
-| A2 Calibration | 0 | small | a threshold that means what it says | planned |
-| A3 Extra decimal | — | small | a smoother rate, earlier leak detection | planned |
-| B1 Export v2 | — | small–medium | the data we need, labelled properly | **done, 0.8.0** |
-| B2 Collecting | B1 | ongoing | more meter types | next (issue forms point to Discussions) |
-| C2 Calibration per sensor | 0 | medium | a stable last digit, forgiving regions | planned |
-| C3 Camera drift | C2 | small–medium | sensors survive small camera moves | when a real case asks for it |
-| C4 4-point perspective | real angle tests | medium | angled cameras | waits for a test with a real angled meter |
-| D wheels-v2 | 0, B (data), C1 | large | a better base model | planned |
-| E Learning per sensor | D (embedding), A2 | medium | the last step for an unusual meter | planned |
+| Export: where the region is in the image (`"box"`) | — | small | correct cells from every export | **done** |
+| Benchmark, labels, replay, geometry cases (§3) | — | small | a fair measure | **done** locally; into `tools/wheelreader` with v2 |
+| wheels-v2 data and training (§4) | benchmark | medium | robust to regions that do not fit | three training runs done, gate open |
+| wheels-v2 in the app (§4) | training | medium | the model and the weakest-wheel confidence in use | planned |
+| Ask for shared meters (§6) | export | ongoing | the data everything else is limited by | next |
+| The rest of §8 | real cases | — | — | when a case asks for it |
 
-Update the status column in the same change that builds a phase.
-
-Suggested order: **0 → A1 + A2 (B2 alongside) → A3 → C2 → D → E**,
-with C3 and C4 when real cases ask for them. A and C2 need no new training and help every existing
-counter sensor right away.
+Update the status column in the same change that builds a step.
 
 ## 10. Risks
 
-- **Prior lock-in (A1):** mitigated by publishing only debounced values, releasing the prior after
-  N agreeing disagreements, and showing it. It must be tested on sequences with a deliberately wrong start.
-- **Calibration on little data (A2):** T fitted on a few hundred readings may not carry over to
-  other meters. Refit for each new benchmark and report the ECE per set.
-- **Overfitting to the few meters we have (D):** split by meter, keep unseen meters in the gate,
-  and prefer drawn variety over more images of the same meter.
-- **Self-calibration fooled by a frame without digits (C2/C3)** (night, a hand in front): use only
-  frames with a confident reading, and require an improvement over many frames.
-- **Per-sensor adaptation that learns a mistake (E):** human labels only, the leave-one-out gate
-  and an off switch.
+- **Overfitting to the few meters we have:** split by meter, keep unseen meters in the gate,
+  prefer drawn variety over more images of the same meter, and three training runs per decision.
+- **Labels from sequences:** an accepted misread on the chain widens intervals around it. Wrong
+  labels are found by the label check (§5).
+- **A slower model on small hardware:** v2 does about twice v1's work; measure on a real Pi 4 before
+  release.
+- **Context from outside the region** can bring in something that moves (a hand, a shadow): drawn
+  rows and real exports cover it; watch for it in the label check.
 
 ## 11. References
 
 - Guo, Pleiss, Sun, Weinberger: *On Calibration of Modern Neural Networks*, ICML 2017 —
   [arXiv:1706.04599](https://arxiv.org/abs/1706.04599). Temperature scaling and ECE.
-- Minderer et al.: *Revisiting the Calibration of Modern Neural Networks*, 2021 —
-  [arXiv:2106.07998](https://arxiv.org/pdf/2106.07998). Calibration under distribution shift.
 - Geifman, El-Yaniv: *SelectiveNet: A Deep Neural Network with an Integrated Reject Option*, ICML 2019 —
   [arXiv:1901.09192](https://arxiv.org/abs/1901.09192). Risk–coverage and reject options.
 - Self-training under distribution shift and confirmation bias:
@@ -354,16 +282,13 @@ counter sensor right away.
   [arXiv:2303.10856](https://arxiv.org/pdf/2303.10856).
 - Zhao et al.: *A Comprehensive Dataset for Word-Wheel Water Meter Reading Under Challenging
   Conditions*, Scientific Data 2026 — [PMC13031774](https://pmc.ncbi.nlm.nih.gov/articles/PMC13031774/),
-  data [doi:10.5061/dryad.7d7wm3860](https://doi.org/10.5061/dryad.7d7wm3860) (CC0). It labels
-  half-turned wheels but reports no separate results for them (DenseNet 98.15 % overall).
+  data [doi:10.5061/dryad.7d7wm3860](https://doi.org/10.5061/dryad.7d7wm3860) (CC0).
 - AI-on-the-edge-device documentation (ideas only):
-  [parameters](https://jomjol.github.io/AI-on-the-edge-device-docs/Parameters/) (PreValue,
-  MaxRateValue, ChangeRateThreshold, ExtendedResolution),
+  [parameters](https://jomjol.github.io/AI-on-the-edge-device-docs/Parameters/),
   [correction algorithm](https://jomjol.github.io/AI-on-the-edge-device-docs/Correction%20Algorithm/),
   [alignment with two reference marks](https://jomjol.github.io/AI-on-the-edge-device-docs/Alignment/).
 - Phase correlation for image shifts:
-  [scikit-image registration example](https://scikit-image.org/docs/0.25.x/auto_examples/registration/plot_register_translation.html)
-  (the method; we would write it with numpy FFT).
+  [scikit-image registration example](https://scikit-image.org/docs/0.25.x/auto_examples/registration/plot_register_translation.html).
 - Dataset licences: [Dataset Ninja: Water Meters](https://datasetninja.com/water-meters) (CC BY-NC-ND 4.0),
   [UniDataPro/water-meters](https://huggingface.co/datasets/UniDataPro/water-meters),
   [Roboflow: water meter digits reading](https://universe.roboflow.com/ai-8rgrs/water-meter-digits-reading) (CC BY 4.0).

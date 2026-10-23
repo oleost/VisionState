@@ -365,7 +365,7 @@ times its busiest shower) rejected right readings after a 35-minute update.
   when the size is back, or when the user says the region is right (`POST
   /sensors/{id}/accept-picture`) or draws a new one (both clear the size). Held rather than
   paused, so a camera that comes back at its old size needs nothing. A camera that moved without
-  changing size is not caught by this: that is C3 in `docs/WHEEL_READER_PLAN.md`.
+  changing size is not caught by this: that is *camera drift* in `docs/WHEEL_READER_PLAN.md` §8.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
 `wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
@@ -687,9 +687,10 @@ automatically.
   checked, accepted or rejected (newest first, `"answer": "unchecked"`; never used as labels without a check,
   see `docs/WHEEL_READER_PLAN.md`), whose frame is kept — each only the region it was read in
   plus `export_margin` (the region is kept with every stored reading since 0.7.1b2,
-  `probs["roi"]`; older ones are cut with today's region, `"region": "current"`). One ZIP of at
+  `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
+  region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 3`; 2 left out
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 4`; 3 had no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
@@ -801,7 +802,7 @@ is part of backups and needs no restart.
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
 | **Backup of everything** ✅ | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress; much less memory (no ONNX Runtime arena, classifier without scikit-learn) | 0.10.0 (betas 0.10.0b1–b7) |
-| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Better counter readings** | Benchmark, wheels-v2 (cells with context, weakest-wheel confidence), more shared meters, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
