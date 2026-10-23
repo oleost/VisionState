@@ -61,6 +61,7 @@ the *same* recipe, so smaller differences mean nothing):
 | **Cell with context**: each cell plus half a cell on each side, 64×48 input, drawn rows of wheels with the region off by up to 38 % of a cell | **robust to a region that does not fit**: 99–100 % on pedromfa's frames with the region half a cell short or wide, or 10 % taller (v1: 0–94 %); as drawn the same as v1 (within run-to-run spread); 958 k parameters, 3.7 MB, 4.7 ms for 8 wheels on one thread |
 | The same, model twice as wide | no better |
 | One cell, drawn cells with the wheel off-centre and neighbours' digits | no better than v1 |
+| **One-cell net + context net, leaving one meter out** | better reading and geometry, more wrong published values in some runs: §4.1 |
 | Shared exports as training data (labels: §5) | on the meter's own other period: small gain at most (14–18 Oct 83–89 % → 91 % with 19–22 Oct in training; the other way round no gain) |
 
 **Tried without training, and dropped:** reading 3–8 slightly shifted crops and averaging (a
@@ -89,7 +90,7 @@ finds most likely (§7: it made things worse).
 
 Built in `VisionStateLocal/wheel/v2/` (data and scripts never go into the repository; a set's
 images may only become test assets when they are CC0). To be moved into
-[`tools/wheelreader`](../tools/wheelreader/README.md) with wheels-v2.
+[`tools/wheelreader`](../tools/wheelreader/README.md) with the next model.
 
 | Set | Source | Use |
 |---|---|---|
@@ -98,7 +99,7 @@ images may only become test assets when they are CC0). To be moved into
 | `pedro40`, `pedro32`, `pedro_esp` | pedromfa's earlier exports (#32, #40) | wheels-v1 was trained on them |
 | `bol_cold`, `bol_warm` | bolausson (GPL-3.0) | test only, never training |
 | `dryad5`, `dryad6` | Dryad test set (CC0); a third of the photos is upside down, the right way up is kept | test |
-| new shared exports | §6 | **split by meter** (or by date for one meter) |
+| new shared exports | §6, from VisionState 0.8.0 on only (§4.2) | **split by meter** (or by date for one meter); a candidate is tested leaving its meter out |
 
 **Labels:**
 
@@ -122,58 +123,98 @@ frame's edge put the cells in the wrong place in 94 % of the maintainer's images
 - **geometry**: the same frames read with the region's edges moved (half a cell short or wide, a
   quarter cell off, 10 % up, down, taller, shorter).
 
-**Gate for a model or decoder:** over three training runs, no set gets more too-high readings and
+**Gate for a model or decoder:** over five training runs (§4.2), no set gets more too-high readings and
 none drops by more than the run-to-run spread. The geometry cases must not get worse. AURC must
 not rise.
 
-## 4. wheels-v2: a cell with context
+## 4. The next wheel model
 
-**Model.** Each wheel's cell plus half a cell on each side (from the picture around the region,
-not only the region; beyond the picture the edge is repeated), grey from the darkest channel as
-v1, scaled to 64×48 with autocontrast. The CNN is v1's with a wider head, and the output is the
-same 100 position bins, so `readers.wheel_decode` and the counter checks stay. The neighbours in
-view let it find the wheel nearest the middle when the cell is off, and see a wheel that the
-region cuts. A second output gives each cell's embedding (the layer before the bins), so
-*learning per sensor* (§8) can later be built in the app without a new model.
+### 4.1 Where wheels-v2 stands
 
-**Data:**
+The candidate: a one-cell net and a context net (each cell plus half a cell on each side, 64×48),
+their log probabilities averaged, the weakest-wheel confidence. Measured **leaving one meter out**
+(trained without the meter it is tested on, three training runs), against wheels-v1:
 
-- drawn rows of five wheels, cut as the app cuts a region that is off by up to 38 % of a cell,
-  with dividers, neighbours in other colours and printed text above or below the windows; the
-  photometric steps of `synth.py`;
-- Dryad training crops (each photo's orientation as for v1);
-- pedromfa #32/#40 and every shared export with labels as in §3, split by meter;
-- still to add: red wheels half way (the maintainer's frames of 14–18 Oct are the cases), IR and
-  night frames, and fogged glass.
+| | wheels-v1 | v2, three runs |
+|---|---|---|
+| maintainer 14–18 Oct, right / too high | 86.6 % / 9 | 92.3–93.5 % / 6–10 |
+| maintainer, replay: published / wrong / hours too high | 192 / 2 / 3.2 h | 198–218 / 3–5 / 2.4 h |
+| maintainer, region as drawn, too high | 2 | 3–5 |
+| Dryad 6 digits, right / too high | 90.2 % / 26 | 91.5–94.0 % / 9–16 |
+| region's right edge half a cell in: maintainer / pedromfa | 43 % / 69 % | 64–66 % / 93–99 % |
+| pedromfa #32: share accepted at 1 % wrong | 0.95 (trained on it) | 0.11–0.23 |
+| bolausson cold | 35 of 35 | 34 of 35 in two runs |
 
-**Confidence:** the weakest wheel (§1, point 3), part of the registry entry
-(`"confidence": "weakest"`), with the threshold picked from the risk–coverage curve so that the
-UI's "at least 70 % sure" means about that. v1 keeps its mean.
+Clearly better at reading and at regions that do not fit, but worse on wrong published values and,
+in some runs, on too-high readings: **not released** (the maintainer's rule: nothing ships that is
+only a little better and worse on any point). What was learnt on the way:
 
-**App:**
+- **A model memorises a meter's framing.** Trained on pedromfa's 716 frames, all cut the same way,
+  a region moved a quarter cell read 0 % right (239 too high). Training on the same frames also
+  cut with the region moved at random (8 cuts per frame, up to 38 % of a cell) fixed it (99.6 %).
+- **The context net alone is unstable** between training runs (maintainer 14–18 Oct: 70–91 %);
+  averaging weights (EMA) did not help; the pair with a one-cell net is stable.
+- **The hard case on the maintainer's meter** is a wheel showing 7 with the next digit in view
+  below it, read as 2 or 4. Crossed sevens are now in the drawn rows.
+- **Run-to-run spread is as large as most differences** (3–5 points on the hard period), and the
+  counts that decide (wrong published values) are small (2 against 3–5): three runs cannot tell
+  them apart well (§4.2, step 1).
 
-- The cells are cut from the frame, not from the cropped region. `engine.models` passes the frame
-  and the region today's code crops, and the new cutting takes the context from the frame.
-- New registry fields for the input and context (`cell_width` 64, a context share), and the
-  confidence kind. `readers.wheel_cells` stays for v1.
-- "What the reader saw" shows the cells with their context dimmed.
-- The wheel model becomes a per-sensor setting. Today every counter uses
-  `readers.DEFAULT_WHEEL_READER`. A counter stored without the setting is read as wheels-v1 (a
-  database step, as for `counter_reader`), a new counter gets v2, and the reading editor offers
-  the switch (as for the text reader → wheel reader in 0.8.0). The setting goes into sensor
-  exports too.
-- Both models are bundled: v2 as the default (3.7 MB), and v1 because released entries never
-  change and counters still use it (2.2 MB). Bundled only means the file is in the image. A model
-  is loaded into memory when the first counter that uses it reads, and released when the last
-  one is deleted or switched.
+### 4.2 How the next model is trained
+
+New data first: the maintainer and pedromfa export again with 0.10.1b1 or later, and training and
+tests use **readings from VisionState 0.8.0 on only** (`"region": "as read"`, with `"box"`), so
+every cell is cut where it was read. Then, in this order, each step measured on its own (§3):
+
+1. **Measurement that can decide.** Five training runs instead of three; a per-frame paired
+   comparison (the same frames read by both models) with a bootstrap interval, instead of
+   comparing totals; a still meter's repeats counted once (a frame shown for hours otherwise
+   counts hundreds of times). Without this, a gain and the noise look alike.
+2. **Decoding the time series** (app side, no new model). A counter never goes down and rises at
+   a bounded rate, so the value is decoded over the last frames together (a Viterbi pass over
+   candidate values with monotone steps), not frame by frame. It targets exactly what held v2
+   back: a hard frame that comes back for hours. It helps v1 too, comes as a new registry entry
+   or setting so existing counters keep their behaviour, and is measured with the replay.
+3. **Labels and loss.** The interval loss only asks that the mass lies inside the label's
+   interval. Add a soft circular target inside the interval (most mass near the middle for a wheel
+   at rest), and fit a temperature on held-out meters (Guo et al.), so that "70 % sure" means about
+   that. Weight the frames that matter: a wheel half way, the last wheel, red wheels.
+4. **Teachers into one student (distillation).** Train five networks, then one network of the
+   app's size on their averaged output, restricted to each frame's label interval and
+   renormalised. The labels still come from other frames (principle 3); what the ensemble knows
+   about *where inside* the interval comes along, and the run-to-run spread of a single network
+   shrinks. Frames with a wide label interval then teach too.
+5. **Better drawn wheels.** Today's rows are flat strips. Draw the wheels as cylinders (digits
+   squeezed at top and bottom, curvature, the next digit half in view), with the flash hot spot
+   and glass reflections of an ESP32-CAM, red wheels, IR and fogged glass, and the fonts of real
+   meters. This aims at what no amount of one meter's frames fixes: a meter the model has not seen.
+6. **A pretrained start, last.** Self-supervised pretraining on all unlabelled cells (every export
+   frame and Dryad), then training as now. It helps most when labels are scarce, but fine-tuning
+   can drift towards the few labelled meters when the domains differ (Wang et al.); only worth it
+   if steps 1–5 leave a gap. A large backbone (DINOv2) is too slow per wheel on small hardware.
+
+Not planned: self-training on the model's own readings (principle 3), and a new network design
+before the steps above are measured.
+
+### 4.3 Model and app
+
+The context design stays the base: neighbours in view let the model find the wheel nearest the
+middle when a cell is off, and see a wheel the region cuts. A second output gives each cell's
+embedding (the layer before the bins), so *learning per sensor* (§8) can be built in the app
+without a new model. The app is ready for a second wheel reader: each counter names its own
+(`readers.wheel_reader_of`; counters set up before keep wheels-v1), a model with a second input
+is fed the cells with their neighbours from the frame (`readers.wheel_context_cells`), the
+confidence kind is a registry field, and a wheel reader is loaded on first use and let go when no
+counter reads with it. Both models are bundled once there are two.
 
 **Before release:**
 
-- three training runs pass the gate;
-- the model is checked against real photos in the tests (registry rule: the drawn e2e counter
-  and the CC0 test images);
-- timed on a real Raspberry Pi 4 (v1 2.3 ms and v2 4.7 ms for 8 wheels on one desktop thread;
-  the Pi is slower);
+- five training runs pass the gate (§3) on the new exports, with no case of §4.1 worse than
+  wheels-v1;
+- the model is checked against real photos in the tests (registry rule: the drawn e2e counter and
+  the CC0 test images);
+- timed on a real Raspberry Pi 4 (v1 2.3 ms, the v2 pair about 6.5 ms for 8 wheels on one desktop
+  thread);
 - a model card with the data and its licences.
 
 ## 5. Labels from shared exports
@@ -223,18 +264,22 @@ most:
   frames decode most likely). On the maintainer's meter it raised the too-high readings from 9 to
   30. A model is often most sure on a crop it reads wrong, so its likelihood cannot steer the
   geometry. The context model makes the geometry matter less instead.
+- **Fitting each export stretch's region to its labels** (`tools/wheelreader/fit_boxes.py`): it
+  made the maintainer's 14 Oct worse. Exports now say where the region was instead.
+- **Training on a meter's frames only as they were cut**: the model learns the framing (§4.1);
+  frames are always also cut with the region moved.
+- **Weight averaging (EMA)** for the context net: no steadier.
 - **Averaging shifted crops** at read time: no gain on most sets, 3–8× the work.
 - **A wider model, and drawn off-centre cells without context**: no gain.
 - **Weakest-wheel confidence for wheels-v1 on its own:** it works (§1), but it comes with
-  wheels-v2 instead of as a separate setting for v1 (the maintainer's call, 2026-10-23).
+  the next model instead of as a separate setting for v1 (the maintainer's call, 2026-10-23).
 
 ## 8. Later, when a case asks for it
 
-- **The last value as a soft expectation** (decoder prior): the window [last value, last + rate ×
-  time] is scored directly; a reading far outside it that the image explains clearly better is
-  not published but sent to Review. It would have stopped 734.156 (+36 steps in four minutes).
-  Two risks: a wrong last value that locks the prior in, and a meter that was replaced. Both need
-  tests that replay sequences.
+- **The last value as an expectation** is now step 2 of §4.2. What stays here: a reading far
+  outside it that the image explains clearly better is not published but sent to Review. It would
+  have stopped 734.156 (+36 steps in four minutes). Risks for both: a wrong last value that locks
+  the prior in, and a meter that was replaced; both need tests that replay sequences.
 - **One more decimal from the last wheel's fraction**: a smoother rate, earlier leak detection;
   off by default.
 - **Camera drift:** a picture that moved at the same size (phase correlation against a reference
@@ -252,9 +297,13 @@ most:
 | Step | Builds on | Size | Gives | Status |
 |---|---|---|---|---|
 | Export: where the region is in the image (`"box"`) | — | small | correct cells from every export | **done** |
-| Benchmark, labels, replay, geometry cases (§3) | — | small | a fair measure | **done** locally; into `tools/wheelreader` with v2 |
-| wheels-v2 data and training (§4) | benchmark | medium | robust to regions that do not fit | three training runs done, gate open |
-| wheels-v2 in the app (§4) | training | medium | the model and the weakest-wheel confidence in use | planned |
+| Benchmark, labels, replay, geometry cases (§3) | — | small | a fair measure | **done** locally; into `tools/wheelreader` with the next model |
+| Counters name their wheel reader; context and confidence kinds in the app (§4.3) | — | medium | a new model without changing existing counters | **done** (0.10.1b1) |
+| wheels-v2 pair, leaving one meter out (§4.1) | benchmark | medium | robust to regions that do not fit | **done**, not released (wrong published values) |
+| New exports from 0.8.0 on, maintainer and pedromfa (§4.2) | 0.10.1b1 | small | correct cells, fresh frames to test on | next |
+| Measurement: five runs, paired comparison, repeats once (§4.2, 1) | benchmark | small | decisions that are not noise | planned |
+| Decoder over the time series (§4.2, 2) | measurement | medium | fewer wrong published values, for v1 too | planned |
+| Labels, loss, calibration; distillation; cylinder wheels (§4.2, 3–5) | measurement | medium | the next model | planned |
 | Ask for shared meters (§6) | export | ongoing | the data everything else is limited by | next |
 | The rest of §8 | real cases | — | — | when a case asks for it |
 
@@ -266,8 +315,8 @@ Update the status column in the same change that builds a step.
   prefer drawn variety over more images of the same meter, and three training runs per decision.
 - **Labels from sequences:** an accepted misread on the chain widens intervals around it. Wrong
   labels are found by the label check (§5).
-- **A slower model on small hardware:** v2 does about twice v1's work; measure on a real Pi 4 before
-  release.
+- **A slower model on small hardware:** the v2 pair does about three times v1's work; measure on
+  a real Pi 4 before release.
 - **Context from outside the region** can bring in something that moves (a hand, a shadow): drawn
   rows and real exports cover it; watch for it in the label check.
 
@@ -277,6 +326,13 @@ Update the status column in the same change that builds a step.
   [arXiv:1706.04599](https://arxiv.org/abs/1706.04599). Temperature scaling and ECE.
 - Geifman, El-Yaniv: *SelectiveNet: A Deep Neural Network with an Integrated Reject Option*, ICML 2019 —
   [arXiv:1901.09192](https://arxiv.org/abs/1901.09192). Risk–coverage and reject options.
+- Hinton, Vinyals, Dean: *Distilling the Knowledge in a Neural Network*, 2015 —
+  [arXiv:1503.02531](https://arxiv.org/abs/1503.02531). Teachers into one student.
+- Kim, Chung, Jang: *Calibration of Ordinal Regression Networks*, 2024 —
+  [arXiv:2410.15658](https://arxiv.org/abs/2410.15658). Soft ordinal targets and calibration.
+- Wang et al.: *Self-Tuning for Data-Efficient Deep Learning*, ICML 2021 —
+  [arXiv:2102.12903](https://arxiv.org/abs/2102.12903). Pretraining and fine-tuning drift with
+  few labels across domains.
 - Self-training under distribution shift and confirmation bias:
   [arXiv:2411.00586](https://arxiv.org/html/2411.00586v1),
   [arXiv:2303.10856](https://arxiv.org/pdf/2303.10856).
