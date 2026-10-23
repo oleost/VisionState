@@ -264,7 +264,7 @@ most:
   frames decode most likely). On the maintainer's meter it raised the too-high readings from 9 to
   30. A model is often most sure on a crop it reads wrong, so its likelihood cannot steer the
   geometry. The context model makes the geometry matter less instead.
-- **Fitting each export stretch's region to its labels** (`tools/wheelreader/fit_boxes.py`): it
+- **Fitting each export stretch's region to its labels** (by the model's likelihood of them): it
   made the maintainer's 14 Oct worse. Exports now say where the region was instead.
 - **Training on a meter's frames only as they were cut**: the model learns the framing (§4.1);
   frames are always also cut with the region moved.
