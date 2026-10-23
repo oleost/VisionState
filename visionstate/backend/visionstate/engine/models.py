@@ -8,10 +8,13 @@ from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
+from sqlalchemy import select
 
 from .. import backbones, detectors, imaging, readers
+from ..db import Sensor
+from ..readers import uses_wheels, wheel_reader_of
 from ..redact import redact
-from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES
+from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES, merge_reading
 from .base import RuntimeBase
 from .logic import filter_detections
 from .training import TrainingMixin
@@ -113,24 +116,38 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         for sensor_id in reading_sensors:
             self.wake(sensor_id, force=True)
 
-    async def ensure_wheel_reader(self) -> readers.WheelReader:
-        """The wheel reader for mechanical counters, loaded on first use (it is bundled)."""
+    async def ensure_wheel_reader(self, reader_id: str) -> readers.WheelReader:
+        """A wheel reader for mechanical counters (each counter names its own), loaded on first use."""
+        spec = readers.WHEEL_READERS.get(reader_id) or readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
         async with self._wheel_reader_lock:
-            if self.wheel_reader is not None:
-                return self.wheel_reader
-            spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+            if (loaded := self.wheel_readers.get(spec.id)) is not None:
+                return loaded
             try:
                 path = self.model_path(spec)
                 if path is None:
                     path = await asyncio.to_thread(backbones.download, spec, self.settings.models_dir)
-                self.wheel_reader = await asyncio.to_thread(readers.WheelReader, spec, path)
+                self.wheel_readers[spec.id] = loaded = await asyncio.to_thread(readers.WheelReader, spec, path)
             except Exception as err:
                 self.wheel_reader_error = redact(str(err))
                 log.exception("Could not load wheel reader %s", spec.id)
                 raise
             self.wheel_reader_error = ""
             log.info("Wheel reader %s loaded", spec.id)
-            return self.wheel_reader
+            return loaded
+
+    def wheel_readers_in_use(self) -> set[str]:
+        """The wheel readers the counters read with."""
+        with self.db.session() as s:
+            stored = s.scalars(select(Sensor.reading).where(Sensor.kind == KIND_READING))
+            return {wheel_reader_of(merge_reading(r)) for r in stored if uses_wheels(merge_reading(r))}
+
+    async def release_wheel_readers(self) -> None:
+        """Let go of the wheel readers no counter reads with any more (deleted, or switched)."""
+        in_use = await asyncio.to_thread(self.wheel_readers_in_use)
+        async with self._wheel_reader_lock:
+            for reader_id in [k for k in self.wheel_readers if k not in in_use]:
+                del self.wheel_readers[reader_id]
+                log.info("Wheel reader %s released", reader_id)
 
     async def read_number(
         self, image: Image.Image, roi: dict | None, reading: dict
@@ -138,12 +155,13 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         """Read the region of ``image``; returns the text and the image the reader used.
 
         The text's ``details`` name the reader that read it (``reader``)."""
-        region = imaging.crop_box(image, imaging.region_box(roi))
-        if reading["display"] == "counter" and reading["counter_reader"] == "wheels":
-            wheels = await self.ensure_wheel_reader()
+        if uses_wheels(reading):
+            wheels = await self.ensure_wheel_reader(wheel_reader_of(reading))
+            box = imaging.pixel_box(image, imaging.region_box(roi))
             async with self._sem:
-                text, used = await asyncio.to_thread(wheels.read_counter, region, int(reading["digits"]))
+                text, used = await asyncio.to_thread(wheels.read_counter, image, int(reading["digits"]), box)
             return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
+        region = imaging.crop_box(image, imaging.region_box(roi))
         reader = await self.ensure_reader()
         async with self._sem:
             text, used = await asyncio.to_thread(

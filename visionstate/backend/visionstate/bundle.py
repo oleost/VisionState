@@ -178,7 +178,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         if sensor is None:
             raise KeyError(sensor_id)
         settings = merge_reading(sensor.reading)
-        wheels = settings["display"] == "counter" and settings["counter_reader"] == "wheels"
+        wheels = readers.uses_wheels(settings)
         mine = (Prediction.sensor_id == sensor_id, Prediction.frame.is_not(None))
         newest = Prediction.created_at.desc()
         rows = [
@@ -243,7 +243,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         manifest = {
             "format": READINGS_FORMAT,
             "app_version": VERSION,
-            "reader": readers.DEFAULT_WHEEL_READER if wheels else reader,
+            "reader": readers.wheel_reader_of(settings) if wheels else reader,
             "meter": meter.strip()[: READING["export_meter_max_chars"]] or None,
             # How the sensor reads; nothing about where it is (no camera, name or region position).
             "settings": {

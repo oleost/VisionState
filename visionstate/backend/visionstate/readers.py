@@ -258,6 +258,9 @@ def decode(probs: np.ndarray, chars: list[str]) -> Text:
 # --- wheel reader (mechanical counters) -------------------------------------------------------------
 
 
+WHEEL_CONFIDENCES = ("mean", "weakest")  # see WheelReader.confidence
+
+
 @dataclass(frozen=True)
 class WheelReaderSpec:
     id: str
@@ -273,10 +276,25 @@ class WheelReaderSpec:
     source: str
     bundled: bool
     footprint: Footprint = field(default_factory=lambda: Footprint())
+    # A model with a second input: every cell again with this share of a cell on each side (the
+    # neighbouring wheels, cut from the whole frame: ``wheel_context_cells``), scaled to
+    # context_width x cell_height. 0 = the cells alone, cut from the region.
+    context: float = 0.0
+    context_width: int = 0
+    # The confidence of a read: "mean" (geometric mean of the wheels' decoded probabilities) or
+    # "weakest" (the weakest wheel's probability near where the value puts it).
+    confidence: str = "mean"
 
     @property
     def filename(self) -> str:
         return f"{self.id}.onnx"
+
+    def __post_init__(self) -> None:
+        # A registry mistake fails at start-up (and in the tests), not at a counter's first read.
+        if self.confidence not in WHEEL_CONFIDENCES:
+            raise ValueError(f"Wheel reader {self.id}: unknown confidence {self.confidence!r}")
+        if self.context < 0 or (self.context > 0) != (self.context_width > 0):
+            raise ValueError(f"Wheel reader {self.id}: context and context_width go together")
 
 
 def load_wheel_registry() -> tuple[str, dict[str, WheelReaderSpec]]:
@@ -297,13 +315,30 @@ def load_wheel_registry() -> tuple[str, dict[str, WheelReaderSpec]]:
             source=v.get("source", ""),
             bundled=bool(v.get("bundled", False)),
             footprint=Footprint.of(v),
+            context=float(v.get("context", 0.0)),
+            context_width=int(v.get("context_width", 0)),
+            confidence=v.get("confidence", "mean"),
         )
         for key, v in raw["readers"].items()
     }
     return raw["default"], specs
 
 
+# A region in a frame in pixels: left, top, right, bottom.
+Pixels = tuple[int, int, int, int]
+
 DEFAULT_WHEEL_READER, WHEEL_READERS = load_wheel_registry()
+
+
+def uses_wheels(reading: dict) -> bool:
+    """Whether a reading sensor's settings read a mechanical counter with a wheel reader."""
+    return reading.get("display") == "counter" and reading.get("counter_reader") == "wheels"
+
+
+def wheel_reader_of(reading: dict) -> str:
+    """The wheel reader a counter reads with: its own (``wheel_reader``), else the default."""
+    chosen = reading.get("wheel_reader")
+    return chosen if chosen in WHEEL_READERS else DEFAULT_WHEEL_READER
 
 
 def wheel_cells(image: Image.Image, digits: int, width: int, height: int) -> np.ndarray:
@@ -317,6 +352,32 @@ def wheel_cells(image: Image.Image, digits: int, width: int, height: int) -> np.
     out = []
     for i in range(max(1, digits)):
         part = grey.crop((round(i * cell), 0, max(round(i * cell) + 1, round((i + 1) * cell)), grey.height))
+        part = ImageOps.autocontrast(part.resize((width, height), Image.Resampling.BILINEAR), cutoff=1)
+        out.append(np.asarray(part, dtype=np.float32) / 255.0)
+    return np.stack(out)
+
+
+def wheel_context_cells(
+    image: Image.Image, box: Pixels, digits: int, width: int, height: int, context: float
+) -> np.ndarray:
+    """The region ``box`` (pixels in ``image``) split into ``digits`` equal cells, each with
+    ``context`` of a cell on both sides, as the wheel model sees them.
+
+    The context comes from the picture around the region (beyond the picture's edge, the edge
+    is repeated), so a wheel the region cuts is still seen whole. Grey, scale and contrast as
+    ``wheel_cells``.
+    """
+    x0, y0, x1, y1 = box
+    count = max(1, digits)
+    cell = (x1 - x0) / count
+    pad = math.ceil(cell * context) + 2
+    grey = np.pad(np.asarray(image.convert("RGB")).min(axis=2), ((0, 0), (pad, pad)), mode="edge")
+    wide = Image.fromarray(grey)
+    out = []
+    for i in range(count):
+        a = round(x0 + (i - context) * cell + pad)
+        b = max(a + 1, round(x0 + (i + 1 + context) * cell + pad))
+        part = wide.crop((a, y0, b, max(y0 + 1, y1)))
         part = ImageOps.autocontrast(part.resize((width, height), Image.Resampling.BILINEAR), cutoff=1)
         out.append(np.asarray(part, dtype=np.float32) / 255.0)
     return np.stack(out)
@@ -383,19 +444,39 @@ def wheel_details(probs: np.ndarray, logp: np.ndarray, value: float, score: floa
 
 
 class WheelReader:
-    """Reads a mechanical counter wheel by wheel: one small ONNX model gives each wheel's position."""
+    """Reads a mechanical counter wheel by wheel: one small ONNX model gives each wheel's position.
+
+    ``image`` and ``box`` below: the frame and the region in it in pixels (no ``box``: the image
+    is the region). Only a model with context (``WheelReaderSpec.context``) looks beyond the region.
+    """
 
     def __init__(self, spec: WheelReaderSpec, model_path: Path):
         self.spec = spec
         self.session = cpu_session(model_path)
-        self.input_name = self.session.get_inputs()[0].name
+        # The cells, then (with context) the cells with their neighbours.
+        self.input_names = [i.name for i in self.session.get_inputs()]
+        # The first output is the positions; a later one (such as each cell's embedding) is not used yet.
+        self.output_name = self.session.get_outputs()[0].name
+        if len(self.input_names) != (2 if spec.context else 1):
+            raise ValueError(f"Wheel reader {spec.id}: the model takes {len(self.input_names)} inputs")
         self._lock = threading.Lock()
 
-    def probabilities(self, image: Image.Image, digits: int) -> np.ndarray:
+    def inputs(self, image: Image.Image, digits: int, box: Pixels | None = None) -> list[np.ndarray]:
+        """What the model is given: the cells, and with context the cells with their neighbours
+        (each cells x height x width, 0..1)."""
+        h = self.spec.cell_height
+        out = [wheel_cells(image.crop(box) if box else image, digits, self.spec.cell_width, h)]
+        if self.spec.context:
+            whole = box or (0, 0, *image.size)
+            out.append(wheel_context_cells(image, whole, digits, self.spec.context_width, h, self.spec.context))
+        return out
+
+    def probabilities(self, image: Image.Image, digits: int, box: Pixels | None = None) -> np.ndarray:
         """The model's probability of every wheel's position (wheels x bins)."""
-        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+        feed = {name: x[:, None] for name, x in zip(self.input_names, self.inputs(image, digits, box), strict=True)}
         with self._lock:
-            logits = np.asarray(self.session.run(None, {self.input_name: cells[:, None]})[0], dtype=np.float64)
+            out = self.session.run([self.output_name], feed)
+        logits = np.asarray(out[0], dtype=np.float64)
         logits -= logits.max(axis=1, keepdims=True)
         probs = np.exp(logits)
         return probs / probs.sum(axis=1, keepdims=True)
@@ -407,19 +488,19 @@ class WheelReader:
         near = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
         return np.log(np.maximum(near, 1e-12))
 
-    def positions(self, image: Image.Image, digits: int) -> np.ndarray:
+    def positions(self, image: Image.Image, digits: int, box: Pixels | None = None) -> np.ndarray:
         """Log probabilities of every wheel's position (wheels x bins), as decoded."""
-        return self.with_slack(self.probabilities(image, digits))
+        return self.with_slack(self.probabilities(image, digits, box))
 
-    def read_counter(self, image: Image.Image, digits: int) -> tuple[Text, Image.Image]:
+    def read_counter(self, image: Image.Image, digits: int, box: Pixels | None = None) -> tuple[Text, Image.Image]:
         """Read ``digits`` wheels; returns the read (all digits, last wheel rounded) and the cells used.
 
         A region drawn a little above or below the digits shifts every wheel alike, so a few
         common shifts are tried (each costs a little) and the most likely reading wins. The
-        confidence is the mean probability per wheel of the positions read. ``details`` keeps
-        how the value was found (``wheel_details``), so it can be checked without the model.
+        confidence is the spec's (``WheelReaderSpec.confidence``). ``details`` keeps how the
+        value was found (``wheel_details``), so it can be checked without the model.
         """
-        probs = self.probabilities(image, digits)
+        probs = self.probabilities(image, digits, box)
         logp = self.with_slack(probs)
         best: tuple[float, float, list[int], int] | None = None
         for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
@@ -432,19 +513,35 @@ class WheelReader:
         number = math.floor(value + 0.5) % 10**digits
         text = Text(
             f"{number:0{digits}d}",
-            math.exp(score / max(1, digits)),
+            self.confidence(probs, score, at, shift),
             {"wheels": wheel_details(probs, logp, value, score, at, shift)},
         )
-        return text, self.cells_image(image, digits)
+        return text, self.cells_image(image, digits, box)
 
-    def cells_image(self, image: Image.Image, digits: int) -> Image.Image:
-        """The cells side by side as the model sees them (for the "what the reader saw" image)."""
-        cells = wheel_cells(image, digits, self.spec.cell_width, self.spec.cell_height)
+    def confidence(self, probs: np.ndarray, score: float, at: list[int], shift: int) -> float:
+        """How sure the read is: "mean" is the geometric mean of the wheels' decoded probabilities;
+        "weakest" the smallest probability of a wheel within ``wheel_weakest_bins`` of where the
+        value puts it (one unclear wheel is not hidden by the clear ones)."""
+        if self.spec.confidence != "weakest":
+            return math.exp(score / max(1, len(at)))
+        bins = probs.shape[1]
+        near = np.arange(-READING["wheel_weakest_bins"], READING["wheel_weakest_bins"] + 1)
+        return float(min(probs[k, (b + shift + near) % bins].sum() for k, b in enumerate(at)))
+
+    def cells_image(self, image: Image.Image, digits: int, box: Pixels | None = None) -> Image.Image:
+        """The cells side by side as the model sees them (for the "what the reader saw" image);
+        with context, the cells with their neighbours faded."""
+        cells = (self.inputs(image, digits, box)[-1] * 255).astype(np.uint8)
+        if self.spec.context:
+            side = round(cells.shape[2] * self.spec.context / (1 + 2 * self.spec.context))
+            faded = (cells * 0.35 + 255 * 0.65).astype(np.uint8)
+            cells[:, :, :side] = faded[:, :, :side]
+            cells[:, :, -side:] = faded[:, :, -side:]
         gap = 2
-        w, h = self.spec.cell_width, self.spec.cell_height
+        h, w = cells.shape[1:]
         line = Image.new("L", (len(cells) * (w + gap) - gap, h), 255)
         for i, cell in enumerate(cells):
-            line.paste(Image.fromarray((cell * 255).astype(np.uint8)), (i * (w + gap), 0))
+            line.paste(Image.fromarray(cell), (i * (w + gap), 0))
         return line.resize((line.width * 2, h * 2), Image.Resampling.NEAREST).convert("RGB")
 
 

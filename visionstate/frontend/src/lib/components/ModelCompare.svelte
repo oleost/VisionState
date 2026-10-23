@@ -15,14 +15,11 @@
   let open = $state(false);
 
   type Kind = (typeof MODEL_KINDS)[number]['key'];
-  const chosen = (kind: Kind) =>
-    ({
-      backbones: info.backbone,
-      detectors: info.detector,
-      face_models: info.face_model,
-      readers: info.reader,
-      wheel_readers: info.wheel_reader,
-    })[kind];
+  // Counters each name their wheel reader, so several can be in use.
+  const chosen = (kind: Kind, id: string) =>
+    kind === 'wheel_readers'
+      ? info.wheel_readers_in_use.includes(id)
+      : id === { backbones: info.backbone, detectors: info.detector, face_models: info.face_model, readers: info.reader }[kind];
   const deletable = (kind: Kind): kind is ModelKind => kind !== 'wheel_readers';
 
   async function remove(kind: ModelKind, m: BackboneInfo) {
@@ -49,9 +46,9 @@
           <strong class="small">{kind.title}</strong>
           <span class="xsmall faint">{kind.text}</span>
           {#each bySize(info[kind.key] as BackboneInfo[]) as m (m.id)}
-            <div class="model" class:current={m.id === chosen(kind.key)}>
+            <div class="model" class:current={chosen(kind.key, m.id)}>
               <span class="name small">
-                {m.name}{#if m.id === chosen(kind.key)}<span class="xsmall muted"> · in use</span>{/if}
+                {m.name}{#if chosen(kind.key, m.id)}<span class="xsmall muted"> · in use</span>{/if}
               </span>
               <span class="facts xsmall muted">
                 <span>~{ram(m)} RAM</span>

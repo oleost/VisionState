@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 
-from .. import bundle, detectors, faces, imaging
-from ..db import Person, keep_change_step, keep_text_reader
+from .. import bundle, detectors, faces, imaging, readers
+from ..db import Person, keep_change_step, keep_text_reader, keep_wheel_reader
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
@@ -72,6 +72,10 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
     data["reading"] = keep_text_reader(data.get("reading"))  # exported before the wheel reader
     # exported before a counter had a change limit of its own
     data["reading"] = keep_change_step(data["reading"])
+    data["reading"] = keep_wheel_reader(data["reading"])  # exported before a counter named its wheel reader
+    if isinstance(data["reading"], dict) and data["reading"].get("wheel_reader") not in (None, *readers.WHEEL_READERS):
+        # exported by a newer version, with a wheel reader this one does not have: the default here
+        data["reading"] = {**data["reading"], "wheel_reader": ""}
     try:
         spec = validated_sensor(data)
     except ValueError as err:

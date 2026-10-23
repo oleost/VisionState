@@ -99,7 +99,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         """After ``stop``, when another runtime takes over in this process (a restored backup):
         let go of the models, the sensors' heads and the frames kept in memory, and give the
         memory back, so two sets of models are never loaded at once."""
-        self.embedder = self.detector = self.reader = self.wheel_reader = None
+        self.embedder = self.detector = self.reader = None
+        self.wheel_readers.clear()
         self.face_model = self.face_index = None
         self.heads.clear()
         self.taught.clear()
@@ -153,6 +154,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if cfg.is_objects:
             await self.faces_settled()
+        if cfg.kind == KIND_READING:
+            await self.release_wheel_readers()  # a counter may read with another one now
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
@@ -178,6 +181,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await self.faces_settled()
         if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
             self.reader = None
+        if descriptor.kind == KIND_READING:
+            await self.release_wheel_readers()
         await asyncio.to_thread(backbones.release_memory)
 
     def set_global_review(self, rules: dict) -> None:

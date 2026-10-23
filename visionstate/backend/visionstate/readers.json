@@ -39,7 +39,7 @@
     "readers": {
       "wheels-v1": {
         "name": "VisionState wheel reader v1",
-        "description": "Reads how far each wheel of a mechanical counter has turned; trained for VisionState (tools/wheelreader).",
+        "description": "Reads how far each wheel has turned, so a wheel between two digits is read right.",
         "url": "https://huggingface.co/oleost/visionstate-wheel-reader/resolve/42f32402973b3bd3de0258766404232b11e8216f/wheels-v1.onnx",
         "sha256": "37912f885b061a7b12298872fbdfa1b73ca0664363b293a55617b1d3680a98ac",
         "size": 2264691,

@@ -31,7 +31,7 @@ from sqlalchemy.pool import QueuePool
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -81,6 +81,25 @@ def _keep_text_readers(conn: Connection) -> None:
             )
 
 
+def keep_wheel_reader(reading: dict | None) -> dict | None:
+    """Reading settings of a counter made before a counter named its wheel reader, with the one it
+    read with kept (wheels-v1; switching is a choice on the Settings tab). Anything else is
+    returned as it is."""
+    if not isinstance(reading, dict) or reading.get("display") != "counter" or "wheel_reader" in reading:
+        return reading
+    return {**reading, "wheel_reader": "wheels-v1"}
+
+
+def _keep_wheel_readers(conn: Connection) -> None:
+    for sensor_id, raw in conn.execute(text("SELECT id, reading FROM sensor WHERE reading IS NOT NULL")).all():
+        reading = json.loads(raw) if isinstance(raw, str) else raw
+        kept = keep_wheel_reader(reading)
+        if kept is not reading:
+            conn.execute(
+                text("UPDATE sensor SET reading = :r WHERE id = :id"), {"r": json.dumps(kept), "id": sensor_id}
+            )
+
+
 def keep_change_step(reading: dict | None) -> dict | None:
     """Reading settings of a counter made before change_limit, with the limit it had kept.
 
@@ -111,6 +130,8 @@ DATA_MIGRATIONS: dict[int, Callable[[Connection], None]] = {
     12: _keep_text_readers,
     # Counters keep the change limit they had (see keep_change_step).
     14: _keep_change_steps,
+    # Counters made before a counter named its wheel reader keep wheels-v1 (see keep_wheel_reader).
+    16: _keep_wheel_readers,
 }
 
 

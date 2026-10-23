@@ -189,11 +189,16 @@ def region_box(roi: dict | None, margin: float = 0.0) -> Box:
     )
 
 
-def crop_box(image: Image.Image, box: Box) -> Image.Image:
-    """Crop a normalised box without masking (a detector needs to see whole objects)."""
+def pixel_box(image: Image.Image, box: Box) -> tuple[int, int, int, int]:
+    """A normalised box in the pixels of ``image``."""
     x1, y1, x2, y2 = box
     width, height = image.size
-    return image.crop((int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)))
+    return int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)
+
+
+def crop_box(image: Image.Image, box: Box) -> Image.Image:
+    """Crop a normalised box without masking (a detector needs to see whole objects)."""
+    return image.crop(pixel_box(image, box))
 
 
 def in_region(x: float, y: float, roi: dict | None) -> bool:

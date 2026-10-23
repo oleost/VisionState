@@ -115,6 +115,8 @@ export interface ReadingSettings {
   digits: number;
   /** Mechanical counters only: what reads the wheels. */
   counter_reader: CounterReader;
+  /** counter_reader "wheels": the wheel reader's id ("" = the default). */
+  wheel_reader: string;
   /** Values and times left, and counters with change_limit "step": the largest change between two
    * readings (0 = no limit). */
   max_step: number;
@@ -560,6 +562,8 @@ export interface AppConfig {
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   counter_readers: CounterReader[];
+  /** The wheel readers a counter can read with (the default is in reading_defaults). */
+  wheel_readers: { id: string; name: string; description: string }[];
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
@@ -586,8 +590,8 @@ export interface Status {
   reader: string | null;
   reader_name: string | null;
   reader_error: string;
-  /** Mechanical counters read wheel by wheel; loaded on first use. */
-  wheel_reader: string | null;
+  /** Mechanical counters read wheel by wheel: the wheel readers loaded (each on first use). */
+  wheel_readers: string[];
   wheel_reader_name: string | null;
   wheel_reader_error: string;
   /** The face model, and how many people and sensors that recognise faces there are. */
@@ -769,9 +773,11 @@ export interface SettingsInfo {
   detectors: DetectorInfo[];
   reader: string;
   readers: DetectorInfo[];
-  /** The wheel reader for mechanical counters (one model for now, nothing to choose). */
+  /** The wheel reader new counters get; each counter names its own. */
   wheel_reader: string;
   wheel_readers: DetectorInfo[];
+  /** The wheel readers counters read with. */
+  wheel_readers_in_use: string[];
   /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
   face_model: string;
   face_models: FaceModelInfo[];
