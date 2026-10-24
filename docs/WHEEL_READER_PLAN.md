@@ -252,6 +252,59 @@ exports, with no case of §4.1 worse than the reader before, or the case named a
 model checked against real photos in the tests (the drawn e2e counter and the CC0 test images);
 a model card with the data and its licences on Hugging Face.
 
+### 4.4 Learnt making wheels-v2, for the next model
+
+**Data: check everything, assume nothing.**
+
+- **A shared export is not ground truth.** Chain labels (§5) are too wide to judge by, and a
+  checked or accepted value can be wrong. Read the test frames by eye (`frames.json`, `null` for a
+  frame nobody can read). Then check every frame where a model is sure and disagrees with the
+  label: zoomed in, five of the first readings by eye were wrong. Frames that stay unclear go to
+  the meter's owner (the maintainer confirmed two that way).
+- **Before using an export:** it has `"region": "as read"` with `"box"` (0.8.0 on; before, the
+  cells were in the wrong place); draw the box on a few images; digits and decimals match the
+  meter; its LICENSE is CC0. After any label change, build the sets again (`exports.py` writes
+  both the bench and the training sets).
+- **A meter's frames are also cut with the region moved** (`exports.py ... 8`); without it a
+  model learns one meter's framing and fails when the region moves a quarter cell (§4.1).
+
+**Measuring.**
+
+- **Five training runs, not three.** One run in three kept publishing the same wrong value (6
+  hours too high) while the others did not. An ensemble of the runs shows what one network can
+  reach.
+- **The replay through the app's rules decides**, not accuracy alone. The test frames are hours
+  apart, so the change limit hardly acts there; a real camera sends far more frames.
+- **The user's threshold (0.70) is shared by all models**, so a model must be sure where it is
+  right: `bench.py eval --sweep` shows how much it would publish at other thresholds. The Dryad
+  test photos are too easy to fit a temperature on (99 % of wheels right).
+- **Look at the frames behind a number** (cells side by side). The gap that was left was one
+  side-on meter whose last wheel turns and is partly hidden; counting the last wheel within ±1
+  digit instead of ±0.4 did not close it.
+- **Meters no model has seen:** the 33 free Openverse photos (`ov4`–`ov8`) and Dryad's six-digit
+  photos; the shared meters are both water meters with red decimals.
+
+**Training.** The recipe is in [`tools/wheelreader`](../tools/wheelreader/README.md). A teacher
+of three pairs did as well as one of eight. A soft teacher left the student unsure; sharpening it
+(`--teacher-t 0.3`) with more weight on the labels (`--alpha 0.7`) removed the last wrong value.
+Not tried yet:
+
+- the teacher only inside the label's interval (`--restrict`);
+- cells skewed and with one edge hidden (a meter seen from the side), and more weight on a last
+  wheel that turns;
+- cylinder-drawn wheels (§4.2, step 5);
+- grey from the darkest colour channel makes orange digits on black wheels dark (a UGI gas meter
+  photo); check preprocessing for coloured digits on dark wheels.
+
+**Releasing.**
+
+- Check the ONNX file against PyTorch (`export_v2.py` prints the largest difference) and on the
+  free photos before uploading it.
+- The tests that assumed one wheel reader had to change: the default in the wizard, the name on
+  Settings, and the drawn e2e counter at x.5, where either neighbour is right.
+- Text that only shows with two wheel readers had never been seen: look at every notice a new
+  reader brings up, on a phone too.
+
 ## 5. Labels from shared exports
 
 - An export holds the checked readings and all unchecked ones, accepted or rejected, with
