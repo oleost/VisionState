@@ -177,17 +177,20 @@ in two periods `a` and `b`; leaving one meter out):
   four sets** (wheels-v1: 3, 2, 1 and 0), read more frames right (maintainer `a`: 97.8 % of the
   runs of frames against 93.0 %; the paired interval +1.5 to +8.5 points) and published more.
   It costs one pair per run, hence distillation (§4.2, step 4).
-- **Distilled into one pair, nearly.** One pair trained half on the labels, half towards the
-  ensemble's probabilities (`train.py --teacher`, not restricted to the interval): in three runs
-  the paired gain over wheels-v1 is significant on three of the four sets (maintainer `a` +5.2
-  points, `b` +1.5, pedromfa `a` +0.6) and none on the fourth; no wrong value published on the
-  maintainer's meter (wheels-v1: 3 and 2), and the region moved or the wrong size hurts far less
-  (right edge half a cell in: 96 % against 69 % on pedromfa's meter). Two things keep it from
-  release: one run of three publishes one wrong value on pedromfa's `b` (a wheel half way from
-  1 to 2 read as 7.6, sure enough to stand for 6 hours), the same run with a teacher of eight
-  pairs as of three; and it is less sure (it publishes 130–150 frames of maintainer `a` at the
-  threshold, wheels-v1 168, the ensemble 202). A temperature fitted on the Dryad test photos does
-  not help: there it is already right (99 % of the wheels).
+- **Distilled into one pair, nearly.** One pair trained towards the ensemble's probabilities
+  (`train.py --teacher`; teacher of eight pairs, sharpened with `--teacher-t 0.3`, 70 % weight on
+  the labels with `--alpha 0.7`, not restricted to the interval). In three runs: **no wrong value
+  published on any of the four sets** (wheels-v1: 3, 2, 1 and 0); the paired gain over wheels-v1
+  is significant on the maintainer's meter (`a` +4.8 points, `b` +1.6), +0.7 on pedromfa's `a`
+  (interval from 0) and none on `b`; the region moved or the wrong size hurts far less (right
+  edge half a cell in: 96 % against 69 % on pedromfa's meter); the free photos of §3 read 27–28
+  of 33 (wheels-v1 26). With half the weight on the teacher, unsharpened, one run of three
+  published a wrong value on pedromfa's `b` (a wheel half way from 1 to 2 read as 7.6, standing
+  for 6 hours), with a teacher of three pairs as of eight. What still keeps it from release: it
+  is less sure on the maintainer's `a`, where the last wheel turns (128–149 frames published at
+  the threshold, wheels-v1 168 with 3 of them wrong, the ensemble 202), and on the free photos
+  (20–22 published, wheels-v1 24). A temperature fitted on the Dryad test photos does not help:
+  there it is already right (99 % of the wheels).
 
 ### 4.2 How the next model is trained
 
@@ -339,7 +342,7 @@ most:
 | Measurement: five runs, paired comparison, repeats once (§4.2, 1) | benchmark | small | decisions that are not noise | **done** |
 | Decoder over the time series (§4.2, 2) | measurement | medium | fewer wrong published values, for v1 too | **dropped** (§7) |
 | Ensemble of training runs (§4.1) | measurement | small | no wrong published value on any set | **done**, too slow to ship as it is |
-| Distillation of the ensemble into one pair (§4.2, 4) | ensemble | medium | the ensemble's results at the app's cost | **in progress** (`distill.py`): better than wheels-v1 on three sets, not yet steady (§4.1) |
+| Distillation of the ensemble into one pair (§4.2, 4) | ensemble | medium | the ensemble's results at the app's cost | **in progress** (`distill.py`): no wrong value published, less sure than wheels-v1 on a turning last wheel (§4.1) |
 | Labels, loss, calibration; cylinder wheels (§4.2, 3, 5) | measurement | medium | the next model | planned |
 | Ask for shared meters (§6) | export | ongoing | the data everything else is limited by | next |
 | The rest of §8 | real cases | — | — | when a case asks for it |
