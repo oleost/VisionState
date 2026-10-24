@@ -63,13 +63,17 @@
 
     {#if reading.display === 'counter' && reading.counter_reader === 'ocr'}
       <div class="notice small" data-testid="try-wheel-reader">
-        New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is read
-        right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.
+        <span
+          >New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is
+          read right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+        >
       </div>
     {:else if newerWheels}
       <div class="notice small" data-testid="try-newer-wheel-reader">
-        New: <strong>{newerWheels.name}</strong>. {newerWheels.description} Try it under
-        <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.
+        <span
+          >New: <strong>{newerWheels.name}</strong>. {newerWheels.description} Try it under
+          <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+        >
       </div>
     {/if}
 

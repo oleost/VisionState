@@ -368,8 +368,8 @@ times its busiest shower) rejected right readings after a 35-minute update.
   changing size is not caught by this: that is *camera drift* in `docs/WHEEL_READER_PLAN.md` §8.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
-`wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
-CPU thread): the crop is split into `digits` equal cells (whole cells, dividers included); each
+`wheel_readers` in `readers.json`; bundled: `wheels-v1`, 2.2 MB, ~2 ms for 8 wheels on one CPU
+thread, and `wheels-v2`, the default for new counters, 6.1 MB, ~7 ms): the crop is split into `digits` equal cells (whole cells, dividers included); each
 cell, grey by its darkest colour channel, 32×48, full contrast, goes through a small CNN that
 gives a distribution over 100 positions around the wheel (0.0–9.9). `readers.wheel_value` then
 finds the most likely *consistent* value by dynamic programming from right to left: the last
@@ -377,7 +377,10 @@ wheel turns freely, every other wheel stands on its digit plus how far its right
 past 9. Wheels at rest may sit one bin off (`READING["wheel_slack_bins"]`), and all wheels may
 appear shifted together by up to `wheel_max_shift_bins` (a region drawn a little above or below
 the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounded to the nearest
-digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
+digit; the confidence is the mean probability per wheel (`"confidence": "mean"`). wheels-v2 also
+reads every cell with half a cell of the frame on each side (`"context"`,
+`readers.wheel_context_cells`) and averages both, and its confidence is the weakest wheel's
+(`"confidence": "weakest"`). It always returns `digits` digits, so
 the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
 the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
 (`db.keep_text_reader`). The model, its training data and its
@@ -387,6 +390,12 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
 - Why a wheel reader (2026-10-09): on every meter tested it read more readings right than
   PP-OCRv6 small and gave no value too high, which the text reader did (numbers in its README).
   The remaining misses are ±1 on a half-turned last wheel.
+- Why wheels-v2 (2026-10-24): leaving each of two meters out in turn, five training runs
+  published no wrong value where wheels-v1 published six, read significantly more frames right
+  on one meter and the same on the other, and stays right when the region does not fit. It
+  publishes less often on a meter seen from the side whose last wheel turns; that was accepted.
+  Counters keep the reader they were set up with (schema v16, `db.keep_wheel_reader`). Numbers:
+  [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) §4.1.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN

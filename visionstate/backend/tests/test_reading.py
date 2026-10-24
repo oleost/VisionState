@@ -1224,24 +1224,29 @@ def test_each_counter_reads_with_the_wheel_reader_it_names(settings):
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = CounterCamera(1234)
         with patch.dict(readers.WHEEL_READERS, {other.id: other}):
-            assert [w["id"] for w in client.get("/api/v1/config").json()["wheel_readers"]] == ["wheels-v1", other.id]
+            assert [w["id"] for w in client.get("/api/v1/config").json()["wheel_readers"]] == [
+                "wheels-v1",
+                "wheels-v2",
+                other.id,
+            ]
             unknown = {**body, "name": "Bad", "reading": {**reading, "wheel_reader": "wheels-nope"}}
             assert client.post("/api/v1/sensors", json=unknown).status_code == 422
             first = client.post("/api/v1/sensors", json={**body, "name": "Water", "reading": reading}).json()["id"]
             second = client.post(
                 "/api/v1/sensors", json={**body, "name": "Gas", "reading": {**reading, "wheel_reader": other.id}}
             ).json()["id"]
-            assert wait_for(lambda: set(loaded()) == {"wheels-v1", other.id}, timeout=60)
-            assert set(client.get("/api/v1/settings").json()["wheel_readers_in_use"]) == {"wheels-v1", other.id}
+            default = readers.DEFAULT_WHEEL_READER
+            assert wait_for(lambda: set(loaded()) == {default, other.id}, timeout=60)
+            assert set(client.get("/api/v1/settings").json()["wheel_readers_in_use"]) == {default, other.id}
             for sid in (first, second):
                 assert wait_for(
                     lambda sid=sid: client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "1234"
                 )
             exported = client.get(f"/api/v1/sensors/{second}/export").content
             # Switched to the other one: the one no counter reads with any more is let go.
-            switched = {**reading, "wheel_reader": "wheels-v1"}
+            switched = {**reading, "wheel_reader": default}
             assert client.patch(f"/api/v1/sensors/{second}", json={"reading": switched}).status_code == 200
-            assert wait_for(lambda: loaded() == ["wheels-v1"])
+            assert wait_for(lambda: loaded() == [default])
         # This version has no wheels-test: the import reads with the default.
         imported = client.post("/api/v1/import", files={"file": ("b.zip", exported, "application/zip")})
         assert imported.status_code == 201, imported.text
