@@ -1,7 +1,7 @@
 """The wheel reader benchmark (`docs/WHEEL_READER_PLAN.md` §3).
 
 python bench.py build                          bench/ sets of pedromfa #32/#40, bolausson, Dryad test
-python bench.py eval <model> [--sets a,b] [--tag name]
+python bench.py eval <model> [--sets a,b] [--tag name] [--sweep]
 python bench.py geometry <model> <export dir>   the same frames with the region's edges moved
 python bench.py compare <base tag> <tag> [<tag> ...] [--sets a,b]
                                                frame by frame against a base (results of eval --tag)
@@ -14,7 +14,8 @@ Decoding is the app's (readers.WheelReader.read_counter): slack 1 bin, common sh
 (penalty 0.3 per bin). Confidence: "mean" (geometric mean of the decoded bins, wheels-v1) and
 "wmin" (the weakest wheel's mass within +-0.4 of where the value puts it, wheels-v2).
 Metrics: right (+-1 on the last wheel), exact, too high; risk-coverage (AURC, share accepted at
-1 % wrong); for export sets a replay through "went down" and the change limit at 0.70, and "ok"
+1 % wrong); for export sets a replay through "went down" and the change limit at 0.70 (--sweep: also
+at other limits, for a model whose confidence is spread differently), and "ok"
 and "too high" with every run of frames with the same label (a still meter) counted once.
 
 compare: the tags after the base are training runs of one candidate. Per set, the difference in
@@ -86,10 +87,15 @@ def softmax(logits):
 
 
 class Model:
-    """probs(cells, context) -> N x BINS for a .pt, a "one-cell.pt+context.pt" pair or an .onnx."""
+    """probs(cells, context) -> N x BINS for a .pt, a "one-cell.pt+context.pt" pair or an .onnx.
+
+    "<spec>@<t>" divides the log probabilities by a temperature t (below 1: surer).
+    """
 
     def __init__(self, spec: str):
         self.parts = []
+        spec, _, t = spec.partition("@")
+        self.t = float(t or 1)
         if spec.endswith(".onnx"):
             import onnxruntime as ort
 
@@ -108,11 +114,11 @@ class Model:
             for i in range(0, len(cells), 2048):
                 feed = {n: x[i : i + 2048].astype(np.float32)[:, None] / 255 for n, x in zip(self.inputs, feeds)}
                 out.append(self.onnx.run(None, feed)[0])
-            return softmax(np.concatenate(out).astype(np.float64))
+            return softmax(np.concatenate(out).astype(np.float64) / self.t)
         from train import predict
 
         logp = sum(predict(m, context if _is_ctx(m) else cells) for m in self.parts)
-        return softmax(logp.astype(np.float64) / len(self.parts))
+        return softmax(logp.astype(np.float64) / len(self.parts) / self.t)
 
 
 def _is_ctx(model) -> bool:
@@ -143,7 +149,7 @@ def simulate(rows, conf_i, t):
     return pub, wrong, high, stale / 3600
 
 
-def evaluate(model: Model, sets: list[str]) -> tuple[dict, dict]:
+def evaluate(model: Model, sets: list[str], sweep: bool = False) -> tuple[dict, dict]:
     """Per set: the metrics, and per frame ok / too high / weakest-wheel confidence / run."""
     results, frames = {}, {}
     for name in sets:
@@ -198,6 +204,9 @@ def evaluate(model: Model, sets: list[str]) -> tuple[dict, dict]:
             line += (f"  | runs {res['runs']}: ok {res['ok_runs'] / res['runs']:6.1%} high {res['high_runs']:5.1f}"
                      f"  | replay@0.7 wmin: {p} published, {w} wrong, {s:.1f} h too high")
         print(line, flush=True)
+        if sequence and sweep:
+            print("            " + "  ".join(f"@{t:.2f}: {p} pub {w} wrong" for t in (0.4, 0.5, 0.6, 0.8)
+                                          for p, w, _h, _s in [simulate(rows, 1, t)]), flush=True)
     return results, frames
 
 
@@ -329,6 +338,7 @@ if __name__ == "__main__":
     ap.add_argument("folder", nargs="*")
     ap.add_argument("--sets")
     ap.add_argument("--tag")
+    ap.add_argument("--sweep", action="store_true")
     a = ap.parse_args()
     if a.what == "build":
         build()
@@ -338,7 +348,7 @@ if __name__ == "__main__":
         compare(a.model, a.folder, a.sets.split(",") if a.sets else None)
     else:
         names = a.sets.split(",") if a.sets else sorted(p.stem for p in BENCH.glob("*.npz") if not p.stem.endswith("_ctx"))
-        res, frames = evaluate(Model(a.model), names)
+        res, frames = evaluate(Model(a.model), names, a.sweep)
         if a.tag:
             (WORK / "results").mkdir(exist_ok=True)
             (WORK / "results" / f"{a.tag}.json").write_text(json.dumps(res, indent=1))

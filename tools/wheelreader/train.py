@@ -1,7 +1,7 @@
 """Train the wheel position model.
 
 python train.py <out-name> <set>:<weight> [<set>:<weight> ...] [--epochs N] [--dryad-orient model.pt]
-                [--input 32|64] [--width 16] [--ema 0.999] [--seed 0] [--teacher tag --alpha 0.5]
+                [--input 32|64] [--width 16] [--ema 0.999] [--seed 0] [--teacher tag --alpha 0.5 --restrict --teacher-t 1]
 
 Sets are data/<set>.npz. A weight is the share of each batch drawn from that set.
 Dryad sets need --dryad-orient (a model that picks each crop's orientation) or use upright; the
@@ -9,7 +9,9 @@ orientation is picked on the one-cell set dryad_train and kept for dryad_train_c
 --input 64: cells with context (context.py); --ema keeps an exponential average of the weights.
 --teacher: distillation (distill.py wrote data/<set>_t_<tag>.npz; a _ctx set reads its one-cell
 twin's); the loss is alpha x the label's interval loss + (1 - alpha) x cross entropy with the
-teacher's probabilities. A set without targets trains on its labels only.
+teacher's probabilities (--restrict: only inside the label's interval, renormalised, so the
+teacher only says where inside the interval; --teacher-t: the teacher's probabilities to the power
+1/t and renormalised, below 1 sharper). A set without targets trains on its labels only.
 Saves runs/<out-name>.pt: {"state", "width", "input"}.
 """
 
@@ -151,6 +153,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--teacher")
     ap.add_argument("--alpha", type=float, default=0.5)
+    ap.add_argument("--restrict", action="store_true")
+    ap.add_argument("--teacher-t", type=float, default=1.0)
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -162,6 +166,9 @@ def main():
         d = load(name)
         if args.teacher and (t := HERE / "data" / f"{name.removesuffix('_ctx')}_t_{args.teacher}.npz").exists():
             d["T"] = np.load(t)["T"]
+            if args.teacher_t != 1:
+                sharp = d["T"].astype(np.float32) ** (1 / args.teacher_t)
+                d["T"] = (sharp / sharp.sum(axis=1, keepdims=True)).astype(np.float16)
         if "rot" in d:
             if args.dryad_orient:
                 if turned is None:
@@ -208,6 +215,10 @@ def main():
                 logp = F.log_softmax(logits, dim=1)
                 mask = interval_mask(torch.cat(ms), torch.cat(hs))
                 own = -torch.logsumexp(logp.masked_fill(~mask, -1e9), dim=1)
+                if args.restrict:
+                    inside = target * mask
+                    target = torch.where(inside.sum(dim=1, keepdim=True) > 1e-6, inside, mask.float())
+                    target = target / target.sum(dim=1, keepdim=True).clamp_min(1e-6)
                 soft = -(target * logp).sum(dim=1)
                 loss = torch.where(has, args.alpha * own + (1 - args.alpha) * soft, own).mean()
             else:
