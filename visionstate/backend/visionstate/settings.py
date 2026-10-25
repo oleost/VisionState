@@ -94,6 +94,9 @@ READING_DEFAULTS = {
     "display": "auto",
     "digits": 6,  # "counter" display only: wheels inside the region; other digit counts are rejected
     "counter_reader": "wheels",  # "counter" display only: see COUNTER_READERS
+    # The wheel reader (an id in readers.json) a counter read by "wheels" uses. A new sensor
+    # stores the registry's default, so a later default never changes it; "" = that default.
+    "wheel_reader": "",
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -191,6 +194,10 @@ READING = {
     "wheel_slack_bins": 1,
     "wheel_max_shift_bins": 2,
     "wheel_shift_penalty": 0.3,
+    # Wheel readers whose confidence is the weakest wheel ("confidence": "weakest" in the
+    # registry): a wheel's share is the model's probability within this many bins of where the
+    # value puts it.
+    "wheel_weakest_bins": 4,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones

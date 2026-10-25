@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.10.1
+
+### New
+
+- **Wheel reader v2 for mechanical counters.** It reads every wheel twice, on its own and with
+  the wheels next to it in view, so a region that does not quite fit is still read right, and it
+  only passes a reading when it is sure of every wheel, not just on average. Tested on two water
+  meters it was not trained on, it published no wrong value where v1 published six (most of them
+  2–3 litres too high, two 20 litres), and it read more frames right. New counters use it.
+  Counters you have keep v1 until you choose v2 under *Read with* on their Settings tab; their
+  Live tab suggests it.
+- On a meter photographed from the side whose last wheel is turning, v2 waits more often for a
+  clear picture, so the value can come a little later. It takes about twice as long per reading
+  as v1 (still a few milliseconds), and the app is 6 MB larger.
+
+### Better
+
+- **Exported readings say where the region is in each image** (Export readings on a reading
+  sensor's Quality tab), also for readings made before this version (since 0.8.0). The margin
+  around the region is cut off at the picture's edge, so the region was not always in the middle.
+  For the wheel reader they also say how sure it was of each wheel the way it decides.
+
+### Fixed
+
+- The suggestions on a counter's Live tab (to try the wheel reader) no longer break into columns
+  on narrow screens.
+
 ## 0.10.0
 
 ### New

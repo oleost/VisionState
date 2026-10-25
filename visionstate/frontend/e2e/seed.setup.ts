@@ -107,9 +107,10 @@ setup('seed a mechanical counter sensor', async ({ request }) => {
   });
   expect(created.ok()).toBeTruthy();
   const sensor = await created.json();
+  // The last wheel stands exactly half way from 9 to 0: either neighbour is right.
   await expect
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
-    .toBe('89.939');
+    .toMatch(/^89\.9(39|40)$/);
 });
 
 setup('seed a sensor that recognises faces', async ({ request }) => {

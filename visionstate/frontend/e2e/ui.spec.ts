@@ -402,13 +402,13 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   // Read by the wheel reader (the default), which reads every field; the text reader instead
   // reads the digits it sees: told there are eight wheels, the seven digits it reads are not accepted.
   const readWith = page.getByLabel('Read with');
-  await expect(readWith).toHaveValue('wheels');
+  await expect(readWith).toHaveValue('wheels:wheels-v2');
   await readWith.selectOption('ocr');
   await expect(page.getByText(/a turning wheel can be misread/)).toBeVisible();
   await page.getByLabel('Number of digits').fill('8');
   await expect(page.getByText(/digits, not 8/)).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Number of digits').fill('7');
-  await readWith.selectOption('wheels');
+  await readWith.selectOption('wheels:wheels-v2');
   await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
   await expectNoHorizontalOverflow(page);
@@ -1145,11 +1145,14 @@ test('a rejected reading keeps the region it was read in', async ({ page, reques
   }
 });
 
-test('the wheel reader shows in Settings and is offered to counters read as text', async ({ page, request }, info) => {
+test('the wheel reader shows in Settings and is offered to counters read as text or with an older one', async ({
+  page,
+  request,
+}, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');
   const wheels = page.getByTestId('wheel-reader');
-  await expect(wheels).toContainText('VisionState wheel reader v1');
+  await expect(wheels).toContainText('VisionState wheel reader v2');
   await expect(wheels.getByRole('link', { name: 'source' })).toHaveAttribute('href', /huggingface\.co/);
   await expect(page.getByText('Wheel reader', { exact: true })).toBeVisible(); // its status row
   await expectNoHorizontalOverflow(page);
@@ -1177,6 +1180,33 @@ test('the wheel reader shows in Settings and is offered to counters read as text
   } finally {
     await page.goto('about:blank');
     await request.delete(`api/v1/sensors/${id}`);
+  }
+  // A counter set up with wheels-v1 keeps it, and its Live tab offers the newer one.
+  const older = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Older water meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: COUNTER_URL(45730),
+      roi: COUNTER_BOX,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', wheel_reader: 'wheels-v1' },
+      interval_s: 3600,
+    },
+  });
+  const olderId = (await older.json()).id;
+  try {
+    await page.goto(`#/sensors/${olderId}/live`);
+    const newer = page.getByTestId('try-newer-wheel-reader');
+    await expect(newer).toContainText('VisionState wheel reader v2');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.notice');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'live-newer-wheel-reader.png'), fullPage: true });
+    await press(newer.getByRole('link'), info);
+    await expect(page.getByLabel('Read with')).toHaveValue('wheels:wheels-v1');
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${olderId}`);
   }
 });
 

@@ -290,7 +290,8 @@ First choose **what it looks like**:
   - *Wheel reader* (default) — a small model made for VisionState that reads how far each wheel
     has turned, so a wheel half way between two digits is read as such. It reads the wheels
     together, the way they turn: a wheel only moves on while the wheel to its right goes from 9
-    to 0, so a reading where they do not fit together is never chosen.
+    to 0, so a reading where they do not fit together is never chosen. A counter keeps the wheel
+    reader it was set up with; should a better one come, its Live tab suggests it.
   - *Text reader* — reads the wheels as text with the number reader (Settings → AI model). Only
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
@@ -322,7 +323,7 @@ First choose **what it looks like**:
   you can also leave it out of the region and count one digit and one decimal less.
   The wheel reader reads mechanical counters better than the text reader on every meter it was
   tried on. New counters use it; counters set up before it came keep the text reader until you
-  choose *Wheel reader* on their Settings tab (their Live tab suggests it).
+  choose a wheel reader on their Settings tab (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
@@ -612,9 +613,12 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   sensor recognises faces.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
-  21 MB). Mechanical counters are read by the included **VisionState wheel reader** (2 MB, a few
-  milliseconds per reading, listed under *Reading sensors: mechanical counters*) unless a sensor
-  is set to the text reader. There is one wheel reader so far, so there is nothing to choose.
+  21 MB). Mechanical counters are read by an included **VisionState wheel reader** (listed under
+  *Reading sensors: mechanical counters*) unless a sensor is set to the text reader. New
+  counters use **v2** (6 MB, about 10 milliseconds per reading): it also looks at each wheel's
+  neighbours, so a region that does not quite fit is still read right, and it holds back a
+  reading when any one wheel is unclear. **v1** (2 MB) stays for the counters set up with it;
+  their Live tab suggests v2, and *Read with* on the Settings tab switches.
   Only loaded while at least one reading sensor exists.
 
 **Compare and manage the models** (under the choices) lists every model, from the smallest to

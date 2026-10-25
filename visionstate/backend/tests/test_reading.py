@@ -1,9 +1,13 @@
 """Reading sensors: parsing, plausibility, decoding, the reader on drawn displays, and the API."""
 
+import dataclasses
 import io
 import json
+import math
+import shutil
 import sqlite3
 import zipfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -12,8 +16,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
 
-from visionstate import readers
-from visionstate.db import Database, Prediction, Sensor, keep_change_step, keep_text_reader
+from visionstate import imaging, readers
+from visionstate.db import Database, Prediction, Sensor, keep_change_step, keep_text_reader, keep_wheel_reader
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages
 from visionstate.readers import counter_line, decode, format_value, implausible, parse, wrong_digit_count
@@ -323,12 +327,88 @@ def test_wheel_value_prefers_a_consistent_reading():
     ],
 )
 @pytest.mark.parametrize("taller", [0.0, 0.25])
-def test_wheel_reader_reads_drawn_counters(value, expected, taller):
-    spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+@pytest.mark.parametrize("reader_id", list(readers.WHEEL_READERS))
+def test_wheel_reader_reads_drawn_counters(value, expected, taller, reader_id):
+    spec = readers.WHEEL_READERS[reader_id]
     reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
     result, used = reader.read_counter(counter_region(render_counter(value), 7, taller), 7)
     assert result.text == expected and result.score > 0.8
     assert used.width > used.height  # the cells side by side
+
+
+class ContextSession:
+    """A model with the second input of a wheel reader with context, made from one without it: it
+    reads the cells alone and keeps the shapes it was fed (no such model is in the registry)."""
+
+    def __init__(self, inner):
+        self.inner, self.fed = inner, []
+
+    def get_inputs(self):
+        return [*self.inner.get_inputs(), SimpleNamespace(name="context")]
+
+    def get_outputs(self):
+        return self.inner.get_outputs()
+
+    def run(self, names, feed):
+        self.fed.append({k: v.shape for k, v in feed.items()})
+        cells = self.inner.get_inputs()[0].name
+        return self.inner.run(names, {cells: feed[cells]})
+
+
+@requires_reader
+def test_a_wheel_reader_with_context_is_given_the_wheels_around_each_cell(monkeypatch):
+    v1 = readers.WHEEL_READERS["wheels-v1"]
+    spec = dataclasses.replace(v1, context=0.5, context_width=64)
+    with pytest.raises(ValueError, match="takes 1 inputs"):  # a model without the second input
+        readers.WheelReader(spec, MODEL_DIR / v1.filename)
+    real = readers.cpu_session
+    monkeypatch.setattr(readers, "cpu_session", lambda path: ContextSession(real(path)))
+    reader = readers.WheelReader(spec, MODEL_DIR / v1.filename)
+    frame = render_counter(89932.0)
+    box = imaging.pixel_box(frame, imaging.region_box(counter_box(7)))
+    result, used = reader.read_counter(frame, 7, box)
+    assert result.text == "0089932" and result.score > 0.8
+    assert sorted(reader.session.fed[-1].values()) == [(7, 1, 48, 32), (7, 1, 48, 64)]
+    # What the reader saw: the cells side by side at twice the size, one wheel per field (without
+    # the neighbours, which would show every wheel twice).
+    assert used.size == ((7 * (32 + 2) - 2) * 2, 48 * 2)
+    # The cells are the region's, cut out or not; their neighbours come from the frame around it.
+    region = frame.crop(box)
+    (cut, cut_context), (cells, context) = reader.inputs(region, 7), reader.inputs(frame, 7, box)
+    assert np.array_equal(cut, cells)
+    assert not np.array_equal(cut_context[-1], context[-1]) and np.array_equal(cut_context[3], context[3])
+    # A region at the picture's edge: beyond it, the edge is repeated.
+    for edge in ((0, box[1], box[2], box[3]), (box[0], box[1], frame.width, box[3])):
+        assert reader.inputs(frame, 7, edge)[1].shape == (7, 48, 64)
+
+
+def test_a_wheel_reader_registry_mistake_fails_at_once():
+    v1 = readers.WHEEL_READERS["wheels-v1"]
+    with pytest.raises(ValueError, match="confidence"):
+        dataclasses.replace(v1, confidence="best")
+    with pytest.raises(ValueError, match="context"):
+        dataclasses.replace(v1, context=0.5)
+
+
+def test_the_weakest_wheel_is_the_confidence_of_a_wheel_reader_that_says_so():
+    """One unclear wheel among clear ones: the mean hides it, the weakest wheel does not."""
+    spec = readers.WHEEL_READERS["wheels-v1"]
+    weakest = dataclasses.replace(spec, confidence="weakest")
+    probs = np.full((4, 100), 1e-6)
+    for k, b in enumerate([10, 20, 30]):
+        probs[k, b] = 1.0
+    probs[3, 40], probs[3, 75] = 0.5, 0.5  # the last wheel: 4.0 or 7.5
+    probs /= probs.sum(axis=1, keepdims=True)
+    at, shift = [10, 20, 30, 40], 0
+    logp = readers.WheelReader.with_slack(probs)
+    reader = object.__new__(readers.WheelReader)
+    reader.spec = weakest
+    p = reader.wheel_p(probs, logp, at, shift)
+    assert reader.confidence(0.0, p) == pytest.approx(0.5, abs=0.01) == min(p)
+    assert p[:3] == pytest.approx([1.0] * 3, abs=0.01)
+    reader.spec = spec
+    assert reader.confidence(4 * math.log(0.84), reader.wheel_p(probs, logp, at, shift)) == pytest.approx(0.84)
+    assert reader.wheel_p(probs, logp, at, shift)[3] == pytest.approx(0.5, abs=0.01)
 
 
 @requires_reader
@@ -340,9 +420,10 @@ def test_wheel_reader_reads_drawn_counters(value, expected, taller):
         ("counter_turning.jpg", "0632590"),
     ],
 )
-def test_wheel_reader_reads_a_real_meter(asset, expected):
+@pytest.mark.parametrize("reader_id", list(readers.WHEEL_READERS))
+def test_wheel_reader_reads_a_real_meter(asset, expected, reader_id):
     """Issue #40: an ESP32 camera with its flash on a water meter with red decimal wheels."""
-    spec = readers.WHEEL_READERS[readers.DEFAULT_WHEEL_READER]
+    spec = readers.WHEEL_READERS[reader_id]
     reader = readers.WheelReader(spec, MODEL_DIR / spec.filename)
     result, _ = reader.read_counter(Image.open(ASSETS / asset).convert("RGB"), 7)
     assert result.text == expected and result.score > 0.8
@@ -350,7 +431,9 @@ def test_wheel_reader_reads_a_real_meter(asset, expected):
     assert result.details is not None
     wheels = result.details["wheels"]
     assert round(wheels["value"]) == int(expected) and wheels["log_p"] < 0 and abs(wheels["shift"]) <= 0.2
-    assert len(wheels["per_wheel"]) == 7
+    assert len(wheels["per_wheel"]) == 7 and wheels["confidence_rule"] == spec.confidence
+    if spec.confidence == "weakest":  # the export shows the probabilities the confidence was made of
+        assert result.score == pytest.approx(min(w["p"] for w in wheels["per_wheel"]), abs=1e-4)
     for wheel in wheels["per_wheel"]:
         assert 0.0 <= wheel["at"] <= 9.9 and 0.0 < wheel["p"] <= 1.0
         assert len(wheel["top"]) == 3 and wheel["top"][0][1] >= wheel["top"][1][1] >= wheel["top"][2][1]
@@ -381,6 +464,32 @@ def test_counters_made_before_the_wheel_reader_keep_the_text_reader(tmp_path):
     assert readers_by_slug == {"old": "ocr", "new": "wheels", "lcd": "wheels"}
     assert keep_text_reader({"display": "counter"}) == {"display": "counter", "counter_reader": "ocr"}
     assert keep_text_reader(None) is None
+
+
+def test_counters_made_before_they_named_a_wheel_reader_keep_wheels_v1(tmp_path):
+    path = tmp_path / "old.db"
+    Database(path).init()
+    con = sqlite3.connect(path)
+    row = (
+        "INSERT INTO sensor (slug, name, kind, source_type, source, interval_s, threshold, debounce, enabled, "
+        "entity_prefix, publish, created_at, reading) VALUES (?, ?, 'reading', 'http', 'x', 30, 0.7, 2, 1, 0, 1, "
+        "'2026-10-01', ?)"
+    )
+    con.execute(row, ("water", "Water", json.dumps({"display": "counter", "digits": 8, "counter_reader": "wheels"})))
+    con.execute(row, ("gas", "Gas", json.dumps({"display": "counter", "digits": 7, "counter_reader": "ocr"})))
+    con.execute(row, ("lcd", "Display", json.dumps({"mode": "counter", "display": "auto"})))
+    con.execute("PRAGMA user_version = 15")  # as a database of 0.10.0
+    con.commit()
+    con.close()
+    db = Database(path)
+    db.init()
+    with db.session() as s:
+        chosen = {r.slug: readers.wheel_reader_of(merge_reading(r.reading)) for r in s.query(Sensor)}
+    # A counter read as text keeps wheels-v1 too, should it be switched to the wheel reader; the
+    # display keeps no stored choice: should it become a counter, it gets the default.
+    assert chosen == {"water": "wheels-v1", "gas": "wheels-v1", "lcd": readers.DEFAULT_WHEEL_READER}
+    assert keep_wheel_reader({"display": "counter", "wheel_reader": "x"}) == {"display": "counter", "wheel_reader": "x"}
+    assert keep_wheel_reader(None) is None
 
 
 def test_counters_keep_their_change_limit_as_a_rate(tmp_path):
@@ -829,6 +938,10 @@ def test_counter_sensor_flow(settings):
         box = counter_box(7)
         assert crop.width < frame.width * box["w"] * 1.4 and crop.height < frame.height * box["h"] * 1.4
         assert entry["region"] == "as read"
+        # "box" is the region inside the image: the margin around it on every side.
+        left, top, right, bottom = entry["box"]
+        assert 0 < left < right < crop.width and 0 < top < bottom < crop.height
+        assert abs((right - left) - frame.width * box["w"]) <= 1 and abs((bottom - top) - frame.height * box["h"]) <= 1
 
         # Moving the region later does not change how earlier readings are cut: they keep theirs.
         assert item["probs"]["roi"] == view()["roi"]
@@ -851,6 +964,7 @@ def test_counter_sensor_flow(settings):
             row.probs = {k: v for k, v in row.probs.items() if k != "roi"}
         old, size = export_entry()
         assert old["region"] == "current" and size[0] < crop.size[0]
+        assert old["box"][0] == 0  # the region starts at the frame's edge: no margin on the left
         assert client.patch(f"/api/v1/sensors/{sid}", json={"roi": box}).status_code == 200
 
         preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
@@ -981,11 +1095,14 @@ def test_wheel_counter_sensor_flow(settings):
         # Two wheels almost turned over: the wheels together read 89.950.
         assert wait_for(lambda: view()["reading"]["value"] == "89.950", timeout=60)
         assert view()["reading"]["counter_reader"] == "wheels"
+        # A new counter stores the default, so a later default never changes it.
+        assert view()["reading"]["wheel_reader"] == readers.DEFAULT_WHEEL_READER
         status = client.get("/api/v1/status").json()
-        assert status["wheel_reader"] == readers.DEFAULT_WHEEL_READER and status["wheel_reader_error"] == ""
+        assert status["wheel_readers"] == [readers.DEFAULT_WHEEL_READER] and status["wheel_reader_error"] == ""
         assert status["reader"] is None  # only a counter read with the wheel reader: no text reader loaded
         models = client.get("/api/v1/settings").json()
         assert models["wheel_reader"] == readers.DEFAULT_WHEEL_READER
+        assert models["wheel_readers_in_use"] == [readers.DEFAULT_WHEEL_READER]
         assert [m["id"] for m in models["wheel_readers"]] == list(readers.WHEEL_READERS)
         assert models["wheel_readers"][0]["installed"] and models["wheel_readers"][0]["license"] == "Apache-2.0"
         image = client.get(f"/api/v1/sensors/{sid}/reading/image")
@@ -1026,7 +1143,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 3 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 5 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
@@ -1094,8 +1211,57 @@ def test_a_wheel_reader_that_does_not_load_is_shown(settings, monkeypatch):
         client.app.state.runtime.grabber = CounterCamera(1234)
         sid = client.post("/api/v1/sensors", json=body).json()["id"]
         assert wait_for(lambda: client.get("/api/v1/status").json()["wheel_reader_error"] == "model file damaged")
-        assert client.get("/api/v1/status").json()["wheel_reader"] is None
+        assert client.get("/api/v1/status").json()["wheel_readers"] == []
         assert "model file damaged" in client.get(f"/api/v1/sensors/{sid}").json()["live"]["error"]
+
+
+@requires_reader
+def test_each_counter_reads_with_the_wheel_reader_it_names(settings):
+    """Two wheel readers: each counter loads its own, one no counter reads with is let go, and a
+    sensor exported with a wheel reader this version does not have is imported with the default."""
+    other = dataclasses.replace(readers.WHEEL_READERS["wheels-v1"], id="wheels-test", name="Test wheel reader")
+    settings.models_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(MODEL_DIR / "wheels-v1.onnx", settings.models_dir / other.filename)
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "change_limit": "off"}
+    body = {"kind": "reading", "source_type": "http", "source": "http://fake", "roi": counter_box(7), "interval_s": 1}
+
+    def loaded():
+        return client.get("/api/v1/status").json()["wheel_readers"]
+
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = CounterCamera(1234)
+        with patch.dict(readers.WHEEL_READERS, {other.id: other}):
+            assert [w["id"] for w in client.get("/api/v1/config").json()["wheel_readers"]] == [
+                "wheels-v1",
+                "wheels-v2",
+                other.id,
+            ]
+            unknown = {**body, "name": "Bad", "reading": {**reading, "wheel_reader": "wheels-nope"}}
+            assert client.post("/api/v1/sensors", json=unknown).status_code == 422
+            first = client.post("/api/v1/sensors", json={**body, "name": "Water", "reading": reading}).json()["id"]
+            second = client.post(
+                "/api/v1/sensors", json={**body, "name": "Gas", "reading": {**reading, "wheel_reader": other.id}}
+            ).json()["id"]
+            default = readers.DEFAULT_WHEEL_READER
+            assert wait_for(lambda: set(loaded()) == {default, other.id}, timeout=60)
+            assert set(client.get("/api/v1/settings").json()["wheel_readers_in_use"]) == {default, other.id}
+            for sid in (first, second):
+                assert wait_for(
+                    lambda sid=sid: client.get(f"/api/v1/sensors/{sid}").json()["reading"]["value"] == "1234"
+                )
+            exported = client.get(f"/api/v1/sensors/{second}/export").content
+            # Switched to the other one: the one no counter reads with any more is let go.
+            switched = {**reading, "wheel_reader": default}
+            assert client.patch(f"/api/v1/sensors/{second}", json={"reading": switched}).status_code == 200
+            assert wait_for(lambda: loaded() == [default])
+        # This version has no wheels-test: the import reads with the default.
+        imported = client.post("/api/v1/import", files={"file": ("b.zip", exported, "application/zip")})
+        assert imported.status_code == 201, imported.text
+        copy = client.get(f"/api/v1/sensors/{imported.json()['id']}").json()
+        assert copy["reading"]["wheel_reader"] == readers.DEFAULT_WHEEL_READER
+        for sid in (first, second, imported.json()["id"]):
+            assert client.delete(f"/api/v1/sensors/{sid}").status_code in (200, 204)
+        assert wait_for(lambda: loaded() == [])
 
 
 @requires_reader

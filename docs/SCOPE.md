@@ -365,11 +365,11 @@ times its busiest shower) rejected right readings after a 35-minute update.
   when the size is back, or when the user says the region is right (`POST
   /sensors/{id}/accept-picture`) or draws a new one (both clear the size). Held rather than
   paused, so a camera that comes back at its old size needs nothing. A camera that moved without
-  changing size is not caught by this: that is C3 in `docs/WHEEL_READER_PLAN.md`.
+  changing size is not caught by this: that is *camera drift* in `docs/WHEEL_READER_PLAN.md` §8.
 
 **Wheel reader** (default for mechanical counters, `counter_reader: "wheels"`, registry
-`wheel_readers` in `readers.json`, model `wheels-v1`, bundled, 2.2 MB, ~2 ms for 8 wheels on one
-CPU thread): the crop is split into `digits` equal cells (whole cells, dividers included); each
+`wheel_readers` in `readers.json`; bundled: `wheels-v1`, 2.2 MB, ~2 ms for 8 wheels on one CPU
+thread, and `wheels-v2`, the default for new counters, 6.1 MB, ~7 ms): the crop is split into `digits` equal cells (whole cells, dividers included); each
 cell, grey by its darkest colour channel, 32×48, full contrast, goes through a small CNN that
 gives a distribution over 100 positions around the wheel (0.0–9.9). `readers.wheel_value` then
 finds the most likely *consistent* value by dynamic programming from right to left: the last
@@ -377,7 +377,10 @@ wheel turns freely, every other wheel stands on its digit plus how far its right
 past 9. Wheels at rest may sit one bin off (`READING["wheel_slack_bins"]`), and all wheels may
 appear shifted together by up to `wheel_max_shift_bins` (a region drawn a little above or below
 the digits) at a cost of `wheel_shift_penalty` per bin. The last wheel is rounded to the nearest
-digit; the confidence is the mean probability per wheel. It always returns `digits` digits, so
+digit; the confidence is the mean probability per wheel (`"confidence": "mean"`). wheels-v2 also
+reads every cell with half a cell of the frame on each side (`"context"`,
+`readers.wheel_context_cells`) and averages both, and its confidence is the weakest wheel's
+(`"confidence": "weakest"`). It always returns `digits` digits, so
 the digit count check does not apply. Counters made before it (no stored `counter_reader`) keep
 the text reader: schema v12 stores `"ocr"` for them, and so does importing an older export
 (`db.keep_text_reader`). The model, its training data and its
@@ -387,6 +390,12 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
 - Why a wheel reader (2026-10-09): on every meter tested it read more readings right than
   PP-OCRv6 small and gave no value too high, which the text reader did (numbers in its README).
   The remaining misses are ±1 on a half-turned last wheel.
+- Why wheels-v2 (2026-10-24): leaving each of two meters out in turn, five training runs
+  published no wrong value where wheels-v1 published six, read significantly more frames right
+  on one meter and the same on the other, and stays right when the region does not fit. It
+  publishes less often on a meter seen from the side whose last wheel turns; that was accepted.
+  Counters keep the reader they were set up with (schema v16, `db.keep_wheel_reader`). Numbers:
+  [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) §4.1.
 - Evaluated (spike on Commons photos): PP-OCR read LCD, LED, dot-matrix and flip-segment
   displays correctly (7/7 with a tight region); it fails on small blurry LCDs, and on rolling
   counter wheels when the whole counter is read as one line. DINOv2 per digit (4/23) and a CNN
@@ -687,14 +696,15 @@ automatically.
   checked, accepted or rejected (newest first, `"answer": "unchecked"`; never used as labels without a check,
   see `docs/WHEEL_READER_PLAN.md`), whose frame is kept — each only the region it was read in
   plus `export_margin` (the region is kept with every stored reading since 0.7.1b2,
-  `probs["roi"]`; older ones are cut with today's region, `"region": "current"`). One ZIP of at
+  `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
+  region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 3`; 2 left out
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 5`; 4 had no `"confidence_rule"`, 3 no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
-  the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability and most
-  likely positions, the common shift and the value with the last wheel's fraction), the reading
+  the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability (the one the confidence is made
+  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction), the reading
   settings without anything that tells where the sensor is (no source, name or region), the
   user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
   be used in tests and evaluations. Images are crops of the stored frames at their resolution.
@@ -801,7 +811,8 @@ is part of backups and needs no restart.
 | **Counter limits** ✅ | A counter's limit grows with the time it was away (learned, a fixed rate or per reading), Review moves a counter on, readings held when the camera's picture changes size, training images in the app's storage (backups hold them) | 0.9.1 (betas 0.9.1b1–b6) |
 | **Reviewing readings** ✅ | A counter's value sent at its first reading, decimals for its rate, a rejected reading that repeats waits in Review once, Review shows a reading's region large and one sensor at a time | 0.9.2 (betas 0.9.2b1–b4) |
 | **Backup of everything** ✅ | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress; much less memory (no ONNX Runtime arena, classifier without scikit-learn) | 0.10.0 (betas 0.10.0b1–b7) |
-| **Better counter readings** | Benchmark, the last value as an expectation, calibrated confidence, extra decimal, self-calibrating regions, wheels-v2, learning per sensor — status per phase in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
+| **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge

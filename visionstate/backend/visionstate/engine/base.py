@@ -60,7 +60,8 @@ class RuntimeBase:
         self.reader: readers.Reader | None = None  # loaded on first use by a reading sensor
         self.reader_error = ""
         self._reader_lock = asyncio.Lock()
-        self.wheel_reader: readers.WheelReader | None = None  # loaded on first use by a counter
+        # Wheel readers by id, each loaded on first use by a counter that reads with it.
+        self.wheel_readers: dict[str, readers.WheelReader] = {}
         self.wheel_reader_error = ""
         self._wheel_reader_lock = asyncio.Lock()
         # Faces (object sensors): the face model, loaded in the background when a sensor turns face

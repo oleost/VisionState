@@ -1,7 +1,7 @@
 <script lang="ts">
   // Reading sensors: the published value, the last read and exactly what the reader saw.
   import { api } from '../../lib/api';
-  import { toastError } from '../../lib/app.svelte';
+  import { app, toastError } from '../../lib/app.svelte';
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct } from '../../lib/format';
@@ -15,6 +15,13 @@
   let checking = $state(false);
   const reading = $derived(sensor.reading!);
   const last = $derived(reading.last);
+  // A counter that reads with an older wheel reader than new counters get is offered the newer one.
+  const newerWheels = $derived.by(() => {
+    const latest = app.config?.reading_defaults.wheel_reader;
+    if (reading.display !== 'counter' || reading.counter_reader !== 'wheels' || !latest) return null;
+    if (!reading.wheel_reader || reading.wheel_reader === latest) return null;
+    return app.config?.wheel_readers.find((w) => w.id === latest) ?? null;
+  });
 
   async function readNow() {
     checking = true;
@@ -56,8 +63,17 @@
 
     {#if reading.display === 'counter' && reading.counter_reader === 'ocr'}
       <div class="notice small" data-testid="try-wheel-reader">
-        New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is read
-        right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.
+        <span
+          >New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is
+          read right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+        >
+      </div>
+    {:else if newerWheels}
+      <div class="notice small" data-testid="try-newer-wheel-reader">
+        <span
+          >New: <strong>{newerWheels.name}</strong>. {newerWheels.description} Try it under
+          <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+        >
       </div>
     {/if}
 

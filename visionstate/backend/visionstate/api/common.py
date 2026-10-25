@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import change_limit, detectors, imaging, teach
+from .. import change_limit, detectors, imaging, readers, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
 from ..mqtt import main_entities
@@ -298,6 +298,7 @@ class ReadingIn(BaseModel):
     display: str = READING_DEFAULTS["display"]
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     counter_reader: str = READING_DEFAULTS["counter_reader"]
+    wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]
     max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])
@@ -332,6 +333,15 @@ class ReadingIn(BaseModel):
     def _counter_reader(cls, value: str) -> str:
         if value not in COUNTER_READERS:
             raise ValueError(f"Unknown counter reader {value!r}")
+        return value
+
+    @field_validator("wheel_reader")
+    @classmethod
+    def _wheel_reader(cls, value: str) -> str:
+        if not value:
+            return readers.DEFAULT_WHEEL_READER  # stored, so a later default never changes it
+        if value not in readers.WHEEL_READERS:
+            raise ValueError(f"Unknown wheel reader {value!r}")
         return value
 
     @field_validator("device_class")

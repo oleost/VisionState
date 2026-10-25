@@ -107,8 +107,9 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 3  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
-# 3: unchecked rejected readings too, the camera picture's size
+READINGS_FORMAT = 5  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+# 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
+# 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's)
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -127,8 +128,12 @@ infrared or night camera), whether VisionState had switched the sensor's light o
 the size of the whole camera picture in pixels ("frame_size"; a camera that changes its size after
 a restart moves what the region shows).
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
-image), how sure it was, its most likely positions, the common shift of all wheels and the
-value with the last wheel's fraction. "seconds" is the time since the oldest reading of the
+image), how sure it was ("p"), its most likely positions, the common shift of all wheels and the
+value with the last wheel's fraction. "confidence_rule" says how the reading's confidence was made
+of the wheels' "p": "mean" (their geometric mean) or "weakest" (the smallest; "p" is then the
+probability that the wheel stands near that position). Readings made before VisionState 0.10.1
+(beta 0.10.1b3) have no "confidence_rule": their "p" is always the "mean" kind, whichever rule
+made the confidence. "seconds" is the time since the oldest reading of the
 export (no time of day): sorted by it, the readings are in the order they were made. VisionState
 keeps only the readings that changed the value, the rejected ones and spot checks, so a reading
 that only repeated the last value is not in it.
@@ -144,7 +149,9 @@ https://github.com/oleost/VisionState — say what the display or meter is, if i
 readings.json ("meter"). Look through the images first; share only what you are happy to make
 public. By sharing it you release the images and data as public domain (see LICENSE.txt).
 
-Each image is cut with the region the reading was made in ("region": "as read"). Readings
+Each image is cut with the region the reading was made in ("region": "as read"), with a margin
+that is cut off where the region comes near the edge of the camera picture: "box" is the region
+inside the image, in pixels (left, top, right, bottom). Readings
 from before VisionState 0.8.0 (beta 0.7.1b2) are cut with the region the sensor has now ("region":
 "current"): if the region was moved since, those images may not show the display at all.
 """
@@ -176,7 +183,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         if sensor is None:
             raise KeyError(sensor_id)
         settings = merge_reading(sensor.reading)
-        wheels = settings["display"] == "counter" and settings["counter_reader"] == "wheels"
+        wheels = readers.uses_wheels(settings)
         mine = (Prediction.sensor_id == sensor_id, Prediction.frame.is_not(None))
         newest = Prediction.created_at.desc()
         rows = [
@@ -201,8 +208,13 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             frame = imaging.decode(path.read_bytes())
             # Cut with the region it was read in; rows from before that was kept use today's region.
             region_then = "roi" in details
-            box = imaging.region_box(details["roi"] if region_then else current, READING["export_margin"])
+            roi = details["roi"] if region_then else current
+            box = imaging.region_box(roi, READING["export_margin"])
             image = imaging.encode_jpeg(imaging.crop_box(frame, box))
+            # Where the region read sits in the image: the margin is cut off at the frame's edges.
+            width, height = frame.size
+            read, scale = imaging.region_box(roi), (width, height, width, height)
+            inside = [int(read[i] * scale[i]) - int(box[i % 2] * scale[i]) for i in range(4)]
             # Room for readings.json still to come: it compresses to well under a fifth.
             if items and file.tell() + len(image) + listed // 4 + 100_000 > budget:
                 left_out += 1
@@ -221,6 +233,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "date": row.created_at.date().isoformat(),  # the day only
                     "seconds": round((row.created_at - oldest).total_seconds()) if oldest else 0,
                     "region": "as read" if region_then else "current",
+                    "box": inside,
                     "reader": details.get("reader"),
                     "app": details.get("app"),
                     "greyscale": imaging.is_night(frame),
@@ -235,7 +248,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
         manifest = {
             "format": READINGS_FORMAT,
             "app_version": VERSION,
-            "reader": readers.DEFAULT_WHEEL_READER if wheels else reader,
+            "reader": readers.wheel_reader_of(settings) if wheels else reader,
             "meter": meter.strip()[: READING["export_meter_max_chars"]] or None,
             # How the sensor reads; nothing about where it is (no camera, name or region position).
             "settings": {

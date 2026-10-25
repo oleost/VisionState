@@ -17,6 +17,22 @@
   const displays = $derived((app.config?.reading_displays ?? []).filter((d) => d !== 'counter'));
   const digitLimits = $derived(app.config?.reading_limits.digits ?? [1, 12]);
   const counterReaders = $derived(app.config?.counter_readers ?? []);
+  // "Read with": every wheel reader (the default first) and the text reader in one list; with one
+  // wheel reader, that one is simply "wheels".
+  const defaultWheels = $derived(app.config?.reading_defaults.wheel_reader ?? '');
+  const wheelReaders = $derived(
+    [...(app.config?.wheel_readers ?? [])].sort(
+      (a, b) => Number(b.id === defaultWheels) - Number(a.id === defaultWheels),
+    ),
+  );
+  const severalWheels = $derived(wheelReaders.length > 1);
+  const wheelsOption = (id: string) => (severalWheels ? `wheels:${id}` : 'wheels');
+  const wheelsChosen = $derived(
+    value.counter_reader === 'wheels'
+      ? (wheelReaders.find((w) => w.id === (value.wheel_reader || defaultWheels)) ?? wheelReaders[0])
+      : undefined,
+  );
+  const readWith = $derived(wheelsChosen ? wheelsOption(wheelsChosen.id) : value.counter_reader);
   const deviceClasses = $derived(app.config?.reading_device_classes ?? []);
   const decimals = $derived(app.config?.reading_limits.decimals ?? [0, 4]);
   const suggested = $derived.by(() => {
@@ -35,6 +51,13 @@
     } else {
       value.display = app.config?.reading_defaults.display ?? 'auto';
     }
+  }
+
+  function setReadWith(choice: string) {
+    const [reader, wheels] = choice.split(':');
+    value.counter_reader = reader as ReadingSettings['counter_reader'];
+    if (wheels) value.wheel_reader = wheels;
+    else if (reader === 'wheels' && wheelReaders[0]) value.wheel_reader = wheelReaders[0].id;
   }
 
   function setMode(mode: ReadingMode) {
@@ -137,14 +160,18 @@
   {:else}
     <label class="field" style="max-width:360px">
       Read with
-      <select class="input" bind:value={value.counter_reader}>
-        {#each counterReaders as r (r)}<option value={r}>{COUNTER_READER_INFO[r]}</option>{/each}
+      <select class="input" value={readWith} onchange={(e) => setReadWith(e.currentTarget.value)}>
+        {#each counterReaders as r (r)}
+          {#if r === 'wheels' && severalWheels}
+            {#each wheelReaders as w (w.id)}
+              <option value={wheelsOption(w.id)}>{w.name}{w.id === defaultWheels ? ' (recommended)' : ''}</option>
+            {/each}
+          {:else}
+            <option value={r}>{COUNTER_READER_INFO[r]}</option>
+          {/if}
+        {/each}
       </select>
-      <span class="hint"
-        >{value.counter_reader === 'wheels'
-          ? 'Reads how far each wheel has turned, so a wheel between two digits is read right.'
-          : 'Reads the wheels as text; a turning wheel can be misread.'}</span
-      >
+      <span class="hint">{wheelsChosen ? wheelsChosen.description : 'Reads the wheels as text; a turning wheel can be misread.'}</span>
     </label>
     <p class="small muted">
       A counter that reads lower than before is rejected; under <em>Sensor output</em> you can also limit how much it

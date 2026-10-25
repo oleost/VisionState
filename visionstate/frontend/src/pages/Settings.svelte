@@ -294,8 +294,8 @@
             <span class="model">{wheelReader.name} · included</span>
             <span class="hint"
               >{wheelReader.description} {wheelReader.license},
-              <a href={wheelReader.source} target="_blank" rel="noreferrer">source</a>. Used by counters set to
-              <em>Read with → Wheel reader</em> (the default).</span
+              <a href={wheelReader.source} target="_blank" rel="noreferrer">source</a>. New counters read with it
+              (<em>Read with</em> on a counter's Settings tab).</span
             >
           </div>
         {/if}

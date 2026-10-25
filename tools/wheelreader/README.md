@@ -1,6 +1,6 @@
 # Wheel reader
 
-The model VisionState reads mechanical counters (water and gas meters) with: a small CNN that
+The models VisionState reads mechanical counters (water and gas meters) with: a small CNN that
 looks at one wheel and tells how far it has turned — a distribution over 100 positions around
 the wheel (0.0, 0.1, … 9.9). The app (`visionstate/backend/visionstate/readers.py`,
 `WheelReader`) splits the region into one cell per wheel and finds the most likely value whose
@@ -9,14 +9,17 @@ wheel positions fit together (a wheel only turns while the wheel to its right go
 This folder holds everything needed to make the model again. Nothing here is part of the app
 image; the data never goes into the repository (it lives in `VisionStateLocal/`, ignored by git).
 
-## The released model
+## The released models
 
-| Id | File | Size | Input | Output |
+| Id | File | Size | Inputs | Outputs |
 |---|---|---|---|---|
 | `wheels-v1` | `wheels-v1.onnx` | 2.2 MB, 565 k parameters | `cells`: N × 1 × 48 × 32, grey 0…1 | `logits`: N × 100 |
+| `wheels-v2` | `wheels-v2.onnx` | 6.1 MB, 1.5 M parameters | `cells` as v1; `context`: N × 1 × 48 × 64, each cell with half a cell of the frame on each side | `logits`: N × 100 (log probabilities of both nets, averaged); `embedding`: N × 512 |
 
-Cell preprocessing (must match `readers.wheel_cells`): grey from each pixel's darkest colour
-channel, resized to 32 × 48 (bilinear), autocontrast with 1 % cut-off, divided by 255.
+Cell preprocessing (must match `readers.wheel_cells`, and `readers.wheel_context_cells` for the
+context): grey from each pixel's darkest colour channel, resized to 32 × 48 (64 × 48 with
+context, bilinear), autocontrast with 1 % cut-off, divided by 255. wheels-v2 is a one-cell net
+and a context net in one file (`export_v2.py`); its confidence is the weakest wheel's.
 
 Licence: Apache-2.0. Trained on data that may be used for anything:
 
@@ -25,6 +28,7 @@ Licence: Apache-2.0. Trained on data that may be used for anything:
 | Drawn wheels (`synth.py`, 600 000 cells): fonts from Google Fonts (`fonts.py`, pinned) | SIL OFL 1.1 (the fonts; drawn images are not covered) | training |
 | [Word-Wheel Water Meter Dataset](https://doi.org/10.5061/dryad.7d7wm3860) (Sci Data 2026), recognition crops | CC0 | training (labels: the nearest digit per wheel) |
 | Checked readings exported from VisionState and shared in issues [#32](https://github.com/oleost/VisionState/issues/32) and [#40](https://github.com/oleost/VisionState/issues/40) | CC0 (the export's LICENSE.txt) | training; `wheels-v1` was evaluated with #40 0001–0017 held out, then trained on all of it |
+| wheels-v2 also: drawn rows of wheels (`rows.py`), and the exports of two water meters of 2026-10-23 (the maintainer's and pedromfa's, #40), 0.8.0 on | OFL fonts; CC0 | training; evaluated leaving each meter out, then trained on both |
 
 Results of `wheels-v1` (2026-10-09; whole reading exact, last digit rounded):
 
@@ -69,6 +73,53 @@ $PY evaluate.py ../../VisionStateLocal/wheel/runs/wheels.pt --width 16 --shift 2
 - `baseline.py` (backend venv) reads the same sets with the app's text reader for comparison;
   `items.py` also knows local test-only sets that are not redistributable (GPL), which are
   skipped when they are missing.
+
+Results of `wheels-v2` (2026-10-24): leaving each meter out, five training runs against
+`wheels-v1` on the same frames, about 1,300 frames read by eye, through the app's rules (70 %,
+never down): wrong values published 0 in 19 of 20 runs and sets (one: 2 litres), wheels-v1 3, 2,
+1 and 0; frames right +4.4 and +1.4 points on the maintainer's meter (significant), +0.6 and +0.1
+on pedromfa's. Trained on all of it: 28 of 33 free Openverse photos (wheels-v1 26), Dryad six
+digits 94.0 % (90.2 %). Weaker: it publishes less often on a meter seen from the side whose last
+wheel turns. Details: the plan, §4.1.
+
+### Making wheels-v2 again
+
+After the steps above, and `$PY rows.py build 300000`:
+
+```
+$PY exports.py olee <maintainer export> 2026-10-18 8   # labels read by eye (frames.json in the export)
+$PY exports.py pede <pedromfa export> 2026-10-20 8
+CELL="synth:1 rows:0.5 dryad_train:1 pede_a:0.03 pede_b:0.03 pede_a_moved:0.08 pede_b_moved:0.08 olee_a:0.03 olee_b:0.03 olee_a_moved:0.08 olee_b_moved:0.08"
+CTX="rows_ctx:2 dryad_train_ctx:1 pede_a_ctx:0.03 pede_b_ctx:0.03 pede_a_moved_ctx:0.08 pede_b_moved_ctx:0.08 olee_a_ctx:0.03 olee_b_ctx:0.03 olee_a_moved_ctx:0.08 olee_b_moved_ctx:0.08"
+# teachers: pairs trained as below without --teacher, each on one meter only, several --seed
+$PY distill.py t16 <teacher pairs, a.pt+b.pt+...> synth rows dryad_train pede_a pede_b pede_a_moved pede_b_moved olee_a olee_b olee_a_moved olee_b_moved
+O="--epochs 25 --width 16 --dryad-orient ../../VisionStateLocal/wheel/runs/s1_synth.pt --teacher t16 --teacher-t 0.3 --alpha 0.7"
+$PY train.py final_cell $CELL $O
+$PY train.py final_ctx $CTX $O --input 64 --ema 0.999
+$PY export_v2.py runs/final_cell.pt runs/final_ctx.pt wheels-v2.onnx
+```
+
+The released teacher was 16 pairs (5 seeds per meter trained before the frames were read by eye,
+3 after).
+
+## Candidates and the benchmark
+
+The next model (a one-cell net and a context net read together, `context.py`) is built and
+measured with these; each script's docstring says how to run it:
+
+| Script | Does |
+|---|---|
+| `rows.py` | drawn rows of wheels, so a cell can sit off-centre with its neighbour in view |
+| `exports.py` | labels and cells from a shared export (only readings with `"box"`); `eye.json` and `frames.json` in the export folder hold labels read by eye |
+| `bench.py` | the benchmark: `eval` (with a replay through *went down* and the change limit), `geometry` (the region's edges moved) and `compare` (paired, with a bootstrap interval); a model spec of several `.pt` files joined with `+` is an ensemble |
+| `distill.py` | an ensemble's probabilities on the training sets, for `train.py --teacher` |
+| `temporal.py` | decoding over the time series instead of frame by frame |
+| `fit_boxes.py` | regions fitted to the labels (dropped: the export says where the region was) |
+| `export_v2.py` | the pair as one ONNX file with a second output, the embedding |
+
+A candidate is measured **leaving one meter out**: trained without the meter it is tested on,
+several training runs (`--seed`), each compared with wheels-v1 on the same frames. Results and
+what was tried are in the plan.
 
 What is planned next (benchmark, wheels-v2 and more): [`docs/WHEEL_READER_PLAN.md`](../../docs/WHEEL_READER_PLAN.md).
 

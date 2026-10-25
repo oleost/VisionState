@@ -35,11 +35,11 @@
     }
   },
   "wheel_readers": {
-    "default": "wheels-v1",
+    "default": "wheels-v2",
     "readers": {
       "wheels-v1": {
         "name": "VisionState wheel reader v1",
-        "description": "Reads how far each wheel of a mechanical counter has turned; trained for VisionState (tools/wheelreader).",
+        "description": "Reads how far each wheel has turned, so a wheel between two digits is read right.",
         "url": "https://huggingface.co/oleost/visionstate-wheel-reader/resolve/42f32402973b3bd3de0258766404232b11e8216f/wheels-v1.onnx",
         "sha256": "37912f885b061a7b12298872fbdfa1b73ca0664363b293a55617b1d3680a98ac",
         "size": 2264691,
@@ -52,6 +52,25 @@
         "ram_mb": 12,
         "time_ms": 5,
         "accuracy": 3
+      },
+      "wheels-v2": {
+        "name": "VisionState wheel reader v2",
+        "description": "Reads each wheel alone and with its neighbours, so a region that does not quite fit is still read right; it holds back when any wheel is unclear.",
+        "url": "https://huggingface.co/oleost/visionstate-wheel-reader/resolve/563f365a5b377c10c7248517ef2576ac5cee3cbf/wheels-v2.onnx",
+        "sha256": "5644705e1f0e684b30bf3c7a6cb23e7eb1ddda616cd16b5321423f45bf7fd8b6",
+        "size": 6102872,
+        "cell_width": 32,
+        "cell_height": 48,
+        "bins": 100,
+        "context": 0.5,
+        "context_width": 64,
+        "confidence": "weakest",
+        "license": "Apache-2.0",
+        "source": "https://huggingface.co/oleost/visionstate-wheel-reader",
+        "bundled": true,
+        "ram_mb": 20,
+        "time_ms": 12,
+        "accuracy": 4
       }
     }
   }
