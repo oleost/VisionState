@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1b4
+
+### Fixed
+
+- **What the reader sees shows one wheel per field with wheel reader v2 too.** It showed every
+  wheel with faded halves of the wheels next to it, which looked like each digit twice. Reading
+  is unchanged.
+
 ## 0.10.1b3
 
 ### Fixed
