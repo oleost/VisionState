@@ -1,22 +1,6 @@
 # Changelog
 
-## 0.10.1b4
-
-### Fixed
-
-- **What the reader sees shows one wheel per field with wheel reader v2 too.** It showed every
-  wheel with faded halves of the wheels next to it, which looked like each digit twice. Reading
-  is unchanged.
-
-## 0.10.1b3
-
-### Fixed
-
-- **Exported readings show how sure wheel reader v2 was of each wheel** the way it decides. The
-  per-wheel value in the export came from v1's way of counting, so a wheel v2 read clearly could
-  look unsure there. Readings made before this version keep the old per-wheel values.
-
-## 0.10.1b2
+## 0.10.1
 
 ### New
 
@@ -31,20 +15,17 @@
   clear picture, so the value can come a little later. It takes about twice as long per reading
   as v1 (still a few milliseconds), and the app is 6 MB larger.
 
-### Fixed
-
-- The suggestions on a counter's Live tab (to try the wheel reader) no longer break into columns
-  on narrow screens.
-
-## 0.10.1b1
-
 ### Better
 
 - **Exported readings say where the region is in each image** (Export readings on a reading
   sensor's Quality tab), also for readings made before this version (since 0.8.0). The margin
   around the region is cut off at the picture's edge, so the region was not always in the middle.
-- Each counter now keeps the wheel reader it reads with, so a better one can come later without
-  changing how your counters read today. There is nothing to choose yet.
+  For the wheel reader they also say how sure it was of each wheel the way it decides.
+
+### Fixed
+
+- The suggestions on a counter's Live tab (to try the wheel reader) no longer break into columns
+  on narrow screens.
 
 ## 0.10.0
 
