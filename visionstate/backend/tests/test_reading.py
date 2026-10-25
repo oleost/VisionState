@@ -369,8 +369,9 @@ def test_a_wheel_reader_with_context_is_given_the_wheels_around_each_cell(monkey
     result, used = reader.read_counter(frame, 7, box)
     assert result.text == "0089932" and result.score > 0.8
     assert sorted(reader.session.fed[-1].values()) == [(7, 1, 48, 32), (7, 1, 48, 64)]
-    # What the reader saw: the cells with their neighbours side by side, at twice the size.
-    assert used.size == ((7 * (64 + 2) - 2) * 2, 48 * 2)
+    # What the reader saw: the cells side by side at twice the size, one wheel per field (without
+    # the neighbours, which would show every wheel twice).
+    assert used.size == ((7 * (32 + 2) - 2) * 2, 48 * 2)
     # The cells are the region's, cut out or not; their neighbours come from the frame around it.
     region = frame.crop(box)
     (cut, cut_context), (cells, context) = reader.inputs(region, 7), reader.inputs(frame, 7, box)

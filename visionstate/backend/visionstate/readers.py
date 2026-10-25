@@ -546,14 +546,12 @@ class WheelReader:
         return min(p)
 
     def cells_image(self, image: Image.Image, digits: int, box: Pixels | None = None) -> Image.Image:
-        """The cells side by side as the model sees them (for the "what the reader saw" image);
-        with context, the cells with their neighbours faded."""
-        cells = (self.inputs(image, digits, box)[-1] * 255).astype(np.uint8)
-        if self.spec.context:
-            side = round(cells.shape[2] * self.spec.context / (1 + 2 * self.spec.context))
-            faded = (cells * 0.35 + 255 * 0.65).astype(np.uint8)
-            cells[:, :, :side] = faded[:, :, :side]
-            cells[:, :, -side:] = faded[:, :, -side:]
+        """The cells side by side as the model sees them (for the "what the reader saw" image):
+        one wheel per field, so a region that cuts the wheels wrong shows. A model with context
+        also sees the neighbours around each cell; they are left out here, as they would look
+        like every wheel twice."""
+        crop = image.crop(box) if box else image
+        cells = (wheel_cells(crop, digits, self.spec.cell_width, self.spec.cell_height) * 255).astype(np.uint8)
         gap = 2
         h, w = cells.shape[1:]
         line = Image.new("L", (len(cells) * (w + gap) - gap, h), 255)
