@@ -699,12 +699,12 @@ automatically.
   `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
   region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 4`; 3 had no `"box"`, 2 left out
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 5`; 4 had no `"confidence_rule"`, 3 no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
-  the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability and most
-  likely positions, the common shift and the value with the last wheel's fraction), the reading
+  the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability (the one the confidence is made
+  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction), the reading
   settings without anything that tells where the sensor is (no source, name or region), the
   user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
   be used in tests and evaluations. Images are crops of the stored frames at their resolution.

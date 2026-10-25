@@ -421,26 +421,34 @@ def wheel_decode(logp: np.ndarray) -> tuple[float, float, list[int]]:
     return value * 10 + at[-1] / tenth, score, at
 
 
-def wheel_details(probs: np.ndarray, logp: np.ndarray, value: float, score: float, at: list[int], shift: int) -> dict:
+def wheel_details(
+    probs: np.ndarray, p: list[float], rule: str, value: float, score: float, at: list[int], shift: int
+) -> dict:
     """How a wheel reading was found, in positions (0.0-9.9): per wheel where the value puts it
-    as seen in the image (``at``, with the common ``shift``), the probability the decoder used
-    there (``p``, a little slack included) and the model's most likely positions (``top``);
-    the value in steps of the last wheel with its fraction, and its log probability."""
+    as seen in the image (``at``, with the common ``shift``), its probability as the confidence
+    counts it (``p``, by the spec's ``confidence_rule``: ``WheelReader.wheel_p``) and the model's
+    most likely positions (``top``); the value in steps of the last wheel with its fraction, and
+    its log probability."""
     bins = probs.shape[1]
     tenth = bins // 10
     top = READING["export_wheel_top"]
     wheels = []
     for k, b in enumerate(at):
-        seen = (b + shift) % bins
         order = np.argsort(probs[k])[::-1][:top]
         wheels.append(
             {
-                "at": round(seen / tenth, 1),
-                "p": round(float(np.exp(logp[k, seen])), 4),
+                "at": round((b + shift) % bins / tenth, 1),
+                "p": round(p[k], 4),
                 "top": [[round(int(i) / tenth, 1), round(float(probs[k, i]), 4)] for i in order],
             }
         )
-    return {"value": round(value, 1), "shift": round(shift / tenth, 1), "log_p": round(score, 3), "per_wheel": wheels}
+    return {
+        "value": round(value, 1),
+        "shift": round(shift / tenth, 1),
+        "log_p": round(score, 3),
+        "confidence_rule": rule,
+        "per_wheel": wheels,
+    }
 
 
 class WheelReader:
@@ -511,22 +519,31 @@ class WheelReader:
         assert best is not None
         value, score, at, shift = best
         number = math.floor(value + 0.5) % 10**digits
+        p = self.wheel_p(probs, logp, at, shift)
         text = Text(
             f"{number:0{digits}d}",
-            self.confidence(probs, score, at, shift),
-            {"wheels": wheel_details(probs, logp, value, score, at, shift)},
+            self.confidence(score, p),
+            {"wheels": wheel_details(probs, p, self.spec.confidence, value, score, at, shift)},
         )
         return text, self.cells_image(image, digits, box)
 
-    def confidence(self, probs: np.ndarray, score: float, at: list[int], shift: int) -> float:
-        """How sure the read is: "mean" is the geometric mean of the wheels' decoded probabilities;
-        "weakest" the smallest probability of a wheel within ``wheel_weakest_bins`` of where the
-        value puts it (one unclear wheel is not hidden by the clear ones)."""
-        if self.spec.confidence != "weakest":
-            return math.exp(score / max(1, len(at)))
+    def wheel_p(self, probs: np.ndarray, logp: np.ndarray, at: list[int], shift: int) -> list[float]:
+        """Every wheel's probability at where the value puts it, as the confidence counts it:
+        "mean" the decoder's (a little slack included), "weakest" the mass within
+        ``wheel_weakest_bins``."""
         bins = probs.shape[1]
+        if self.spec.confidence != "weakest":
+            return [float(np.exp(logp[k, (b + shift) % bins])) for k, b in enumerate(at)]
         near = np.arange(-READING["wheel_weakest_bins"], READING["wheel_weakest_bins"] + 1)
-        return float(min(probs[k, (b + shift + near) % bins].sum() for k, b in enumerate(at)))
+        return [float(probs[k, (b + shift + near) % bins].sum()) for k, b in enumerate(at)]
+
+    def confidence(self, score: float, p: list[float]) -> float:
+        """How sure the read is, from the decoder's ``score`` and the wheels' ``wheel_p``: "mean"
+        is the geometric mean of the wheels' decoded probabilities (the score, shift penalty
+        included); "weakest" the smallest (one unclear wheel is not hidden by the clear ones)."""
+        if self.spec.confidence != "weakest":
+            return math.exp(score / max(1, len(p)))
+        return min(p)
 
     def cells_image(self, image: Image.Image, digits: int, box: Pixels | None = None) -> Image.Image:
         """The cells side by side as the model sees them (for the "what the reader saw" image);

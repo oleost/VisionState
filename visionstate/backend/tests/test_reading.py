@@ -399,11 +399,15 @@ def test_the_weakest_wheel_is_the_confidence_of_a_wheel_reader_that_says_so():
     probs[3, 40], probs[3, 75] = 0.5, 0.5  # the last wheel: 4.0 or 7.5
     probs /= probs.sum(axis=1, keepdims=True)
     at, shift = [10, 20, 30, 40], 0
+    logp = readers.WheelReader.with_slack(probs)
     reader = object.__new__(readers.WheelReader)
     reader.spec = weakest
-    assert reader.confidence(probs, 0.0, at, shift) == pytest.approx(0.5, abs=0.01)
+    p = reader.wheel_p(probs, logp, at, shift)
+    assert reader.confidence(0.0, p) == pytest.approx(0.5, abs=0.01) == min(p)
+    assert p[:3] == pytest.approx([1.0] * 3, abs=0.01)
     reader.spec = spec
-    assert reader.confidence(probs, 4 * math.log(0.84), at, shift) == pytest.approx(0.84)
+    assert reader.confidence(4 * math.log(0.84), reader.wheel_p(probs, logp, at, shift)) == pytest.approx(0.84)
+    assert reader.wheel_p(probs, logp, at, shift)[3] == pytest.approx(0.5, abs=0.01)
 
 
 @requires_reader
@@ -426,7 +430,9 @@ def test_wheel_reader_reads_a_real_meter(asset, expected, reader_id):
     assert result.details is not None
     wheels = result.details["wheels"]
     assert round(wheels["value"]) == int(expected) and wheels["log_p"] < 0 and abs(wheels["shift"]) <= 0.2
-    assert len(wheels["per_wheel"]) == 7
+    assert len(wheels["per_wheel"]) == 7 and wheels["confidence_rule"] == spec.confidence
+    if spec.confidence == "weakest":  # the export shows the probabilities the confidence was made of
+        assert result.score == pytest.approx(min(w["p"] for w in wheels["per_wheel"]), abs=1e-4)
     for wheel in wheels["per_wheel"]:
         assert 0.0 <= wheel["at"] <= 9.9 and 0.0 < wheel["p"] <= 1.0
         assert len(wheel["top"]) == 3 and wheel["top"][0][1] >= wheel["top"][1][1] >= wheel["top"][2][1]
@@ -1136,7 +1142,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 4 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 5 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.

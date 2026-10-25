@@ -107,8 +107,9 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 4  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
-# 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image
+READINGS_FORMAT = 5  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+# 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
+# 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's)
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -127,8 +128,12 @@ infrared or night camera), whether VisionState had switched the sensor's light o
 the size of the whole camera picture in pixels ("frame_size"; a camera that changes its size after
 a restart moves what the region shows).
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
-image), how sure it was, its most likely positions, the common shift of all wheels and the
-value with the last wheel's fraction. "seconds" is the time since the oldest reading of the
+image), how sure it was ("p"), its most likely positions, the common shift of all wheels and the
+value with the last wheel's fraction. "confidence_rule" says how the reading's confidence was made
+of the wheels' "p": "mean" (their geometric mean) or "weakest" (the smallest; "p" is then the
+probability that the wheel stands near that position). Readings made before VisionState 0.10.1
+(beta 0.10.1b3) have no "confidence_rule": their "p" is always the "mean" kind, whichever rule
+made the confidence. "seconds" is the time since the oldest reading of the
 export (no time of day): sorted by it, the readings are in the order they were made. VisionState
 keeps only the readings that changed the value, the rejected ones and spot checks, so a reading
 that only repeated the last value is not in it.
