@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1b3
+
+### Fixed
+
+- **Exported readings show how sure wheel reader v2 was of each wheel** the way it decides. The
+  per-wheel value in the export came from v1's way of counting, so a wheel v2 read clearly could
+  look unsure there. Readings made before this version keep the old per-wheel values.
+
 ## 0.10.1b2
 
 ### New
