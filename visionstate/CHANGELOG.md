@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.11.0b2
+
+### Better
+
+- **History pictures are the camera's own**: a frame is kept as the camera sent it instead of
+  being saved again, so it takes no time, loses nothing and usually takes less space — the same
+  history limit holds more. Pictures a camera sends turned (by a tag in the file) are still saved
+  upright as before.
+- **Less work at every check**: a camera picture is no longer copied twice while it is read
+  (about 20 % faster, and less memory for large pictures).
+- **Far fewer MQTT messages**: a sensor's values are sent when they change, and every few
+  minutes all the same (and right after the connection to the broker comes back). A sensor that
+  sees the same thing all day now sends almost nothing.
+- **The app rests in the background**: a page that is not shown (another browser tab, the Home
+  Assistant app put away) no longer asks the app for anything, and is brought up to date the
+  moment it is shown again.
+
 ## 0.11.0b1
 
 ### Better
