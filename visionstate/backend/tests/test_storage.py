@@ -477,3 +477,51 @@ def test_frames_are_decoded_small_where_that_is_enough(tmp_path):
     png = io.BytesIO()
     photo.resize((640, 360)).save(png, format="PNG")
     assert imaging.decode(png.getvalue(), at_least=(10, 10)).size == (640, 360)  # not a JPEG: whole
+
+
+def test_the_history_keeps_the_cameras_own_jpeg(runtime):
+    """A frame decoded whole and upright is saved as the camera sent it (not encoded again);
+    anything else — a crop, a turned picture, a PNG, a frame decoded small — is encoded. A training
+    image is always encoded again (what an uploaded photo carries besides its pixels stays out)."""
+    import io
+
+    from visionstate import imaging
+
+    from .conftest import ASSETS
+
+    rt = runtime
+    sid = state_sensor(rt)
+    photo = Image.open(ASSETS / "beach.jpg").convert("RGB")
+    buf = io.BytesIO()
+    photo.save(buf, format="JPEG", quality=75)
+    data = buf.getvalue()
+
+    frame = imaging.decode(data)
+    assert frame.mode == "RGB" and imaging.original_jpeg(frame) == data
+    assert rt.storage.history_path(sid, rt.storage.save_history(sid, frame)).read_bytes() == data
+    crop = imaging.crop(frame, {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5})
+    assert imaging.original_jpeg(crop) is None and imaging.original_jpeg(frame.copy()) is None
+    assert rt.storage.history_path(sid, rt.storage.save_history(sid, crop)).read_bytes() != data
+    assert imaging.original_jpeg(imaging.decode(data, at_least=(64, 64))) is None
+    sample = rt.add_sample(sid, frame, "upload", None)
+    with rt.db.session() as s:
+        from visionstate.db import Sample
+
+        assert rt.storage.sample_path(sid, s.get(Sample, sample).filename).read_bytes() != data
+
+    exif = Image.Exif()
+    exif[imaging.EXIF_ORIENTATION] = 6  # turned: the camera's file is not the picture as shown
+    turned = io.BytesIO()
+    photo.save(turned, format="JPEG", quality=75, exif=exif)
+    upright = imaging.decode(turned.getvalue())
+    assert upright.size == (photo.height, photo.width) and imaging.original_jpeg(upright) is None
+    png = io.BytesIO()
+    photo.save(png, format="PNG")
+    assert imaging.original_jpeg(imaging.decode(png.getvalue())) is None
+
+    key = id(frame)
+    del frame, crop
+    import gc
+
+    gc.collect()
+    assert key not in imaging._ORIGINALS  # forgotten with its image

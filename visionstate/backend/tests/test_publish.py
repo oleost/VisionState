@@ -160,14 +160,16 @@ def test_a_picture_is_sent_when_it_shows_something_new(tmp_path, monkeypatch):
 
 @requires_reader
 def test_values_that_change_at_every_check_are_not_sent(tmp_path):
-    """No timestamp in the attributes, the confidence in whole percent, the pictures once while the
-    value stays: nothing makes Home Assistant store the entities again at every check."""
+    """No timestamp in the attributes, the confidence in whole percent, and nothing sent again
+    while it stays the same (the pictures included): nothing makes Home Assistant store the
+    entities again at every check. A new value is sent at once."""
     settings = Settings(
         data_dir=tmp_path / "data", media_dir=tmp_path / "media", frontend_dir=tmp_path, bundled_models_dir=MODEL_DIR
     )
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime
-        rt.grabber = DisplayCamera("0012345.6")
+        camera = CountingCamera("0012345.6")
+        rt.grabber = camera
         mqtt = CountingMqtt(rt.mqtt)
         rt.mqtt = mqtt
         body = {
@@ -181,9 +183,25 @@ def test_values_that_change_at_every_check_are_not_sent(tmp_path):
         }
         client.post("/api/v1/sensors", json=body)
         base = "visionstate/meter"
-        assert wait_for(lambda: mqtt.count.get(f"{base}/confidence", 0) >= 3, timeout=60)
+        assert wait_for(lambda: mqtt.sent.get(f"{base}/state") == "12345.6", timeout=60)
+        grabs = camera.grabs
+        assert wait_for(lambda: camera.grabs >= grabs + 3, timeout=60)  # three more checks of the same
         attributes = mqtt.sent[f"{base}/attributes"]
         attributes = json.loads(attributes) if isinstance(attributes, str) else attributes
         assert "last_update" not in attributes
         assert mqtt.sent[f"{base}/confidence"].isdigit()  # whole percent
-        assert mqtt.count[f"{base}/image"] == 1 and mqtt.count[f"{base}/reader_image"] == 1
+        for entity in ("state", "confidence", "attributes", "availability", "image", "reader_image"):
+            assert mqtt.count[f"{base}/{entity}"] == 1, (entity, mqtt.count)
+        camera.text = "0012346.6"
+        assert wait_for(lambda: mqtt.sent.get(f"{base}/state") == "12346.6", timeout=60)
+        assert wait_for(lambda: mqtt.count[f"{base}/image"] == 2, timeout=10)
+
+
+class CountingCamera(DisplayCamera):
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.grabs = 0
+
+    async def grab(self, source_type, source):
+        self.grabs += 1
+        return await super().grab(source_type, source)

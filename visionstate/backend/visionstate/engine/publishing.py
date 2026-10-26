@@ -21,9 +21,19 @@ log = logging.getLogger(__name__)
 
 class PublishingMixin(RuntimeBase):
     async def _send(self, cfg: SensorConfig, topic: str, payload: str | bytes | dict, retain: bool = False) -> None:
-        """Publish one of a sensor's values — unless it is not to be sent to Home Assistant."""
-        if cfg.publish:
-            await self.mqtt.publish(topic, payload, retain=retain)
+        """Publish one of a sensor's values — unless it is not to be sent to Home Assistant, or it
+        is what was sent last (sent again every PUBLISH["refresh_s"] all the same, and after MQTT
+        (re)connects: publish_discovery forgets what was sent). Home Assistant would only throw an
+        unchanged value away."""
+        if not cfg.publish:
+            return
+        live = self.live_state(cfg.id)
+        now = time.time()
+        sent = live.sent_on_change.get(topic)
+        if sent is not None and sent[0] == payload and now - sent[1] < PUBLISH["refresh_s"]:
+            return
+        await self.mqtt.publish(topic, payload, retain=retain)
+        live.sent_on_change[topic] = (payload, now)
 
     async def _send_on_change(
         self, cfg: SensorConfig, topic: str, shows: object, make: Callable[[], bytes | dict]

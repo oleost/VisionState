@@ -186,8 +186,9 @@ Many users run Home Assistant on phones and tablets.
   them resizes what is observed, WebKit reports "ResizeObserver loop completed with undelivered
   notifications" (seen once in CI on the dashboard, never locally). Measure in a timeout instead,
   like `measure` in `DetectionBoxes.svelte` (not the next animation frame: none comes in a hidden tab).
-- The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only poll
-  while visible look fine there. Use `setVisibility` (e2e) or override it by hand.
+- The Chrome tab Claude drives counts as hidden (`document.visibilityState`), and every page polls
+  only while visible (`lib/poll.ts`, live frames, history): there nothing updates by itself. Use
+  `setVisibility` (e2e) or override it by hand.
 - A backend test that swaps in a fake camera after `TestClient(create_app(...))` has started may
   see the first check use the real one (and the sensor go *unavailable*): wait for the state you
   expect with `wait_for`, never read it once.

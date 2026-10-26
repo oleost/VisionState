@@ -577,6 +577,10 @@ keeps `last_reported`), the confidence and the probabilities in whole percent
 (`engine.logic.percent`), and the pictures and an object's attributes (boxes, last seen) through
 `engine.publishing.PublishingMixin._send_on_change`: at once when what they are about changes (the published
 state, the objects and their counts, the value), otherwise every `settings.PUBLISH["refresh_s"]`.
+Every other value is sent only when it differs from what that topic got last
+(`engine.publishing.PublishingMixin._send`), and again after the same time: Home Assistant would
+only throw it away. What was sent is forgotten when discovery is published (MQTT connected again,
+a sensor changed), so nothing waits for a change after the broker or Home Assistant restarted.
 
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Send to Home Assistant** (`sensor.publish`, default
@@ -702,7 +706,10 @@ the old copies stay for `SAMPLES_MOVE["keep_old_days"]` after the first copy, so
 backup made before the update still gives the older version its images, then they are removed.
 Files no sensor lists are left in the media folder.
 
-History frames are full camera frames (JPEG 90). They are removed by age (`history_days`;
+History frames are full camera frames: the camera's own JPEG when the frame is one and needs no
+turning (`imaging.original_jpeg`; not encoded again, so no time spent and nothing lost, and usually
+smaller), otherwise JPEG 90. Training images are always encoded again: that leaves out what an
+uploaded photo carries besides its pixels (where it was taken), as they go into exports. They are removed by age (`history_days`;
 frames waiting for review get twice as long) and by total size (`history_max_gb`, 0 = no limit):
 oldest first, frames waiting for review only when that is not enough. Both limits are a DB
 setting edited in Settings → Storage (`/api/v1/storage`, which also reports disk use);

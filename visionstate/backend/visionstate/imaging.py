@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -27,17 +28,44 @@ class ImageTooLarge(OSError):
     """An image with more pixels than RUNTIME["max_image_megapixels"]; handled like an unreadable one."""
 
 
+# The camera's own JPEG of a frame decode() made, by id() of that image while it lives (see
+# original_jpeg); an entry goes with its image (weakref.finalize), so an id is never reused here.
+_ORIGINALS: dict[int, bytes] = {}
+
+EXIF_ORIENTATION = 0x0112
+
+
 def decode(data: bytes, at_least: tuple[int, int] | None = None) -> Image.Image:
     """An image (RGB). ``at_least``: a JPEG may be decoded smaller, down to this size (its decoder
-    scales by 1/2, 1/4 or 1/8 while decoding, several times faster than decoding it whole)."""
+    scales by 1/2, 1/4 or 1/8 while decoding, several times faster than decoding it whole).
+
+    Without copies: a frame already upright and RGB (most camera pictures) is the decoded image
+    itself — exif_transpose and convert would each copy it whole. A JPEG decoded whole and
+    upright is remembered as it came (original_jpeg), so the history keeps the camera's own file.
+    """
     image = Image.open(io.BytesIO(data))
     # Checked from the header, before the pixels are decoded (they could take gigabytes).
     if image.width * image.height > RUNTIME["max_image_megapixels"] * 1_000_000:
         raise ImageTooLarge(f"Image too large ({image.width}×{image.height})")
     if at_least is not None:
         image.draft("RGB", at_least)  # only JPEG does anything with it
-    image = ImageOps.exif_transpose(image)
-    return image.convert("RGB")
+    upright = image.getexif().get(EXIF_ORIENTATION, 1) == 1
+    jpeg = image.format == "JPEG"
+    if not upright:
+        ImageOps.exif_transpose(image, in_place=True)
+    image.load()
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    if jpeg and upright and at_least is None:
+        _ORIGINALS[id(image)] = data
+        weakref.finalize(image, _ORIGINALS.pop, id(image), None)
+    return image
+
+
+def original_jpeg(image: Image.Image) -> bytes | None:
+    """The camera's JPEG ``image`` was decoded from, when it is exactly that picture (not a crop
+    or another copy of it: those are other images)."""
+    return _ORIGINALS.get(id(image))
 
 
 def decode_for_signature(data: bytes, roi: dict | None) -> Image.Image:

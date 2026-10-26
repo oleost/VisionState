@@ -154,6 +154,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling, the last restored backup (Settings is made again with it) |
 | `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
+| `lib/poll.ts` | Polling that rests while the page is hidden (`pollWhileVisible`: status, dashboard, sensor page) |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
 | `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |

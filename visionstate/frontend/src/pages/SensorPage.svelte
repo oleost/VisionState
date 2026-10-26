@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import { api } from '../lib/api';
   import { shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
   import CameraChanged from '../lib/components/CameraChanged.svelte';
@@ -9,6 +8,7 @@
   import ObjectChips from '../lib/components/ObjectChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
   import { facesBusy, isObjectSensor } from '../lib/objects';
+  import { pollWhileVisible } from '../lib/poll';
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
@@ -27,7 +27,6 @@
 
   let sensor = $state<Sensor | null>(null);
   let error = $state('');
-  let timer: ReturnType<typeof setInterval>;
 
   async function load() {
     try {
@@ -42,10 +41,8 @@
     void id;
     sensor = null;
     load();
-    clearInterval(timer);
-    timer = setInterval(load, POLL.sensor);
+    return pollWhileVisible(POLL.sensor, load);
   });
-  onDestroy(() => clearInterval(timer));
 
   async function togglePause() {
     if (!sensor) return;

@@ -111,7 +111,7 @@ test('no page asks the server more often than it polls', async ({ page, request 
   }
 });
 
-test('hiding and showing a page with live frames does not start extra polling', async ({ page, request }, info) => {
+test('a hidden page asks nothing, and hiding and showing it does not start extra polling', async ({ page, request }, info) => {
   const id = await seededSensorId(request);
   // Slow answers, so the page is hidden and shown while a request is on its way.
   await page.route('**/api/v1/sensors/*/frame*', async (route) => {
@@ -130,12 +130,17 @@ test('hiding and showing a page with live frames does not start extra polling', 
   }
   expectCalm(await apiRequestsDuring(page, POLL_WINDOW_MS));
 
-  // While hidden, nothing is fetched (frames and the light's lease wait for the page).
+  // While hidden, nothing is fetched at all (frames, the light's lease, the sensor and the
+  // status wait for the page); shown again, the sensor is brought up to date at once.
   await setVisibility(page, 'hidden');
   await page.waitForTimeout(1_000); // answers already on their way
   const hidden = await apiRequestsDuring(page, POLL_WINDOW_MS);
-  expect(Object.keys(hidden).filter((p) => p.endsWith('/frame') || p.endsWith('/lights/hold')), JSON.stringify(hidden)).toEqual([]);
+  expect(Object.keys(hidden), JSON.stringify(hidden)).toEqual([]);
+  const refreshed = page.waitForRequest((req) => new URL(req.url()).pathname === `/api/v1/sensors/${id}`, {
+    timeout: 1_500,
+  });
   await setVisibility(page, 'visible');
+  await refreshed;
 
   // The light's lease (renewed every 10 s) is not taken more than once either.
   await page.goto('#/sensors/new');
