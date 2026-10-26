@@ -463,7 +463,10 @@ nothing decodes in between.
     and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state
     (compared without regard to case).
   - Optional region change detection: a small greyscale copy of the ROI is compared every
-    *N* seconds; the AI only runs when the difference exceeds a threshold.
+    *N* seconds; the AI only runs when the difference exceeds a threshold. The frame is decoded
+    only as large as that copy needs (`imaging.decode_for_signature`: a JPEG decodes at 1/2, 1/4 or
+    1/8 of its size), four to six times faster than whole, with the same result; history
+    thumbnails are decoded the same way.
   - Every trigger starts a *burst* (default every 2 s for 30 s) to catch the final state.
   - A sensor that recognises faces starts one by itself when a check finds a person nobody is
     named for (`engine.logic.steer_face_burst`, tunables `FACES["burst_*"]`): someone walking up

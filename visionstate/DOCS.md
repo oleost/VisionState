@@ -15,7 +15,9 @@ number** from a display, without any training. Everything runs on this machine; 
   VisionState finds the broker automatically.
 - **A camera** in Home Assistant (any `camera.*` entity: Frigate, ESP32-CAM, Reolink,
   generic camera…), or a direct HTTP snapshot URL (`http://` or `https://`) or stream URL
-  (`rtsp://`, `rtsps://`, also an `http://` video stream).
+  (`rtsp://`, `rtsps://`, also an `http://` video stream). A stream is kept open while frames
+  are asked for often (a burst of checks, the live view), so those come at once instead of after
+  a new connection each time.
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
   also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
@@ -572,7 +574,8 @@ a known point:
   reached first; the oldest frames are removed first, frames waiting for review last (they are
   kept twice as many days). Set either limit there (`0` GB = no size limit). Training images, and
   readings you verified on a reading sensor's Quality tab or in the review queue, are never
-  removed automatically.
+  removed automatically. History frames that no history entry lists any more (the app was
+  stopped while it saved one) are removed after an hour.
 - **Export** (on a sensor) downloads a ZIP with the sensor's settings (region, states, objects or
   reading settings, triggers, review overrides) and all its images with labels — for an object
   sensor, the boxes it was taught and its own labels. Camera passwords are removed from the file.

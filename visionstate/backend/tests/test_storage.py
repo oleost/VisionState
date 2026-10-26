@@ -447,3 +447,33 @@ def test_an_existing_database_gets_the_index_at_start(settings):
         names = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type = 'index'"))}
     db.engine.dispose()
     assert "ix_prediction_waiting" in names
+
+
+def test_frames_are_decoded_small_where_that_is_enough(tmp_path):
+    """Change detection and thumbnails decode a JPEG at 1/2, 1/4 or 1/8 of its size while decoding:
+    the signature stays the same (to far below any threshold), the thumbnail its size."""
+    import io
+
+    from visionstate import imaging
+    from visionstate.settings import CHANGE_SIGNATURE_DECODE, CHANGE_SIGNATURE_SIZE, THUMB_SIZE
+
+    from .conftest import ASSETS
+
+    photo = Image.open(ASSETS / "beach.jpg").convert("RGB").resize((3840, 2160))
+    buf = io.BytesIO()
+    photo.save(buf, format="JPEG", quality=90)
+    data = buf.getvalue()
+    for roi in (None, {"x": 0.6, "y": 0.5, "w": 0.1, "h": 0.2}):
+        small = imaging.decode_for_signature(data, roi)
+        assert small.width < 3840  # decoded smaller …
+        region = imaging.crop(small, roi)
+        assert min(region.size) >= CHANGE_SIGNATURE_SIZE * CHANGE_SIGNATURE_DECODE  # … but large enough
+        whole = imaging.region_signature(imaging.decode(data), roi)
+        assert imaging.change_score(whole, imaging.region_signature(small, roi)) < 0.005
+    path = tmp_path / "frame.jpg"
+    path.write_bytes(data)
+    assert imaging.load(path, at_least=(THUMB_SIZE, THUMB_SIZE)).width < 3840
+    assert imaging.thumbnail(imaging.load(path, at_least=(THUMB_SIZE, THUMB_SIZE))).size == (THUMB_SIZE, 180)
+    png = io.BytesIO()
+    photo.resize((640, 360)).save(png, format="PNG")
+    assert imaging.decode(png.getvalue(), at_least=(10, 10)).size == (640, 360)  # not a JPEG: whole

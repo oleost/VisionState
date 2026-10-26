@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from . import backup
 from .api import backup as backup_api
@@ -21,6 +23,18 @@ from .settings import BACKUP, INGRESS_PROXY_IP, VERSION, Settings, load_settings
 log = logging.getLogger("visionstate")
 
 WATCHDOG_PATH = f"{API_PREFIX}/alive"  # config.yaml "watchdog"
+
+
+class HashedAssets(StaticFiles):
+    """The built UI's scripts, styles and fonts: Vite puts a hash of the content in each name, so
+    a browser keeps them instead of asking again every time the panel opens (index.html is never
+    kept: it names the current ones)."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -83,7 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     frontend = settings.frontend_dir.resolve()
     index = frontend / "index.html"
     if index.exists():
-        app.mount("/assets", StaticFiles(directory=frontend / "assets"), name="assets")
+        app.mount("/assets", HashedAssets(directory=frontend / "assets"), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str):

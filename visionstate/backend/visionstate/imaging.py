@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import io
+import math
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
-from .settings import CHANGE_SIGNATURE_SIZE, JPEG_QUALITY, NEUTRAL_FILL, ROI_MAX_POINTS, RUNTIME, THUMB_SIZE
+from .settings import (
+    CHANGE_SIGNATURE_DECODE,
+    CHANGE_SIGNATURE_SIZE,
+    JPEG_QUALITY,
+    NEUTRAL_FILL,
+    ROI_MAX_POINTS,
+    RUNTIME,
+    THUMB_SIZE,
+)
 
 FULL_FRAME_KEY = "full"
 
@@ -18,18 +27,34 @@ class ImageTooLarge(OSError):
     """An image with more pixels than RUNTIME["max_image_megapixels"]; handled like an unreadable one."""
 
 
-def decode(data: bytes) -> Image.Image:
+def decode(data: bytes, at_least: tuple[int, int] | None = None) -> Image.Image:
+    """An image (RGB). ``at_least``: a JPEG may be decoded smaller, down to this size (its decoder
+    scales by 1/2, 1/4 or 1/8 while decoding, several times faster than decoding it whole)."""
     image = Image.open(io.BytesIO(data))
     # Checked from the header, before the pixels are decoded (they could take gigabytes).
     if image.width * image.height > RUNTIME["max_image_megapixels"] * 1_000_000:
         raise ImageTooLarge(f"Image too large ({image.width}×{image.height})")
+    if at_least is not None:
+        image.draft("RGB", at_least)  # only JPEG does anything with it
     image = ImageOps.exif_transpose(image)
     return image.convert("RGB")
 
 
-def load(path: Path) -> Image.Image:
-    """A stored image (RGB), with its file closed right away (it may be deleted meanwhile)."""
+def decode_for_signature(data: bytes, roi: dict | None) -> Image.Image:
+    """A frame decoded just large enough for region_signature (change detection): the region keeps
+    CHANGE_SIGNATURE_DECODE times the signature's size on each side."""
+    roi = normalise_roi(roi)
+    side = CHANGE_SIGNATURE_SIZE * CHANGE_SIGNATURE_DECODE
+    w, h = (roi["w"], roi["h"]) if roi else (1.0, 1.0)
+    return decode(data, at_least=(math.ceil(side / w), math.ceil(side / h)))
+
+
+def load(path: Path, at_least: tuple[int, int] | None = None) -> Image.Image:
+    """A stored image (RGB), with its file closed right away (it may be deleted meanwhile);
+    ``at_least`` as for decode."""
     with Image.open(path) as image:
+        if at_least is not None:
+            image.draft("RGB", at_least)
         return image.convert("RGB")
 
 

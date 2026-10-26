@@ -425,6 +425,9 @@ LIGHT_DOMAINS = ("light", "switch", "input_boolean")
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
+# A probe decodes a JPEG only this many times larger than the signature (over its region), not
+# whole: the same signature (to about 0.001), four to six times faster (imaging.decode_for_signature).
+CHANGE_SIGNATURE_DECODE = 4
 
 # --- Region of interest ------------------------------------------------------------
 

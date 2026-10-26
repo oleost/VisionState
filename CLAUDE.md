@@ -63,7 +63,11 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`. A new feature says
   which kind(s) it applies to.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
-  exception (log it once, try again) — only `CancelledError` may end it.
+  exception (log it once, try again) — only `CancelledError` may end it. Database work in an
+  `async def` goes through `asyncio.to_thread` (`tests/test_event_loop.py` fails otherwise).
+- What is sent to Home Assistant must not change at every check unless the result does (no
+  timestamps, no needless decimals, pictures through `_send_on_change`): Home Assistant stores
+  every change as a new row (`docs/SCOPE.md` §8).
 - Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`): entries are never changed
   or removed once released (their texts, measured footprint and similarity limits may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
@@ -184,3 +188,6 @@ Many users run Home Assistant on phones and tablets.
   like `measure` in `DetectionBoxes.svelte` (not the next animation frame: none comes in a hidden tab).
 - The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only poll
   while visible look fine there. Use `setVisibility` (e2e) or override it by hand.
+- A backend test that swaps in a fake camera after `TestClient(create_app(...))` has started may
+  see the first check use the real one (and the sensor go *unavailable*): wait for the state you
+  expect with `wait_for`, never read it once.

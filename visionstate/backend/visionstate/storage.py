@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import imaging
-from .settings import Settings
+from .settings import THUMB_SIZE, Settings
 
 
 class Storage:
@@ -80,7 +80,10 @@ class Storage:
         """Cached thumbnail for a sample or history frame."""
         target = self.thumb_path(kind, item_id)
         if not target.exists() or target.stat().st_mtime < source.stat().st_mtime:
-            self._write(target, imaging.thumbnail(imaging.load(source)))
+            # Decoded just large enough (a JPEG decodes at 1/2, 1/4 or 1/8 of its size): three times
+            # faster for a 4K frame, and a page of history asks for dozens at once.
+            size = (THUMB_SIZE, THUMB_SIZE)
+            self._write(target, imaging.thumbnail(imaging.load(source, at_least=size)))
         return target
 
     def delete_sample(self, sensor_id: int, sample_id: int, filename: str) -> None:

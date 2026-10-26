@@ -173,7 +173,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             return
         try:
             frame_id, data = await self.grab(cfg)
-            image = await asyncio.to_thread(imaging.decode, data)
+            # Only for the signature: decoded small (a check that follows decodes it whole).
+            small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
@@ -184,11 +185,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             # No baseline (first run or the region changed). With a light this frame is the
             # baseline (checks in the light never set one); without, check it, which sets one.
             if lit:
-                live.signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+                live.signature = await asyncio.to_thread(imaging.region_signature, small, cfg.roi)
             else:
-                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+                await self.run_once(cfg, data=data, frame_id=frame_id)
             return
-        signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+        signature = await asyncio.to_thread(imaging.region_signature, small, cfg.roi)
         score = imaging.change_score(live.signature, signature)
         live.change_score = score
         if score >= cfg.triggers["change_threshold"]:
@@ -199,7 +200,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
                 live.signature = signature
                 await self.run_once(cfg)
             else:
-                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+                await self.run_once(cfg, data=data, frame_id=frame_id)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         data = await self.grabber.grab(cfg.source_type, cfg.source)
