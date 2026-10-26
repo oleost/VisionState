@@ -39,17 +39,17 @@ Click a few examples of each state; it learns in about a second.
 
 ### 🧍 Objects & people
 
-*Emma is home*, *our car is in the driveway*, a cat on the lawn, an unknown person at the door.
+*Tom is home*, *our car is in the driveway*, a cat and a bicycle on it, an unknown person at the door.
 
 Pick from 80 objects — no training. Name people by their face once; every camera knows them.
 
 <p align="center">
-  <img src="docs/promo/objects.png" alt="An object sensor recognising Emma by her face and telling our car from any car" width="900"><br>
-  <em>Emma recognised by her face, and our own car told apart from any other car.</em>
+  <img src="docs/promo/objects.png" alt="An object sensor recognising Tom by his face and telling our car from any car" width="900"><br>
+  <em>Tom recognised by his face, and our own car told apart from any other car.</em>
 </p>
 
 <p align="center">
-  <img src="docs/promo/people.png" alt="The People page with the faces taught for Emma" width="900"><br>
+  <img src="docs/promo/people.png" alt="The People page with the faces taught for Tom" width="900"><br>
   <em>A few photos from your phone are enough to start; faces never leave your Home Assistant.</em>
 </p>
 
@@ -86,7 +86,7 @@ on for each reading; a battery camera can trigger a check when it has a new pict
 
 <p align="center">
   <img src="docs/promo/ha-states.png" alt="A garage door state sensor as a Home Assistant device" width="340">
-  <img src="docs/promo/ha-objects.png" alt="The driveway object sensor as a Home Assistant device, with Emma and our car" width="340">
+  <img src="docs/promo/ha-objects.png" alt="The driveway object sensor as a Home Assistant device, with Tom and our car" width="340">
 </p>
 
 - **State sensor** — the state with its confidence, the last frame, a button to check now and a switch to pause it.

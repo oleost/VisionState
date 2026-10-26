@@ -154,12 +154,15 @@ Many users run Home Assistant on phones and tablets.
   watch it `--headed` or step through it `--ui`; after a failure `npx playwright show-trace
   test-results/<test>/trace.zip`.
 - **Demo sensors:** `python scripts/seed_demo.py --url <app> --images <camera>` seeds one sensor of
-  each kind (Driveway with Emma and "Our car", Garage door, Water meter) on any instance: locally
+  each kind (Driveway with Tom and "Our car", Garage door, Water meter) on any instance: locally
   with `--images http://127.0.0.1:8765/photo` (the fake camera), or on an installed app with
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.
 - **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
   broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
-  `visionstate/frontend` (1440 px wide, device scale 1.2).
+  `visionstate/frontend` (1440 px wide, device scale 1.2). Not a broker another VisionState is
+  connected to: both use the same client ID and push each other off every few seconds (on a test
+  broker that is in use, `VISIONSTATE_DISCOVERY_PREFIX` keeps the entities out of Home Assistant,
+  but not that).
   The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
   maintainer before publishing.
 
