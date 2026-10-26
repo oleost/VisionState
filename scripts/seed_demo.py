@@ -196,6 +196,14 @@ def main() -> None:
     args = parser.parse_args()
     api = Api(args.url) if args.url else ingress(args.app)
     photo = lambda name: f"{args.images.rstrip('/')}/{name}.jpg"
+    # The cameras must see the pictures as they are here: right after a push, GitHub serves the
+    # older ones for a few minutes, and a face taught from an older picture is someone else's.
+    for name in ("demo_driveway", "demo_tom", "demo_garage", "counter_turning"):
+        served = httpx.get(photo(name), timeout=30, follow_redirects=True).content
+        if served != (ASSETS / f"{name}.jpg").read_bytes():
+            sys.exit(
+                f"{photo(name)} is not the picture in tests/assets (GitHub serves a pushed change after a few minutes)"
+            )
     existing = {s["name"]: s for s in api.call("GET", "/sensors")}
 
     def create(spec: dict) -> dict | None:
