@@ -9,6 +9,7 @@ detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloade
 from __future__ import annotations
 
 import ctypes
+import functools
 import gc
 import hashlib
 import json
@@ -25,6 +26,7 @@ import numpy as np
 from PIL import Image
 
 from . import imaging
+from .settings import RUNTIME
 
 log = logging.getLogger(__name__)
 
@@ -165,11 +167,18 @@ def cpu_session(model_path: Path):
     No memory arena: with it, each session keeps the largest working memory any image ever
     needed (D-FINE S alone held about 265 MB after a few detections) for the rest of the run; without
     it that memory is freed after every run, for about 6 % more time per check.
+
+    No spinning: by default ONNX Runtime's threads keep a core busy while they wait for work, which
+    on a small machine takes CPU from Home Assistant itself; RUNTIME["inference_threads"] threads
+    per model (0: ONNX Runtime's choice, one per physical core).
     """
     import onnxruntime as ort
 
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+    options.intra_op_num_threads = RUNTIME["inference_threads"]
     options.log_severity_level = 3
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
@@ -190,10 +199,16 @@ def trim_memory() -> None:
 
     Without it glibc keeps what the largest image needed: on Home Assistant OS the app stayed about
     190 MB larger with the default models. Only glibc has it; elsewhere this does nothing."""
+    if (trim := _malloc_trim()) is not None:
+        trim(0)
+
+
+@functools.cache
+def _malloc_trim():  # noqa: ANN202 - a ctypes function, or None
     try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        return ctypes.CDLL("libc.so.6").malloc_trim
     except OSError, AttributeError:
-        pass
+        return None
 
 
 class Embedder:

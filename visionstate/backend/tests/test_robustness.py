@@ -104,6 +104,59 @@ def test_image_pixel_limit(monkeypatch):
         imaging.decode(data)
 
 
+def test_home_assistant_snapshot_size_limit(tmp_path, monkeypatch):
+    """A camera through Home Assistant has the same limit as a snapshot URL."""
+    monkeypatch.setitem(vs_settings.RUNTIME, "max_frame_mb", 0.001)  # 1 kB
+    settings = make_settings(tmp_path)
+    settings.ha_url, settings.ha_token = "http://ha:8123", "token"
+
+    def ha_with(content: bytes) -> FrameGrabber:
+        grabber = FrameGrabber(HomeAssistant(settings))
+        grabber.ha._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, content=content))
+        )
+        return grabber
+
+    assert asyncio.run(ha_with(b"x" * 500).grab("ha_camera", "camera.door")) == b"x" * 500
+    with pytest.raises(SourceError, match="larger than"):
+        asyncio.run(ha_with(b"x" * 5000).grab("ha_camera", "camera.door"))
+
+
+def test_rtsp_grabs_run_on_their_own_threads(tmp_path, monkeypatch):
+    """A camera that hangs holds an RTSP thread, never one of the default executor's (database,
+    models); FFmpeg's socket timeout has its current name."""
+    import threading
+
+    from visionstate import sources
+
+    seen: dict = {}
+
+    def fake_grab(url: str) -> bytes:
+        seen["thread"] = threading.current_thread().name
+        return b"jpeg"
+
+    monkeypatch.setattr(sources, "grab_rtsp", fake_grab)
+    grabber = FrameGrabber(HomeAssistant(make_settings(tmp_path)))
+    assert asyncio.run(grabber.grab("rtsp", "rtsp://cam/s1")) == b"jpeg"
+    assert seen["thread"].startswith("rtsp")
+    asyncio.run(grabber.close())
+
+    opened: dict = {}
+
+    class Refused(Exception):
+        pass
+
+    def fake_open(url, options=None, timeout=None):  # noqa: ANN001
+        opened.update(options)
+        raise Refused
+
+    monkeypatch.undo()  # the real grab_rtsp again
+    monkeypatch.setattr("av.open", fake_open)
+    with pytest.raises(Refused):
+        sources.grab_rtsp("rtsp://cam/s1")
+    assert opened["timeout"] == "10000000" and "stimeout" not in opened
+
+
 def test_ha_client_without_api_raises_a_clear_error(tmp_path):
     ha = HomeAssistant(make_settings(tmp_path))
     assert not ha.enabled

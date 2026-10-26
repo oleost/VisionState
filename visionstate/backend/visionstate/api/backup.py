@@ -227,7 +227,7 @@ async def _start(app, settings: Settings, on_connect: Callable[[MqttBridge], Awa
     """A runtime on the data there is now; ``on_connect``: done once its MQTT is connected."""
     db = Database(settings.db_path)
     try:
-        db.init()
+        await asyncio.to_thread(db.init)  # an older backup's database is upgraded here
         rt = Runtime(settings, db)
         if on_connect is not None:
             rt.on_first_connect.append(on_connect)

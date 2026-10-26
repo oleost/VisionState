@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
 from ..db import Prediction, Sensor
 from ..mqtt import REVIEW_TOPICS, object_topics, topics
+from ..settings import PUBLISH
 from .base import RuntimeBase
 from .state import SensorConfig
 
@@ -21,6 +24,28 @@ class PublishingMixin(RuntimeBase):
         """Publish one of a sensor's values — unless it is not to be sent to Home Assistant."""
         if cfg.publish:
             await self.mqtt.publish(topic, payload, retain=retain)
+
+    async def _send_on_change(
+        self, cfg: SensorConfig, topic: str, shows: object, make: Callable[[], bytes | dict]
+    ) -> None:
+        """A picture, or attributes that change a little at every check (an object's boxes and
+        when it was last seen): sent when what they are about changed (``shows``: the state, the
+        objects, the value), otherwise only every PUBLISH["refresh_s"].
+
+        Home Assistant stores the state again for every picture an image entity gets (its state
+        is the time of the picture) and for attributes that changed, so sending them at every
+        check filled its database. ``make`` builds the payload only when it is sent. After MQTT
+        (re)connects, publish_discovery forgets what was sent, so the next check sends it again.
+        """
+        if not cfg.publish:
+            return
+        live = self.live_state(cfg.id)
+        now = time.time()
+        sent = live.sent_on_change.get(topic)
+        if sent is not None and sent[0] == shows and now - sent[1] < PUBLISH["refresh_s"]:
+            return
+        await self.mqtt.publish(topic, await asyncio.to_thread(make), retain=True)
+        live.sent_on_change[topic] = (shows, now)
 
     async def publish_discovery(self, cfg: SensorConfig) -> None:
         """Tell Home Assistant about a sensor's entities (again), and repeat what it last knew.
@@ -39,6 +64,8 @@ class PublishingMixin(RuntimeBase):
             await self.mqtt.remove_rate(cfg.slug)  # only counters have a rate
         await self.mqtt.publish_discovery(cfg.descriptor)
         self._registry_wanted.set()
+        if cfg.id in self.live:
+            self.live[cfg.id].sent_on_change.clear()  # sent again at the next check (e.g. publishing switched on)
         await self.mqtt.publish(t["enabled"], "ON" if cfg.enabled else "OFF", retain=True)
         live = self.live.get(cfg.id)
         # Not sent to Home Assistant: its entities are unavailable (no values, no statistics). Sent

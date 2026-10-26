@@ -255,8 +255,13 @@ class Prediction(Base):
     """
 
     __tablename__ = "prediction"
-    # The history of some sensors, newest first, paged by (time, id): see api/history.py.
-    __table_args__ = (Index("ix_prediction_sensor_time", "sensor_id", "created_at", "id"),)
+    # The history of some sensors, newest first, paged by (time, id): see api/history.py. The frames
+    # waiting for review (counted after every check that adds one): the condition is written as
+    # SQLAlchemy writes ``reviewed.is_(False)``, as SQLite only uses a partial index for that text.
+    __table_args__ = (
+        Index("ix_prediction_sensor_time", "sensor_id", "created_at", "id"),
+        Index("ix_prediction_waiting", "sensor_id", "created_at", sqlite_where=text("reviewed IS 0")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), index=True)
@@ -379,6 +384,9 @@ class Database:
         def _pragmas(dbapi_conn, _record):  # noqa: ANN001
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
+            # Safe from corruption with WAL; a power cut may lose the last commit, never a crash of the
+            # app. Saves a sync of the log at every commit (SD cards).
+            cur.execute("PRAGMA synchronous=NORMAL")
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
 

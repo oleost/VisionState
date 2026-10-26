@@ -543,6 +543,12 @@ STORAGE_LIMITS = {
     "history_days": (1, 365),
     "history_max_gb": (0.0, 1000.0),
 }
+# The history clean-up (engine/history.py): rows removed per transaction, and how old a frame no row
+# lists must be before it is removed (a frame is written just before its row).
+HISTORY_CLEANUP = {
+    "batch": 500,
+    "orphan_age_s": 3600.0,
+}
 
 # Training images moved from the media folder to the app's own storage (engine/history.py,
 # move_samples). The copies left in the media folder are removed this many days after the move: until
@@ -575,8 +581,17 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
 
 # --- Runtime ------------------------------------------------------------------
 
+# What is sent to Home Assistant (engine/publishing.py). A sensor's picture (its image entity) and
+# an object's attributes (boxes, last seen) are sent when what they show changes, and otherwise this
+# often, so a dashboard is never far behind: Home Assistant stores every picture it gets, and every
+# change of attributes, as a new state.
+PUBLISH = {
+    "refresh_s": 300.0,
+}
+
 RUNTIME = {
     "max_concurrent_inferences": 2,
+    "inference_threads": 0,  # threads per model run (backbones.cpu_session); 0: one per physical core
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
     "cleanup_interval_s": 600,  # history clean-up (age and size limits)
@@ -584,6 +599,9 @@ RUNTIME = {
     # A camera picture larger than this is refused (a misconfigured URL streaming without end, a
     # decompression bomb): a 12-megapixel JPEG is a few MB, an 8K frame 33 megapixels.
     "max_frame_mb": 50,
+    "rtsp_workers": 4,  # RTSP grabs at once (on threads of their own, see sources.FrameGrabber)
+    # An RTSP stream grabbed again within this many seconds is kept open (sources.FrameGrabber); 0: never.
+    "rtsp_keep_open_s": 5.0,
     "max_image_megapixels": 60,
     "loop_retry_s": 30.0,  # a sensor's loop failed unexpectedly (database busy): try again after this
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image

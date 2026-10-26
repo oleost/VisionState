@@ -99,6 +99,12 @@ def get_sensor(session: Session, sensor_id: int, kind: str | None = None) -> Sen
     return sensor
 
 
+def check_sensor(rt: Runtime, sensor_id: int, kind: str | None = None) -> None:
+    """404 (or 400, see get_sensor) unless the sensor exists; for a worker thread (asyncio.to_thread)."""
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, kind)
+
+
 def state_id_for(sensor: Sensor, key: str | None) -> int | None:
     if key is None:
         return None

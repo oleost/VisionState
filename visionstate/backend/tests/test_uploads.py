@@ -70,3 +70,53 @@ def test_stream_grab_error_is_redacted():
     with pytest.raises(sources.SourceError) as err:
         sources.grab_rtsp("rtsp://admin:secret@127.0.0.1:9/stream")
     assert "secret" not in str(err.value)
+
+
+def test_a_stream_grabbed_often_is_kept_open(tmp_path, monkeypatch):
+    """One check connects for one frame; frames asked for again soon (a burst, the live view)
+    come from a stream kept open, which goes once it ends or nobody asks for a while."""
+    from visionstate import settings as vs_settings
+
+    video = tmp_path / "clip.mp4"
+    make_video(video, [("open", 30)])
+    one_shots: list[str] = []
+    real_grab = sources.grab_rtsp
+
+    def counting_grab(url: str) -> bytes:
+        one_shots.append(url)
+        return real_grab(url)
+
+    monkeypatch.setattr(sources, "grab_rtsp", counting_grab)
+    grabber = sources.FrameGrabber(sources.HomeAssistant(_settings(tmp_path)))
+    url = str(video)
+    assert Image.open(io.BytesIO(grabber._grab_stream(url))).size == (320, 180)
+    assert one_shots == [url] and not grabber._streams  # a single check: no stream left open
+    assert Image.open(io.BytesIO(grabber._grab_stream(url))).size == (320, 180)  # soon again: kept open
+    stream = grabber._streams[url]
+    assert one_shots == [url]
+    stream._thread.join(timeout=30)  # a file ends (a camera that stops sending)
+    assert not stream.alive
+    grabber._grab_stream(url)  # a stream that ended is opened again
+    assert grabber._streams[url] is not stream
+    grabber._streams[url].close()
+
+    monkeypatch.setitem(vs_settings.RUNTIME, "rtsp_keep_open_s", 0)  # 0: always one frame per connection
+    other = sources.FrameGrabber(sources.HomeAssistant(_settings(tmp_path)))
+    other._grab_stream(url)
+    other._grab_stream(url)
+    assert len(one_shots) == 3 and not other._streams
+
+
+def test_a_stream_that_cannot_be_opened_says_why(tmp_path):
+    stream = sources.RtspStream("rtsp://admin:secret@127.0.0.1:9/stream", keep_open=5)
+    with pytest.raises(sources.SourceError) as err:
+        stream.grab()
+    assert "secret" not in str(err.value)
+
+
+def _settings(tmp_path):
+    from visionstate.settings import Settings
+
+    return Settings(
+        data_dir=tmp_path / "d", media_dir=tmp_path / "m", frontend_dir=tmp_path, bundled_models_dir=tmp_path
+    )

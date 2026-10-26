@@ -47,6 +47,18 @@ def copy_limited(source: IO[bytes], target: IO[bytes], max_bytes: int, chunk: in
     return True
 
 
+def _state_id(rt: Runtime, sensor_id: int, key: str | None) -> int | None:
+    """The id of a state sensor's state ``key`` (None: no label); 404/400 as get_sensor."""
+    with rt.db.session() as s:
+        return state_id_for(get_sensor(s, sensor_id, KIND_STATES), key)
+
+
+def spool_upload(upload_file: UploadFile, name: str) -> tuple[Path, bool]:
+    """An uploaded file copied to a temporary file; True when it was larger than the limit."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as tmp:
+        return Path(tmp.name), not copy_limited(upload_file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
+
+
 def _retrain(request: Request, sensor_id: int) -> None:
     runtime(request).schedule_retrain(sensor_id)
 
@@ -55,8 +67,7 @@ def _retrain(request: Request, sensor_id: int) -> None:
 async def capture(sensor_id: int, body: CaptureIn, request: Request) -> dict:
     """Label the frame the user is looking at (by frame id), or a fresh one."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), body.state_key)
+    state_id = await asyncio.to_thread(_state_id, rt, sensor_id, body.state_key)
     data = rt.live_state(sensor_id).frame(body.frame_id) if body.frame_id else None
     if data is None:
         shown = await asyncio.to_thread(rt.frame_for_view, sensor_id)
@@ -85,16 +96,13 @@ async def upload(
     """Training images from uploaded files (images, ZIP archives, videos), labelled with
     ``state_key`` when given; returns the new samples and an error per file that failed."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        state_id = state_id_for(get_sensor(s, sensor_id, KIND_STATES), state_key or None)
+    state_id = await asyncio.to_thread(_state_id, rt, sensor_id, state_key or None)
 
     created: list[int] = []
     errors: list[str] = []
     for upload_file in files:
         name = upload_file.filename or "upload"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as tmp:
-            tmp_path = Path(tmp.name)
-            too_large = not copy_limited(upload_file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
+        tmp_path, too_large = await asyncio.to_thread(spool_upload, upload_file, name)
         if too_large:
             tmp_path.unlink(missing_ok=True)
             errors.append(f"{name}: larger than {UPLOAD_LIMITS['max_file_mb']} MB")
@@ -145,22 +153,29 @@ async def list_samples(
     """A page of a sensor's training images, newest first, with the model's suggestion for
     unlabelled ones."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id)
-        key_by_state = {st.id: st.key for st in sensor.states}
-        labelled_ids = select(SampleLabel.sample_id)
-        query = select(Sample).where(Sample.sensor_id == sensor_id)
-        if filter == "labelled":
-            query = query.where(Sample.id.in_(labelled_ids))
-        elif filter == "unlabelled":
-            query = query.where(Sample.id.not_in(labelled_ids))
-        if state:
-            query = query.where(
-                Sample.id.in_(select(SampleLabel.sample_id).where(SampleLabel.state_id == state_id_for(sensor, state)))
-            )
-        total = s.scalar(select(func.count()).select_from(query.subquery()))
-        samples = s.scalars(query.order_by(Sample.created_at.desc()).limit(min(limit, 1000)).offset(offset)).all()
-        cfg = SensorConfig.from_row(sensor)
+
+    def page() -> tuple[dict[int, str], int | None, list[Sample], SensorConfig]:
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id)
+            key_by_state = {st.id: st.key for st in sensor.states}
+            labelled_ids = select(SampleLabel.sample_id)
+            query = select(Sample).where(Sample.sensor_id == sensor_id)
+            if filter == "labelled":
+                query = query.where(Sample.id.in_(labelled_ids))
+            elif filter == "unlabelled":
+                query = query.where(Sample.id.not_in(labelled_ids))
+            if state:
+                query = query.where(
+                    Sample.id.in_(
+                        select(SampleLabel.sample_id).where(SampleLabel.state_id == state_id_for(sensor, state))
+                    )
+                )
+            total = s.scalar(select(func.count()).select_from(query.subquery()))
+            samples = s.scalars(query.order_by(Sample.created_at.desc()).limit(min(limit, 1000)).offset(offset)).all()
+            cfg = SensorConfig.from_row(sensor)
+            return key_by_state, total, list(samples), cfg
+
+    key_by_state, total, samples, cfg = await asyncio.to_thread(page)
     unlabelled = [x for x in samples if not x.labels]
     suggestions = await asyncio.to_thread(rt.suggest, cfg, unlabelled) if unlabelled else {}
     return {
@@ -187,18 +202,27 @@ def label_samples(sensor_id: int, body: LabelIn, request: Request) -> dict:
 async def accept_suggestions(sensor_id: int, body: IdsIn, request: Request) -> dict:
     """Label the given unlabelled images with what the model suggests for them."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id)
-        cfg = SensorConfig.from_row(sensor)
-        samples = [
-            x
-            for x in s.scalars(select(Sample).where(Sample.sensor_id == sensor_id, Sample.id.in_(body.sample_ids)))
-            if not x.labels
-        ]
+
+    def unlabelled() -> tuple[SensorConfig, list[Sample]]:
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id)
+            cfg = SensorConfig.from_row(sensor)
+            samples = [
+                x
+                for x in s.scalars(select(Sample).where(Sample.sensor_id == sensor_id, Sample.id.in_(body.sample_ids)))
+                if not x.labels
+            ]
+            return cfg, samples
+
+    cfg, samples = await asyncio.to_thread(unlabelled)
     suggestions = await asyncio.to_thread(rt.suggest, cfg, samples)
     state_ids = {st["key"]: st["id"] for st in cfg.states}
-    with rt.db.session() as s:
-        s.add_all(SampleLabel(sample_id=i, state_id=state_ids[key]) for i, (key, _) in suggestions.items())
+
+    def label() -> None:
+        with rt.db.session() as s:
+            s.add_all(SampleLabel(sample_id=i, state_id=state_ids[key]) for i, (key, _) in suggestions.items())
+
+    await asyncio.to_thread(label)
     if suggestions:
         _retrain(request, sensor_id)
     return {"updated": len(suggestions)}

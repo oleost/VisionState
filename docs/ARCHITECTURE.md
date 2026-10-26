@@ -34,7 +34,10 @@ one event loop:
 
 - **I/O** (camera, MQTT, Home Assistant) is async.
 - **Database and file work** runs in worker threads (`asyncio.to_thread`): SQLite with WAL, one
-  short session per unit of work (`Database.session()`).
+  short session per unit of work (`Database.session()`). Never directly in an `async def`:
+  `tests/test_event_loop.py` fails on a session (or `load_sensor`) opened there.
+- **RTSP grabs** run on threads of their own (`sources.FrameGrabber`, `RUNTIME["rtsp_workers"]`),
+  so a camera that does not answer holds none of the default pool's.
 - **AI inference and training** runs in worker threads too, at most
   `RUNTIME["max_concurrent_inferences"]` at a time (the semaphore `Runtime._sem`).
 - **Long-running loops** (one per sensor, MQTT, the Home Assistant event stream, clean-up) catch
@@ -133,7 +136,8 @@ error is kept in `LiveState.error` and shown in the UI.
   the move kept training images in `<media>/samples/`: they are read there until
   `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed
   only after the row that lists it (`db.Database.after_commit`), and an image that is gone anyway
-  is left out of training and of the taught boxes instead of stopping the sensor.
+  is left out of training and of the taught boxes instead of stopping the sensor. The history clean-up
+  (`engine.HistoryMixin.cleanup_history`) also removes frames no row lists, once they are old.
 - **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
   `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
   `prediction` rows (see `db.py`).

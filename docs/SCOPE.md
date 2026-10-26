@@ -95,6 +95,8 @@ so retraining only runs the backbone on new or changed samples.
   `backbones.trim_memory`, as glibc kept the freed memory as well. With the default models the app
   is about 190 MB smaller (a test installation with nine sensors and faces: 943 → 677 MB) for
   about 6 % more time per check. The footprints of the detectors were measured again this way.
+  ONNX Runtime's threads do not spin while they wait for work (`backbones.cpu_session`): by
+  default they keep cores busy between runs, CPU taken from Home Assistant on the same machine.
 - DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
   also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
   object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base
@@ -429,7 +431,7 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
 |---|---|
 | HA camera entity (default) | `camera_proxy` via the Supervisor/HA API. Works with any `camera.*` entity. |
 | HTTP snapshot URL | HTTP GET of a JPEG/PNG. |
-| RTSP stream | First decoded frame via PyAV (bundled FFmpeg). |
+| RTSP stream | First decoded frame via PyAV (bundled FFmpeg); kept open while frames are asked for often (below). |
 | Upload | Images (JPG/PNG/WebP/BMP), ZIP archives, video (MP4/MKV/MOV/AVI/WebM). |
 
 Video upload: one frame every *N* seconds (default 5), near-duplicates skipped by perceptual
@@ -438,9 +440,18 @@ hash, then the current model suggests a label for each frame. Upload and ZIP siz
 
 Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
-pseudo-protocols), a camera an entity ID. A snapshot is read up to `RUNTIME["max_frame_mb"]`, and
-every image is refused above `RUNTIME["max_image_megapixels"]` — checked from its header, before
-the pixels are decoded.
+pseudo-protocols), a camera an entity ID. A snapshot (a URL's or a Home Assistant camera's) is read
+up to `RUNTIME["max_frame_mb"]`, and every image is refused above `RUNTIME["max_image_megapixels"]`
+— checked from its header, before the pixels are decoded. An RTSP grab blocks a thread for seconds
+(connecting, waiting for a key frame; FFmpeg's socket `timeout`), so it runs on threads of its
+own (`RUNTIME["rtsp_workers"]`): cameras that do not answer never hold up the database or the
+models, which share the default thread pool. Connecting for one frame took 1–2.8 s with a real camera (an iPhone
+camera app, 2026-10-26: connecting, waiting for a key frame), so a stream grabbed again within
+`RUNTIME["rtsp_keep_open_s"]` (a burst of checks, the live view) is kept open
+(`sources.RtspStream`: a thread decodes it and keeps the newest frame; a grab takes a frame decoded
+after it asked) — about 30 ms a frame, for 4–6 % of one core while it is open. It closes once
+nobody asked for that long, so a check at the regular interval still connects for one frame and
+nothing decodes in between.
 
 ## 7. When and how a sensor decides
 
@@ -533,7 +544,7 @@ match: `m3` with `water` made the value entity disappear without a word), so `mq
 unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`) and otherwise leaves the
 device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
 without a device class are never touched: those entities exist, with history in their unit.
-Attributes: `read_text`, `rejected`, `last_update`, `last_trigger`. The button is "Read now".
+Attributes: `read_text`, `rejected`, `last_trigger`. The button is "Read now".
 Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
 them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
 `settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
@@ -551,8 +562,20 @@ Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` 
 for review; attributes: per-sensor breakdown, `oldest_waiting_since`). The review reminder (§7)
 uses Home Assistant's REST API (`persistent_notification`, `notify`), not MQTT.
 
-Attributes on the state entity: `probabilities`, `top_state`, `last_update`, `trained`,
-`last_trigger`. Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
+Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_trigger`.
+
+**Nothing changes at every check unless the result does** (decided 2026-10-26): the recorder of
+Home Assistant writes a state row for every `state_changed` event, which an MQTT entity fires when
+its state or attributes differ from the last message; an image entity's state is the time of its
+last picture, so every picture, even an identical one, is a new row. Until 0.10.1 a state sensor
+on the default interval wrote several rows a minute (a `last_update` timestamp in the attributes,
+the confidence to one decimal, the picture). Now: no timestamps in attributes (Home Assistant
+keeps `last_reported`), the confidence and the probabilities in whole percent
+(`engine.logic.percent`), and the pictures and an object's attributes (boxes, last seen) through
+`engine.publishing.PublishingMixin._send_on_change`: at once when what they are about changes (the published
+state, the objects and their counts, the value), otherwise every `settings.PUBLISH["refresh_s"]`.
+
+Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Send to Home Assistant** (`sensor.publish`, default
 `settings.SENSOR_PUBLISH_DEFAULT`, DB migration 9 keeps existing sensors on): when off, discovery
 stays (the entities and the IDs the user gave them are kept), but no value is published (the
@@ -683,7 +706,17 @@ setting edited in Settings → Storage (`/api/v1/storage`, which also reports di
 the former app option `history_retention_days` was removed in 0.6.1 without carrying its value
 over (early days; the release notes say so). The clean-up runs every
 10 minutes and right after the limits change. Training images are never removed
-automatically.
+automatically. A frame is removed only once the removal of its row is committed, and frames no row
+lists (the app stopped between writing a frame and its row) are removed once they are older than
+`HISTORY_CLEANUP["orphan_age_s"]` — only in the history folders. Every image is written next to its
+name and then moved there (`storage.Storage._write`), so a power cut or a full disk never leaves
+half a picture under a name a row lists.
+
+The database is SQLite in WAL mode with `synchronous=NORMAL`: safe from corruption, and a power
+cut can lose only the last commit (a crash of the app loses nothing); it saves a sync of the log
+at every commit, which matters on SD cards. Nothing on the event loop waits for it: every query of
+an `async` function runs through `asyncio.to_thread` (`tests/test_event_loop.py` fails otherwise),
+as a busy database would otherwise stop every sensor, MQTT and the API with it.
 
 ## 12. Import / export
 

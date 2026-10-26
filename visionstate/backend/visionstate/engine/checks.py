@@ -7,7 +7,6 @@ import logging
 import math
 import random
 import time
-from datetime import UTC, datetime
 
 from PIL import Image
 
@@ -18,7 +17,7 @@ from ..redact import redact
 from ..settings import RUNTIME, UNKNOWN_STATE
 from ..sources import SourceError
 from .base import RuntimeBase
-from .logic import next_check_at, review_reason
+from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
 from .state import SensorConfig
@@ -284,20 +283,21 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
 
         crop = imaging.crop(image, cfg.roi)
         await self._send(cfg, t["state"], live.debouncer.published or UNKNOWN_STATE, retain=True)
-        await self._send(cfg, t["confidence"], f"{confidence * 100:.1f}", retain=True)
+        await self._send(cfg, t["confidence"], percent(confidence), retain=True)
         await self._send(
             cfg,
             t["attributes"],
             {
-                "probabilities": {k: round(v, 4) for k, v in probs.items()},
+                # Whole percent, like the confidence: a value that changes at every check makes Home
+                # Assistant store the state again each time.
+                "probabilities": {k: round(v, 2) for k, v in probs.items()},
                 "top_state": top,
-                "last_update": datetime.now(UTC).isoformat(),
                 "trained": bool(probs),
                 "last_trigger": live.last_trigger,
             },
             retain=True,
         )
-        await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send_on_change(cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80))
 
         reason = None
         if probs:

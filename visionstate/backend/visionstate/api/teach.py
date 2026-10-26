@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, timedelta
 from functools import partial
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from PIL import Image
@@ -105,11 +106,15 @@ async def frame_image(
 ) -> tuple[Image.Image, str]:
     """The frame a box was drawn on, and where it came from ("live" or "history")."""
     if history_id is not None:
-        with rt.db.session() as s:
-            row = s.get(Prediction, history_id)
-            if row is None or row.sensor_id != sensor_id or not row.frame:
-                raise HTTPException(404, "History frame not found")
-            path = rt.storage.history_path(sensor_id, row.frame)
+
+        def history_frame() -> Path:
+            with rt.db.session() as s:
+                row = s.get(Prediction, history_id)
+                if row is None or row.sensor_id != sensor_id or not row.frame:
+                    raise HTTPException(404, "History frame not found")
+                return rt.storage.history_path(sensor_id, row.frame)
+
+        path = await asyncio.to_thread(history_frame)
         if not path.exists():
             raise HTTPException(404, "History frame file missing")
         return await asyncio.to_thread(imaging.load, path), "history"
@@ -129,41 +134,51 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     if not, it cannot be found there later either.
     """
     rt = runtime(request)
-    with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
-        objects = merge_objects(sensor.objects)
-        count = s.scalar(
-            select(func.count())
-            .select_from(Sample)
-            .where(Sample.sensor_id == sensor_id, Sample.object_label.is_not(None))
-        )
-        if (count or 0) >= TEACH["max_examples"]:
-            raise HTTPException(400, f"A sensor can be taught at most {TEACH['max_examples']} boxes")
-        if body.detected is not None and body.detected not in detectors.LABELS.by_key:
-            raise HTTPException(400, f"Unknown object {body.detected!r}")
-        new = None
-        if body.new_label:
-            new = own_label(
-                objects, body.new_label, body.parent or body.detected or "", set(s.scalars(select(Person.key)))
+
+    def check() -> tuple[dict | None, str, dict | None]:
+        """The label the box is taught as (and a new own label, if it makes one); 400 when it cannot be."""
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
+            objects = merge_objects(sensor.objects)
+            count = s.scalar(
+                select(func.count())
+                .select_from(Sample)
+                .where(Sample.sensor_id == sensor_id, Sample.object_label.is_not(None))
             )
-            label = new["key"]
-        else:
-            active = {c["key"] for c in active_custom(objects)}
-            label = body.label or ""
-            if label == NONE_LABEL and body.detected is None:
-                raise HTTPException(400, "A box the detector missed needs a label")
-            if label != NONE_LABEL and label not in objects["classes"] and label not in active:
-                raise HTTPException(400, f"Not one of the sensor's objects or labels: {label!r}")
-        roi = sensor.roi
+            if (count or 0) >= TEACH["max_examples"]:
+                raise HTTPException(400, f"A sensor can be taught at most {TEACH['max_examples']} boxes")
+            if body.detected is not None and body.detected not in detectors.LABELS.by_key:
+                raise HTTPException(400, f"Unknown object {body.detected!r}")
+            new = None
+            if body.new_label:
+                new = own_label(
+                    objects, body.new_label, body.parent or body.detected or "", set(s.scalars(select(Person.key)))
+                )
+                label = new["key"]
+            else:
+                active = {c["key"] for c in active_custom(objects)}
+                label = body.label or ""
+                if label == NONE_LABEL and body.detected is None:
+                    raise HTTPException(400, "A box the detector missed needs a label")
+                if label != NONE_LABEL and label not in objects["classes"] and label not in active:
+                    raise HTTPException(400, f"Not one of the sensor's objects or labels: {label!r}")
+            roi = sensor.roi
+            return new, label, roi
+
+    new, label, roi = await asyncio.to_thread(check)
     x1, _, x2, y2 = body.box
     if not imaging.in_region((x1 + x2) / 2, y2, roi):
         raise HTTPException(400, "That box is outside the sensor's region, so it never counts")
     image, origin = await frame_image(rt, sensor_id, body.frame_id, body.history_id)
     if new is not None:
-        with rt.db.session() as s:
-            row = get_sensor(s, sensor_id)
-            stored = merge_objects(row.objects)
-            row.objects = {**(row.objects or {}), "custom": [*stored["custom"], new]}
+
+        def add_label() -> None:
+            with rt.db.session() as s:
+                row = get_sensor(s, sensor_id)
+                stored = merge_objects(row.objects)
+                row.objects = {**(row.objects or {}), "custom": [*stored["custom"], new]}
+
+        await asyncio.to_thread(add_label)
     example_id = await asyncio.to_thread(
         rt.add_object_example, sensor_id, image, body.box, label, body.detected, body.score, origin
     )
@@ -262,15 +277,23 @@ def forget_box(sensor_id: int, example_id: int, request: Request) -> Response:
 
 async def remove_labels(rt: Runtime, sensor_id: int, keys: set[str] | None) -> None:
     """Remove own labels (``None``: all of them, and every taught box) with their entities."""
-    with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
-        objects = merge_objects(sensor.objects)
-        gone = [c["key"] for c in objects["custom"] if keys is None or c["key"] in keys]
-        if keys is not None and not gone:
-            raise HTTPException(404, "Label not found")
-        delete_examples(rt, s, sensor_id, [] if keys is None else [Sample.object_label.in_(gone)])
-        sensor.objects = {**(sensor.objects or {}), "custom": [c for c in objects["custom"] if c["key"] not in gone]}
-        slug = sensor.slug
+
+    def remove() -> tuple[list[str], str]:
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
+            objects = merge_objects(sensor.objects)
+            gone = [c["key"] for c in objects["custom"] if keys is None or c["key"] in keys]
+            if keys is not None and not gone:
+                raise HTTPException(404, "Label not found")
+            delete_examples(rt, s, sensor_id, [] if keys is None else [Sample.object_label.in_(gone)])
+            sensor.objects = {
+                **(sensor.objects or {}),
+                "custom": [c for c in objects["custom"] if c["key"] not in gone],
+            }
+            slug = sensor.slug
+            return gone, slug
+
+    gone, slug = await asyncio.to_thread(remove)
     for key in gone:
         await rt.mqtt.remove_object_class(slug, key)
     await rt.sensor_updated(sensor_id, retrain=False)

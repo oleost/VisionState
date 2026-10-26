@@ -306,7 +306,7 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown reader")
     if body.face_model is not None and body.face_model not in faces.RECOGNISERS:
         raise HTTPException(400, "Unknown face model")
-    current = get_settings(request)
+    current = await asyncio.to_thread(get_settings, request)
     # Only reload what changed: a new backbone retrains every state sensor.
     if body.backbone != current["backbone"]:
         try:
@@ -325,7 +325,7 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
             raise HTTPException(500, f"Could not load reader: {redact(str(err))}") from err
     if body.face_model is not None and body.face_model != current["face_model"]:
         await rt.set_face_model(body.face_model)  # loads in the background when a sensor uses faces
-    return get_settings(request)
+    return await asyncio.to_thread(get_settings, request)
 
 
 @router.post("/faces/retry")

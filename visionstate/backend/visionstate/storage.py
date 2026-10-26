@@ -47,8 +47,16 @@ class Storage:
         return f"{uuid.uuid4().hex}.jpg"
 
     def _write(self, path: Path, image: Image.Image) -> None:
+        """Whole or not at all: written next to it, then put in its place (a power cut or a full
+        disk never leaves half a picture under the name a row lists)."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(imaging.encode_jpeg(image))
+        part = path.with_name(f"{path.name}.part")
+        try:
+            part.write_bytes(imaging.encode_jpeg(image))
+            part.replace(path)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
 
     def save_sample(self, sensor_id: int, image: Image.Image) -> str:
         filename = self.new_filename()

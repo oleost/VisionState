@@ -49,8 +49,8 @@ The sensor appears in Home Assistant as a device named after the sensor, with th
 | Entity | What it is |
 |---|---|
 | `sensor.<name>` | The state (`open`, `closed`, …, or `unknown` when unsure) |
-| `sensor.<name>_confidence` | How sure the AI is, in % |
-| `image.<name>_last_frame` | The image region that was classified |
+| `sensor.<name>_confidence` | How sure the AI is, in whole % |
+| `image.<name>_last_frame` | The image region that was classified — sent when the state changes, otherwise every few minutes |
 | `button.<name>_classify_now` | Classify right now (use it in automations) |
 | `switch.<name>_enabled` | Pause / resume the sensor |
 
@@ -63,8 +63,13 @@ In addition, the **VisionState** device has `sensor.visionstate_review_queue`: t
 frames waiting for review, with a per-sensor breakdown and `oldest_waiting_since` (when the
 oldest of them came) as attributes.
 
-The state entity also has a `probabilities` attribute with the score of every state and a
-`last_trigger` attribute telling what caused the last check.
+The state entity also has a `probabilities` attribute with the score of every state (in whole
+percent, as a fraction) and a `last_trigger` attribute telling what caused the last check.
+
+Nothing VisionState sends changes at every check unless the result does: Home Assistant stores
+each new state in its database, so values that only move a little (a timestamp, a confidence to
+the decimal, the same picture again) would fill it. The pictures, and an object's boxes, follow
+the result at once and are otherwise sent again every few minutes.
 
 **Tuning a sensor before Home Assistant uses it:** switch off **Send to Home Assistant** (in the
 last step of the wizard, or under **Settings → General**). The sensor then runs as usual — its
@@ -92,8 +97,10 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   | `sensor.<name>_<object>_count` | How many there are |
 
   plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
-  `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence
-  and the boxes. Removing an object from the list removes its entities.
+  `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence,
+  the boxes and when it was last seen; they follow at once when the object comes or goes or its
+  count changes, and every few minutes while it stays. Removing an object from the list removes
+  its entities.
 - **Settings tab → Sensor output**:
 
   | Setting | Default | Meaning |
