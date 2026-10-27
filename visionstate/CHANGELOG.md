@@ -1,23 +1,6 @@
 # Changelog
 
-## 0.11.0b2
-
-### Better
-
-- **History pictures are the camera's own**: a frame is kept as the camera sent it instead of
-  being saved again, so it takes no time, loses nothing and usually takes less space — the same
-  history limit holds more. Pictures a camera sends turned (by a tag in the file) are still saved
-  upright as before.
-- **Less work at every check**: a camera picture is no longer copied twice while it is read
-  (about 20 % faster, and less memory for large pictures).
-- **Far fewer MQTT messages**: a sensor's values are sent when they change, and every few
-  minutes all the same (and right after the connection to the broker comes back). A sensor that
-  sees the same thing all day now sends almost nothing.
-- **The app rests in the background**: a page that is not shown (another browser tab, the Home
-  Assistant app put away) no longer asks the app for anything, and is brought up to date the
-  moment it is shown again.
-
-## 0.11.0b1
+## 0.11.0
 
 ### Better
 
@@ -30,11 +13,23 @@
   - the *Last frame* pictures, and an object's boxes and *last seen*, are sent at once when the
     state, the objects or the value change, and otherwise every few minutes.
   If an automation reads `last_update`, or the boxes while an object stays, look at it.
+- **Far fewer MQTT messages**: a sensor's values are sent when they change, and every few
+  minutes all the same (and right after the connection to the broker comes back). A sensor that
+  sees the same thing all day now sends almost nothing.
 - **Faster checks with less CPU**: the AI models no longer keep processor cores busy while they
   wait — about 30 % less CPU per check on the test machine, which leaves more for Home Assistant.
+  A camera picture is no longer copied twice while it is read (about 20 % faster, and less memory
+  for large pictures).
 - **RTSP cameras are much quicker during a burst of checks and in the live view**: the stream is
   kept open while frames are asked for often (about 30 ms a frame instead of 1–3 s), and closed
   again a few seconds after.
+- **History pictures are the camera's own**: a frame is kept as the camera sent it instead of
+  being saved again, so it takes no time, loses nothing and usually takes less space — the same
+  history limit holds more. Pictures a camera sends turned (by a tag in the file) are still saved
+  upright as before.
+- **The app rests in the background**: a page that is not shown (another browser tab, the Home
+  Assistant app put away) no longer asks the app for anything, and is brought up to date the
+  moment it is shown again.
 - Change detection and the history's thumbnails decode camera pictures only as large as they
   need — several times faster for large pictures.
 - The app no longer stalls while its database is busy, and the browser keeps the app's files

@@ -1,5 +1,5 @@
-name: VisionState (beta)
-version: "0.11.0b2"
+name: VisionState
+version: "0.11.0"
 slug: visionstate
 description: Teach a local AI to recognise states (open, closed, …), find objects (people, cars, pets) or read numbers in your camera images
 url: https://github.com/oleost/VisionState
@@ -16,7 +16,7 @@ ingress_port: 8099
 # a request into memory and refuses one over 16 MB.
 ingress_stream: true
 panel_icon: mdi:eye-check-outline
-panel_title: VisionState β
+panel_title: VisionState
 homeassistant_api: true
 hassio_api: true
 services:
@@ -39,5 +39,3 @@ schema:
   mqtt_port: port?
   mqtt_username: str?
   mqtt_password: password?
-environment:
-  VISIONSTATE_MEDIA: /media/visionstate_beta
