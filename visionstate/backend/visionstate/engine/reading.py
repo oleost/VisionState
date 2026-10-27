@@ -18,7 +18,7 @@ from ..mqtt import rate_unit, topics
 from ..redact import redact
 from ..settings import COUNTER_LIMIT, READING, REMINDER, VERSION
 from .base import RuntimeBase
-from .logic import reading_verdict
+from .logic import percent, reading_verdict
 from .models import ModelsMixin
 from .publishing import PublishingMixin
 from .state import SensorConfig
@@ -188,21 +188,21 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         t = topics(cfg.slug)
         if live.debouncer.published is not None:
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)
-        await self._send(cfg, t["confidence"], f"{text.score * 100:.1f}", retain=True)
+        await self._send(cfg, t["confidence"], percent(text.score), retain=True)
         await self._send(
             cfg,
             t["attributes"],
             {
                 "read_text": text.text,
-                "last_update": datetime.now(UTC).isoformat(),
                 "rejected": reason,
                 "last_trigger": live.last_trigger,
             },
             retain=True,
         )
+        shows = (live.debouncer.published, text.text, reason)
         crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
-        await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
-        await self._send(cfg, t["reader_image"], reader_jpeg, retain=True)
+        await self._send_on_change(cfg, t["image"], shows, lambda: imaging.encode_jpeg(crop, 80))
+        await self._send_on_change(cfg, t["reader_image"], shows, lambda: reader_jpeg)
         await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
 
     async def _keep_reading(
@@ -351,7 +351,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         watch.budget_s, watch.held = max(0.0, now - watch.accepted_at), False
         watch.seen_at, watch.sample = now, None  # nothing learned across it
         await asyncio.to_thread(self._save_watch, sensor_id, watch, value)
-        cfg = self.load_sensor(sensor_id)
+        cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
         if cfg is not None:
             await self._send(cfg, topics(cfg.slug)["state"], value, retain=True)
 

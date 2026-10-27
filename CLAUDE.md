@@ -63,7 +63,11 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`. A new feature says
   which kind(s) it applies to.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
-  exception (log it once, try again) — only `CancelledError` may end it.
+  exception (log it once, try again) — only `CancelledError` may end it. Database work in an
+  `async def` goes through `asyncio.to_thread` (`tests/test_event_loop.py` fails otherwise).
+- What is sent to Home Assistant must not change at every check unless the result does (no
+  timestamps, no needless decimals, pictures through `_send_on_change`): Home Assistant stores
+  every change as a new row (`docs/SCOPE.md` §8).
 - Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`): entries are never changed
   or removed once released (their texts, measured footprint and similarity limits may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
@@ -150,12 +154,15 @@ Many users run Home Assistant on phones and tablets.
   watch it `--headed` or step through it `--ui`; after a failure `npx playwright show-trace
   test-results/<test>/trace.zip`.
 - **Demo sensors:** `python scripts/seed_demo.py --url <app> --images <camera>` seeds one sensor of
-  each kind (Driveway with Emma and "Our car", Garage door, Water meter) on any instance: locally
+  each kind (Driveway with Tom and "Our car", Garage door, Water meter) on any instance: locally
   with `--images http://127.0.0.1:8765/photo` (the fake camera), or on an installed app with
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.
 - **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
   broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
-  `visionstate/frontend` (1440 px wide, device scale 1.2).
+  `visionstate/frontend` (1440 px wide, device scale 1.2). Not a broker another VisionState is
+  connected to: both use the same client ID and push each other off every few seconds (on a test
+  broker that is in use, `VISIONSTATE_DISCOVERY_PREFIX` keeps the entities out of Home Assistant,
+  but not that).
   The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
   maintainer before publishing.
 
@@ -182,5 +189,9 @@ Many users run Home Assistant on phones and tablets.
   them resizes what is observed, WebKit reports "ResizeObserver loop completed with undelivered
   notifications" (seen once in CI on the dashboard, never locally). Measure in a timeout instead,
   like `measure` in `DetectionBoxes.svelte` (not the next animation frame: none comes in a hidden tab).
-- The Chrome tab Claude drives counts as hidden (`document.visibilityState`); views that only poll
-  while visible look fine there. Use `setVisibility` (e2e) or override it by hand.
+- The Chrome tab Claude drives counts as hidden (`document.visibilityState`), and every page polls
+  only while visible (`lib/poll.ts`, live frames, history): there nothing updates by itself. Use
+  `setVisibility` (e2e) or override it by hand.
+- A backend test that swaps in a fake camera after `TestClient(create_app(...))` has started may
+  see the first check use the real one (and the sensor go *unavailable*): wait for the state you
+  expect with `wait_for`, never read it once.

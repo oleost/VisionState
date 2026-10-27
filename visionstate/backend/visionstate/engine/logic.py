@@ -240,3 +240,9 @@ def reading_verdict(
     if reason == "went down" and readers.settling(value, last, settings):
         return None, True
     return reason, False
+
+
+def percent(share: float) -> str:
+    """A confidence for Home Assistant, in whole percent: a value that changes at every check
+    makes Home Assistant store the entity's state again each time."""
+    return f"{share * 100:.0f}"

@@ -101,6 +101,15 @@ def test_static_files_cannot_escape_frontend_dir(client):
         assert "top secret" not in resp.text
 
 
+def test_the_built_ui_is_kept_by_the_browser_but_not_its_index(client, tmp_path):
+    """Asset names carry a hash of their content: kept for a year; index.html names the current ones."""
+    (tmp_path / "frontend" / "assets" / "index-AbCd1234.js").write_text("app()")
+    asset = client.get("/assets/index-AbCd1234.js")
+    assert asset.status_code == 200 and "immutable" in asset.headers["cache-control"]
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert "cache-control" not in client.get("/assets/missing.js").headers
+
+
 def test_review_rules_global_and_per_sensor(client):
     assert client.get("/api/v1/review-rules").json()["spot_rate"] == 0.0
     rules = client.put("/api/v1/review-rules", json={"below": 0.8, "cooldown_s": 600}).json()

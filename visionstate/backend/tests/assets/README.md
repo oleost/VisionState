@@ -35,12 +35,12 @@ The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
 
 | File | What | Source |
 |---|---|---|
-| `demo_driveway.jpg` | Emma on her car, cut to 16:9 with a camera's date and name drawn on | [Woman Car](https://stocksnap.io/photo/woman-car-WKVLDV0K0G) by Candace McDaniel, StockSnap (CC0) |
-| `demo_emma_car.jpg` | Emma in the same car: a face to teach | [Woman Car](https://stocksnap.io/photo/woman-car-XHLANQWHBS), same author (CC0) |
-| `demo_emma_guitar.jpg` | Emma on the car with a guitar: a face to teach | [Woman Car](https://stocksnap.io/photo/woman-car-TV3QFON1JP), same author (CC0) |
+| `demo_driveway.jpg` | A driveway seen from above: Tom and a girl with a parcel, cars, a bicycle and a cat | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
+| `demo_tom.jpg` | Tom alone on the same driveway: a face to teach on the camera | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
+| `demo_tom_photo.jpg` | Tom close up, as a photo from a phone: a face to teach with Add photos | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
 | `demo_garage.jpg` | A garage door from inside, cut; the script draws it open and half open | [Utility building interior view of wood panel overhead garage doors](https://commons.wikimedia.org/wiki/File:UTILITY_BUILDING_INTERIOR_VIEW_OF_WOOD_PANEL_OVERHEAD_GARAGE_DOORS,_LOOKING_NORTHWEST._-_Tucson_Plant_Materials_Center,_General_Utility_Building,_3241_North_Romero_Road,_HABS_ARIZ,10-TUCSO,32C-7.tif), HABS (public domain) |
 
-"Emma" is a made-up name. The water meter is `counter_turning.jpg` above.
+"Tom" is a made-up name. The water meter is `counter_turning.jpg` above.
 
 `backups/` holds a backup made by each database version and backup format (`backup-format<F>-schema<S>.zip`),
 drawn by our own code (`tests/backup_fixture.py`): every later version's tests restore each of

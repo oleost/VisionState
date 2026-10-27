@@ -18,6 +18,7 @@ from .checks import ChecksMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
 from .reminders import RemindersMixin
+from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
@@ -54,14 +55,14 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.face_choice = await asyncio.to_thread(self.db.get_text, "face_model", faces.DEFAULT_RECOGNISER)
         if self.face_choice not in faces.RECOGNISERS:
             self.face_choice = faces.DEFAULT_RECOGNISER
-        backbone_id = self.db.get_text("backbone", backbones.DEFAULT_BACKBONE)
+        backbone_id = await asyncio.to_thread(self.db.get_text, "backbone", backbones.DEFAULT_BACKBONE)
         try:
             await self.load_embedder(backbone_id)
         except Exception as err:  # noqa: BLE001
             log.exception("Could not load backbone %s", backbone_id)
             self.embedder_error = str(err)
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
-            if self.heads_load(sensor_id):
+            if await asyncio.to_thread(self.heads_load, sensor_id):
                 log.info("Sensor %s: model from another version, retraining from stored images", sensor_id)
                 self.schedule_retrain(sensor_id, delay=0)
         await asyncio.to_thread(self.restore_last_seen)  # "last seen" survives an update or restart
@@ -211,24 +212,20 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self._entity_index = await asyncio.to_thread(self._trigger_index)
         self.ha_events.set_entities(set(self._entity_index))
 
-    def start_burst(self, sensor_id: int, source: str, detail: str) -> None:
-        """Check now, then keep checking at the burst pace for the configured duration."""
-        cfg = self.load_sensor(sensor_id)
-        if cfg is None or not cfg.enabled:
+    def start_burst(self, cfg: SensorConfig, source: str, detail: str) -> None:
+        """Check now, then keep checking at the burst pace for the configured duration (on the loop)."""
+        if not cfg.enabled:
             return
-        live = self.live_state(sensor_id)
+        live = self.live_state(cfg.id)
         now = time.time()
         live.burst_until = now + cfg.triggers["burst_duration_s"]
         live.last_trigger = {"source": source, "detail": detail, "at": now}
-        self.wake(sensor_id, force=True)
-
-    def _entity_changed(self, sensor_id: int, entity_id: str, old: str | None, new: str | None) -> None:
-        cfg = self.load_sensor(sensor_id)
-        if cfg is None or not entity_triggers(cfg.triggers, entity_id, new):
-            return
-        log.debug("Sensor %s triggered by %s: %s -> %s", sensor_id, entity_id, old, new)
-        self.start_burst(sensor_id, "entity", f"{entity_id}: {old} → {new}")
+        self.wake(cfg.id, force=True)
 
     async def _on_ha_state(self, entity_id: str, old: str | None, new: str | None) -> None:
         for sensor_id in self._entity_index.get(entity_id, set()):
-            await asyncio.to_thread(self._entity_changed, sensor_id, entity_id, old, new)
+            cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
+            if cfg is None or not entity_triggers(cfg.triggers, entity_id, new):
+                continue
+            log.debug("Sensor %s triggered by %s: %s -> %s", sensor_id, entity_id, old, new)
+            self.start_burst(cfg, "entity", f"{entity_id}: {old} → {new}")

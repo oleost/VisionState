@@ -7,7 +7,6 @@ import logging
 import math
 import random
 import time
-from datetime import UTC, datetime
 
 from PIL import Image
 
@@ -18,7 +17,7 @@ from ..redact import redact
 from ..settings import RUNTIME, UNKNOWN_STATE
 from ..sources import SourceError
 from .base import RuntimeBase
-from .logic import next_check_at, review_reason
+from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
 from .state import SensorConfig
@@ -174,7 +173,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             return
         try:
             frame_id, data = await self.grab(cfg)
-            image = await asyncio.to_thread(imaging.decode, data)
+            # Only for the signature: decoded small (a check that follows decodes it whole).
+            small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
@@ -185,11 +185,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
             # No baseline (first run or the region changed). With a light this frame is the
             # baseline (checks in the light never set one); without, check it, which sets one.
             if lit:
-                live.signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+                live.signature = await asyncio.to_thread(imaging.region_signature, small, cfg.roi)
             else:
-                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+                await self.run_once(cfg, data=data, frame_id=frame_id)
             return
-        signature = await asyncio.to_thread(imaging.region_signature, image, cfg.roi)
+        signature = await asyncio.to_thread(imaging.region_signature, small, cfg.roi)
         score = imaging.change_score(live.signature, signature)
         live.change_score = score
         if score >= cfg.triggers["change_threshold"]:
@@ -200,7 +200,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
                 live.signature = signature
                 await self.run_once(cfg)
             else:
-                await self.run_once(cfg, data=data, image=image, frame_id=frame_id)
+                await self.run_once(cfg, data=data, frame_id=frame_id)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         data = await self.grabber.grab(cfg.source_type, cfg.source)
@@ -284,20 +284,21 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
 
         crop = imaging.crop(image, cfg.roi)
         await self._send(cfg, t["state"], live.debouncer.published or UNKNOWN_STATE, retain=True)
-        await self._send(cfg, t["confidence"], f"{confidence * 100:.1f}", retain=True)
+        await self._send(cfg, t["confidence"], percent(confidence), retain=True)
         await self._send(
             cfg,
             t["attributes"],
             {
-                "probabilities": {k: round(v, 4) for k, v in probs.items()},
+                # Whole percent, like the confidence: a value that changes at every check makes Home
+                # Assistant store the state again each time.
+                "probabilities": {k: round(v, 2) for k, v in probs.items()},
                 "top_state": top,
-                "last_update": datetime.now(UTC).isoformat(),
                 "trained": bool(probs),
                 "last_trigger": live.last_trigger,
             },
             retain=True,
         )
-        await self._send(cfg, t["image"], await asyncio.to_thread(imaging.encode_jpeg, crop, 80), retain=True)
+        await self._send_on_change(cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80))
 
         reason = None
         if probs:

@@ -70,7 +70,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             track = live.tracks[key]
             ot = object_topics(cfg.slug, key)
             attributes = {
-                "confidence": round(track.score, 4),
+                "confidence": round(track.score, 2),
                 "boxes": [d["box"] for d in found if teach.counts_for(d, key)],
                 "last_seen": datetime.fromtimestamp(track.last_seen, UTC).isoformat() if track.last_seen else None,
                 "last_trigger": live.last_trigger,
@@ -79,18 +79,21 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
                 attributes["filtered"] = sum(1 for d in found if d.get("filtered") and d["key"] == key)
             await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
             await self._send(cfg, ot["count"], str(track.count), retain=True)
-            await self._send(cfg, ot["attributes"], attributes, retain=True)
+            shows = (track.on, track.count, live.last_trigger, attributes.get("filtered"))
+            await self._send_on_change(cfg, ot["attributes"], shows, lambda attributes=attributes: attributes)
         names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
         names.update({c["key"]: c["name"] for c in cfg.custom_labels})
         names[FACE_UNKNOWN_KEY] = "Unknown person"
         drawn = [{**d, "key": d.get("label") or d["key"]} for d in counted]
-        annotated = await asyncio.to_thread(
-            lambda: imaging.crop_box(
-                imaging.draw_detections(image, drawn, names, OBJECT_BOX_COLOR), imaging.region_box(cfg.roi)
+
+        def picture() -> bytes:
+            box = imaging.region_box(cfg.roi)
+            return imaging.encode_jpeg(
+                imaging.crop_box(imaging.draw_detections(image, drawn, names, OBJECT_BOX_COLOR), box), 80
             )
-        )
-        jpeg = await asyncio.to_thread(imaging.encode_jpeg, annotated, 80)
-        await self._send(cfg, topics(cfg.slug)["image"], jpeg, retain=True)
+
+        shows = tuple((key, live.tracks[key].on, live.tracks[key].count) for key in keys)
+        await self._send_on_change(cfg, topics(cfg.slug)["image"], shows, picture)
         for key in changed:
             track = live.tracks[key]
             published = "on" if track.on else "off"

@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import imaging
-from .settings import Settings
+from .settings import THUMB_SIZE, Settings
 
 
 class Storage:
@@ -46,9 +46,18 @@ class Storage:
     def new_filename() -> str:
         return f"{uuid.uuid4().hex}.jpg"
 
-    def _write(self, path: Path, image: Image.Image) -> None:
+    def _write(self, path: Path, image: Image.Image, data: bytes | None = None) -> None:
+        """Whole or not at all: written next to it, then put in its place (a power cut or a full
+        disk never leaves half a picture under the name a row lists). ``data``: the JPEG to write
+        as it is (otherwise ``image`` is encoded)."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(imaging.encode_jpeg(image))
+        part = path.with_name(f"{path.name}.part")
+        try:
+            part.write_bytes(data if data is not None else imaging.encode_jpeg(image))
+            part.replace(path)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
 
     def save_sample(self, sensor_id: int, image: Image.Image) -> str:
         filename = self.new_filename()
@@ -64,15 +73,22 @@ class Storage:
         self.face_path(filename).unlink(missing_ok=True)
 
     def save_history(self, sensor_id: int, image: Image.Image) -> str:
+        """A camera frame for the history: the camera's own JPEG when ``image`` is exactly that
+        (imaging.original_jpeg) — not encoded again, so no time spent and no quality lost, and
+        usually smaller. Only the history: a training image is always encoded again, which leaves
+        out what an uploaded photo may carry besides its pixels (where it was taken)."""
         filename = self.new_filename()
-        self._write(self.history_path(sensor_id, filename), image)
+        self._write(self.history_path(sensor_id, filename), image, imaging.original_jpeg(image))
         return filename
 
     def thumbnail(self, kind: str, item_id: int, source: Path) -> Path:
         """Cached thumbnail for a sample or history frame."""
         target = self.thumb_path(kind, item_id)
         if not target.exists() or target.stat().st_mtime < source.stat().st_mtime:
-            self._write(target, imaging.thumbnail(imaging.load(source)))
+            # Decoded just large enough (a JPEG decodes at 1/2, 1/4 or 1/8 of its size): three times
+            # faster for a 4K frame, and a page of history asks for dozens at once.
+            size = (THUMB_SIZE, THUMB_SIZE)
+            self._write(target, imaging.thumbnail(imaging.load(source, at_least=size)))
         return target
 
     def delete_sample(self, sensor_id: int, sample_id: int, filename: str) -> None:

@@ -241,6 +241,8 @@ class LiveState:
     # ({"from": [w, h], "to": [w, h], "since": epoch seconds}); readings are held until it is
     # back or the user accepts it (engine/reading.py).
     camera_changed: dict | None = None
+    # Sent to Home Assistant when it changed: topic -> (what it showed, when), see PublishingMixin._send_on_change.
+    sent_on_change: dict[str, tuple[object, float]] = field(default_factory=dict)
 
     def remember(self, data: bytes) -> str:
         frame_id = f"{time.time_ns():x}"

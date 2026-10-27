@@ -3,6 +3,7 @@
   import { app, loadConfig, refreshStatus } from './lib/app.svelte';
   import Nav from './lib/components/Nav.svelte';
   import Toasts from './lib/components/Toasts.svelte';
+  import { pollWhileVisible } from './lib/poll';
   import { route } from './lib/router.svelte';
   import { POLL, SENSOR_TABS, type SensorTab } from './lib/ui';
   import Dashboard from './pages/Dashboard.svelte';
@@ -18,8 +19,7 @@
   Promise.all([loadConfig(), refreshStatus()])
     .then(() => (ready = true))
     .catch((err) => (app.error = err.message));
-  const timer = setInterval(refreshStatus, POLL.status);
-  onDestroy(() => clearInterval(timer));
+  onDestroy(pollWhileVisible(POLL.status, refreshStatus));
 
   const [section, id, tab] = $derived(route.parts);
   // '' = the sensor's first tab, which depends on its kind (resolved by SensorPage).

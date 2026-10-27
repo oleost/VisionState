@@ -42,7 +42,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     async def set_backbone(self, backbone_id: str) -> None:
         await self.load_embedder(backbone_id)
         await asyncio.to_thread(backbones.release_memory)
-        self.db.set_setting("backbone", backbone_id)
+        await asyncio.to_thread(self.db.set_setting, "backbone", backbone_id)
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_STATES):
             self.schedule_retrain(sensor_id, delay=0)
 

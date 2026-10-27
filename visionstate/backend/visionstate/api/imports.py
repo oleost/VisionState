@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import tempfile
 import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,7 +29,7 @@ from .common import (
     unique_slug,
 )
 from .faces import add_face_row, new_person, taken_keys
-from .samples import copy_limited
+from .samples import spool_upload
 
 if TYPE_CHECKING:
     from .sensors import SensorIn
@@ -43,10 +42,8 @@ router = APIRouter(prefix=API_PREFIX, tags=["import"])
 async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
     """A new sensor from an exported bundle (validated like the API); a state sensor is trained."""
     rt = runtime(request)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-        path = Path(tmp.name)
-        within_limit = copy_limited(file.file, tmp, UPLOAD_LIMITS["max_file_mb"] * 1_000_000)
-    if not within_limit:
+    path, too_large = await asyncio.to_thread(spool_upload, file, "bundle.zip")
+    if too_large:
         path.unlink(missing_ok=True)
         raise HTTPException(413, f"Bundle is larger than {UPLOAD_LIMITS['max_file_mb']} MB")
     try:

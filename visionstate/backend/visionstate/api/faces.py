@@ -193,31 +193,40 @@ async def teach_face(sensor_id: int, body: FaceTeachIn, request: Request) -> dic
     cfg = await asyncio.to_thread(_config, rt, sensor_id)
     if not body.person and not body.new_person:
         raise HTTPException(400, "Say who it is: a person or a new person")
-    with rt.db.session() as s:
-        if body.person:
-            person = person_by_key(s, body.person)
-            count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
-            if count >= FACES["max_faces_per_person"]:
-                raise HTTPException(400, f"A person can have at most {FACES['max_faces_per_person']} faces")
-        else:
-            # Checked now, made only once the face is good.
-            if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
-                raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
-            _check_name(s, body.new_person or "")
+
+    def check() -> None:
+        with rt.db.session() as s:
+            if body.person:
+                person = person_by_key(s, body.person)
+                count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
+                if count >= FACES["max_faces_per_person"]:
+                    raise HTTPException(400, f"A person can have at most {FACES['max_faces_per_person']} faces")
+            else:
+                # Checked now, made only once the face is good.
+                if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
+                    raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
+                _check_name(s, body.new_person or "")
+
+    await asyncio.to_thread(check)
     image, origin, face, problem = await _find(rt, sensor_id, body, cfg)
     if problem or face is None:
         raise HTTPException(400, PROBLEMS.get(problem or "none", PROBLEMS["none"]))
     crop, local = faces.face_crop(image, face)
     filename = await asyncio.to_thread(rt.storage.save_face, crop)
-    with rt.db.session() as s:
-        person = person_by_key(s, body.person) if body.person else new_person(s, body.new_person or "")
-        face_id = add_face_row(s, person.id, sensor_id, filename, crop, faces.face_to_dict(local), origin)
-        key, name = person.key, person.name
-        n = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
+
+    def add() -> tuple[int, str, str, int]:
+        with rt.db.session() as s:
+            person = person_by_key(s, body.person) if body.person else new_person(s, body.new_person or "")
+            face_id = add_face_row(s, person.id, sensor_id, filename, crop, faces.face_to_dict(local), origin)
+            key, name = person.key, person.name
+            n = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
+            return face_id, key, name, n
+
+    face_id, key, name, n = await asyncio.to_thread(add)
     if body.new_person:
         await rt.people_changed()  # the person's entities on every sensor that recognises faces
     else:
-        rt.faces_changed()
+        await asyncio.to_thread(rt.faces_changed)
     if body.history_id is not None:
         await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, key, "person", True)
         await rt.person_last_seen_changed(key)  # Home Assistant gets that last_seen too
@@ -348,13 +357,17 @@ async def add_photos(
         raise HTTPException(400, "Say who it is: a person or a new person")
     if not await asyncio.to_thread(rt.face_sensor_ids):  # the face model is only fetched after a sensor's confirmation
         raise HTTPException(400, "Turn on face recognition on a sensor first (its Settings → Faces)")
-    with rt.db.session() as s:
-        if person:
-            person_by_key(s, person)
-        else:
-            if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
-                raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
-            _check_name(s, new_name or "")
+
+    def check() -> None:
+        with rt.db.session() as s:
+            if person:
+                person_by_key(s, person)
+            else:
+                if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
+                    raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
+                _check_name(s, new_name or "")
+
+    await asyncio.to_thread(check)
     model = await _face_model(rt)
     min_px = rt.face_limits(None)["min_face_px"]
     found: list[tuple[Image.Image, faces.Face]] = []
@@ -382,19 +395,26 @@ async def add_photos(
             skipped.append({"file": name, "message": PHOTO_PROBLEMS.get(problems[0], PHOTO_PROBLEMS["none"])})
     if not found:
         return {"label": person, "name": None, "added": 0, "skipped": skipped, "faces": None}
-    with rt.db.session() as s:
-        who = person_by_key(s, person) if person else new_person(s, new_name or "")
-        count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == who.id)) or 0
-        added = 0
-        for image, face in found:
-            if count >= FACES["max_faces_per_person"]:
-                skipped.append({"file": "", "message": f"A person has at most {FACES['max_faces_per_person']} faces."})
-                break
-            crop, local = faces.face_crop(image, face)
-            filename = rt.storage.save_face(crop)
-            add_face_row(s, who.id, None, filename, crop, faces.face_to_dict(local), "upload")
-            count, added = count + 1, added + 1
-        result = {"label": who.key, "name": who.name, "added": added, "skipped": skipped, "faces": count}
+
+    def add() -> dict:
+        with rt.db.session() as s:
+            who = person_by_key(s, person) if person else new_person(s, new_name or "")
+            count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == who.id)) or 0
+            added = 0
+            for image, face in found:
+                if count >= FACES["max_faces_per_person"]:
+                    skipped.append(
+                        {"file": "", "message": f"A person has at most {FACES['max_faces_per_person']} faces."}
+                    )
+                    break
+                crop, local = faces.face_crop(image, face)
+                filename = rt.storage.save_face(crop)
+                add_face_row(s, who.id, None, filename, crop, faces.face_to_dict(local), "upload")
+                count, added = count + 1, added + 1
+            result = {"label": who.key, "name": who.name, "added": added, "skipped": skipped, "faces": count}
+            return result
+
+    result = await asyncio.to_thread(add)
     if not person:
         await rt.people_changed()
     else:
@@ -421,10 +441,15 @@ def _pictures(upload_file: UploadFile, name: str, limit: int) -> list[Image.Imag
 async def rename_person(key: str, body: PersonIn, request: Request) -> dict:
     """A person's name (their entities' names follow; their key and entity IDs stay)."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        person = person_by_key(s, key)
-        person.name = _check_name(s, body.name, keep=person.id)
-        result = {"key": person.key, "name": person.name}
+
+    def rename() -> dict:
+        with rt.db.session() as s:
+            person = person_by_key(s, key)
+            person.name = _check_name(s, body.name, keep=person.id)
+            result = {"key": person.key, "name": person.name}
+            return result
+
+    result = await asyncio.to_thread(rename)
     await rt.people_changed()
     return result
 

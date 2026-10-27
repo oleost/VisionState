@@ -10,6 +10,7 @@
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
   import { facesBusy, isObjectSensor, objectName } from '../lib/objects';
+  import { pollWhileVisible } from '../lib/poll';
   import { isReadingSensor, readingText, readingUnit } from '../lib/reading';
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
@@ -18,7 +19,6 @@
 
   let sensors = $state<Sensor[] | null>(null);
   let importInput: HTMLInputElement;
-  let timer: ReturnType<typeof setInterval>;
 
   async function load() {
     try {
@@ -29,8 +29,7 @@
   }
 
   load();
-  timer = setInterval(load, POLL.dashboard);
-  onDestroy(() => clearInterval(timer));
+  onDestroy(pollWhileVisible(POLL.dashboard, load));
 
   async function importFile(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];

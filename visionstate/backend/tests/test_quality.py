@@ -155,7 +155,9 @@ def test_outdated_heads_are_retrained_on_startup(tmp_path, model_dir, outdated):
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["model"]["version"] > version)
-        assert client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok"
+        # The first check may run before the fake camera is in place (source "x": unavailable); the
+        # check after the retrain uses it.
+        assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["status"] == "ok")
     head = classifier.load(path)
     assert head is not None and head.format == classifier.HEAD_FORMAT
     assert legacy.read_bytes() == classifier.LEGACY_MARKER

@@ -34,7 +34,10 @@ one event loop:
 
 - **I/O** (camera, MQTT, Home Assistant) is async.
 - **Database and file work** runs in worker threads (`asyncio.to_thread`): SQLite with WAL, one
-  short session per unit of work (`Database.session()`).
+  short session per unit of work (`Database.session()`). Never directly in an `async def`:
+  `tests/test_event_loop.py` fails on a session (or `load_sensor`) opened there.
+- **RTSP grabs** run on threads of their own (`sources.FrameGrabber`, `RUNTIME["rtsp_workers"]`),
+  so a camera that does not answer holds none of the default pool's.
 - **AI inference and training** runs in worker threads too, at most
   `RUNTIME["max_concurrent_inferences"]` at a time (the semaphore `Runtime._sem`).
 - **Long-running loops** (one per sensor, MQTT, the Home Assistant event stream, clean-up) catch
@@ -47,13 +50,13 @@ API as `request.app.state.runtime`.
 
 | File | What it does |
 |---|---|
-| `__main__.py`, `main.py` | Entry point (logging, uvicorn), FastAPI app, Ingress-only guard, static UI |
+| `__main__.py`, `main.py` | Entry point (logging, uvicorn), FastAPI app, Ingress-only guard, static UI (hashed assets kept by the browser: `HashedAssets`) |
 | `settings.py` | **Every** default, limit and tunable, the app options (`Settings`), the `merge_*` helpers that fill a stored setting with defaults |
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
-| `storage.py` | Image files on disk: training samples, history frames, thumbnails |
+| `storage.py` | Image files on disk: training samples, history frames, thumbnails; written whole or not at all |
 | `engine/` | The runtime — see below |
 | `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
-| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP; address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
+| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
@@ -62,7 +65,7 @@ API as `request.app.state.runtime`.
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding, regions (ROI), crops, change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
@@ -93,7 +96,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `teaching.py` | Taught boxes of object sensors (index, embeddings) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
-| `publishing.py` | Discovery and values to Home Assistant, the review queue entity, commands from it |
+| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`), the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
 | `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
@@ -133,7 +136,8 @@ error is kept in `LiveState.error` and shown in the UI.
   the move kept training images in `<media>/samples/`: they are read there until
   `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed
   only after the row that lists it (`db.Database.after_commit`), and an image that is gone anyway
-  is left out of training and of the taught boxes instead of stopping the sensor.
+  is left out of training and of the taught boxes instead of stopping the sensor. The history clean-up
+  (`engine.HistoryMixin.cleanup_history`) also removes frames no row lists, once they are old.
 - **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
   `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
   `prediction` rows (see `db.py`).
@@ -150,6 +154,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/app.svelte.ts` | Shared state: config from `GET /api/v1/config`, status polling, the last restored backup (Settings is made again with it) |
 | `lib/router.svelte.ts` | Hash routes (`paths`), a page's query (`route.query`, `setQuery`) |
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
+| `lib/poll.ts` | Polling that rests while the page is hidden (`pollWhileVisible`: status, dashboard, sensor page) |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
 | `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |

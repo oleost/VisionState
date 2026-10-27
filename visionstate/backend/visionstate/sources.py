@@ -6,6 +6,9 @@ import asyncio
 import io
 import logging
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -119,10 +122,10 @@ class HomeAssistant:
     async def snapshot(self, entity_id: str) -> bytes:
         if not self.enabled:
             raise SourceError("Home Assistant API is not configured")
-        resp = await self._client.get(f"{self.base}/camera_proxy/{entity_id}")
-        if resp.status_code != 200:
-            raise SourceError(f"{entity_id}: HTTP {resp.status_code}")
-        return resp.content
+        async with self._client.stream("GET", f"{self.base}/camera_proxy/{entity_id}") as resp:
+            if resp.status_code != 200:
+                raise SourceError(f"{entity_id}: HTTP {resp.status_code}")
+            return await read_limited(resp)
 
     async def state(self, entity_id: str) -> str | None:
         """The current state of an entity, or None when it does not exist."""
@@ -199,9 +202,39 @@ class FrameGrabber:
     def __init__(self, ha: HomeAssistant):
         self.ha = ha
         self._http = httpx.AsyncClient(timeout=RUNTIME["http_timeout_s"], follow_redirects=True)
+        # An RTSP grab blocks a thread for seconds (connecting, waiting for a key frame): on threads
+        # of its own, so cameras that do not answer never hold up the database or the AI models.
+        self._rtsp = ThreadPoolExecutor(max_workers=RUNTIME["rtsp_workers"], thread_name_prefix="rtsp")
+        self._streams: dict[str, RtspStream] = {}  # streams kept open while frames come often
+        self._last_grab: dict[str, float] = {}  # when each stream address was last grabbed
 
     async def close(self) -> None:
         await self._http.aclose()
+        for stream in self._streams.values():
+            stream.close()
+        self._rtsp.shutdown(wait=False, cancel_futures=True)
+
+    def _grab_stream(self, url: str) -> bytes:
+        """A frame of an RTSP stream (on an RTSP thread).
+
+        A check now and then connects for one frame (connecting and waiting for a key frame take a
+        second or more). Frames asked for again within RUNTIME["rtsp_keep_open_s"] (a burst of
+        checks, someone watching the live view) come from the stream kept open meanwhile; it is
+        closed once nobody asked for that long, as decoding it costs CPU all the while.
+        """
+        keep_open = RUNTIME["rtsp_keep_open_s"]
+        now = time.monotonic()
+        last, self._last_grab[url] = self._last_grab.get(url), now
+        stream = self._streams.get(url)
+        if stream is not None and not stream.alive:
+            stream = self._streams.pop(url)
+            stream.close()
+            stream = None
+        if stream is None and (keep_open <= 0 or last is None or now - last > keep_open):
+            return grab_rtsp(url)
+        if stream is None:
+            stream = self._streams[url] = RtspStream(url, keep_open)
+        return stream.grab()
 
     async def grab(self, source_type: str, source: str) -> bytes:
         check_source(source_type, source)
@@ -210,22 +243,28 @@ class FrameGrabber:
                 return await self.ha.snapshot(source)
             if source_type == "http":
                 return await self._get_limited(source)
-            return await asyncio.to_thread(grab_rtsp, source)
+            return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
         except httpx.HTTPError as err:
             raise SourceError(describe(err)) from err
 
     async def _get_limited(self, url: str) -> bytes:
         """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]."""
-        limit = RUNTIME["max_frame_mb"] * 1_000_000
         async with self._http.stream("GET", url) as resp:
             if resp.status_code != 200:
                 raise SourceError(f"HTTP {resp.status_code}")
-            body = bytearray()
-            async for chunk in resp.aiter_bytes():
-                body += chunk
-                if len(body) > limit:
-                    raise SourceError(f"Picture larger than {RUNTIME['max_frame_mb']} MB")
-            return bytes(body)
+            return await read_limited(resp)
+
+
+async def read_limited(resp: httpx.Response) -> bytes:
+    """A picture's body, refused when it is larger than RUNTIME["max_frame_mb"] (a misconfigured
+    address streaming without end)."""
+    limit = RUNTIME["max_frame_mb"] * 1_000_000
+    body = bytearray()
+    async for chunk in resp.aiter_bytes():
+        body += chunk
+        if len(body) > limit:
+            raise SourceError(f"Picture larger than {RUNTIME['max_frame_mb']} MB")
+    return bytes(body)
 
 
 def describe(err: httpx.HTTPError) -> str:
@@ -237,15 +276,87 @@ def describe(err: httpx.HTTPError) -> str:
     return type(err).__name__
 
 
+STREAM_OPTIONS = {"rtsp_transport": "tcp", "timeout": "10000000"}  # FFmpeg's socket timeout, in µs
+
+
+def _jpeg(frame) -> bytes:  # noqa: ANN001 - an av.VideoFrame
+    buf = io.BytesIO()
+    frame.to_image().save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 def grab_rtsp(url: str) -> bytes:
+    """One frame of a stream: connect, decode the first frame, disconnect."""
     import av
 
     try:
-        with av.open(url, options={"rtsp_transport": "tcp", "stimeout": "10000000"}, timeout=10) as container:
+        # "timeout" was "stimeout" before FFmpeg 5 (an unknown option is ignored without a word).
+        with av.open(url, options=STREAM_OPTIONS, timeout=10) as container:
             for frame in container.decode(video=0):
-                buf = io.BytesIO()
-                frame.to_image().save(buf, format="JPEG", quality=90)
-                return buf.getvalue()
+                return _jpeg(frame)
     except av.FFmpegError as err:
         raise SourceError(redact(str(err))) from err
     raise SourceError("No video frame received")
+
+
+class RtspStream:
+    """An RTSP stream kept open: a thread of its own decodes it and keeps the newest frame, until
+    no frame was asked for in ``keep_open`` seconds or the stream fails (see FrameGrabber._grab_stream)."""
+
+    def __init__(self, url: str, keep_open: float):
+        self.url, self.keep_open = url, keep_open
+        self._changed = threading.Condition()
+        self._frame = None
+        self._frame_at = 0.0
+        self._error: SourceError | None = None
+        self._asked_at = time.monotonic()
+        self._closed = False
+        self._thread = threading.Thread(target=self._run, name="rtsp-stream", daemon=True)
+        self._thread.start()
+
+    @property
+    def alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def close(self) -> None:
+        with self._changed:
+            self._closed = True
+            self._changed.notify_all()
+
+    def grab(self) -> bytes:
+        """A frame decoded after this call (never an old one), or the stream's error."""
+        asked = time.monotonic()
+        with self._changed:
+            self._asked_at = asked
+            ready = self._changed.wait_for(
+                lambda: self._frame_at > asked or self._error is not None or not self.alive,
+                timeout=RUNTIME["http_timeout_s"],
+            )
+            if self._frame_at > asked:
+                frame = self._frame
+            elif self._error is not None:
+                raise self._error
+            else:
+                raise SourceError("No video frame received" if ready else "The stream stopped sending frames")
+        return _jpeg(frame)
+
+    def _run(self) -> None:
+        import av
+
+        try:
+            with av.open(self.url, options=STREAM_OPTIONS, timeout=10) as container:
+                for frame in container.decode(video=0):
+                    with self._changed:
+                        self._frame, self._frame_at = frame, time.monotonic()
+                        self._changed.notify_all()
+                        if self._closed or time.monotonic() - self._asked_at > self.keep_open:
+                            return
+        except av.FFmpegError as err:
+            with self._changed:
+                self._error = SourceError(redact(str(err)))
+        except Exception as err:  # noqa: BLE001 - the thread must end with a reason for the waiting grab
+            with self._changed:
+                self._error = SourceError(redact(str(err)) or type(err).__name__)
+        finally:
+            with self._changed:
+                self._changed.notify_all()

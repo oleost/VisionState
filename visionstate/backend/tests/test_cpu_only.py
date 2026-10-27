@@ -18,6 +18,10 @@ def test_backbone_and_detector_use_only_the_cpu():
     )
     assert embedder.session.get_providers() == ["CPUExecutionProvider"]
     assert detector.session.get_providers() == ["CPUExecutionProvider"]
+    # Threads do not spin while they wait for work (that takes CPU from Home Assistant).
+    options = detector.session.get_session_options()
+    assert options.get_session_config_entry("session.intra_op.allow_spinning") == "0"
+    assert options.get_session_config_entry("session.inter_op.allow_spinning") == "0"
 
 
 @requires_reader

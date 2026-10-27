@@ -43,6 +43,7 @@ from .common import (
     StateIn,
     Triggers,
     check_faces,
+    check_sensor,
     check_teach,
     get_sensor,
     runtime,
@@ -179,13 +180,17 @@ def list_sensors(request: Request) -> list[dict]:
 async def create_sensor(body: SensorIn, request: Request) -> dict:
     rt = runtime(request)
     body.checked()
-    with rt.db.session() as s:
-        sensor = body.new_sensor(unique_slug(s, body.name))
-        s.add(sensor)
-        s.flush()
-        sensor_id = sensor.id
+
+    def create() -> int:
+        with rt.db.session() as s:
+            sensor = body.new_sensor(unique_slug(s, body.name))
+            s.add(sensor)
+            s.flush()
+            return sensor.id
+
+    sensor_id = await asyncio.to_thread(create)
     await rt.sensor_created(sensor_id)
-    return get_one(sensor_id, request)
+    return await asyncio.to_thread(get_one, sensor_id, request)
 
 
 @router.get("/{sensor_id}")
@@ -202,44 +207,48 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
     _check_source_type(body.source_type)
     if body.states is not None:
         validate_states(body.states)
-    with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id)
-        if sensor.kind != KIND_STATES and body.states is not None:
-            raise HTTPException(400, "Only state sensors have states")
-        if sensor.kind != KIND_OBJECTS and body.objects is not None:
-            raise HTTPException(400, "Only object sensors have objects")
-        if sensor.kind != KIND_READING and body.reading is not None:
-            raise HTTPException(400, "Only reading sensors have reading settings")
-        old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
-        for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
-            value = getattr(body, field)
-            if value is not None:
-                setattr(sensor, field, value)
-        if body.review is not None:
-            sensor.review = body.review.stored()
-        if body.triggers is not None:
-            sensor.triggers = body.triggers.model_dump()
-        if body.clear_roi:
-            sensor.roi = None
-        elif body.roi is not None:
-            sensor.roi = body.roi.normalised()
-        if body.states is not None:
-            _apply_states(sensor, body.states)
-        if body.objects is not None:
-            # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
-            sensor.objects = {**(sensor.objects or {}), **body.objects.stored(exclude_unset=True)}
-            merged = merge_objects(sensor.objects)
-            check_teach(merge_teach(rt.backbone_id, rt.global_teach, merged["teach"]))
-            check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
-        if body.reading is not None:
-            sensor.reading = body.reading.model_dump()
-        if sensor.roi != old_roi or sensor.source != old_source:
-            sensor.frame_size = None  # the next frame's size is the one the region is drawn on
-        s.flush()
-        changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
-        retrain = changed and sensor.kind == KIND_STATES
+
+    def change() -> bool:
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id)
+            if sensor.kind != KIND_STATES and body.states is not None:
+                raise HTTPException(400, "Only state sensors have states")
+            if sensor.kind != KIND_OBJECTS and body.objects is not None:
+                raise HTTPException(400, "Only object sensors have objects")
+            if sensor.kind != KIND_READING and body.reading is not None:
+                raise HTTPException(400, "Only reading sensors have reading settings")
+            old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
+            for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
+                value = getattr(body, field)
+                if value is not None:
+                    setattr(sensor, field, value)
+            if body.review is not None:
+                sensor.review = body.review.stored()
+            if body.triggers is not None:
+                sensor.triggers = body.triggers.model_dump()
+            if body.clear_roi:
+                sensor.roi = None
+            elif body.roi is not None:
+                sensor.roi = body.roi.normalised()
+            if body.states is not None:
+                _apply_states(sensor, body.states)
+            if body.objects is not None:
+                # Merged, so own labels (made by teaching) and fields an older UI does not send stay.
+                sensor.objects = {**(sensor.objects or {}), **body.objects.stored(exclude_unset=True)}
+                merged = merge_objects(sensor.objects)
+                check_teach(merge_teach(rt.backbone_id, rt.global_teach, merged["teach"]))
+                check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
+            if body.reading is not None:
+                sensor.reading = body.reading.model_dump()
+            if sensor.roi != old_roi or sensor.source != old_source:
+                sensor.frame_size = None  # the next frame's size is the one the region is drawn on
+            s.flush()
+            changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
+            return changed and sensor.kind == KIND_STATES
+
+    retrain = await asyncio.to_thread(change)
     await rt.sensor_updated(sensor_id, retrain=retrain)
-    return get_one(sensor_id, request)
+    return await asyncio.to_thread(get_one, sensor_id, request)
 
 
 @router.delete("/{sensor_id}", status_code=204)
@@ -250,8 +259,12 @@ async def delete_sensor(sensor_id: int, request: Request) -> Response:
         raise HTTPException(404, "Sensor not found")
     if rt.live_state(sensor_id).camera_changed is not None:
         await rt.camera_notice(cfg, None)
-    with rt.db.session() as s:
-        s.delete(get_sensor(s, sensor_id))
+
+    def delete() -> None:
+        with rt.db.session() as s:
+            s.delete(get_sensor(s, sensor_id))
+
+    await asyncio.to_thread(delete)
     await rt.sensor_deleted(sensor_id, cfg.descriptor)
     return Response(status_code=204)
 
@@ -279,7 +292,7 @@ async def live_frame(sensor_id: int, request: Request, cached: bool = False, fra
             raise HTTPException(404, "Frame no longer cached")
         latest_id, data = live.frames[-1]
         return Response(data, media_type="image/jpeg", headers={"X-Frame-Id": latest_id, "Cache-Control": "no-store"})
-    shown = rt.frame_for_view(sensor_id)
+    shown = await asyncio.to_thread(rt.frame_for_view, sensor_id)
     if cached and live.frames:
         new_id, data = live.frames[-1]
     elif shown is not None:
@@ -312,8 +325,12 @@ async def accept_picture(sensor_id: int, request: Request) -> dict:
     """A reading sensor's camera changed its picture size and the region is still right: read
     again, with the next frame's size as the one the region is drawn on."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        get_sensor(s, sensor_id, KIND_READING).frame_size = None
+
+    def accept() -> None:
+        with rt.db.session() as s:
+            get_sensor(s, sensor_id, KIND_READING).frame_size = None
+
+    await asyncio.to_thread(accept)
     rt.wake(sensor_id, force=True, paused_too=True)
     return {"ok": True}
 
@@ -321,8 +338,7 @@ async def accept_picture(sensor_id: int, request: Request) -> dict:
 @router.post("/{sensor_id}/retrain")
 async def retrain(sensor_id: int, request: Request) -> dict:
     rt = runtime(request)
-    with rt.db.session() as s:
-        get_sensor(s, sensor_id, KIND_STATES)
+    await asyncio.to_thread(check_sensor, rt, sensor_id, KIND_STATES)
     rt.schedule_retrain(sensor_id, delay=0)
     return {"ok": True}
 
@@ -519,8 +535,7 @@ async def reading_export(
     GitHub's file size: only the region of each, what was read, the answer.
     ``meter``: what the user says the meter is."""
     rt = runtime(request)
-    with rt.db.session() as s:
-        get_sensor(s, sensor_id, KIND_READING)
+    await asyncio.to_thread(check_sensor, rt, sensor_id, KIND_READING)
     reader = await asyncio.to_thread(rt.db.get_text, "reader", readers.DEFAULT_READER)
     fd, name = tempfile.mkstemp(suffix=".zip")
     os.close(fd)

@@ -1,4 +1,5 @@
-"""History limits: removal by age and by total size (oldest first, review queue last), and the API."""
+"""History limits: removal by age and by total size (oldest first, review queue last), and the API;
+files written whole and removed with their rows; frames no row lists."""
 
 from datetime import timedelta
 
@@ -337,3 +338,190 @@ def test_a_file_that_cannot_be_removed_does_not_fail_the_request(runtime, caplog
     with rt.db.session() as s:
         assert s.get(Sample, sample_id) is None
     assert "Could not remove a file" in caplog.text
+
+
+def test_history_files_go_only_when_the_rows_are_committed(runtime, monkeypatch):
+    """The clean-up removes a frame together with its row: a commit that fails keeps both."""
+    rt = runtime
+    sid = state_sensor(rt)
+    (row_id,) = add_frames(rt, sid, [(400, True)])
+    with rt.db.session() as s:
+        path = rt.storage.history_path(sid, s.get(Prediction, row_id).frame)
+
+    real_session = rt.db.session
+
+    def failing_session():
+        from contextlib import contextmanager
+
+        @contextmanager
+        def session():
+            with real_session() as s:
+                yield s
+                s.flush()
+                raise OSError("database is locked")
+
+        return session()
+
+    monkeypatch.setattr(rt.db, "session", failing_session)
+    with pytest.raises(OSError):
+        rt._remove_history([(row_id, sid, path.name)])
+    monkeypatch.undo()
+    assert path.exists() and remaining(rt) == {row_id}
+    rt.cleanup_history()
+    assert not path.exists() and remaining(rt) == set()
+
+
+def test_frames_no_row_lists_are_removed_once_they_are_old(runtime):
+    import os
+    import time
+
+    from visionstate.settings import HISTORY_CLEANUP
+
+    rt = runtime
+    sid = state_sensor(rt)
+    (row_id,) = add_frames(rt, sid, [(0, True)])
+    with rt.db.session() as s:
+        kept = rt.storage.history_path(sid, s.get(Prediction, row_id).frame)
+    kept_thumb = rt.storage.thumbnail("history", row_id, kept)
+    old_orphan = rt.storage.history_path(sid, rt.storage.save_history(sid, noise(2)))
+    young_orphan = rt.storage.history_path(sid, rt.storage.save_history(sid, noise(3)))
+    old_thumb = rt.storage.thumb_path("history", row_id + 100)
+    old_thumb.write_bytes(kept_thumb.read_bytes())
+    half = old_orphan.with_name("x.jpg.part")  # a write cut off by a power cut
+    half.write_bytes(b"half")
+    other = rt.settings.history_dir / "notes.txt"  # not ours: left alone
+    other.write_text("x")
+    long_ago = time.time() - HISTORY_CLEANUP["orphan_age_s"] - 60
+    for path in (kept, kept_thumb, old_orphan, old_thumb, half, other):
+        os.utime(path, (long_ago, long_ago))
+
+    assert rt.remove_orphan_frames() == 3
+    assert kept.exists() and kept_thumb.exists() and young_orphan.exists() and other.exists()
+    assert not old_orphan.exists() and not old_thumb.exists() and not half.exists()
+
+
+def test_image_files_are_written_whole_or_not_at_all(runtime, monkeypatch):
+    from visionstate import imaging
+
+    rt = runtime
+    sid = state_sensor(rt)
+    name = rt.storage.save_history(sid, noise(1))
+    folder = rt.storage.history_path(sid, name).parent
+    assert [p.name for p in folder.iterdir()] == [name]
+
+    def cut_off(image, quality=90):  # noqa: ANN001
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(imaging, "encode_jpeg", cut_off)
+    with pytest.raises(OSError):
+        rt.storage.save_history(sid, noise(2))
+    assert [p.name for p in folder.iterdir()] == [name]  # no half picture, no leftover
+
+
+def test_the_review_queue_is_counted_from_an_index(runtime):
+    """The count after every check that flags a frame reads the partial index, not the history."""
+    from sqlalchemy import func, select, text
+
+    rt = runtime
+    query = select(Prediction.sensor_id, func.count(Prediction.id)).where(Prediction.reviewed.is_(False))
+    sql = str(query.group_by(Prediction.sensor_id).compile(rt.db.engine, compile_kwargs={"literal_binds": True}))
+    with rt.db.engine.connect() as conn:
+        assert conn.execute(text("PRAGMA synchronous")).scalar() == 1  # NORMAL (with WAL)
+        plan = " ".join(str(row[-1]) for row in conn.execute(text("EXPLAIN QUERY PLAN " + sql)))
+    assert "ix_prediction_waiting" in plan, plan
+
+
+def test_an_existing_database_gets_the_index_at_start(settings):
+    """Indexes added later are made when the app starts on an older database (Database.init)."""
+    from sqlalchemy import text
+
+    from visionstate.db import Database
+
+    settings.ensure_dirs()
+    db = Database(settings.db_path)
+    db.init()
+    with db.engine.begin() as conn:
+        conn.execute(text("DROP INDEX ix_prediction_waiting"))  # as a database of an older version
+    db.init()
+    with db.engine.connect() as conn:
+        names = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type = 'index'"))}
+    db.engine.dispose()
+    assert "ix_prediction_waiting" in names
+
+
+def test_frames_are_decoded_small_where_that_is_enough(tmp_path):
+    """Change detection and thumbnails decode a JPEG at 1/2, 1/4 or 1/8 of its size while decoding:
+    the signature stays the same (to far below any threshold), the thumbnail its size."""
+    import io
+
+    from visionstate import imaging
+    from visionstate.settings import CHANGE_SIGNATURE_DECODE, CHANGE_SIGNATURE_SIZE, THUMB_SIZE
+
+    from .conftest import ASSETS
+
+    photo = Image.open(ASSETS / "beach.jpg").convert("RGB").resize((3840, 2160))
+    buf = io.BytesIO()
+    photo.save(buf, format="JPEG", quality=90)
+    data = buf.getvalue()
+    for roi in (None, {"x": 0.6, "y": 0.5, "w": 0.1, "h": 0.2}):
+        small = imaging.decode_for_signature(data, roi)
+        assert small.width < 3840  # decoded smaller …
+        region = imaging.crop(small, roi)
+        assert min(region.size) >= CHANGE_SIGNATURE_SIZE * CHANGE_SIGNATURE_DECODE  # … but large enough
+        whole = imaging.region_signature(imaging.decode(data), roi)
+        assert imaging.change_score(whole, imaging.region_signature(small, roi)) < 0.005
+    path = tmp_path / "frame.jpg"
+    path.write_bytes(data)
+    assert imaging.load(path, at_least=(THUMB_SIZE, THUMB_SIZE)).width < 3840
+    assert imaging.thumbnail(imaging.load(path, at_least=(THUMB_SIZE, THUMB_SIZE))).size == (THUMB_SIZE, 180)
+    png = io.BytesIO()
+    photo.resize((640, 360)).save(png, format="PNG")
+    assert imaging.decode(png.getvalue(), at_least=(10, 10)).size == (640, 360)  # not a JPEG: whole
+
+
+def test_the_history_keeps_the_cameras_own_jpeg(runtime):
+    """A frame decoded whole and upright is saved as the camera sent it (not encoded again);
+    anything else — a crop, a turned picture, a PNG, a frame decoded small — is encoded. A training
+    image is always encoded again (what an uploaded photo carries besides its pixels stays out)."""
+    import io
+
+    from visionstate import imaging
+
+    from .conftest import ASSETS
+
+    rt = runtime
+    sid = state_sensor(rt)
+    photo = Image.open(ASSETS / "beach.jpg").convert("RGB")
+    buf = io.BytesIO()
+    photo.save(buf, format="JPEG", quality=75)
+    data = buf.getvalue()
+
+    frame = imaging.decode(data)
+    assert frame.mode == "RGB" and imaging.original_jpeg(frame) == data
+    assert rt.storage.history_path(sid, rt.storage.save_history(sid, frame)).read_bytes() == data
+    crop = imaging.crop(frame, {"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5})
+    assert imaging.original_jpeg(crop) is None and imaging.original_jpeg(frame.copy()) is None
+    assert rt.storage.history_path(sid, rt.storage.save_history(sid, crop)).read_bytes() != data
+    assert imaging.original_jpeg(imaging.decode(data, at_least=(64, 64))) is None
+    sample = rt.add_sample(sid, frame, "upload", None)
+    with rt.db.session() as s:
+        from visionstate.db import Sample
+
+        assert rt.storage.sample_path(sid, s.get(Sample, sample).filename).read_bytes() != data
+
+    exif = Image.Exif()
+    exif[imaging.EXIF_ORIENTATION] = 6  # turned: the camera's file is not the picture as shown
+    turned = io.BytesIO()
+    photo.save(turned, format="JPEG", quality=75, exif=exif)
+    upright = imaging.decode(turned.getvalue())
+    assert upright.size == (photo.height, photo.width) and imaging.original_jpeg(upright) is None
+    png = io.BytesIO()
+    photo.save(png, format="PNG")
+    assert imaging.original_jpeg(imaging.decode(png.getvalue())) is None
+
+    key = id(frame)
+    del frame, crop
+    import gc
+
+    gc.collect()
+    assert key not in imaging._ORIGINALS  # forgotten with its image

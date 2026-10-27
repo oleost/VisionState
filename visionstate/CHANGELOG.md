@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.11.0
+
+### Better
+
+- **Much less in Home Assistant's database.** VisionState no longer sends values that change at
+  every check when the result does not: on a test installation with nine sensors, Home Assistant
+  stored about 500–750 states an hour instead of about 4,400. What changed for you:
+  - the confidence is in whole percent, and the `probabilities` of a state sensor have two
+    decimals;
+  - the `last_update` attribute is gone (Home Assistant shows when a sensor last reported);
+  - the *Last frame* pictures, and an object's boxes and *last seen*, are sent at once when the
+    state, the objects or the value change, and otherwise every few minutes.
+  If an automation reads `last_update`, or the boxes while an object stays, look at it.
+- **Far fewer MQTT messages**: a sensor's values are sent when they change, and every few
+  minutes all the same (and right after the connection to the broker comes back). A sensor that
+  sees the same thing all day now sends almost nothing.
+- **Faster checks with less CPU**: the AI models no longer keep processor cores busy while they
+  wait — about 30 % less CPU per check on the test machine, which leaves more for Home Assistant.
+  A camera picture is no longer copied twice while it is read (about 20 % faster, and less memory
+  for large pictures).
+- **RTSP cameras are much quicker during a burst of checks and in the live view**: the stream is
+  kept open while frames are asked for often (about 30 ms a frame instead of 1–3 s), and closed
+  again a few seconds after.
+- **History pictures are the camera's own**: a frame is kept as the camera sent it instead of
+  being saved again, so it takes no time, loses nothing and usually takes less space — the same
+  history limit holds more. Pictures a camera sends turned (by a tag in the file) are still saved
+  upright as before.
+- **The app rests in the background**: a page that is not shown (another browser tab, the Home
+  Assistant app put away) no longer asks the app for anything, and is brought up to date the
+  moment it is shown again.
+- Change detection and the history's thumbnails decode camera pictures only as large as they
+  need — several times faster for large pictures.
+- The app no longer stalls while its database is busy, and the browser keeps the app's files
+  instead of loading them every time the panel opens.
+
+### Fixed
+
+- History pictures are written whole or not at all, and removed only together with their
+  history entries; pictures left behind (the app was stopped while saving one) are removed.
+- A camera from Home Assistant has the same size limit for its pictures as a snapshot URL.
+- An RTSP stream's connection timeout works again (FFmpeg had renamed the option).
+
 ## 0.10.1
 
 ### New
