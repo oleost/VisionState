@@ -247,7 +247,7 @@ default). A head for own sounds needs examples of what is *not* one of them. A p
 | **1. Listening** | The `sound` kind; RTSP and HTTP audio streams (an ESP32 among them, §10); pretrained classes from a curated list (§2) → a binary sensor per sound; level line and live scores in the Live tab; clips around events (opt-in, speech silenced) with playback in the history. | A real CC0 siren and smoke alarm turn their sensors on in a backend test; wizard, Live tab and a clip played after a tap pass e2e on desktop, Android and iPhone. |
 | **2. Review** | Review questions for uncertain sounds ("Was this the doorbell?"), history filters per sound. | e2e on every device. |
 | **3. Own sounds** | Teach a sound from a clip in the history or an uploaded file; the small head (§5), its ask band and Quality tab (clips per sound, look-alikes); export/import. | Own sounds taught from five clips each are told apart in a backend test and on the spike data. |
-| **4. Later** | A Home Assistant *event* entity per sound; uploads of audio and video for teaching; stock ESPHome and voice-satellite microphones (§10); CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
+| **4. Later** | A Home Assistant *event* entity per sound; uploads of audio and video for teaching; stock ESPHome microphones (§10); CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
 
 ## 8. Where it would go in the code
 
@@ -297,8 +297,11 @@ As for images: CC0 / public domain, or drawn by our own code.
   checks the stream has audio, shows its codec and sample rate, and says how to turn it on. Some
   cameras allow only a few connections at once, and a sound sensor holds one all day: a go2rtc
   restream (the go2rtc app's RTSP server) shares one camera connection — Frigate recommends the
-  same for its audio. Home Assistant's camera entities give the app snapshots, not sound; whether
-  the stream behind one can be reached is a phase 0 question.
+  same for its audio.
+- **A Home Assistant camera's own sound** (picking `camera.front_door` as image sensors do) is the
+  easiest for users and wanted, but not known to be possible: Home Assistant gives apps snapshots,
+  not sound, and the stream it has inside (HLS, often seconds behind) may not be reachable from an
+  app. Looked into first when testing with real microphones and Home Assistant; until then, RTSP.
 - **ESP32 microphones.** A cheap ESP32 with an I2S microphone (such as an INMP441) in each room is a
   strong case: camera audio is often poor (§12), and a room without a camera can still listen. 16 kHz
   16-bit mono is about 256 kbit/s, easy over Wi-Fi.
@@ -312,22 +315,22 @@ As for images: CC0 / public domain, or drawn by our own code.
     while quiet, so the sensor shows *quiet*, not *unavailable* (§4). Worth it mainly on batteries.
   - *Stock ESPHome* sends its microphone over its native API to Home Assistant's voice assistant,
     on a wake word, and Home Assistant does not pass that audio on to apps. Listening all day needs
-    an integration of its own — phase 4, once phase 0 has checked what ESPHome offers.
+    an integration of its own — phase 4, once phase 0 has checked what ESPHome offers. Voice
+    satellites (Home Assistant's own voice hardware) are left out for now.
   - **No push** (the maintainer's decision, 2026-10-29): VisionState always opens the connection; a
     device never connects to VisionState to deliver audio, which would break the rule that the app
     is only reachable through Home Assistant Ingress.
 
-## 11. Open questions for the maintainer
+## 11. Decisions
 
-1. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
-   enough, or must a Home Assistant camera entity or stock ESPHome come first?
-2. **The name:** VisionState that also hears — fine as it is, or a line in the README?
-
-Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
+None of the maintainer's questions is open. Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
 Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
 reason to leave the Pi out; clips are in the first release (off by default, speech silenced, §6);
 smoke and fire alarms get device class *smoke* (§8); own sounds learn the room's sounds as
-*other*, on by default (§6).
+*other*, on by default (§6); phase 1 listens to RTSP and HTTP streams (go2rtc restreams and ESP32
+microphones among them), a Home Assistant camera's own sound is wanted and looked into when testing
+with real microphones and Home Assistant (§10), voice satellites are left out for now; the name stays
+VisionState, and the README and the store text say it hears too once sound sensors ship.
 
 ## 12. Pitfalls to avoid
 
