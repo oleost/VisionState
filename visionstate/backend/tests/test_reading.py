@@ -1326,10 +1326,11 @@ def test_straighten_turns_the_region_upright_and_undoes_its_perspective():
 
 
 class TurnedCounter:
-    """A camera that sees the drawn counter turned by 125° (it hangs askew above the meter)."""
+    """A camera that sees the drawn counter turned by 125° (it hangs askew above the meter), and
+    with ``tilt`` also at an angle (perspective)."""
 
-    def __init__(self, angle: float = 125.0):
-        image, self.roi = turned(render_counter(89932), angle, counter_box(7))
+    def __init__(self, angle: float = 125.0, tilt: float = 0.0):
+        image, self.roi = turned(render_counter(89932), angle, counter_box(7), tilt)
         buf = io.BytesIO()
         image.save(buf, format="JPEG", quality=92)
         self.jpeg = buf.getvalue()
@@ -1377,3 +1378,14 @@ def test_a_turned_counter_is_read_with_its_region_straightened(settings):
         left, top, right, bottom = entry["box"]
         assert entry["straightened"] is True and 0 < left < right < cut.width and 0 < top < bottom < cut.height
         assert (right - left, bottom - top) == region.size
+
+
+@requires_reader
+@pytest.mark.parametrize("angle", [0.0, 125.0])
+def test_a_counter_seen_at_an_angle_is_read_with_its_region_straightened(settings, angle):
+    camera = TurnedCounter(angle, tilt=0.45)  # the far end of the picture about half as wide
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        reading = {"mode": "counter", "display": "counter", "digits": 7, "straighten": True}
+        preview = {"source_type": "http", "source": "http://fake", "roi": camera.roi, "reading": reading}
+        assert client.post("/api/v1/preview/read", json=preview).json()["text"] == "0089932"

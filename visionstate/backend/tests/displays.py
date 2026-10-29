@@ -5,6 +5,7 @@ dark panel. Unlit segments stay faintly visible, like on real displays.
 ``render_counter(89939.5)`` draws a mechanical counter with rolling digit wheels.
 """
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 SEGMENTS = {
@@ -52,10 +53,20 @@ def counter_box(digits: int) -> dict[str, float]:
     }
 
 
-def turned(image: Image.Image, angle: float, region: dict[str, float]) -> tuple[Image.Image, dict]:
+def _homography(src: list[tuple[float, float]], dst: list[tuple[float, float]]) -> np.ndarray:
+    """The 3×3 projective transform taking the four points ``src`` to ``dst``."""
+    rows, values = [], []
+    for (x, y), (u, v) in zip(src, dst, strict=True):
+        rows += [[x, y, 1, 0, 0, 0, -x * u, -y * u], [0, 0, 0, x, y, 1, -x * v, -y * v]]
+        values += [u, v]
+    return np.append(np.linalg.solve(np.array(rows, float), np.array(values, float)), 1.0).reshape(3, 3)
+
+
+def turned(image: Image.Image, angle: float, region: dict[str, float], tilt: float = 0.0) -> tuple[Image.Image, dict]:
     """``image`` turned ``angle`` degrees (anticlockwise, the whole picture kept: a camera that hangs
     askew) and the rectangle ``region`` (shares of the frame) in it: a region of four corners, its
-    top edge first — what a user puts on the turned display (issue #58)."""
+    top edge first — what a user puts on the turned display (issue #58). ``tilt`` also looks at it
+    at an angle: the top of the picture ``tilt`` × its width narrower than the bottom (perspective)."""
     import math
 
     out = image.convert("RGB").rotate(angle, expand=True, fillcolor=(90, 90, 90), resample=Image.Resampling.BICUBIC)
@@ -63,13 +74,28 @@ def turned(image: Image.Image, angle: float, region: dict[str, float]) -> tuple[
     x, y, rw, rh = region["x"] * w, region["y"] * h, region["w"] * w, region["h"] * h
     rad = math.radians(angle)
     cx, cy, nw, nh = w / 2, h / 2, out.width, out.height
-    corners = [
-        [
-            round(((px - cx) * math.cos(rad) + (py - cy) * math.sin(rad) + nw / 2) / nw, 4),
-            round((-(px - cx) * math.sin(rad) + (py - cy) * math.cos(rad) + nh / 2) / nh, 4),
-        ]
+    points = [
+        (
+            (px - cx) * math.cos(rad) + (py - cy) * math.sin(rad) + nw / 2,
+            -(px - cx) * math.sin(rad) + (py - cy) * math.cos(rad) + nh / 2,
+        )
         for px, py in ((x, y), (x + rw, y), (x + rw, y + rh), (x, y + rh))
     ]
+    if tilt:
+        frame = [(0.0, 0.0), (float(nw), 0.0), (float(nw), float(nh)), (0.0, float(nh))]
+        seen = [(tilt * nw / 2, 0.0), (nw - tilt * nw / 2, 0.0), (float(nw), float(nh)), (0.0, float(nh))]
+        back = _homography(seen, frame)  # each pixel of the tilted picture comes from here
+        out = out.transform(
+            out.size,
+            Image.Transform.PERSPECTIVE,
+            tuple(back.flatten()[:8]),
+            Image.Resampling.BICUBIC,
+            fillcolor=(90, 90, 90),
+        )
+        forward = _homography(frame, seen)
+        moved = [forward @ np.array([px, py, 1.0]) for px, py in points]
+        points = [(m[0] / m[2], m[1] / m[2]) for m in moved]
+    corners = [[round(float(px) / nw, 4), round(float(py) / nh, 4)] for px, py in points]
     xs, ys = [c[0] for c in corners], [c[1] for c in corners]
     box = {"x": min(xs), "y": min(ys), "w": round(max(xs) - min(xs), 4), "h": round(max(ys) - min(ys), 4)}
     return out, {**box, "points": corners}

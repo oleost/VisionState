@@ -312,8 +312,10 @@ the digits or the wheels: the edge marked **Top** goes on their top edge, and **
 mark to the next edge (for a meter turned a quarter or upside down). Drag the corners where they
 belong and the region follows the meter at any angle, its perspective undone as well, as if the
 camera looked straight at it. *What the reader sees* shows it upright, with a mechanical
-counter's fields on it. A plain box straightens to the same picture as before. Straightening is
-for reading sensors only: for states and objects the region stays a border.
+counter's fields on it. A plain box straightens to the same picture as before. The bend of a
+wide-angle (fisheye) lens is not undone: keep the meter away from the edge of such a picture,
+where straight edges curve most. Straightening is for reading sensors only: for states and
+objects the region stays a border.
 
 | Mode | For | In Home Assistant |
 |---|---|---|

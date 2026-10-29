@@ -9,8 +9,9 @@ GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/ass
 GET /display.jpg?text=12.5&style=lcd|led   a drawn seven-segment display (for reading sensors)
 GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter with rolling digits
                                  (value = the number on the wheels; .5 = last wheel half way);
-                                 &turn=125 turns the picture (a camera hanging askew above the meter)
-GET /counter-region.json?digits=7&turn=125   the region of its wheels in that picture: four corners, top edge first
+                                 &turn=125 turns the picture (a camera hanging askew above the meter),
+                                 &tilt=0.4 also sees it at an angle (the far end 40 % narrower)
+GET /counter-region.json?digits=7&turn=125&tilt=0.4   the region of its wheels in that picture: four corners, top edge first
 GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wider (a camera that changed
                                  its picture size after a restart); wider=0 sets it back
 """
@@ -96,8 +97,9 @@ class Handler(BaseHTTPRequestHandler):
 
             digits = int(number("digits", 7, 1, 8))
             image = render_counter(number("value", 0, 0, 10**digits), digits, int(number("decimals", 3, 0, digits)))
-            if turn := number("turn", 0, -360, 360):
-                image = turned(image, turn, counter_box(digits))[0]
+            turn, tilt = number("turn", 0, -360, 360), number("tilt", 0, 0, 0.9)
+            if turn or tilt:
+                image = turned(image, turn, counter_box(digits), tilt)[0]
             if wider := WIDER.get(query.get("camera", [""])[0], 0):
                 wide = Image.new("RGB", (image.width + wider, image.height), (40, 40, 40))
                 wide.paste(image, (0, 0))
@@ -110,10 +112,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 digits = min(8, max(1, int(query.get("digits", ["7"])[0])))
                 turn = float(query.get("turn", ["0"])[0])
+                tilt = min(0.9, max(0.0, float(query.get("tilt", ["0"])[0])))
             except ValueError:
                 self.send_error(400)
                 return
-            region = turned(render_counter(0, digits), turn, counter_box(digits))[1]
+            region = turned(render_counter(0, digits), turn, counter_box(digits), tilt)[1]
             self._send(json.dumps(region).encode(), "application/json")
         elif url.path.startswith("/photo/"):
             photo = PHOTOS / Path(url.path).name  # name only: no paths outside the folder

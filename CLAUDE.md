@@ -116,8 +116,8 @@ itself (`__main__.py`).
   seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
-  `&turn=125` the camera hangs askew, and `/counter-region.json?digits=7&turn=125` is the region to
-  straighten).
+  `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and
+  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.
