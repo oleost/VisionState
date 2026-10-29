@@ -13,7 +13,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageDraw
 from sqlalchemy import select
 
 from visionstate import imaging, readers
@@ -24,7 +24,7 @@ from visionstate.readers import counter_line, decode, format_value, implausible,
 from visionstate.settings import COUNTER_LIMIT, KIND_READING, READING, VERSION, merge_reading
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
-from .displays import counter_box, counter_positions, render, render_counter
+from .displays import counter_box, counter_positions, render, render_counter, turned
 from .test_integration import wait_for
 
 
@@ -889,6 +889,7 @@ def test_counter_sensor_flow(settings):
         "unit": "m³",
         "counter_reader": "ocr",
         "change_limit": "off",  # the counter jumps between checks seconds apart
+        "straighten": False,  # the bounding box: its export's margin stops at the frame's edge
     }
     body = {
         "name": "Water meter",
@@ -1143,7 +1144,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 5 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 6 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
@@ -1288,3 +1289,91 @@ def test_spot_checks_of_accepted_readings(settings):
         assert client.post(f"/api/v1/review/{item['id']}", json={"action": "read_ok"}).status_code == 200
         verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
         assert verified["right_accepted"] == 1 and verified["misread_accepted"] == 0
+
+
+# --- Straightening the region (issue #58: a meter the camera sees turned or at an angle) ----------
+
+
+def test_straighten_turns_the_region_upright_and_undoes_its_perspective():
+    image = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((100, 50, 300, 150), fill="black")
+    draw.rectangle((100, 50, 150, 150), fill="red")  # the left end of the area
+    box = {"x": 0.25, "y": 1 / 6, "w": 0.5, "h": 1 / 3}
+    upright = imaging.region_image(image, box, True)
+    assert upright.size == (200, 100) and upright.getpixel((5, 50)) == (255, 0, 0)
+    # The right edge marked as the top (corners from the top right): the red end comes out at the bottom.
+    turned = [[0.75, 1 / 6], [0.75, 0.5], [0.25, 0.5], [0.25, 1 / 6]]
+    assert imaging.normalise_roi({"points": turned}) is not None
+    assert imaging.normalise_roi({"points": turned})["points"][0] == [0.75, 0.1667]  # kept as drawn
+    out = imaging.region_image(image, {"points": turned}, True)
+    assert out.size == (100, 200) and out.getpixel((50, 195)) == (255, 0, 0) and out.getpixel((50, 5)) == (0, 0, 0)
+    # Corners going round the other way keep the same top edge, and are not mirrored.
+    mirrored = imaging.region_image(image, {"points": [[0.75, 1 / 6], [0.25, 1 / 6], [0.25, 0.5], [0.75, 0.5]]}, True)
+    assert mirrored.size == (200, 100) and mirrored.getpixel((5, 50)) == (255, 0, 0)
+    # Perspective: a trapezoid (the far end narrower) comes out as a rectangle, every corner inside.
+    trapezoid = Image.new("RGB", (400, 300), "white")
+    ImageDraw.Draw(trapezoid).polygon([(150, 60), (250, 60), (330, 240), (70, 240)], fill="black")
+    flat = imaging.region_image(
+        trapezoid, {"points": [[150 / 400, 0.2], [250 / 400, 0.2], [330 / 400, 0.8], [70 / 400, 0.8]]}, True
+    )
+    corners = [(3, 3), (flat.width - 4, 3), (flat.width - 4, flat.height - 4), (3, flat.height - 4)]
+    assert all(sum(flat.getpixel(c)) < 100 for c in corners)
+    # Without straightening, or with more than four corners: the bounding box, as before.
+    assert imaging.region_image(image, box).size == (200, 100)
+    five = {"points": [[0.25, 0.2], [0.5, 0.1], [0.75, 0.2], [0.75, 0.5], [0.25, 0.5]]}
+    assert imaging.region_corners(five) is None and imaging.region_image(image, five, True).size == (200, 120)
+
+
+class TurnedCounter:
+    """A camera that sees the drawn counter turned by 125° (it hangs askew above the meter)."""
+
+    def __init__(self, angle: float = 125.0):
+        image, self.roi = turned(render_counter(89932), angle, counter_box(7))
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=92)
+        self.jpeg = buf.getvalue()
+
+    async def grab(self, source_type, source):
+        return self.jpeg
+
+    async def close(self):
+        pass
+
+
+@requires_reader
+def test_a_turned_counter_is_read_with_its_region_straightened(settings):
+    camera = TurnedCounter()
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        roi = camera.roi
+        reading = {"mode": "counter", "display": "counter", "digits": 7}
+        preview = {"source_type": "http", "source": "http://fake", "roi": roi}
+        read = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "straighten": True}}).json()
+        assert read["text"] == "0089932"
+        boxed = client.post(
+            "/api/v1/preview/read", json={**preview, "reading": {**reading, "straighten": False}}
+        ).json()
+        assert boxed["text"] != "0089932"  # the bounding box of a turned counter cannot be read
+
+        # A new reading sensor straightens; one saved before it was offered does not.
+        body = {"name": "Meter", "kind": "reading", "source_type": "http", "source": "http://fake", "roi": roi}
+        made = client.post("/api/v1/sensors", json={**body, "reading": reading}).json()
+        assert made["reading"]["straighten"] is True
+        assert client.get("/api/v1/config").json()["reading_defaults"]["straighten"] is True
+        assert merge_reading({"mode": "counter"})["straighten"] is False
+        # It reads the turned counter, and History cuts its frame straightened, as it was read.
+        history = f"/api/v1/history?sensor={made['id']}"
+        assert wait_for(lambda: client.get(history).json()["items"], timeout=60)
+        rows = client.get(history).json()["items"]
+        assert rows[0]["probs"]["straighten"] is True and rows[0]["probs"]["text"] == "0089932"
+        region = Image.open(io.BytesIO(client.get(f"/api/v1/history/{rows[0]['id']}/image?size=region").content))
+        assert region.width > region.height  # the counter upright: wider than tall
+        # The export holds it straightened too, with the margin around it and the region placed in it.
+        export = client.get(f"/api/v1/sensors/{made['id']}/reading-export").content
+        with zipfile.ZipFile(io.BytesIO(export)) as archive:
+            entry = json.loads(archive.read("readings.json"))["readings"][0]
+            cut = Image.open(archive.open(entry["file"]))
+        left, top, right, bottom = entry["box"]
+        assert entry["straightened"] is True and 0 < left < right < cut.width and 0 < top < bottom < cut.height
+        assert (right - left, bottom - top) == region.size

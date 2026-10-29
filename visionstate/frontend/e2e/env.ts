@@ -19,5 +19,8 @@ export const DISPLAY_URL = (text: string, style: 'lcd' | 'led' = 'lcd') =>
 export const COUNTER_SENSOR_NAME = 'Water meter';
 export const COUNTER_URL = (value: number, digits = 7, decimals = 3) =>
   `${CAMERA_URL}/counter.jpg?value=${value}&digits=${digits}&decimals=${decimals}`;
+/** The same counter, the camera turned by `turn` degrees (issue #58), and the region of its wheels in it. */
+export const TURNED_COUNTER_URL = (value: number, turn: number) => `${COUNTER_URL(value)}&turn=${turn}`;
+export const TURNED_COUNTER_REGION = (turn: number) => `${CAMERA_URL}/counter-region.json?digits=7&turn=${turn}`;
 /** The window with the seven wheels in that frame (backend/tests/displays.py, counter_box(7)). */
 export const COUNTER_BOX = { x: 99 / 800, y: 118 / 360, w: 602 / 800, h: 130 / 360 };

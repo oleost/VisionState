@@ -305,6 +305,16 @@ First choose **what it looks like**:
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
 
+**A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:
+with **Straighten the region** (on for a new reading sensor; sensors made before keep reading as
+they did until you turn it on) the region is read upright. Put its four corners on the corners of
+the digits or the wheels: the edge marked **Top** goes on their top edge, and **Turn** moves the
+mark to the next edge (for a meter turned a quarter or upside down). Drag the corners where they
+belong and the region follows the meter at any angle, its perspective undone as well, as if the
+camera looked straight at it. *What the reader sees* shows it upright, with a mechanical
+counter's fields on it. A plain box straightens to the same picture as before. Straightening is
+for reading sensors only: for states and objects the region stays a border.
+
 | Mode | For | In Home Assistant |
 |---|---|---|
 | **Counter** | Power, water and gas meters — only goes up | `state_class: total_increasing`, works in the Energy dashboard |

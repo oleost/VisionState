@@ -104,8 +104,10 @@ def _normalise_points(points: list | None) -> list[list[float]] | None:
 
 
 def _is_axis_rectangle(points: list[list[float]], x: float, y: float, w: float, h: float) -> bool:
-    corners = {(x, y), (round(x + w, 4), y), (x, round(y + h, 4)), (round(x + w, 4), round(y + h, 4))}
-    return len(points) == 4 and {(p[0], p[1]) for p in points} == corners
+    """Four corners that are the plain rectangle, clockwise from its top-left. A rectangle whose
+    corners start elsewhere is kept as points: a straightened region's top is its first edge."""
+    corners = [[x, y], [round(x + w, 4), y], [round(x + w, 4), round(y + h, 4)], [x, round(y + h, 4)]]
+    return points == corners
 
 
 def normalise_roi(roi: dict | None) -> dict | None:
@@ -252,6 +254,66 @@ def pixel_box(image: Image.Image, box: Box) -> tuple[int, int, int, int]:
 def crop_box(image: Image.Image, box: Box) -> Image.Image:
     """Crop a normalised box without masking (a detector needs to see whole objects)."""
     return image.crop(pixel_box(image, box))
+
+
+def region_corners(roi: dict | None) -> list[list[float]] | None:
+    """A region's four corners, its top edge first (from the first corner to the second): a
+    rectangle's clockwise from the top-left, or a four-cornered polygon's as drawn. None without a
+    region or for a polygon of more corners."""
+    roi = normalise_roi(roi)
+    if roi is None:
+        return None
+    points = roi.get("points")
+    if points:
+        return [list(p) for p in points] if len(points) == 4 else None
+    x, y, w, h = roi["x"], roi["y"], roi["w"], roi["h"]
+    return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
+
+
+def straighten(image: Image.Image, corners: list[list[float]], margin: float = 0.0) -> Image.Image:
+    """The four-cornered area of ``image`` (normalised corners, its top edge first) as an upright
+    rectangle: rotation and perspective undone in one step, as if the area were a rectangle seen
+    straight on. Its width is the mean of the top and bottom edges, its height of the sides.
+    ``margin`` × its size is added on each side, straightened the same way (outside the frame: black)."""
+    return straightened_box(image, corners, margin)[0]
+
+
+def straightened_box(
+    image: Image.Image, corners: list[list[float]], margin: float = 0.0
+) -> tuple[Image.Image, tuple[int, int, int, int]]:
+    """``straighten``, and where the area itself sits in the image it returns (pixels x1, y1, x2, y2)."""
+    width, height = image.size
+    p = [(c[0] * width, c[1] * height) for c in corners]
+    # Corners going round the other way would mirror it: walk the top edge the other way instead.
+    area = sum(p[i][0] * p[(i + 1) % 4][1] - p[(i + 1) % 4][0] * p[i][1] for i in range(4))
+    if area < 0:
+        p = [p[1], p[0], p[3], p[2]]
+    out_w = max(1, round((math.dist(p[0], p[1]) + math.dist(p[3], p[2])) / 2))
+    out_h = max(1, round((math.dist(p[0], p[3]) + math.dist(p[1], p[2])) / 2))
+    # The perspective transform maps each output pixel to the image: solve it from the corners.
+    rows, values = [], []
+    for (u, v), (x, y) in zip(((0, 0), (out_w, 0), (out_w, out_h), (0, out_h)), p, strict=True):
+        rows += [[u, v, 1, 0, 0, 0, -u * x, -v * x], [0, 0, 0, u, v, 1, -u * y, -v * y]]
+        values += [x, y]
+    try:
+        a, b, c, d, e, f, g, h = np.linalg.solve(np.array(rows, dtype=np.float64), np.array(values, dtype=np.float64))
+    except np.linalg.LinAlgError:  # three corners on one line: nothing to straighten
+        box = pixel_box(image, region_box({"points": corners}))
+        return image.crop(box), (0, 0, box[2] - box[0], box[3] - box[1])
+    # The margin shifts the output: the same transform of (u - mx, v - my), scaled so its constant is 1.
+    mx, my = round(out_w * margin), round(out_h * margin)
+    k = 1 - g * mx - h * my
+    coeffs = [a / k, b / k, (c - a * mx - b * my) / k, d / k, e / k, (f - d * mx - e * my) / k, g / k, h / k]
+    size = (out_w + 2 * mx, out_h + 2 * my)
+    out = image.transform(size, Image.Transform.PERSPECTIVE, tuple(coeffs), Image.Resampling.BICUBIC)
+    return out, (mx, my, mx + out_w, my + out_h)
+
+
+def region_image(image: Image.Image, roi: dict | None, straightened: bool = False) -> Image.Image:
+    """What a reading sensor reads: its region straightened (``straightened``, four corners), or
+    the region's bounding box."""
+    corners = region_corners(roi) if straightened else None
+    return straighten(image, corners) if corners else crop_box(image, region_box(roi))
 
 
 def in_region(x: float, y: float, roi: dict | None) -> bool:

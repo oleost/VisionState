@@ -1,7 +1,16 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
+import {
+  CAMERA_URL,
+  COUNTER_BOX,
+  COUNTER_URL,
+  DISPLAY_URL,
+  PHOTO_URL,
+  READING_SENSOR_NAME,
+  TURNED_COUNTER_REGION,
+  TURNED_COUNTER_URL,
+} from './env';
 import {
   apiRequestsDuring,
   center,
@@ -432,6 +441,45 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('a counter the camera sees turned is read with its region straightened', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // The camera hangs askew: the counter is turned by 125° (issue #58). The region's four corners sit on the
+  // window with the wheels, its top edge at the wheels' top.
+  const roi = await (await request.get(TURNED_COUNTER_REGION(125))).json();
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Turned meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: TURNED_COUNTER_URL(89932, 125),
+      roi,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³' },
+    },
+  });
+  expect(made.ok(), await made.text()).toBeTruthy();
+  const sensor = await made.json();
+  expect(sensor.reading.straighten).toBe(true); // a new reading sensor straightens its region
+  await page.goto(`#/sensors/${sensor.id}/live`);
+  await expect(page.locator('.value-card .value')).toHaveText('89.932 m³', { timeout: 60_000 });
+
+  // Settings: the region has four corners and no "+" to add one, its top marked; Turn moves the top.
+  await page.goto(`#/sensors/${sensor.id}/settings`);
+  await expect(page.getByLabel('Straighten the region')).toBeChecked();
+  const frame = page.locator('.frame .roi');
+  await expect(frame.locator('.handle.corner')).toHaveCount(4);
+  await expect(frame.locator('.handle.add')).toHaveCount(0);
+  await expect(frame.getByTestId('digit-cells')).toHaveCount(0); // the fields are shown upright, on the Live tab
+  const top = frame.getByTestId('roi-top');
+  await expect(top).toBeVisible();
+  const before = (await top.boundingBox())!;
+  await press(page.getByTestId('roi-turn'), info);
+  await expect.poll(async () => Math.round((await top.boundingBox())!.x)).not.toBe(Math.round(before.x));
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensor.id}`);
 });
 
 test('reading wizard suggests the decimals the display shows', async ({ page }, info) => {

@@ -236,10 +236,11 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
         sensor = s.get(Sensor, row.sensor_id)
         details = (row.probs or {}) if sensor and sensor.kind == KIND_READING else {}  # a state's probs are not details
         roi = details["roi"] if "roi" in details else sensor.roi if sensor else None
+        straightened = bool(details.get("straighten"))  # as it was read (rows from before: not)
     if not path.exists():
         raise HTTPException(404, "Frame file missing")
     if size == "region":
-        image = imaging.crop_box(imaging.load(path), imaging.region_box(roi))
+        image = imaging.region_image(imaging.load(path), roi, straightened)
         return Response(imaging.encode_jpeg(image), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     if size == "thumb":
         path = rt.storage.thumbnail("history", prediction_id, path)

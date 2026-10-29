@@ -65,7 +65,7 @@ API as `request.app.state.runtime`.
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`), change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |

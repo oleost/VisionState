@@ -35,6 +35,7 @@ from ..settings import (
     READING_DISPLAYS,
     READING_LIMITS,
     READING_MODES,
+    READING_NEW_SENSOR,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -305,6 +306,7 @@ class ReadingIn(BaseModel):
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
+    straighten: bool = READING_NEW_SENSOR["straighten"]
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]
     max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])

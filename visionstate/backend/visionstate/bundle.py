@@ -107,9 +107,10 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 5  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+READINGS_FORMAT = 6  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
 # 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
-# 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's)
+# 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's);
+# 6: "straightened" (the region read upright, its perspective undone, and so is the image)
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -151,7 +152,10 @@ public. By sharing it you release the images and data as public domain (see LICE
 
 Each image is cut with the region the reading was made in ("region": "as read"), with a margin
 that is cut off where the region comes near the edge of the camera picture: "box" is the region
-inside the image, in pixels (left, top, right, bottom). Readings
+inside the image, in pixels (left, top, right, bottom). A reading made with the region
+straightened ("straightened": true: the sensor turned it upright and undid its perspective, as the
+reader saw it) has an image straightened the same way, with the margin around it (black where it
+is outside the camera picture). Readings
 from before VisionState 0.8.0 (beta 0.7.1b2) are cut with the region the sensor has now ("region":
 "current"): if the region was moved since, those images may not show the display at all.
 """
@@ -209,12 +213,17 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             # Cut with the region it was read in; rows from before that was kept use today's region.
             region_then = "roi" in details
             roi = details["roi"] if region_then else current
-            box = imaging.region_box(roi, READING["export_margin"])
-            image = imaging.encode_jpeg(imaging.crop_box(frame, box))
-            # Where the region read sits in the image: the margin is cut off at the frame's edges.
-            width, height = frame.size
-            read, scale = imaging.region_box(roi), (width, height, width, height)
-            inside = [int(read[i] * scale[i]) - int(box[i % 2] * scale[i]) for i in range(4)]
+            corners = imaging.region_corners(roi) if details.get("straighten") else None
+            if corners:  # read straightened: so is the image, with the same margin
+                cut, placed = imaging.straightened_box(frame, corners, READING["export_margin"])
+                image, inside = imaging.encode_jpeg(cut), list(placed)
+            else:
+                box = imaging.region_box(roi, READING["export_margin"])
+                image = imaging.encode_jpeg(imaging.crop_box(frame, box))
+                # Where the region read sits in the image: the margin is cut off at the frame's edges.
+                width, height = frame.size
+                read, scale = imaging.region_box(roi), (width, height, width, height)
+                inside = [int(read[i] * scale[i]) - int(box[i % 2] * scale[i]) for i in range(4)]
             # Room for readings.json still to come: it compresses to well under a fifth.
             if items and file.tell() + len(image) + listed // 4 + 100_000 > budget:
                 left_out += 1
@@ -233,6 +242,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "date": row.created_at.date().isoformat(),  # the day only
                     "seconds": round((row.created_at - oldest).total_seconds()) if oldest else 0,
                     "region": "as read" if region_then else "current",
+                    "straightened": bool(corners),
                     "box": inside,
                     "reader": details.get("reader"),
                     "app": details.get("app"),

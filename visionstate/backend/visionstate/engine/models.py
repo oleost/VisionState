@@ -154,14 +154,18 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
     ) -> tuple[readers.Text, Image.Image]:
         """Read the region of ``image``; returns the text and the image the reader used.
 
-        The text's ``details`` name the reader that read it (``reader``)."""
+        The text's ``details`` name the reader that read it (``reader``). A straightened region
+        (``reading["straighten"]``) is read upright: the readers get it already straightened."""
+        straightened = bool(reading.get("straighten")) and imaging.region_corners(roi) is not None
         if uses_wheels(reading):
             wheels = await self.ensure_wheel_reader(wheel_reader_of(reading))
-            box = imaging.pixel_box(image, imaging.region_box(roi))
+            if straightened:
+                image = await asyncio.to_thread(imaging.region_image, image, roi, True)
+            box = None if straightened else imaging.pixel_box(image, imaging.region_box(roi))
             async with self._sem:
                 text, used = await asyncio.to_thread(wheels.read_counter, image, int(reading["digits"]), box)
             return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
-        region = imaging.crop_box(image, imaging.region_box(roi))
+        region = await asyncio.to_thread(imaging.region_image, image, roi, straightened)
         reader = await self.ensure_reader()
         async with self._sem:
             text, used = await asyncio.to_thread(

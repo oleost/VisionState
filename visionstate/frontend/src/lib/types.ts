@@ -117,6 +117,8 @@ export interface ReadingSettings {
   counter_reader: CounterReader;
   /** counter_reader "wheels": the wheel reader's id ("" = the default). */
   wheel_reader: string;
+  /** Read the region straightened: four corners, the first edge its top (imaging.region_image). */
+  straighten: boolean;
   /** Values and times left, and counters with change_limit "step": the largest change between two
    * readings (0 = no limit). */
   max_step: number;

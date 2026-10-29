@@ -21,7 +21,7 @@
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
-  import { isPolygon, toRectangle } from '../../lib/roi';
+  import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
   import type { ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
@@ -55,6 +55,11 @@
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
+  // A reading sensor's region straightened: four corners, its top marked (RoiEditor quad).
+  const straightened = $derived(readingSensor && reading.straighten);
+  $effect(() => {
+    if (straightened && roi && toPoints(roi).length > 4) roi = toRectangle(roi);
+  });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
@@ -126,7 +131,12 @@
     <section class="card pad col">
       <div class="card-title">
         <h3>Region</h3>
-        <span class="row region-actions" style="gap:8px">
+        <span class="row wrap region-actions" style="gap:8px">
+          {#if straightened && roi}
+            <button class="btn sm" onclick={() => roi && (roi = turnTop(roi))} title="The edge clockwise from it becomes the top" data-testid="roi-turn">
+              <Icon name="refresh" size={14} /> Turn
+            </button>
+          {/if}
           {#if isPolygon(roi)}
             <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
           {/if}
@@ -134,8 +144,10 @@
         </span>
       </div>
       <p class="small muted">
-        Drag to draw a new box, move it, or shape it with corners.
-        {objectSensor
+        {straightened
+          ? 'Put its four corners on the corners of the display or counter, the edge marked Top at its top; it is read upright.'
+          : 'Drag to draw a new box, move it, or shape it with corners.'}
+        {straightened ? '' : objectSensor
           ? 'An object counts when it stands inside it (the bottom of its box).'
           : readingSensor
             ? reading.display === 'counter'
@@ -148,11 +160,12 @@
           sensorId={sensor.id}
           bind:roi
           editable
+          quad={straightened}
           showLive={false}
           interval={10_000}
           light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
         >
-          {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
+          {#if readingSensor && reading.display === 'counter' && !(straightened && isPolygon(roi))}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
         </LiveFrame>
       </div>
     </section>

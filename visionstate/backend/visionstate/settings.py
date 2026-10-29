@@ -97,6 +97,11 @@ READING_DEFAULTS = {
     # The wheel reader (an id in readers.json) a counter read by "wheels" uses. A new sensor
     # stores the registry's default, so a later default never changes it; "" = that default.
     "wheel_reader": "",
+    # Read the region straightened (imaging.region_image): a four-cornered region, its top edge
+    # marked, is turned upright and its perspective undone — a meter the camera sees at an angle or
+    # turned. Off for sensors saved before it was offered (they read as they did); a new sensor
+    # starts with READING_NEW_SENSOR.
+    "straighten": False,
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -679,6 +684,10 @@ def faces_on(objects: dict) -> bool:
 def active_custom(objects: dict) -> list[dict]:
     """The sensor's own labels that are in use: those whose class is still selected."""
     return [label for label in objects["custom"] if label["parent"] in objects["classes"]]
+
+
+# What a new reading sensor starts with where it differs from what a stored one without it has.
+READING_NEW_SENSOR = {"straighten": True}
 
 
 def merge_reading(stored: dict | None) -> dict:

@@ -267,6 +267,17 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
   (`tests/assets`, `tests/test_models.py`) now guard every model file. 8-bit variants were slower and worse on CPU.
+**A reading sensor's region can be straightened** (`reading["straighten"]`; issue #58: an
+ESP32-CAM that cannot hang straight above a meter): its four corners, the first edge the top, are
+turned into an upright rectangle by one perspective transform (`imaging.region_image`), so
+rotation at any angle and perspective are undone in one step — width and height the mean of the
+opposite edges, as for a rectangle seen at an angle. It is the region the user already draws, no
+new tool: the editor keeps it at four corners and marks the top (`RoiEditor` `quad`, *Turn*).
+Reading sensors only (decided 2026-10-29): for states and objects the region is a border, and four
+corners there are not a rectangle to straighten. A new reading sensor straightens; one saved before
+has no key and reads as it did (`settings.READING_NEW_SENSOR`). Each reading records whether it was
+straightened, so History, Review and the export cut its frame the same way.
+
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
 | ID | Model | Use |

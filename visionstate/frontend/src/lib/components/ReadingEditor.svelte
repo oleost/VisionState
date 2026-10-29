@@ -178,11 +178,29 @@
       may change at once.
     </p>
   {/if}
+
+  <label class="check straighten">
+    <input type="checkbox" bind:checked={value.straighten} aria-label="Straighten the region" />
+    <span class="col" style="gap:2px">
+      <strong class="small">Straighten the region</strong>
+      <span class="xsmall faint">
+        For a {type === 'counter' ? 'meter' : 'display'} the camera sees turned or at an angle: put the region's four corners
+        on its corners, with the edge marked <em>Top</em> at its top. It is read upright, its perspective undone.
+      </span>
+    </span>
+  </label>
 </div>
 
 <style>
   .editor {
     gap: var(--space-4);
+  }
+  .straighten {
+    align-items: flex-start;
+  }
+  .straighten input {
+    flex: none;
+    margin-top: 3px;
   }
   .group {
     gap: var(--space-2);
