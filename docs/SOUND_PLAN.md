@@ -67,8 +67,20 @@ Quality tab, MQTT discovery, export/import and backup.
 3. **Windows:** every hop (about half a second) the newest window (about one second for YAMNet,
    one or more for CED) goes to the model; at most one window waits, the rest are dropped when the
    CPU falls behind — sound is live, a backlog is useless.
-4. **Quiet is cheap:** a window below a loudness floor is not classified at all (a quiet house is
-   most of the day). The floor is a setting, learned per sensor later if needed.
+4. **Quiet is cheap** (the sound version of change detection): a window that is not loud enough is
+   not classified at all — a quiet house is most of the day, so this is where the CPU is saved.
+   - *Relative, not absolute decibels.* Microphones are not calibrated: the level is measured
+     against full scale (dBFS), not as sound pressure, so the same room gives different numbers on
+     a camera and an ESP32, and a camera's automatic gain moves them. A fixed "50 dB" would mislead.
+   - *Above the background by default:* the sensor keeps learning its background level (a slow
+     running estimate of the quiet parts) and classifies windows a set number of dB above it. That
+     works in a quiet bedroom and in a garage with a fan alike. The user can switch to a fixed level
+     and sees the level live in the Live tab, next to the line it must cross, as change detection
+     shows its signature today.
+   - *Nothing lost at the start:* the ring buffer holds the last seconds, so the window that crosses
+     the line is classified together with what came just before it.
+   - *Faint sounds that matter* (an appliance beeping two rooms away) can stay below the line; the
+     Live tab is where the user checks it, and the docs say so.
 5. **Classify:** scores for every class the user picked; for own sounds, the window's embedding is
    compared with the taught clips (§8).
 6. **Decide:** a sound is *on* after it scored above its threshold in enough of the last windows
@@ -83,6 +95,12 @@ Quality tab, MQTT discovery, export/import and backup.
 
 A loop that listens all day must survive anything (a camera rebooting, a stream with no audio
 track, a codec change): log once, reconnect with a back-off, never end except on `CancelledError`.
+
+**Quiet is not unavailable.** A source that sends nothing for a while is either quiet on purpose (an
+ESP32 that only sends when it is loud, §10) or gone. The sensor tells them apart by a heartbeat: a
+source that says it is alive but sends no sound is *quiet* (its sounds off, the sensor available);
+only a source that is silent past its heartbeat, or whose connection is gone, makes the sensor
+*unavailable* — and that is reported once, not at every reconnect.
 
 ## 5. Models found (licences as stated on 2026-10-29)
 
@@ -176,8 +194,8 @@ Following the existing structure (names are proposals):
 - Entities: a `binary_sensor` per sound with device class *sound* (perhaps *smoke* for smoke and fire
   alarms, §11), new unique IDs that never change.
 - UI: the wizard gets *Sound* as a kind and a stream as the source (a Home Assistant camera
-  snapshot has no sound); the Live tab shows the sounds picked with how close each is to its
-  threshold; clips play only after a tap (iOS allows nothing else); no hover-only controls.
+  snapshot has no sound); the Live tab shows the sound level against the line it must cross (§4, step 4) and the
+  sounds picked with how close each is to its threshold; clips play only after a tap (iOS allows nothing else); no hover-only controls.
 - Tests: the fake camera gets an audio stream endpoint (drawn sounds on request) in the format an
   ESP32 microphone sends (§10), so the e2e tests can make a sound sensor hear something and test
   the same path a real ESP takes.
@@ -208,6 +226,16 @@ As for images: CC0 / public domain, or drawn by our own code.
   - *A stream of its own* (firmware that sends the microphone as an HTTP stream of WAV or raw PCM,
     or over RTSP) needs nothing beyond phase 1: anything PyAV can open, a sound sensor can listen
     to. It is not stock ESPHome; phase 0 picks firmware to recommend and documents it.
+  - **Recommended: the ESP32 streams all the time** and VisionState decides what is loud enough
+    (§4, step 4). The firmware stays as simple as it can be, the level is set in the UI rather than
+    in firmware, and the bandwidth is nothing on a home network.
+  - *Optional later: the ESP32 sends only when it is loud* (it measures the level itself and keeps
+    about a second before the crossing; a second of 16 kHz 16-bit audio is 32 KB). VisionState still
+    opens the connection and keeps it open; the ESP32 sends a small heartbeat while quiet, so the
+    sensor shows *quiet*, not *unavailable* (§4). Worth it mainly for battery-powered devices.
+  - **No push** (the maintainer's decision, 2026-10-29): VisionState always opens the connection to
+    the source; a device never connects to VisionState to deliver audio. Taking connections from
+    devices would break the rule that the app is only reachable through Home Assistant Ingress.
   - *Stock ESPHome* sends its microphone to Home Assistant's voice assistant only after a wake
     word, as far as known on 2026-10-29, and Home Assistant does not pass that audio on to apps.
     Listening to it all day needs an integration of its own (VisionState connecting to the device,
@@ -239,7 +267,9 @@ As for images: CC0 / public domain, or drawn by our own code.
   alarm near 3 kHz does; breaking glass loses much of what identifies it. The spike measures per
   codec, and the wizard shows the stream's sample rate.
 - **Camera audio processing.** Automatic gain and noise suppression in the camera change the level
-  and can cut steady beeps; the loudness floor must cope with it.
+  and can cut steady beeps; the loudness line follows the learned background for that reason.
+- **"Decibels" from an uncalibrated microphone** are relative (dBFS): never promise sound pressure
+  levels, and never copy a level from one microphone to another.
 - **A stream with no audio, or one that comes and goes.** A clear message in the Live tab and
   Status, never a loop that stops (CLAUDE.md).
 - **Always-open streams cost.** Each sound sensor keeps a connection to its camera all day; several
