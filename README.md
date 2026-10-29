@@ -62,7 +62,8 @@ Draw a box around the number. Counters only go up and land in the Energy dashboa
 ## Read a water, gas or power meter with an ESP32-CAM
 
 Put an ESP32-CAM (or any camera) above the meter, add it to Home Assistant with ESPHome or use its
-snapshot URL, and draw a box around the digits. VisionState reads the rolling wheels of a
+snapshot URL, and draw a box around the digits — a camera that cannot hang straight sees the
+meter turned or at an angle: put the box's corners on it, and it is read upright. VisionState reads the rolling wheels of a
 mechanical water or gas meter and the digits of an LCD or LED power meter, checks every value
 before it is published (a counter never goes down or jumps), and the total lands in the Energy
 dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
