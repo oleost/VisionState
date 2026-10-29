@@ -139,8 +139,13 @@ sounds; a Raspberry Pi 4 — the minimum VisionState runs on, and a sound sensor
 
 **The training data question** (as for faces): every model above is trained on AudioSet — Google's
 labels are CC BY 4.0, the audio is YouTube videos not licensed for reuse. The weights are not the
-clips, and the models are published under permissive licences, but the question is the
-maintainer's to settle (§11, question 1).
+clips, and the models are published under permissive licences. **Decided (2026-10-29): accepted**,
+as for the models already in use — D-FINE learned from COCO (Flickr photos under mixed Creative
+Commons licences), and the face models from research-only data sets
+([`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md) §12). As for faces: the registry entry
+says what the model learned from, Settings → AI model shows its licence and training data, and the
+model is not bundled — it is downloaded when the first sound sensor is created (most users never
+make one).
 
 **Leaning:** CED-Tiny for both the classes and own sounds, YAMNet as the baseline in phase 0.
 
@@ -193,8 +198,9 @@ Design rules that follow:
 
 Following the existing structure (names are proposals):
 
-- A registry `sounds.json` next to `readers.json`, with per-class thresholds and the embedding
-  output's name; loaded in `engine/models.py` on first use like the detector and reader.
+- A registry `sounds.json` next to `readers.json` and `faces.json`, never bundled, with per-class
+  thresholds, the embedding output's name and what the model learned from (as `faces.json` has);
+  downloaded when the first sound sensor is created and loaded in `engine/models.py` on first use.
 - An audio stream class next to `sources.RtspStream` (open, audio only, resample, ring buffer,
   heartbeat, reconnect); `sources.check_source` checks its address the same way.
 - A new engine part (a mixin, as `ObjectChecksMixin` is) with the listening loop per sensor; the
@@ -257,11 +263,9 @@ As for images: CC0 / public domain, or drawn by our own code.
 
 ## 11. Open questions for the maintainer
 
-1. **Licence bar:** accept models trained on AudioSet (all candidates are), as a download on demand
-   if not bundled?
-2. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
+1. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
    enough, or must a Home Assistant camera entity or stock ESPHome come first?
-3. **The name:** VisionState that also hears — fine as it is, or a line in the README?
+2. **The name:** VisionState that also hears — fine as it is, or a line in the README?
 
 Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
 Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
