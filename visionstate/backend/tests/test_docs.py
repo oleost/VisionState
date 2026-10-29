@@ -61,7 +61,7 @@ BACKEND_TEXT = "\n".join(p.read_text(encoding="utf-8") for paths in MODULES.valu
 # Tables whose columns a doc may name (`prediction.read_ok`); "sensor" is also a Home Assistant domain.
 TABLES = set(re.findall(r'__tablename__ = "(\w+)"', (BACKEND / "db.py").read_text(encoding="utf-8"))) - {"sensor"}
 # A plan names code that is still to be written; only its links and paths are checked.
-PLANS = {REPO / "docs" / "WHEEL_READER_PLAN.md"}
+PLANS = {REPO / "docs" / "WHEEL_READER_PLAN.md", REPO / "docs" / "POINTER_DIAL_PLAN.md"}
 
 
 def _prose(doc: Path) -> str:

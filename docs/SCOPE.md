@@ -32,7 +32,8 @@ of a meter. Neither needs training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §14.
+- Reading needle gauges (a pressure or temperature gauge). The pointer dials of a water meter are
+  planned: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md).
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -868,6 +869,7 @@ is part of backups and needs no restart.
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at release | not released |
+| **Pointer dials** | The last wheel's digit as passed, not rounded, with its fraction as a decimal; then a water meter's pointer dials, placed in the same view and read together with the wheels — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | planned |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
@@ -875,9 +877,9 @@ summary per hour or day, "seen in the frame" as a filter, saved filters, bulk ac
 import of a backup;
 less camera traffic (reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
-dials and gauges; several readings per sensor (a sign with four prices, a
-counter plus its dials); per-sensor model
+Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) and
+[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md): gauges; several readings per sensor (a sign with
+four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
