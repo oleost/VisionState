@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.0b1
+
+**An early beta, lightly tested.** The two features below pass the automated tests on drawn
+meters, but have not yet been tried on a real meter seen askew or on real pointer dials. If you
+have such a meter, please try it and tell us how it went — a screenshot of *What the reader
+sees*, or an export (Quality → *Export readings*), helps most.
+
+### New
+
+- **A meter or display seen turned or at an angle is read upright** (#58): a reading sensor's
+  region can be straightened. Put its four corners on the corners of the digits or wheels, mark
+  the top edge (**Turn** moves the mark), and the region is read as if the camera looked straight
+  at it — any angle, perspective included. On for new reading sensors; sensors made before read as
+  they did until *Straighten the region* is turned on in their settings.
+- **Pointer dials** (#59): the small dials beside the wheels of many water meters (×0.1, ×0.01 …)
+  can be added to a mechanical counter read by the wheel reader — *Edit: Dials* in the wizard, or
+  the *Pointer dials* card in Settings. Each dial adds a digit, and the wheels and dials are read
+  together, so the ×0.1 dial settles the last wheel. The needle is found by its red colour, or as
+  the darkest part of the dial in an infrared picture.
+- **The last wheel's fraction**: a counter read by the wheel reader counts the digit its last
+  wheel has passed (not rounded up half way, which made the last digit come early) and reads how
+  far it has turned as one more decimal. On for new counters; counters made before read as they
+  did until *Read the last wheel's fraction* is turned on.
+- History, Review and the readings export (format 7) keep the straightened region and each dial
+  as it was read.
+
 ## 0.11.0
 
 ### Better
