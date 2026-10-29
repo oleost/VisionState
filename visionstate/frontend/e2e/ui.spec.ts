@@ -1662,11 +1662,12 @@ test('new sound sensor through the wizard: a microphone stream is tried, sounds 
 
 test('a sound heard on a camera: its video clip in the history, the question in Review', async ({ page, request }, info) => {
   test.skip(!(await soundModelInstalled(request)), 'no sound model');
-  test.setTimeout(150_000);
+  test.setTimeout(180_000);
   const id = await seededSoundSensorId(request);
   const errors = watchErrors(page);
   await page.goto(`#/sensors/${id}/history`);
-  const row = page.locator('.card.item').filter({ hasText: 'Siren heard' }).first();
+  // The heading exactly: "Our siren heard" (the own sound, once heard) is not this row.
+  const row = page.locator('.card.item').filter({ has: page.getByText('Siren heard', { exact: true }) }).first();
   await expect(row).toContainText('video clip');
   await press(row.getByRole('button').first(), info);
   const play = row.getByRole('button', { name: 'Play the clip' });
@@ -1675,19 +1676,22 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   await press(play, info);
   await expect(row.locator('video')).toBeVisible();
   await expect(row.getByText('Teach this clip as')).toBeVisible();
-  await expect(row.getByRole('button', { name: 'Our siren' })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Our siren', exact: true })).toBeVisible();
 
   // Every project answers one question: a new siren asks again (the sensor's review has no cooldown).
   const waiting = async () => (await (await request.get(`api/v1/review?sensor=${id}`)).json()).total;
-  if (!(await waiting())) {
+  // Where the windows fall changes the scores, and a sure one asks nothing: play it again until one asks.
+  for (let tries = 0; tries < 4 && !(await waiting()); tries++) {
     await request.get(PLAY_URL('siren'));
-    await expect.poll(waiting, { timeout: 90_000 }).toBeGreaterThan(0);
+    await expect.poll(waiting, { timeout: 25_000 }).toBeGreaterThan(0).catch(() => undefined);
   }
+  expect(await waiting()).toBeGreaterThan(0);
   await page.goto(`#/review?sensor=${id}`);
   await expect(page.getByText('Was this')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await press(page.getByRole('button', { name: 'Yes, Siren' }), info);
+  // The question may name another sound (a siren can score as a smoke alarm too): answer yes to it.
+  await press(page.getByRole('button', { name: /^Yes, / }), info);
   await expect.poll(waiting).toBe(0);
   errors.expectNone();
 });
