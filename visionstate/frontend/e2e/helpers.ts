@@ -1,6 +1,6 @@
 // Shared helpers for the UI tests: error collection, layout checks and real touch/mouse gestures.
 import { expect, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { COUNTER_SENSOR_NAME, FACE_SENSOR_NAME, OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NAME } from './env';
+import { COUNTER_SENSOR_NAME, FACE_SENSOR_NAME, OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NAME, SOUND_SENSOR_NAME } from './env';
 
 export type Point = { x: number; y: number };
 
@@ -114,6 +114,13 @@ export const seededObjectSensorId = (request: APIRequestContext) => seededSensor
 export const seededReadingSensorId = (request: APIRequestContext) => seededSensorId(request, READING_SENSOR_NAME);
 export const seededCounterSensorId = (request: APIRequestContext) => seededSensorId(request, COUNTER_SENSOR_NAME);
 export const seededFaceSensorId = (request: APIRequestContext) => seededSensorId(request, FACE_SENSOR_NAME);
+export const seededSoundSensorId = (request: APIRequestContext) => seededSensorId(request, SOUND_SENSOR_NAME);
+
+/** Whether the sound model is on disk (until it is published, it is made by hand: tools/soundmodel). */
+export async function soundModelInstalled(request: APIRequestContext): Promise<boolean> {
+  const settings = await (await request.get('api/v1/settings')).json();
+  return !!settings.sound_models?.[0]?.installed;
+}
 
 /** API requests per path (without the query) made while `ms` pass on the page. */
 export async function apiRequestsDuring(page: Page, ms: number): Promise<Record<string, number>> {

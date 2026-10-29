@@ -73,9 +73,81 @@ export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
 
 /**
  * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a
- * number from a display. Only state sensors are trained.
+ * number from a display; 'sound' hears sounds in a stream. Only state sensors are trained.
  */
-export type SensorKind = 'single_state' | 'objects' | 'reading';
+export type SensorKind = 'single_state' | 'objects' | 'reading' | 'sound';
+
+/** 'auto': windows a set number of dB above the background it learns are analysed; 'fixed': above a fixed level. */
+export type SoundLevel = 'auto' | 'fixed';
+
+/** What a sound sensor listens for and when (defaults: config sound_defaults). */
+export interface SoundSettings {
+  /** The model's sounds it listens for (config sounds). */
+  sounds: string[];
+  level: SoundLevel;
+  above_db: number;
+  fixed_db: number;
+  /** A sound stays heard this long after it was last heard. */
+  clear_after_s: number;
+  /** Keep the seconds around a sound that was heard (speech silenced first). */
+  clips: boolean;
+  /** Clips of a camera stream show its video too (off: sound only). */
+  video: boolean;
+  /** Own sounds learn what the room sounds like. */
+  learn_room: boolean;
+  /** A sound's own threshold (missing: the model's). */
+  thresholds: Record<string, number>;
+}
+
+/** An own sound of a sound sensor, taught from clips. */
+export interface OwnSound {
+  key: string;
+  name: string;
+}
+
+export interface SoundLive {
+  key: string;
+  name: string;
+  own: boolean;
+  threshold: number;
+  model_threshold: number;
+  on: boolean;
+  /** The last analysed window's score (0 while quiet). */
+  score: number;
+}
+
+export interface SensorSound extends SoundSettings {
+  custom: OwnSound[];
+  live: SoundLive[];
+  /** The level of each half second, newest last (dBFS). */
+  levels: number[];
+  /** The level a window must reach to be analysed (null: not learned yet). */
+  line: number | null;
+  analysed: boolean;
+  /** The stream's audio and video, once it was opened. */
+  stream: { codec: string; sample_rate: number; channels: number; video: { codec: string; width: number; height: number } | null } | null;
+}
+
+/** POST /sounds/preview: a stream listened to for a few seconds (new sensor wizard). */
+export interface SoundPreview {
+  ok: boolean;
+  error?: string;
+  model_error?: string;
+  stream: SensorSound['stream'];
+  seconds?: number;
+  levels?: number[];
+  sounds?: { key: string; score: number }[];
+}
+
+/** GET /sensors/{id}/sounds/taught: clips taught to a sound sensor. */
+export interface SoundTaught {
+  clips: { id: number; label: string; origin: string; created_at: string }[];
+  counts: Record<string, number>;
+  sounds: (OwnSound & { clips: number })[];
+  /** Windows of the room kept as "other". */
+  room: number;
+  trained: boolean;
+}
 
 export type ReadingMode = 'counter' | 'value' | 'time_left';
 /** 'counter' is a mechanical counter with rolling digit wheels; the others are digital displays. */
@@ -486,6 +558,7 @@ export interface Sensor {
   states: StateDef[];
   objects: SensorObjects | null;
   reading: SensorReading | null;
+  sound: SensorSound | null;
   status: SensorStatus;
   trained: boolean;
   training: boolean;
@@ -503,6 +576,7 @@ export interface SensorInput {
   states: { key?: string; name: string; color?: string }[];
   objects?: ObjectSettings;
   reading?: ReadingSettings;
+  sound?: SoundSettings;
   interval_s?: number;
   threshold?: number;
   debounce?: number;
@@ -575,6 +649,13 @@ export interface AppConfig {
   history: { page_size: number; max_page_size: number; max_filter_values: number; window_presets_h: number[]; poll_s: number };
   /** What a history row can be, per sensor kind (names are unique across kinds). */
   history_events: Record<SensorKind, string[]>;
+  sound_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
+  sound_defaults: SoundSettings;
+  sound_limits: Record<'above_db' | 'fixed_db' | 'clear_after_s' | 'threshold', [number, number]>;
+  sound_levels: SoundLevel[];
+  sound: { hop_s: number; window_s: number; live_levels: number; max_custom: number; max_taught: number; own_threshold: number; floor_db: number };
+  /** The model's sounds a sensor can listen for. */
+  sounds: { key: string; name: string; threshold: number; device_class: string; icon: string }[];
 }
 
 export interface Status {
@@ -594,6 +675,10 @@ export interface Status {
   wheel_readers: string[];
   wheel_reader_name: string | null;
   wheel_reader_error: string;
+  /** The sound model (loaded on first use by a sound sensor). */
+  sound_model: string | null;
+  sound_model_name: string | null;
+  sound_model_error: string;
   /** The face model, and how many people and sensors that recognise faces there are. */
   faces: FaceStatus & { people: number; sensors: number };
   mqtt: { connected: boolean; host: string | null; error: string };
@@ -634,9 +719,12 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | null;
   reviewed: boolean;
   has_frame: boolean;
+  /** Sound sensors: the seconds around a sound (with the camera's video when `clip_video`). */
+  has_clip?: boolean;
+  clip_video?: boolean;
   /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask' |
    * 'face' (a face nobody is named for). */
   detections: Detection[] | null;
@@ -682,6 +770,8 @@ export interface ReviewItem extends Prediction {
     reading: ReadingSettings | null;
     /** Object sensors: the own labels a question can be about. */
     labels: OwnLabel[];
+    /** Sound sensors: the sounds it listens for and its own sounds an answer can name. */
+    sounds: { key: string; name: string; own: boolean }[];
   };
 }
 

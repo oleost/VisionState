@@ -9,9 +9,13 @@ import {
   FACE_SENSOR_NAME,
   OBJECT_SENSOR_NAME,
   PHOTO_URL,
+  PLAY_URL,
   READING_SENSOR_NAME,
   SENSOR_NAME,
+  SOUND_CAMERA_URL,
+  SOUND_SENSOR_NAME,
 } from './env';
+import { soundModelInstalled } from './helpers';
 
 setup('seed a trained sensor', async ({ request }) => {
   const created = await request.post('api/v1/sensors', {
@@ -145,6 +149,47 @@ setup('seed a sensor that recognises faces', async ({ request }) => {
   const left = people.sort((a, b) => a.box[0] - b.box[0])[0];
   const taught = await request.post(`api/v1/sensors/${sensor.id}/faces`, {
     data: { frame_id: frameId, box: left.box, score: left.score, new_person: 'Suni' },
+  });
+  expect(taught.ok(), await taught.text()).toBeTruthy();
+});
+
+setup('seed a sound sensor on a camera with sound', async ({ request }) => {
+  setup.skip(!(await soundModelInstalled(request)), 'the sound model is not on disk (tools/soundmodel/README.md)');
+  setup.setTimeout(120_000);
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: SOUND_SENSOR_NAME,
+      kind: 'sound',
+      source_type: 'rtsp',
+      source: SOUND_CAMERA_URL,
+      // A siren counts from 0.85: the recording's 0.9 is only just heard, so it is asked about in Review.
+      sound: { sounds: ['siren', 'dog_bark', 'smoke_alarm'], clips: true, clear_after_s: 3, thresholds: { siren: 0.85 } },
+      review: { cooldown_s: 0 },
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const sensor = await created.json();
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).sound.line, { timeout: 30_000 })
+    .not.toBeNull();
+  await request.get(PLAY_URL('siren'));
+  // Heard, with a clip (with the camera's video), and asked about in Review once it stopped.
+  await expect
+    .poll(
+      async () => {
+        const rows = (await (await request.get(`api/v1/history?sensor=${sensor.id}&event=heard`)).json()).items;
+        return rows.some((r: { clip_video: boolean }) => r.clip_video);
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).total, { timeout: 60_000 })
+    .toBeGreaterThan(0);
+  // An own sound taught from that clip.
+  const rows = (await (await request.get(`api/v1/history?sensor=${sensor.id}&event=heard`)).json()).items;
+  const taught = await request.post(`api/v1/sensors/${sensor.id}/sounds/teach`, {
+    data: { history_id: rows[0].id, new_name: 'Our siren' },
   });
   expect(taught.ok(), await taught.text()).toBeTruthy();
 });

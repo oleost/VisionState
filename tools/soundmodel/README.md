@@ -57,8 +57,7 @@ the tests that need it are skipped in CI.
    (`sha256` and `size` stay as they are).
 5. Check it downloads: `python -m visionstate.backbones /tmp/m --all` must print the file, and
    `sha256sum /tmp/m/ced-tiny.onnx` the SHA-256 above. Then the backend tests, which now run the
-   sound tests in CI too (add `sounds.json` to the models cache key in `.github/workflows/ci.yml`
-   if it is not there).
+   sound tests in CI too (the models cache key in `.github/workflows/ci.yml` hashes `sounds.json`).
 
 ## Model card (README.md of the Hugging Face repository)
 

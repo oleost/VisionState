@@ -14,18 +14,31 @@
   import { haSlug, slugify } from '../lib/format';
   import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
-  import { LOW_STREAM_NAME, SENSOR_KIND_INFO, SMALL_FRAME_PX } from '../lib/ui';
+  import StreamField from '../lib/components/sound/StreamField.svelte';
+  import type { ReadingSettings, Roi, SensorKind, SoundSettings, Triggers } from '../lib/types';
+  import { LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
   import ObjectsStep from './wizard/ObjectsStep.svelte';
   import ReadingStep from './wizard/ReadingStep.svelte';
+  import SoundStep from './wizard/SoundStep.svelte';
   import StatesStep from './wizard/StatesStep.svelte';
 
-  const STEPS = [
+  const PICTURE_STEPS = [
     { title: 'Camera', sub: 'Name and image source' },
     { title: 'Region', sub: 'What to look at' },
     { title: 'Detect', sub: 'States, objects or a number' },
     { title: 'Checks', sub: 'When to look (optional)' },
   ];
+  const SOUND_STEPS = [
+    { title: 'Stream', sub: 'Name and sound source' },
+    { title: 'Listen', sub: 'What to hear' },
+    { title: 'Home Assistant', sub: 'Send it there' },
+  ];
+
+  // Look at the picture (states, objects, a number) or listen (a sound sensor).
+  let mode = $state<'picture' | 'sound'>('picture');
+  const STEPS = $derived(mode === 'sound' ? SOUND_STEPS : PICTURE_STEPS);
+  let sound = $state<SoundSettings>(structuredClone($state.snapshot(app.config!.sound_defaults)));
+  let streamSource = $state('');
 
   let step = $state(0);
   let name = $state('');
@@ -75,13 +88,17 @@
     reading: () => app.config!.reading_sensor_defaults,
   } as const;
 
-  function chooseKind(value: SensorKind) {
+  function chooseKind(value: Exclude<SensorKind, 'sound'>) {
     kind = value;
     interval_s = KIND_DEFAULTS[value]().interval_s; // e.g. meters change slowly: 30 s
   }
 
   const canNext = $derived(
-    step === 0
+    mode === 'sound'
+      ? step === 0
+        ? name.trim().length > 0 && streamSource.trim().length > 0
+        : true
+      : step === 0
       ? name.trim().length > 0 && source.trim().length > 0
       : step === 1
         ? previewUrl !== null
@@ -104,11 +121,34 @@
   }
 
   function goto(target: number) {
-    if (target === 1 && step === 0) loadPreview();
+    if (target === 1 && step === 0 && mode === 'picture') loadPreview();
     step = target;
   }
 
+  async function createSound() {
+    saving = true;
+    try {
+      const sensor = await api.createSensor({
+        name: name.trim(),
+        kind: 'sound',
+        source_type: 'rtsp',
+        source: streamSource.trim(),
+        roi: null,
+        states: [],
+        sound,
+        publish,
+      });
+      toast(`${sensor.name} created`);
+      go(paths.sensor(sensor.id, 'live'));
+    } catch (err) {
+      toastError(err);
+    } finally {
+      saving = false;
+    }
+  }
+
   async function create() {
+    if (mode === 'sound') return createSound();
     saving = true;
     try {
       const learned = kind === 'single_state';
@@ -163,25 +203,62 @@
       <span class="spacer"></span>
       <p class="xsmall faint hint">
         You can change everything later.
-        {kind === 'single_state' ? 'Labelling starts right after you create the sensor.' : 'This sensor works right away.'}
+        {mode === 'picture' && kind === 'single_state' ? 'Labelling starts right after you create the sensor.' : 'This sensor works right away.'}
       </p>
     </aside>
 
     <section class="col content">
-      {#if (step === 1 || step === 2) && triggers.light_entity}
+      {#if mode === 'picture' && (step === 1 || step === 2) && triggers.light_entity}
         <LightHold entity={triggers.light_entity} delay={triggers.light_delay_s} bind:ready={lightReady} />
       {/if}
       {#if step === 0}
-        <div class="col" style="gap:6px">
-          <h2>Name it and pick a camera</h2>
-          <p class="muted">Any camera in Home Assistant works — Frigate, ESP32-CAM, Reolink, generic streams.</p>
+        <div class="modes" role="radiogroup" aria-label="What the sensor does">
+          {#each Object.entries(SENSOR_MODE_INFO) as [value, info] (value)}
+            <button
+              class="kind mode"
+              class:selected={mode === value}
+              role="radio"
+              aria-checked={mode === value}
+              onclick={() => (mode = value as 'picture' | 'sound')}
+            >
+              <span class="radio" aria-hidden="true"></span>
+              <span class="col" style="gap:4px">
+                <strong class="row" style="gap:6px"><Icon name={info.icon} size={16} />{info.title}</strong>
+                <span class="small muted">{info.text}</span>
+              </span>
+            </button>
+          {/each}
         </div>
-        <label class="field" style="max-width:420px">
-          Sensor name
-          <input class="input" bind:value={name} placeholder="Garage door" />
-        </label>
-        <SourcePicker bind:sourceType bind:source />
-        <div style="max-width:640px"><LightEditor bind:triggers /></div>
+        {#if mode === 'sound'}
+          <div class="col" style="gap:6px">
+            <h2>Name it and pick a stream with sound</h2>
+            <p class="muted">A camera with a microphone, or a microphone of its own (an ESP32 with a microphone, sending its sound).</p>
+          </div>
+          <label class="field" style="max-width:420px">
+            Sensor name
+            <input class="input" bind:value={name} placeholder="Hallway" />
+          </label>
+          <div class="col" style="max-width:640px;gap:6px"><StreamField bind:source={streamSource} /></div>
+        {:else}
+          <div class="col" style="gap:6px">
+            <h2>Name it and pick a camera</h2>
+            <p class="muted">Any camera in Home Assistant works — Frigate, ESP32-CAM, Reolink, generic streams.</p>
+          </div>
+          <label class="field" style="max-width:420px">
+            Sensor name
+            <input class="input" bind:value={name} placeholder="Garage door" />
+          </label>
+          <SourcePicker bind:sourceType bind:source />
+          <div style="max-width:640px"><LightEditor bind:triggers /></div>
+        {/if}
+      {:else if mode === 'sound' && step === 1}
+        <SoundStep source={streamSource.trim()} bind:sound />
+      {:else if mode === 'sound'}
+        <div class="col" style="gap:6px">
+          <h2>Send it to Home Assistant</h2>
+          <p class="muted">Each sound becomes an on/off sensor ({sound.sounds.length} now; own sounds join them once taught).</p>
+        </div>
+        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
       {:else if step === 1}
         <div class="row wrap">
           <div class="col" style="gap:6px">
@@ -226,7 +303,7 @@
               class:selected={kind === value}
               role="radio"
               aria-checked={kind === value}
-              onclick={() => chooseKind(value as SensorKind)}
+              onclick={() => chooseKind(value as Exclude<SensorKind, 'sound'>)}
             >
               <span class="radio" aria-hidden="true"></span>
               <span class="col" style="gap:4px">
@@ -268,8 +345,8 @@
         {#if step < STEPS.length - 1}
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
-          <button class="btn primary" disabled={!detectValid || saving} onclick={create}>
-            {saving ? 'Creating…' : kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
+          <button class="btn primary" disabled={(mode === 'picture' && !detectValid) || saving} onclick={create}>
+            {saving ? 'Creating…' : mode === 'picture' && kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
           </button>
         {/if}
       </footer>
@@ -382,6 +459,12 @@
     text-align: left;
     cursor: pointer;
   }
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    max-width: 760px;
+  }
   .kind.selected {
     border-color: var(--c-accent);
     box-shadow: 0 0 0 1px var(--c-accent);
@@ -398,7 +481,8 @@
     border: 5px solid var(--c-accent);
   }
   @media (max-width: 600px) {
-    .kinds {
+    .kinds,
+    .modes {
       grid-template-columns: minmax(0, 1fr);
     }
   }

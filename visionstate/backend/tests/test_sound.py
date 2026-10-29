@@ -16,7 +16,7 @@ from visionstate.settings import KIND_SOUND, SOUND, merge_sound
 from visionstate.sources import AudioStream
 
 from .conftest import MODEL_DIR, requires_sound
-from .sound_stream import RATE, SoundServer, noise, recording
+from .sound_stream import RATE, SoundServer, chime, noise, recording
 from .test_integration import settings, wait_for  # noqa: F401 - the settings fixture
 
 SPEC = sounds.MODELS[sounds.DEFAULT_MODEL]
@@ -253,17 +253,6 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
         assert config["history_events"]["sound"] == ["heard", "quiet"]
     time.sleep(0)  # the stream's thread ends on its own (closed with the runtime)
-
-
-def chime(seconds: float = 3.0, gain: float = 0.3, seed: int = 0) -> np.ndarray:
-    """A drawn two-tone doorbell (ding-dong) with a little noise."""
-    t = np.arange(int(seconds * RATE)) / RATE
-    out = np.zeros_like(t)
-    for start, freq in ((0.3, 784.0), (1.0, 622.0)):
-        m = t >= start
-        decay = np.exp(-(t[m] - start) * 2.5)
-        out[m] += gain * decay * (np.sin(2 * np.pi * freq * t[m]) + 0.3 * np.sin(2 * np.pi * 2 * freq * t[m]))
-    return (out + noise(seconds, 0.002, seed)).astype(np.float32)
 
 
 @requires_sound

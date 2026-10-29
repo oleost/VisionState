@@ -1,8 +1,8 @@
 # Sound sensors: research and plan
 
 Hearing **what kind of sound** a microphone picks up (a siren, a smoke alarm, a dog barking,
-someone speaking, our own doorbell) and turning it into Home Assistant sensors, all locally. Nothing
-is built yet; this is the plan and the decisions made so far. How the app works now is in
+someone speaking, our own doorbell) and turning it into Home Assistant sensors, all locally. This
+was the plan; it is built (§13 says what is left), and how it works now is in SCOPE.md §5. How the app works now is in
 [`SCOPE.md`](SCOPE.md), the code map in [`ARCHITECTURE.md`](ARCHITECTURE.md). Research done
 2026-10-29: licences read from the model pages, prior art (Frigate's audio detection) and the
 literature that day; the numbers marked *measured* come from a first look at CED-Tiny with drawn
@@ -356,3 +356,53 @@ No question for the maintainer is open. Decided on 2026-10-29:
   gets a test with a real recording of a known class, as the registry rule asks.
 - **Learning from its own answers** drifts: only human answers are labels.
 - **Playback on phones:** iOS plays sound only after a tap, and not every format (§8); test on WebKit.
+
+## 13. Status, and what is left (handover)
+
+**Built** (on `claude/lucid-cori-j40ck3`, from `beta`; not merged, not released), as described in
+[`SCOPE.md`](SCOPE.md) §5 and in DOCS.md *Sound sensors*: phases 1–3 and the clips with video —
+the `sound` kind (database version 17, its kept backup), `sources.AudioStream` (RTSP and HTTP
+audio, reconnecting), the level line, CED-Tiny with per-sound thresholds, `logic.hear`, a
+`binary_sensor` per sound (smoke alarms as *smoke*), clips with speech silenced (AAC, or MP4 with
+the camera's video), review questions, own sounds (taught from history clips or uploaded
+recordings, the room's windows and 200 everyday sounds as *other*), export/import, backup, the
+wizard (*Listen*), the Live, Own sounds, History and Settings tabs, Review, the fake camera's
+`/sound.wav`, `/camera.ts` and `/play`, backend tests (`tests/test_sound.py`, real CC0
+recordings in `tests/assets/sounds/`) and e2e tests.
+
+**What the cloud session could not do** — for Claude working locally (or the maintainer):
+
+1. **Publish the sound model** (it is not on Hugging Face yet): follow
+   [`tools/soundmodel/README.md`](../tools/soundmodel/README.md) *Publishing it* — make the file,
+   check its SHA-256, upload it to `oleost/visionstate-sound` with the model card there, set the
+   pinned `url` in `sounds.json` (the models cache keys in `.github/workflows/ci.yml` already
+   hash it, so CI downloads it then). Until then CI skips every test that needs the model (backend
+   `requires_sound`, the e2e sound seed and tests), and the app says "not published yet" on a sound
+   sensor. Locally: `python tools/soundmodel/make_model.py out` and copy the file to
+   `visionstate/backend/models/ced-tiny.onnx`.
+2. **Run every check locally on Windows** (the cloud ran them on Linux): the backend suite, ruff,
+   pyright, `npm run check`, `npm run build` and the e2e suite (desktop, mobile, iphone).
+3. **Look at the UI by hand** (CLAUDE.md *UI testing routine*): the wizard's *Listen*, the Live tab
+   (level chart, scores), Own sounds (record on a phone: the file input offers the microphone),
+   History (a clip with video and a sound clip, played after a tap) and Review, at desktop width
+   and at ~390 px. iOS: does an AAC `.m4a` and an fMP4 video clip play in the Home Assistant app?
+4. **Real hardware** (none of it was possible in the cloud):
+   - a Raspberry Pi 4 (or the CI's aarch64 image): time per second of audio, memory with the
+     sound model loaded, how many sound sensors it carries beside the image sensors — then the
+     number in DOCS.md, and the model's `ram_mb`/`time_ms` in `sounds.json` (estimated 40 MB,
+     16 ms for a 2-s window on a desktop CPU);
+   - real cameras: which send sound, which codecs (G.711 at 8 kHz, AAC, Opus), whether PyAV gets
+     the track; a camera that allows few connections (go2rtc restream);
+   - a Home Assistant camera's own sound (§10: wanted, not known to be possible);
+   - an ESP32 with an I2S microphone sending WAV over HTTP: firmware to recommend in DOCS.md;
+   - a day of a household's background and TV: false alarms per day, the thresholds in
+     `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*;
+   - own sounds recorded at home (a doorbell, an appliance beep): clips needed, `own_threshold`.
+5. **At release**: the README and the store text (`visionstate/README.md`) say VisionState hears
+   too (§11); the roadmap row in SCOPE.md gets its version; screenshots of a sound sensor for
+   `docs/promo/` if wanted (and `scripts/seed_demo.py` could seed one).
+
+**Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
+cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the
+level line ignores sounds below it by design; clips of an H.265 stream may not play in every
+browser (the Live tab warns).

@@ -4,8 +4,9 @@
 
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
-Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — or **read a
-number** from a display, without any training. Everything runs on this machine; no cloud.
+Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — **read a
+number** from a display, or **listen** for sounds — sirens, a smoke alarm, a dog, your own
+doorbell — without any training. Everything runs on this machine; no cloud.
 
 ## Requirements
 
@@ -18,6 +19,8 @@ number** from a display, without any training. Everything runs on this machine; 
   (`rtsp://`, `rtsps://`, also an `http://` video stream). A stream is kept open while frames
   are asked for often (a burst of checks, the live view), so those come at once instead of after
   a new connection each time.
+  A sound sensor needs a stream with sound: a camera's stream with its microphone on, or an HTTP
+  audio stream (an ESP32 microphone).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
   also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
@@ -417,6 +420,77 @@ First choose **what it looks like**:
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change
   detection) makes it read right away.
 
+## Sound sensors
+
+A sound sensor listens to a stream's sound all the time and tells Home Assistant what it hears:
+each sound is an on/off sensor (`binary_sensor`), on while the sound is heard and for a few
+seconds after (*A sound stays heard for*). In the wizard, choose **Listen** first.
+
+**Where the sound comes from** (*Stream with sound*):
+
+- a camera's RTSP stream — switch its microphone (its audio) on in the camera first. A camera's
+  sub stream is enough: the sound is the same;
+- a go2rtc restream (`rtsp://homeassistant.local:8554/<name>` with the go2rtc app): one connection
+  to the camera for everyone, for cameras that allow only a few;
+- a microphone of its own: an ESP32 with an I2S microphone (such as an INMP441) sending its sound
+  as an HTTP stream of WAV, for a room without a camera.
+
+The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
+whether it has video), how loud it is and what it heard. The Live tab shows the same while it
+runs.
+
+**What it recognises out of the box** (pick them in the wizard or under Settings): a dog barking,
+a siren, a smoke or fire alarm and crying are recognised well; someone talking, shouting or
+screaming and knocking fairly. The smoke alarm is a *smoke* sensor in Home Assistant — a
+notification on top of your smoke detectors, **never instead of them**. Most smoke alarms beep at
+about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms sound different:
+teach yours as an own sound. A sound on TV is a real sound to the sensor.
+
+**Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
+door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
+(with clips on: *Teach this clip as*), or from recordings made with a phone (any sound or video
+file; its loudest four seconds are kept). About five clips is a good start. Each own sound is an
+on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts
+from 200 everyday sounds as *other sounds*, learns what its room sounds like as it listens
+(*Learn the room's sounds*, on by default), and takes clips you add as *Other sounds*.
+
+**When it analyses.** Only sound loud enough is analysed — that is where it saves the CPU on a
+quiet day. By default the sensor learns how quiet its room is and analyses what is louder by a
+set number of dB; or set a fixed level. The Live tab shows the level of the last minute and the
+line it must cross. A sound that matters but stays below it — a beep two rooms away — is missed:
+lower the line. The levels are relative to the loudest the stream can be (dBFS), not sound
+pressure: the same room shows other numbers on another microphone.
+
+**When a sound counts.** Each sound has a threshold (*Heard from*, under Settings): it is heard
+when its score passes the threshold in two of the last three windows, and stays heard while it
+scores above half of it. The Live tab shows each sound's score against its threshold: lower it
+when a sound is missed, raise it when something else is taken for it.
+
+**Clips** (off by default): with *Keep a clip of each sound heard*, the seconds before and after
+a sound are kept in its History row, to listen to and to teach own sounds from. On a camera with
+video the clip shows the video too (*With the camera's video*; off: sound only, much smaller); the
+video is copied as the camera sends it, so H.265 video does not play in every browser — use the
+camera's H.264 sub stream. Clips are kept in the app's own storage (not the media folder, which
+every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
+part of the history in a backup.
+
+**Review.** With clips on, a sound that was only just heard is asked about in Review: listen (or
+watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer is
+kept; an own sound learns from it, the built-in sounds do not change.
+
+**Privacy.** A sensor that listens hears what kind of sound it is, **never what is said**: there
+is no speech recognition. *Someone talking* only says that someone is. Before a clip is kept,
+every second in which someone talks is silenced, and *Someone talking* never keeps a clip at all.
+Everyone in the house should know that the sensor listens; recording other people's
+conversations in secret is against the law in many countries. Point it at your own home, not the
+street or the neighbours.
+
+**Good to know.** Many cameras send their sound in telephone quality (8 kHz): nothing above 4 kHz
+is heard — alarms, sirens and barks are fine, crying and breaking glass suffer (the Live tab says
+so). Each sound sensor keeps its stream open all day; on a Raspberry Pi 4 a sound sensor that
+analyses all the time takes a few per cent of one core, a quiet one much less. The sound model is
+downloaded when the first sound sensor is made.
+
 ## Training tips (state sensors)
 
 - **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
@@ -509,8 +583,8 @@ automations.
 ## History
 
 **History** at the top lists what every sensor recorded: state changes, objects that appeared,
-cleared or were filtered away, faces nobody is named for, new values and rejected readings, and
-frames sent to review. Each
+cleared or were filtered away, faces nobody is named for, new values and rejected readings,
+sounds heard (with their clips), and frames sent to review. Each
 sensor's **History** tab is the same list for that sensor alone; **Open in all history** there
 takes its filter to the History page.
 
@@ -518,8 +592,9 @@ Narrow it down with the filters above the list — each takes any number of choi
 number next to a choice is how many entries choosing it would find:
 
 - **Sensors** (History page only).
-- **What**: a state, an object or one of your own labels — *Car* and *Our car* are told apart.
-- **Event**: e.g. *State changed*, *Detected*, *Cleared*, *Rejected reading*, *Sent to review*.
+- **What**: a state, an object, a sound or one of your own labels and sounds — *Car* and *Our car*
+  are told apart.
+- **Event**: e.g. *State changed*, *Detected*, *Cleared*, *Rejected reading*, *Heard*, *Sent to review*.
 - **Time**: the last hour, 24 hours, 7 or 30 days, or *From … to …*.
 - **Waiting for review**, and newest or oldest first.
 
@@ -533,8 +608,9 @@ How long history is kept is set under **Settings → Storage** (below).
 another Home Assistant, from the stable app to the beta app (or back), or to start again from
 a known point:
 
-- **Download backup**: sensors and the app's settings (always), training images, people and
-  their faces, history and the downloaded AI models — all ticked; untick what you do not want
+- **Download backup**: sensors and the app's settings (always), training images (and the clips
+  taught to sound sensors), people and their faces, history (with sound clips) and the downloaded
+  AI models — all ticked; untick what you do not want
   (each shows its size). Camera passwords are left out unless you tick **Camera passwords**
   (anyone with the file can then read them). Large histories make large files.
 - **Restore** replaces *everything* in the app with the backup: sensors, people, training images
@@ -559,6 +635,8 @@ a known point:
 - Settings, the database, trained models and **training images** (also the boxes taught to object
   sensors and the taught faces) live in the app's own storage and are part of Home Assistant
   backups of the app, so a restore brings back what you taught together with its images.
+- **Sound clips** of the history live in the app's own storage too, like the clips taught to sound
+  sensors.
 - **History frames** are stored in `/media/visionstate` (the beta app uses
   `/media/visionstate_beta`); they are only in a Home Assistant backup that includes the media
   folder (a VisionState backup from Settings → Backup has them).
@@ -630,6 +708,11 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   reading when any one wheel is unclear. **v1** (2 MB) stays for the counters set up with it;
   their Live tab suggests v2, and *Read with* on the Settings tab switches.
   Only loaded while at least one reading sensor exists.
+- **Sound sensors:** **CED-Tiny** (Apache-2.0, 7 MB, about 8 milliseconds per second of sound on a
+  desktop CPU) — never included: downloaded when the first sound sensor is made, loaded while one
+  exists. It was trained by its makers on AudioSet: Google's labels of YouTube videos, whose
+  sound is not licensed for reuse. VisionState adds one output to it (what own sounds are taught
+  on); the file is published by VisionState.
 
 **Compare and manage the models** (under the choices) lists every model, from the smallest to
 the largest, with its rough memory use, time per check, how accurate it is compared with the

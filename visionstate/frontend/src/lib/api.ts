@@ -33,6 +33,9 @@ import type {
   Sensor,
   SensorInput,
   SettingsInfo,
+  SoundPreview,
+  SoundSettings,
+  SoundTaught,
   Status,
   StorageInfo,
   Taught,
@@ -156,7 +159,11 @@ export const api = {
   /** `objects` is merged into what the sensor has: only the fields sent change. */
   updateSensor: (
     id: number,
-    body: Partial<Omit<SensorInput, 'objects'>> & { objects?: Partial<ObjectSettings>; clear_roi?: boolean },
+    body: Partial<Omit<SensorInput, 'objects' | 'sound'>> & {
+      objects?: Partial<ObjectSettings>;
+      sound?: Partial<Omit<SoundSettings, 'thresholds'>> & { thresholds?: Record<string, number | null> };
+      clear_roi?: boolean;
+    },
   ) =>
     request<Sensor>(`sensors/${id}`, send('PATCH', body)),
   deleteSensor: (id: number) => request<void>(`sensors/${id}`, send('DELETE')),
@@ -228,6 +235,8 @@ export const api = {
   /** region: only what the sensor looked at (a reading: the region it was read in). */
   historyImageUrl: (predictionId: number, size: 'thumb' | 'full' | 'region' = 'full') =>
     `${BASE}history/${predictionId}/image?size=${size}`,
+  /** A sound sensor's clip in the history (sound, or video with sound). */
+  historyClipUrl: (predictionId: number) => `${BASE}history/${predictionId}/clip`,
   exportUrl: (id: number, faces = false) => `${BASE}sensors/${id}/export${faces ? '?faces=true' : ''}`,
 
   teachLimits: () => request<TeachLimitsInfo>('teach-limits'),
@@ -331,6 +340,33 @@ export const api = {
       xhr.send(file);
     });
   },
+
+  /** Sound sensors: listen to a stream for a few seconds (the wizard). */
+  soundPreview: (source: string) => request<SoundPreview>('sounds/preview', send('POST', { source })),
+  soundTaught: (id: number) => request<SoundTaught>(`sensors/${id}/sounds/taught`),
+  /** Teach a history clip as an own sound (`label`), a new one (`newName`) or another sound ('other'). */
+  teachSoundClip: (id: number, historyId: number, label: string | null, newName?: string) =>
+    request<{ id: number; label: string; made: boolean }>(
+      `sensors/${id}/sounds/teach`,
+      send('POST', { history_id: historyId, label, new_name: newName || null }),
+    ),
+  /** Teach recordings (their loudest seconds) as an own sound, a new one, or another sound. */
+  uploadSoundClips(id: number, files: File[], label: string | null, newName?: string) {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f, f.name));
+    if (newName) form.append('new_name', newName);
+    else if (label) form.append('label', label);
+    return request<{ added: { id: number; label: string; made: boolean }[] }>(`sensors/${id}/sounds/upload`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  soundClipUrl: (sampleId: number) => `${BASE}sound-clips/${sampleId}`,
+  forgetSoundClip: (sampleId: number) => request<void>(`sound-clips/${sampleId}`, send('DELETE')),
+  forgetSound: (id: number, key: string) => request<void>(`sensors/${id}/sounds/${encodeURIComponent(key)}`, send('DELETE')),
+  /** A sound sensor's question ("Was this a siren?"): yes, no, one of its own sounds, a new one, or skip. */
+  answerSound: (predictionId: number, action: 'yes' | 'no' | 'sound' | 'new' | 'skip', key?: string, name?: string) =>
+    request(`review/${predictionId}`, send('POST', { action, state_key: key ?? null, value: name ?? null })),
 
   importBundle(file: File) {
     const form = new FormData();

@@ -12,13 +12,18 @@
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { HISTORY_INTRO, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import { HISTORY_INTRO, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TAB_LABELS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
   import ObjectQualityTab from './sensor/ObjectQualityTab.svelte';
   import ReadingLiveTab from './sensor/ReadingLiveTab.svelte';
   import ReadingQualityTab from './sensor/ReadingQualityTab.svelte';
+  import SoundLiveTab from './sensor/SoundLiveTab.svelte';
+  import SoundOwnTab from './sensor/SoundOwnTab.svelte';
+  import SoundSettingsTab from './sensor/SoundSettingsTab.svelte';
+  import SoundChips from '../lib/components/sound/SoundChips.svelte';
+  import { isSoundSensor } from '../lib/sound';
   import QualityTab from './sensor/QualityTab.svelte';
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
@@ -80,6 +85,8 @@
             <h1>{sensor.name}</h1>
             {#if isObjectSensor(sensor)}
               <ObjectChips {sensor} />
+            {:else if isSoundSensor(sensor)}
+              <SoundChips {sensor} />
             {:else if isReadingSensor(sensor)}
               <StatePill name={readingText(sensor)} color="var(--c-accent)" />
             {:else}
@@ -88,9 +95,12 @@
             {#if sensor.training}<span class="chip info">Training…</span>{:else if facesBusy(sensor)}<span class="chip info"
                 >{facesBusy(sensor)}</span
               >{:else if sensor.status !== 'ok'}<span
-                class="chip {SENSOR_STATUS[sensor.status].tone}">{SENSOR_STATUS[sensor.status].label}</span
+                class="chip {SENSOR_STATUS[sensor.status].tone}"
+                >{isSoundSensor(sensor) && sensor.status === 'unavailable' ? 'No sound' : SENSOR_STATUS[sensor.status].label}</span
               >{/if}
-            <span class="mono xsmall muted">{isObjectSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span>
+            <span class="mono xsmall muted"
+              >{isObjectSensor(sensor) || isSoundSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span
+            >
             {#if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
           </div>
         </div>
@@ -106,7 +116,7 @@
       <nav aria-label="Sensor sections">
         {#each tabs as t (t.id)}
           <a href={href(paths.sensor(sensor.id, t.id))} class:active={t.id === tab} aria-current={t.id === tab ? 'page' : undefined}>
-            {t.label}
+            {TAB_LABELS[sensor.kind]?.[t.id] ?? t.label}
             {#if t.id === 'upload' && sensor.counts.unlabelled}<span class="count">{sensor.counts.unlabelled}</span>{/if}
           </a>
         {/each}
@@ -120,6 +130,12 @@
     {/if}
     {#if tab === 'live' && isReadingSensor(sensor)}
       <ReadingLiveTab {sensor} onchange={load} />
+    {:else if tab === 'live' && isSoundSensor(sensor)}
+      <SoundLiveTab {sensor} onchange={load} />
+    {:else if tab === 'quality' && isSoundSensor(sensor)}
+      <SoundOwnTab {sensor} onchange={load} />
+    {:else if tab === 'settings' && isSoundSensor(sensor)}
+      <SoundSettingsTab {sensor} onchange={load} />
     {:else if tab === 'live'}
       <LiveTab {sensor} onchange={load} />
     {:else if tab === 'label'}

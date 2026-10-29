@@ -6,6 +6,9 @@
   import Icon from '../lib/components/Icon.svelte';
   import LiveFrame from '../lib/components/LiveFrame.svelte';
   import ObjectChips from '../lib/components/ObjectChips.svelte';
+  import LevelChart from '../lib/components/sound/LevelChart.svelte';
+  import SoundChips from '../lib/components/sound/SoundChips.svelte';
+  import { isSoundSensor } from '../lib/sound';
   import StatePill from '../lib/components/StatePill.svelte';
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
@@ -47,6 +50,10 @@
 
 
   function meta(s: Sensor) {
+    if (isSoundSensor(s)) {
+      const names = (s.sound?.live ?? []).map((x) => x.name);
+      return names.length ? `Listens for ${names.join(', ')}` : 'Listens for nothing yet';
+    }
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map((k) => objectName(k)).join(', ')}`;
     if (isReadingSensor(s) && s.reading) {
       const unit = readingUnit(s.reading);
@@ -103,6 +110,9 @@
             {#if isObjectSensor(s)}
               <AnalysedFrame sensor={s} labels={false} />
               <span class="pill-pos"><ObjectChips sensor={s} overlay /></span>
+            {:else if isSoundSensor(s)}
+              <span class="levels"><LevelChart levels={s.sound?.levels ?? []} line={s.sound?.line ?? null} /></span>
+              <span class="pill-pos"><SoundChips sensor={s} overlay /></span>
             {:else if isReadingSensor(s)}
               <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
               <span class="pill-pos"><StatePill overlay name={readingText(s)} color="var(--c-accent)" /></span>
@@ -128,7 +138,7 @@
               {#if !s.publish}<span class="chip warn not-sent" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
               <span class="small muted">{meta(s)}</span>
             </div>
-            {#if isObjectSensor(s) || isReadingSensor(s)}
+            {#if isObjectSensor(s) || isReadingSensor(s) || isSoundSensor(s)}
               <div class="actions">
                 <a class="btn sm" href={href(paths.sensor(s.id, 'live'))}>Live</a>
                 <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
@@ -148,7 +158,7 @@
       <a class="card new" href={href(paths.newSensor())}>
         <span class="plus"><Icon name="plus" size={22} /></span>
         <h2>New sensor</h2>
-        <span class="small muted">Watch a state you teach it, find people, cars and animals, or read a number.</span>
+        <span class="small muted">Watch a state you teach it, find people, cars and animals, read a number, or listen for sounds.</span>
       </a>
     </div>
   {/if}
@@ -184,6 +194,12 @@
     aspect-ratio: 16 / 9;
     overflow: hidden;
     background: var(--c-sunken);
+  }
+  .levels {
+    padding: var(--space-4) var(--space-4) 56px;
+  }
+  .levels :global(.legend) {
+    display: none;
   }
   .pill-pos {
     position: absolute;

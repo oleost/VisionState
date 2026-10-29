@@ -15,7 +15,9 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 
 A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
 pretrained detector, and a third, **reading sensors**, reads a number from a display or the wheels
-of a meter. Neither needs training.
+of a meter. Neither needs training. A fourth, **sound sensors**, listens to a stream's sound and
+recognises sounds (sirens, alarms, a dog) with a pretrained model, and the household's own sounds
+taught from a few clips.
 
 ## 2. Goals / Non-goals
 
@@ -427,6 +429,40 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
   that recommends other defaults does not change an installation. Registry entries are never
   changed or removed once released.
 
+**Sound sensors** (`sounds.py`, `engine/sound.py`, `api/sounds.py`; registry
+`backend/visionstate/sounds.json`; the research, measurements and decisions in
+[`SOUND_PLAN.md`](SOUND_PLAN.md)) listen all the time instead of checking frames. The stream
+(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream to 16 kHz
+mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
+each hop's level (dBFS) and analyses the newest window only when it is loud enough: above the
+background it learns (a low percentile of the recent levels, not learned while a sound is heard,
+so a long siren never becomes the background) by `above_db`, or above a fixed level. The model is
+**CED-Tiny** (Apache-2.0; trained on AudioSet, accepted 2026-10-29) with an embedding output added
+by `tools/soundmodel/make_model.py`: it takes the raw waveform and gives every AudioSet class's
+score (already probabilities) and a 576-number embedding. Each of its *sounds* in the registry is
+one or more classes with a threshold measured on CC0 recordings. A sound is heard when its score
+passed the threshold in `SOUND["on_windows"]` of the last `SOUND["of_windows"]` windows, and
+stays heard while it scores above `SOUND["off_share"]` of it and for `clear_after_s` after
+(`logic.hear`: two thresholds, more robust than a median filter).
+
+*Own sounds* are a small head per sensor (`sounds.SoundHead`: logistic regression with
+`classifier.fit` on the embedding, standardised over what it was trained on) for the own sounds
+against `sounds.OTHER`: taught clips (`sample` rows whose `object_label` is the own sound's key or
+`other`, embeddings cached under `roi_key` "sound"), the windows of the room that matched none of
+them (`learn_room`, at most `SOUND["room_kept"]`, in the heads folder, never exported) and 200
+everyday CC0 sounds every head starts from (`ced-tiny-other.npy`, `tools/soundmodel/make_other.py`):
+without them, five clips of a doorbell made a head that took noise for the doorbell.
+
+*Clips* (off by default): the seconds around a sound that was heard, cut from the stream's
+buffer once its seconds after arrived; every second with a speech score of at least
+`SOUND["speech_mute"]` is silenced first, and *Someone talking* never keeps one. On a stream with
+video (`sound["video"]`, on by default) the stream's thread also keeps the last seconds of video
+packets undecoded and the clip is an MP4 of the video copied from a key frame with the sound as
+AAC (`AudioStream.video_clip`); otherwise AAC alone (`sounds.encode_clip`). A heard sound that
+never scored above its threshold plus `SOUND["unsure_share"]` of the way to 1 is asked about in
+Review (with its clip); the answer is kept in the row and teaches the clip to an own sound. What
+a sound sensor never does: understand speech (§2).
+
 ## 6. Image sources
 
 | Source | Details |
@@ -569,6 +605,12 @@ uses Home Assistant's REST API (`persistent_notification`, `notify`), not MQTT.
 
 Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_trigger`.
 
+**Sound sensors** have one `binary_sensor` per sound (`mqtt.sound_topics`, unique ID
+`visionstate_<slug>_<sound key>`): `device_class: smoke` for smoke and fire alarms (decided
+2026-10-29; DOCS.md says it is no replacement for a smoke detector), `sound` for the others, and
+the pause switch; no frame and no "check now". A sound no longer listened for (or an own sound
+forgotten) loses its entity. Only changes are published: on/off, no scores.
+
 **Nothing changes at every check unless the result does** (decided 2026-10-26): the recorder of
 Home Assistant writes a state row for every `state_changed` event, which an MQTT entity fires when
 its state or attributes differ from the last message; an image entity's state is the time of its
@@ -693,6 +735,7 @@ loads.
 | Thumbnails of training images | `/data/thumbs/sample/` | Excluded (made again when asked for) |
 | The people's taught faces (crops, shared by every sensor) | `/data/faces/` | Yes |
 | History frames | `/media/visionstate/history/` (beta: `/media/visionstate_beta`) | With the media folder. Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+| Sound clips of the history (`.m4a`, or `.mp4` with video) | `/data/clips/<sensor>/` (`Settings.clips_dir`; not the media folder: a clip may hold voices) | Yes; the same limits as history frames |
 
 What the user taught lives in `/data`, next to the database that lists it: Home Assistant backs up
 an app's `/data` (also by itself before every update) but not the media folder, so training
@@ -859,6 +902,7 @@ is part of backups and needs no restart.
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Sound sensors** | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — built, status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | not released |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
@@ -870,6 +914,6 @@ dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
-detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); sound
-sensors (sirens, alarms, a dog, our own doorbell) — researched and planned in
-[`SOUND_PLAN.md`](SOUND_PLAN.md).
+detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
+sensors: a Home Assistant camera's own sound, stock ESPHome microphones, telling a built-in sound
+it was wrong (a veto from "no" answers), CLAP sounds described by a text.

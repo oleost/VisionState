@@ -1,7 +1,7 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
+import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, PLAY_URL, READING_SENSOR_NAME, SOUND_WAV_URL } from './env';
 import {
   apiRequestsDuring,
   center,
@@ -18,7 +18,9 @@ import {
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
+  seededSoundSensorId,
   setVisibility,
+  soundModelInstalled,
   watchErrors,
 } from './helpers';
 
@@ -35,7 +37,17 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
   const readingId = await seededReadingSensorId(request);
   const counterId = await seededCounterSensorId(request);
   const faceId = await seededFaceSensorId(request);
+  const soundId = (await soundModelInstalled(request)) ? await seededSoundSensorId(request) : null;
+  const sound: [string, string, RegExp | string][] = soundId
+    ? [
+        ['sound-live', `sensors/${soundId}/live`, 'Listening'],
+        ['sound-history', `sensors/${soundId}/history`, 'When each sound was heard'],
+        ['sound-own', `sensors/${soundId}/quality`, 'Teach the sensor sounds of your own'],
+        ['sound-settings', `sensors/${soundId}/settings`, 'Sounds to listen for'],
+      ]
+    : [];
   return [
+    ...sound,
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
@@ -1615,4 +1627,89 @@ test('a camera that changed its picture size holds the readings until the region
     await request.get(`${CAMERA_URL}/set?wider=0&camera=${camera}`);
     await request.delete(`api/v1/sensors/${id}`);
   }
+});
+
+
+// --- sound sensors (skipped until the sound model is on disk: tools/soundmodel/README.md) --------
+
+test('new sound sensor through the wizard: a microphone stream is tried, sounds picked', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await press(page.getByRole('radio', { name: /Listen/ }), info);
+  await expect(page.getByText('Name it and pick a stream with sound')).toBeVisible();
+  await page.getByPlaceholder('Hallway').fill('Wizard sound');
+  await page.getByLabel('Stream with sound').fill(SOUND_WAV_URL);
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  // The stream is listened to: sound only (an ESP32 microphone sends WAV).
+  await expect(page.getByTestId('sound-test')).toContainText('16 kHz', { timeout: 20_000 });
+  await expect(page.getByTestId('sound-test')).not.toContainText('video');
+  await press(page.getByText('Siren', { exact: true }), info);
+  await expect(page.getByRole('checkbox', { name: 'Siren' })).toBeChecked();
+  await expect(page.getByRole('slider', { name: 'Siren: heard from' })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('sound-siren')).toBeVisible();
+  await expect(page.getByText('Analysed above')).toBeVisible({ timeout: 20_000 });
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('a sound heard on a camera: its video clip in the history, the question in Review', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(150_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/history`);
+  const row = page.locator('.card.item').filter({ hasText: 'Siren heard' }).first();
+  await expect(row).toContainText('video clip');
+  await press(row.getByRole('button').first(), info);
+  const play = row.getByRole('button', { name: 'Play the clip' });
+  await expect(play).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(play, info);
+  await expect(row.locator('video')).toBeVisible();
+  await expect(row.getByText('Teach this clip as')).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Our siren' })).toBeVisible();
+
+  // Every project answers one question: a new siren asks again (the sensor's review has no cooldown).
+  const waiting = async () => (await (await request.get(`api/v1/review?sensor=${id}`)).json()).total;
+  if (!(await waiting())) {
+    await request.get(PLAY_URL('siren'));
+    await expect.poll(waiting, { timeout: 90_000 }).toBeGreaterThan(0);
+  }
+  await page.goto(`#/review?sensor=${id}`);
+  await expect(page.getByText('Was this')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(page.getByRole('button', { name: 'Yes, Siren' }), info);
+  await expect.poll(waiting).toBe(0);
+  errors.expectNone();
+});
+
+test('own sounds: a recording taught as a new sound, played back, and forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  await expect(page.getByTestId('own-sound-our_siren')).toBeVisible();
+  const name = `Bark ${info.project.name}`;
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  const recording = path.resolve(import.meta.dirname, '..', '..', 'backend', 'tests', 'assets', 'sounds', 'dog_bark.m4a');
+  await page.locator('#sound-files').setInputFiles(recording);
+  const card = page.locator('section.card').filter({ hasText: name });
+  await expect(card).toContainText('1 clip');
+  await press(card.getByRole('button', { name: 'Play the clip' }), info);
+  await expect(card.locator('audio')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  const forget = card.getByRole('button', { name: /Forget/ }).first();
+  await press(forget, info);
+  await press(card.getByRole('button', { name: /Tap again/ }), info);
+  await expect(page.locator('section.card').filter({ hasText: name })).toHaveCount(0);
+  errors.expectNone();
 });

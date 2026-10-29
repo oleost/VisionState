@@ -1,9 +1,10 @@
 # CLAUDE.md
 
-VisionState — a Home Assistant app that turns camera images into sensors, all locally:
+VisionState — a Home Assistant app that turns camera images and sound into sensors, all locally:
 **states** the user teaches it (garage door open/closed; embedding model + small per-sensor
-classifier), **objects** found by a pretrained detector (people, cars, animals) and **readings**
-(a number on a display or the wheels of a meter). This file is the contributor guide for people
+classifier), **objects** found by a pretrained detector (people, cars, animals), **readings**
+(a number on a display or the wheels of a meter) and **sounds** heard in a stream (sirens, alarms,
+own sounds taught from clips). This file is the contributor guide for people
 and AI assistants.
 
 - **Language:** everything in the repository (code, comments, UI text, docs, commit messages) is
@@ -28,7 +29,8 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | The wheel reader model: data, licences, results, how to train it | [`tools/wheelreader/README.md`](tools/wheelreader/README.md) |
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
-| Sound sensors: models, licences, privacy, the plan | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
+| Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
+| The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
 | Test image sources | `visionstate/backend/tests/assets/README.md` |
 
@@ -61,7 +63,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile); the map of the code
   is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — keep it current when the structure changes.
-- Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`. A new feature says
+- Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`, `sound`. A new feature says
   which kind(s) it applies to.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
   exception (log it once, try again) — only `CancelledError` may end it. Database work in an
@@ -69,7 +71,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - What is sent to Home Assistant must not change at every check unless the result does (no
   timestamps, no needless decimals, pictures through `_send_on_change`): Home Assistant stores
   every change as a new row (`docs/SCOPE.md` §8).
-- Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`): entries are never changed
+- Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`, `sounds.json`): entries are never changed
   or removed once released (their texts, measured footprint and similarity limits may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
   broken and only a test with real photos showed it).
@@ -117,6 +119,10 @@ itself (`__main__.py`).
   seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size).
+  For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
+  `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
+  plays a sound once in both. The sound model is not published yet: make it with
+  `tools/soundmodel/make_model.py` and copy it into `models/` (`tools/soundmodel/README.md`).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.
@@ -137,7 +143,8 @@ Many users run Home Assistant on phones and tablets.
 - **Automated:** `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
   (Playwright, `e2e/`; once: `npx playwright install chromium webkit`). It starts the backend and
   `scripts/fake_camera.py`, seeds one sensor of each kind (a trained state sensor, an object sensor
-  on a real photo, reading sensors on a drawn display and a drawn mechanical counter), and runs every
+  on a real photo, reading sensors on a drawn display and a drawn mechanical counter, a sound sensor on
+  the fake camera's stream with sound — skipped while the sound model is not on disk), and runs every
   page on **desktop** (1440×900, mouse), **mobile** (Pixel 7, real touch via CDP) and **iphone**
   (iPhone 14, WebKit like the Home Assistant app on iOS): no console errors, no sideways scrolling,
   no text running out of buttons or cards, plus the wizard, region editor gestures, labelling,

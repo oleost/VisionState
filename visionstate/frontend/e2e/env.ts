@@ -21,3 +21,10 @@ export const COUNTER_URL = (value: number, digits = 7, decimals = 3) =>
   `${CAMERA_URL}/counter.jpg?value=${value}&digits=${digits}&decimals=${decimals}`;
 /** The window with the seven wheels in that frame (backend/tests/displays.py, counter_box(7)). */
 export const COUNTER_BOX = { x: 99 / 800, y: 118 / 360, w: 602 / 800, h: 130 / 360 };
+/** A sound sensor listening to the fake camera's stream with sound (H.264 video and AAC). */
+export const SOUND_SENSOR_NAME = 'Hallway';
+export const SOUND_CAMERA_URL = `${CAMERA_URL}/camera.ts`;
+/** An ESP32-like microphone: sound only, as WAV. */
+export const SOUND_WAV_URL = `${CAMERA_URL}/sound.wav`;
+/** Plays a sound once in the fake camera's streams (CC0 recordings, or "chime": a drawn doorbell). */
+export const PLAY_URL = (sound: 'siren' | 'dog_bark' | 'smoke_alarm' | 'speech' | 'chime') => `${CAMERA_URL}/play?sound=${sound}`;

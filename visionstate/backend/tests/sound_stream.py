@@ -1,6 +1,6 @@
 """A stream of sound for tests: an HTTP server that sends WAV audio without end, the way an ESP32
-microphone (or ``scripts/fake_camera.py``'s ``/sound.wav``) does. What it plays can be changed
-while it runs (``play``)."""
+microphone does, or a camera's stream with sound (``scripts/fake_camera.py`` serves the same). What
+it plays can be changed while it runs (``play``)."""
 
 from __future__ import annotations
 
@@ -41,42 +41,28 @@ def wav_header(rate: int = RATE) -> bytes:
     )
 
 
-class SoundServer:
-    """Serves ``/sound.wav``: ``background`` (looped), with ``play``-ed sounds mixed in once each.
-    ``speed`` above 1 sends faster than real time (tests that need not wait). With ``video``,
-    ``url`` is a camera instead: ``/camera.ts``, H.264 video (a bar moving across, a key frame every
-    two seconds) with the same sound as AAC, in MPEG-TS."""
+def chime(seconds: float = 3.0, gain: float = 0.3, seed: int = 0) -> np.ndarray:
+    """A drawn two-tone doorbell (ding-dong) with a little noise."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    out = np.zeros_like(t)
+    for start, freq in ((0.3, 784.0), (1.0, 622.0)):
+        m = t >= start
+        decay = np.exp(-(t[m] - start) * 2.5)
+        out[m] += gain * decay * (np.sin(2 * np.pi * freq * t[m]) + 0.3 * np.sin(2 * np.pi * 2 * freq * t[m]))
+    return (out + noise(seconds, 0.002, seed)).astype(np.float32)
 
-    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0, video: bool = False):
+
+class SoundSource:
+    """Endless sound: ``background`` (looped), with ``play``-ed sounds mixed in once each, sent as
+    WAV (``send_wav``) or as a camera's MPEG-TS (``send_camera``: H.264 video — a bar moving across, a
+    key frame every two seconds — with the sound as AAC). ``speed`` above 1 sends faster than real
+    time (tests that need not wait)."""
+
+    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0):
         self.background = noise(5.0) if background is None else background
         self.speed = speed
         self._queue: list[np.ndarray] = []
         self._lock = threading.Lock()
-        server = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args) -> None:  # noqa: ANN002
-                pass
-
-            def do_GET(self) -> None:  # noqa: N802
-                self.send_response(200)
-                self.send_header("Content-Type", "video/mp2t" if self.path.endswith(".ts") else "audio/wav")
-                self.end_headers()
-                try:
-                    if self.path.endswith(".ts"):
-                        server._send_camera(self.wfile)
-                        return
-                    self.wfile.write(wav_header())
-                    server._send(self.wfile)
-                except BrokenPipeError, ConnectionResetError:
-                    pass
-
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.httpd.daemon_threads = True
-        name = "camera.ts" if video else "sound.wav"
-        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/{name}"
-        self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self._thread.start()
 
     def play(self, samples: np.ndarray) -> None:
         with self._lock:
@@ -99,12 +85,13 @@ class SoundServer:
             yield np.clip(part, -1, 1).astype(np.float32)
             time.sleep(chunk / RATE / self.speed)
 
-    def _send(self, out) -> None:  # noqa: ANN001 - the response's file
+    def send_wav(self, out) -> None:  # noqa: ANN001 - the response's file
+        out.write(wav_header())
         for part in self._chunks():
             out.write((part * 32767).astype("<i2").tobytes())
             out.flush()
 
-    def _send_camera(self, out) -> None:  # noqa: ANN001 - the response's file
+    def send_camera(self, out) -> None:  # noqa: ANN001 - the response's file
         import av
 
         with av.open(out, mode="w", format="mpegts") as container:
@@ -124,6 +111,36 @@ class SoundServer:
                 for packet in audio.encode(sound):
                     container.mux(packet)
                 out.flush()
+
+
+class SoundServer(SoundSource):
+    """A SoundSource on an HTTP server of its own: ``url`` is ``/sound.wav``, or with ``video`` a
+    camera, ``/camera.ts``."""
+
+    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0, video: bool = False):
+        super().__init__(background, speed)
+        source = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args) -> None:  # noqa: ANN002
+                pass
+
+            def do_GET(self) -> None:  # noqa: N802
+                camera = self.path.endswith(".ts")
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp2t" if camera else "audio/wav")
+                self.end_headers()
+                try:
+                    source.send_camera(self.wfile) if camera else source.send_wav(self.wfile)
+                except BrokenPipeError, ConnectionResetError:
+                    pass
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.httpd.daemon_threads = True
+        name = "camera.ts" if video else "sound.wav"
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/{name}"
+        self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self._thread.start()
 
     def close(self) -> None:
         self.httpd.shutdown()

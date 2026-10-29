@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-all-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
+          key: models-all-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json', 'visionstate/backend/visionstate/faces.json', 'visionstate/backend/visionstate/sounds.json') }}
       - run: python -m visionstate.backbones models --all
       - run: ruff check visionstate tests
       - run: ruff format --check visionstate tests
@@ -82,7 +82,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: visionstate/backend/models
-          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json') }}
+          key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json', 'visionstate/backend/visionstate/faces.json', 'visionstate/backend/visionstate/sounds.json') }}
       - run: python -m visionstate.backbones models
         working-directory: visionstate/backend
       - uses: actions/setup-node@v7

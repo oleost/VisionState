@@ -11,6 +11,10 @@ GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter 
                                  (value = the number on the wheels; .5 = last wheel half way)
 GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wider (a camera that changed
                                  its picture size after a restart); wider=0 sets it back
+GET /sound.wav                   endless sound (a quiet room), as an ESP32 microphone sends it (for sound sensors)
+GET /camera.ts                   a camera with sound: H.264 video and the same sound as AAC (MPEG-TS)
+GET /play?sound=siren            plays a sound once in both: siren, dog_bark, smoke_alarm, speech (the CC0
+                                 recordings of backend/tests/assets/sounds) or chime (a drawn doorbell)
 """
 
 import io
@@ -25,8 +29,20 @@ from PIL import Image, ImageDraw
 TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "tests"
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
+sys.path.insert(0, str(TESTS.parent))  # the backend package, for the sound stream
 from displays import STYLES, render_counter  # noqa: E402  (shared with the backend tests)
 from displays import render as render_display  # noqa: E402
+
+SOUND = None  # tests/sound_stream.SoundSource, made on first use (it needs the backend's packages)
+
+
+def sound_source():  # noqa: ANN201
+    global SOUND
+    if SOUND is None:
+        from sound_stream import SoundSource
+
+        SOUND = SoundSource()
+    return SOUND
 
 STATE = {"state": "closed", "night": False}
 WIDER: dict[str, int] = {}  # counter.jpg's "camera" -> pixels added on the right
@@ -66,6 +82,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         url = urlparse(self.path)
+        if url.path in ("/sound.wav", "/camera.ts"):
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav" if url.path == "/sound.wav" else "video/mp2t")
+            self.end_headers()
+            source = sound_source()
+            try:
+                source.send_wav(self.wfile) if url.path == "/sound.wav" else source.send_camera(self.wfile)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if url.path == "/play":
+            from sound_stream import chime, recording
+
+            name = parse_qs(url.query).get("sound", ["siren"])[0]
+            if name == "chime":
+                sound_source().play(chime())
+            elif name in ("siren", "dog_bark", "smoke_alarm", "speech"):
+                sound_source().play(recording(name))
+            else:
+                self.send_error(404)
+                return
+            self._send(b"playing", "text/plain")
+            return
         if url.path == "/set":
             query = parse_qs(url.query)
             if query.get("state", [""])[0] in DOOR_HEIGHT:

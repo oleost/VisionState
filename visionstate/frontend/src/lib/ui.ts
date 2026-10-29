@@ -26,7 +26,7 @@ export const BACKUP_PARTS: Record<BackupPart, { label: string; help: string }> =
   sensors: { label: 'Sensors and settings', help: 'Every sensor, its trained model and the app’s settings (always included)' },
   samples: { label: 'Training images', help: 'Labelled images and taught boxes' },
   faces: { label: 'People and their faces', help: 'Everyone taught by face, with their face images' },
-  history: { label: 'History', help: 'Stored frames, readings and the review queue' },
+  history: { label: 'History', help: 'Stored frames, sound clips, readings and the review queue' },
   models: { label: 'Downloaded AI models', help: 'Downloaded again when needed if left out' },
 };
 
@@ -54,6 +54,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   spot_check: { label: 'Spot check', tone: 'muted', help: 'A random confident frame, to catch silent mistakes.' },
   rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
   ask: { label: 'Is it yours?', tone: 'info', help: 'This may be one of your own labels, but the AI is not sure. Your answer is taught.' },
+  unsure: { label: 'Was it this sound?', tone: 'info', help: 'The sound was heard, but only just. Listen to the clip; your answer is kept and can teach the sensor.' },
 };
 
 /**
@@ -164,6 +165,7 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   video: 'Video frame',
   review: 'Review',
   import: 'Import',
+  history: 'History',
 };
 
 export const SENSOR_TABS = [
@@ -185,10 +187,25 @@ export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
   single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
   objects: ['live', 'history', 'quality', 'settings'],
   reading: ['live', 'history', 'quality', 'settings'],
+  sound: ['live', 'history', 'quality', 'settings'],
+};
+/** A tab's label where a kind names it otherwise (a sound sensor's Quality tab holds its own sounds). */
+export const TAB_LABELS: Partial<Record<SensorKind, Partial<Record<SensorTab, string>>>> = {
+  sound: { quality: 'Own sounds' },
 };
 
-/** The two kinds as offered in the new sensor wizard. */
-export const SENSOR_KIND_INFO: Record<SensorKind, { title: string; text: string; example: string }> = {
+/** What a new sensor does, as asked first in the wizard: look at the picture, or listen. */
+export const SENSOR_MODE_INFO = {
+  picture: { title: 'Watch the picture', text: 'States, objects or a number in a camera image.', icon: 'camera' },
+  sound: {
+    title: 'Listen',
+    text: 'Sounds in a camera’s audio or a microphone stream: sirens, alarms, a dog, your own doorbell.',
+    icon: 'sound',
+  },
+} as const;
+
+/** The picture kinds as offered in the new sensor wizard. */
+export const SENSOR_KIND_INFO: Record<Exclude<SensorKind, 'sound'>, { title: string; text: string; example: string }> = {
   single_state: {
     title: 'States',
     text: 'Your own states, learned from a few labelled examples.',
@@ -291,6 +308,8 @@ export const HISTORY_EVENTS: Record<string, string> = {
   value: 'New value',
   rejected: 'Rejected reading',
   verified: 'Checked by hand',
+  heard: 'Heard',
+  quiet: 'No longer heard',
 };
 
 /** What a sensor's History tab lists, per kind (the History page lists all of it). */
@@ -298,6 +317,7 @@ export const HISTORY_INTRO: Record<SensorKind, string> = {
   single_state: 'State changes and frames flagged for review. Tap a frame to see it whole; use “Add as” to turn it into training data — especially when the AI got it wrong.',
   objects: 'When each object appeared and cleared. Tap a row to see the frame with what the AI found, and tap a box there to correct it.',
   reading: 'Every new value and every rejected reading (readings you verified are kept for good). Tap a row to see the frame; the Quality tab sums them up.',
+  sound: 'When each sound was heard and when it stopped. With clips on, tap a row to listen (and watch, on a camera) — and teach the clip as one of your own sounds.',
 };
 
 export const TIMELINE_HOURS = 24;
