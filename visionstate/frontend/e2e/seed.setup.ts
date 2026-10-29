@@ -155,15 +155,15 @@ setup('seed a sensor that recognises faces', async ({ request }) => {
 
 setup('seed a sound sensor on a camera with sound', async ({ request }) => {
   setup.skip(!(await soundModelInstalled(request)), 'the sound model is not on disk (tools/soundmodel/README.md)');
-  setup.setTimeout(180_000);
+  setup.setTimeout(120_000);
   const created = await request.post('api/v1/sensors', {
     data: {
       name: SOUND_SENSOR_NAME,
       kind: 'sound',
       source_type: 'rtsp',
       source: SOUND_CAMERA_URL,
-      // A siren counts from 0.85: the recording's 0.9 is only just heard, so it is asked about in Review.
-      sound: { sounds: ['siren', 'dog_bark', 'smoke_alarm'], clips: true, clear_after_s: 3, thresholds: { siren: 0.85 } },
+      // A quiet siren (gain 0.1) scores about 0.6: heard from 0.5, and asked about in Review (below 0.75).
+      sound: { sounds: ['siren', 'dog_bark', 'smoke_alarm'], clips: true, clear_after_s: 3, thresholds: { siren: 0.5 } },
       review: { cooldown_s: 0 },
     },
   });
@@ -172,14 +172,11 @@ setup('seed a sound sensor on a camera with sound', async ({ request }) => {
   await expect
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).sound.line, { timeout: 30_000 })
     .not.toBeNull();
-  // Heard, with a clip (with the camera's video), and asked about in Review once it stopped. Where the
-  // windows fall changes the scores, and a sure one asks nothing: play it again until one asks.
-  const waiting = async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).total;
-  for (let tries = 0; tries < 4 && !(await waiting()); tries++) {
-    await request.get(PLAY_URL('siren'));
-    await expect.poll(waiting, { timeout: 25_000 }).toBeGreaterThan(0).catch(() => undefined);
-  }
-  expect(await waiting()).toBeGreaterThan(0);
+  // Heard, with a clip (with the camera's video), and asked about in Review once it stopped.
+  await request.get(PLAY_URL('siren', 0.1));
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).total, { timeout: 60_000 })
+    .toBeGreaterThan(0);
   await expect
     .poll(async () => {
       const rows = (await (await request.get(`api/v1/history?sensor=${sensor.id}&event=heard`)).json()).items;

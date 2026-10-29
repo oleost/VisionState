@@ -121,7 +121,7 @@ itself (`__main__.py`).
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
-  plays a sound once in both. The sound model is not published yet: make it with
+  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model is not published yet: make it with
   `tools/soundmodel/make_model.py` and copy it into `models/` (`tools/soundmodel/README.md`).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under

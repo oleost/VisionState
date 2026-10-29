@@ -14,12 +14,14 @@ GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wide
 GET /sound.wav                   endless sound (a quiet room), as an ESP32 microphone sends it (for sound sensors)
 GET /camera.ts                   a camera with sound: H.264 video and the same sound as AAC (MPEG-TS)
 GET /play?sound=siren            plays a sound once in both: siren, dog_bark, smoke_alarm, speech (the CC0
-                                 recordings of backend/tests/assets/sounds) or chime (a drawn doorbell)
+                                 recordings of backend/tests/assets/sounds) or chime (a drawn doorbell);
+                                 &gain=0.1 plays it quieter (a siren then scores about 0.6, not 0.9)
 """
 
 import io
 import random
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -34,15 +36,17 @@ from displays import STYLES, render_counter  # noqa: E402  (shared with the back
 from displays import render as render_display  # noqa: E402
 
 SOUND = None  # tests/sound_stream.SoundSource, made on first use (it needs the backend's packages)
+SOUND_LOCK = threading.Lock()  # streams asked for at once must share one source
 
 
 def sound_source():  # noqa: ANN201
     global SOUND
-    if SOUND is None:
-        from sound_stream import SoundSource
+    with SOUND_LOCK:
+        if SOUND is None:
+            from sound_stream import SoundSource
 
-        SOUND = SoundSource()
-    return SOUND
+            SOUND = SoundSource()
+        return SOUND
 
 STATE = {"state": "closed", "night": False}
 WIDER: dict[str, int] = {}  # counter.jpg's "camera" -> pixels added on the right
@@ -95,11 +99,16 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/play":
             from sound_stream import chime, recording
 
-            name = parse_qs(url.query).get("sound", ["siren"])[0]
+            query = parse_qs(url.query)
+            name = query.get("sound", ["siren"])[0]
+            try:
+                gain = min(1.0, max(0.0, float(query.get("gain", ["1"])[0])))
+            except ValueError:
+                gain = 1.0
             if name == "chime":
-                sound_source().play(chime())
+                sound_source().play(chime() * gain)
             elif name in ("siren", "dog_bark", "smoke_alarm", "speech"):
-                sound_source().play(recording(name))
+                sound_source().play(recording(name) * gain)
             else:
                 self.send_error(404)
                 return

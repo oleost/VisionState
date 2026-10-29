@@ -189,4 +189,12 @@
   .inline input {
     width: 90px;
   }
+  /* A checkbox beside a title and a long text: next to the title, and never squeezed by the text. */
+  .check {
+    align-items: flex-start;
+  }
+  .check input {
+    flex: none;
+    margin-top: 3px;
+  }
 </style>

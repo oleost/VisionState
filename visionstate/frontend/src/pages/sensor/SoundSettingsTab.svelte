@@ -24,6 +24,12 @@
   const before = { ...settings.thresholds };
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
+
+  function questionsEvery(seconds: number): string {
+    const minutes = Math.round(seconds / 60);
+    if (seconds <= 0) return 'Every sound only just heard is asked about';
+    return minutes <= 1 ? 'At most one question a minute' : `At most one question per ${minutes} minutes`;
+  }
   let saving = $state(false);
   const hasVideo = $derived(sensor.sound?.stream ? !!sensor.sound.stream.video : null);
 
@@ -81,7 +87,7 @@
             <option value="off">Off</option>
           </select>
         </label>
-        <p class="xsmall faint">At most one question per {Math.round((review.cooldown_s ?? globalReview.cooldown_s) / 60)} minutes (Settings → Review).</p>
+        <p class="xsmall faint">{questionsEvery(review.cooldown_s ?? globalReview.cooldown_s)} (Settings → Review).</p>
       {/if}
     </section>
   </div>

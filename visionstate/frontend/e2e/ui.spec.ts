@@ -1662,7 +1662,7 @@ test('new sound sensor through the wizard: a microphone stream is tried, sounds 
 
 test('a sound heard on a camera: its video clip in the history, the question in Review', async ({ page, request }, info) => {
   test.skip(!(await soundModelInstalled(request)), 'no sound model');
-  test.setTimeout(180_000);
+  test.setTimeout(150_000);
   const id = await seededSoundSensorId(request);
   const errors = watchErrors(page);
   await page.goto(`#/sensors/${id}/history`);
@@ -1680,12 +1680,10 @@ test('a sound heard on a camera: its video clip in the history, the question in 
 
   // Every project answers one question: a new siren asks again (the sensor's review has no cooldown).
   const waiting = async () => (await (await request.get(`api/v1/review?sensor=${id}`)).json()).total;
-  // Where the windows fall changes the scores, and a sure one asks nothing: play it again until one asks.
-  for (let tries = 0; tries < 4 && !(await waiting()); tries++) {
-    await request.get(PLAY_URL('siren'));
-    await expect.poll(waiting, { timeout: 25_000 }).toBeGreaterThan(0).catch(() => undefined);
+  if (!(await waiting())) {
+    await request.get(PLAY_URL('siren', 0.1));
+    await expect.poll(waiting, { timeout: 60_000 }).toBeGreaterThan(0);
   }
-  expect(await waiting()).toBeGreaterThan(0);
   await page.goto(`#/review?sensor=${id}`);
   await expect(page.getByText('Was this')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();

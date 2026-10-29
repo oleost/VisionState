@@ -60,7 +60,7 @@
   {/key}
   <div class="col center">
     <p class="question">
-      Was this <strong>{asked}</strong>?
+      <span>Was this <strong>{asked}</strong>?</span>
       <span class="small muted">It scored {pct(item.confidence)} at most — only just enough to be heard.</span>
     </p>
     <div class="row wrap center-row">

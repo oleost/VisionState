@@ -61,29 +61,40 @@ class SoundSource:
     def __init__(self, background: np.ndarray | None = None, speed: float = 1.0):
         self.background = noise(5.0) if background is None else background
         self.speed = speed
-        self._queue: list[np.ndarray] = []
+        # Each stream sent has its own queue, so a sound plays in every one of them; one played while
+        # none is sent waits for the next.
+        self._queues: list[list[np.ndarray]] = []
+        self._waiting: list[np.ndarray] = []
         self._lock = threading.Lock()
 
     def play(self, samples: np.ndarray) -> None:
         with self._lock:
-            self._queue.append(samples.astype(np.float32))
+            for queue in self._queues or [self._waiting]:
+                queue.append(samples.astype(np.float32))
 
     def _chunks(self):  # noqa: ANN202 - endless tenths of a second of sound
         chunk = RATE // 10
         position = 0
         playing = np.zeros(0, dtype=np.float32)
-        while True:
-            with self._lock:
-                if not len(playing) and self._queue:
-                    playing = self._queue.pop(0)
-            part = np.resize(np.roll(self.background, -position), chunk)
-            position = (position + chunk) % len(self.background)
-            if len(playing):
-                extra = playing[:chunk]
-                part[: len(extra)] += extra
-                playing = playing[chunk:]
-            yield np.clip(part, -1, 1).astype(np.float32)
-            time.sleep(chunk / RATE / self.speed)
+        with self._lock:
+            queue, self._waiting = self._waiting, []
+            self._queues.append(queue)
+        try:
+            while True:
+                with self._lock:
+                    if not len(playing) and queue:
+                        playing = queue.pop(0)
+                part = np.resize(np.roll(self.background, -position), chunk)
+                position = (position + chunk) % len(self.background)
+                if len(playing):
+                    extra = playing[:chunk]
+                    part[: len(extra)] += extra
+                    playing = playing[chunk:]
+                yield np.clip(part, -1, 1).astype(np.float32)
+                time.sleep(chunk / RATE / self.speed)
+        finally:
+            with self._lock:  # by identity: empty queues are equal, and list.remove would take another one
+                self._queues = [q for q in self._queues if q is not queue]
 
     def send_wav(self, out) -> None:  # noqa: ANN001 - the response's file
         out.write(wav_header())

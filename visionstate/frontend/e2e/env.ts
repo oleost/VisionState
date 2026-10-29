@@ -27,4 +27,5 @@ export const SOUND_CAMERA_URL = `${CAMERA_URL}/camera.ts`;
 /** An ESP32-like microphone: sound only, as WAV. */
 export const SOUND_WAV_URL = `${CAMERA_URL}/sound.wav`;
 /** Plays a sound once in the fake camera's streams (CC0 recordings, or "chime": a drawn doorbell). */
-export const PLAY_URL = (sound: 'siren' | 'dog_bark' | 'smoke_alarm' | 'speech' | 'chime') => `${CAMERA_URL}/play?sound=${sound}`;
+export const PLAY_URL = (sound: 'siren' | 'dog_bark' | 'smoke_alarm' | 'speech' | 'chime', gain = 1) =>
+  `${CAMERA_URL}/play?sound=${sound}&gain=${gain}`;
