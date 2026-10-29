@@ -9,7 +9,8 @@ is built yet; this is the plan and the decisions made so far. How the app works 
 ## 1. The idea in one paragraph
 
 A new sensor kind, **sound sensors**, listens to the audio of a camera stream (most IP cameras have
-a microphone) and recognises sound events. Like the two kinds that exist for images, it comes in a
+a microphone) or of a small microphone of its own (an ESP32 with an I2S microphone, §10), and
+recognises sound events. Like the two kinds that exist for images, it comes in a
 ready-made and a taught form: a **pretrained sound classifier** knows several hundred everyday
 sounds out of the box (the user picks the ones they care about, as an object sensor picks classes),
 and **own sounds** are taught from a handful of clips ("Our doorbell", "Washing machine done"),
@@ -149,11 +150,11 @@ Design rules that follow:
 
 | Phase | What | Done when |
 |---|---|---|
-| **0. Spike** (local, `/VisionStateLocal/`) | Audio from real cameras of the household: which codecs they send (AAC, G.711, Opus), at which sample rate, whether PyAV gets a usable track. Time per second of audio for CED-Tiny and YAMNet on a desktop CPU and a Raspberry Pi 4. Hit rates on the CC0 and drawn sounds (§9); false alarms over a day of a household's background and TV. Own sounds: how many clips a doorbell or an appliance beep needs, class scores vs a hidden layer as the embedding. Read the weights' and data's terms. | A model chosen with numbers, thresholds proposed, and a written verdict on CPU (does it fit beside the image sensors on a Pi 4?) and licences. Or "not good enough", which is a valid outcome. |
-| **1. Listening** | The `sound` kind; RTSP audio and HTTP audio streams as sources; pretrained classes picked from a curated list (§2) → a binary sensor per sound; the Live tab shows what it hears now; no clips. | A drawn smoke alarm and a CC0 siren turn their sensors on in a backend test, and the wizard and Live tab pass e2e on desktop, Android and iPhone. |
+| **0. Spike** (local, `/VisionStateLocal/`) | Audio from real cameras of the household: which codecs they send (AAC, G.711, Opus), at which sample rate, whether PyAV gets a usable track. Time per second of audio for CED-Tiny and YAMNet on a desktop CPU and a Raspberry Pi 4. Hit rates on the CC0 and drawn sounds (§9); false alarms over a day of a household's background and TV. Own sounds: how many clips a doorbell or an appliance beep needs, class scores vs a hidden layer as the embedding. ESP32 microphones (§10): which firmware to recommend for a continuous stream, and what ESPHome can do today. Read the weights' and data's terms. | A model chosen with numbers, thresholds proposed, and a written verdict on CPU (does it fit beside the image sensors on a Pi 4?) and licences. Or "not good enough", which is a valid outcome. |
+| **1. Listening** | The `sound` kind; RTSP audio and HTTP audio streams as sources, an ESP32 microphone sending an HTTP stream among them (§10); pretrained classes picked from a curated list (§2) → a binary sensor per sound; the Live tab shows what it hears now; no clips. | A drawn smoke alarm and a CC0 siren turn their sensors on in a backend test, and the wizard and Live tab pass e2e on desktop, Android and iPhone. |
 | **2. Clips and review** | Clips around events (opt-in, speech silenced), history with playback, review questions for uncertain sounds, history filters. | e2e: a clip plays after a tap on every device. |
 | **3. Own sounds** | Teach a sound from a clip in the history or an uploaded file; matching with threshold, margin and ask band as taught boxes; a Quality tab (clips per sound, look-alikes); export/import. | An own sound taught from five drawn clips is recognised in a backend test and on the spike data. |
-| **4. Later** | A Home Assistant *event* entity per sound for automations; uploads of audio and video files for teaching; ESPHome and voice-satellite microphones; CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
+| **4. Later** | A Home Assistant *event* entity per sound for automations; uploads of audio and video files for teaching; ESPHome and voice-satellite microphones that do not send a stream of their own (§10); CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
 
 ## 8. Where it would go in the code
 
@@ -177,8 +178,9 @@ Following the existing structure (names are proposals):
 - UI: the wizard gets *Sound* as a kind and a stream as the source (a Home Assistant camera
   snapshot has no sound); the Live tab shows the sounds picked with how close each is to its
   threshold; clips play only after a tap (iOS allows nothing else); no hover-only controls.
-- Tests: the fake camera gets an audio stream endpoint (drawn sounds on request), so the e2e tests
-  can make a sound sensor hear something.
+- Tests: the fake camera gets an audio stream endpoint (drawn sounds on request) in the format an
+  ESP32 microphone sends (§10), so the e2e tests can make a sound sensor hear something and test
+  the same path a real ESP takes.
 
 ## 9. Test sounds
 
@@ -200,13 +202,25 @@ As for images: CC0 / public domain, or drawn by our own code.
   turned off; the wizard checks the stream has audio and says how to turn it on when not.
 - Home Assistant's own camera entities give the app snapshots, not sound; whether the stream behind
   a camera entity can be reached for audio is a question for the spike (§11, question 2).
+- **ESP32 microphones.** A cheap ESP32 with an I2S microphone (such as an INMP441) in each room is a
+  strong case: many cameras send poor audio (§12, telephone-band audio), and a room without a camera
+  can still listen. 16 kHz, 16-bit mono is about 256 kbit/s, easy for an ESP32 over Wi-Fi.
+  - *A stream of its own* (firmware that sends the microphone as an HTTP stream of WAV or raw PCM,
+    or over RTSP) needs nothing beyond phase 1: anything PyAV can open, a sound sensor can listen
+    to. It is not stock ESPHome; phase 0 picks firmware to recommend and documents it.
+  - *Stock ESPHome* sends its microphone to Home Assistant's voice assistant only after a wake
+    word, as far as known on 2026-10-29, and Home Assistant does not pass that audio on to apps.
+    Listening to it all day needs an integration of its own (VisionState connecting to the device,
+    or an ESPHome component that streams continuously) — phase 4, after phase 0 has checked what
+    ESPHome offers by then.
 
 ## 11. Open questions for the maintainer
 
 1. **Licence bar:** accept models trained on AudioSet (all candidates are), as a download on demand
    if not bundled?
-2. **Sources:** RTSP and HTTP streams in phase 1 — is that enough, or must a Home Assistant camera
-   entity (its stream through Home Assistant) or an ESPHome microphone come first?
+2. **Sources:** RTSP and HTTP streams in phase 1, with an ESP32 microphone sending an HTTP stream as
+   a first-class case (§10) — is that enough, or must a Home Assistant camera entity (its stream
+   through Home Assistant) or stock ESPHome come first?
 3. **Raspberry Pi 4:** must a sound sensor run there beside the image sensors, or is "a stronger
    machine recommended" fine? Phase 0 gives the numbers.
 4. **Clips:** off by default with speech silenced (§6) — or no clips at all in the first release?
