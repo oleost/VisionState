@@ -377,11 +377,24 @@ audio, reconnecting), the level line, CED-Tiny with per-sound thresholds, `logic
 the camera's video), review questions, own sounds (taught from history clips or uploaded
 recordings, the room's windows and 200 everyday sounds as *other*), export/import, backup, the
 wizard (*Listen*), the Live, Own sounds, History and Settings tabs, Review, the fake camera's
-`/sound.wav`, `/camera.ts` and `/play`, backend tests (`tests/test_sound.py`, real CC0
-recordings in `tests/assets/sounds/`) and e2e tests.
+`/sound.wav`, `/camera.ts` and `/play` (with `&gain`), backend tests (`tests/test_sound.py`, real
+CC0 recordings in `tests/assets/sounds/`) and e2e tests, the README's Sounds section with
+`docs/promo/sound.png`. 83 sounds in groups (§2), picked in the same `LabelPicker` as objects;
+the sound UI uses the components every kind shares (`docs/ARCHITECTURE.md`, frontend map).
+
+**Checked in the cloud** (Linux, with the model made by `make_model.py` on disk): the backend suite
+(393 tests, 93 % coverage), ruff, pyright, `npm run check`, `npm run build`, the full e2e suite
+(132 passed, 6 skipped) and the sound e2e tests many
+times. Once, right after a full backend run, *a sound heard on a camera* failed on iphone; it did
+not fail again in five runs and its error was not kept — if it comes back, keep the trace
+(`npx playwright show-trace`).
 
 **What the cloud session could not do** — for Claude working locally (or the maintainer):
 
+0. **Bring it into `beta`**: the branch is `beta` plus its own commits (nothing to resolve while
+   `beta` has not moved): `git merge --ff-only origin/claude/lucid-cori-j40ck3` on `beta`, or a
+   pull request. Publish the model (1) before a beta is released: without it a beta user's sound
+   sensor says "not published yet".
 1. **Publish the sound model** (it is not on Hugging Face yet): follow
    [`tools/soundmodel/README.md`](../tools/soundmodel/README.md) *Publishing it* — make the file,
    check its SHA-256, upload it to `oleost/visionstate-sound` with the model card there, set the

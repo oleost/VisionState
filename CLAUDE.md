@@ -182,6 +182,22 @@ Many users run Home Assistant on phones and tablets.
 
 ## Test pitfalls found the hard way
 
+- Sound tests need the sound model on disk (`tools/soundmodel/README.md`; until it is published
+  CI skips them): without `backend/models/ced-tiny.onnx` the e2e sound seed and tests are skipped
+  and look green. Check for "skipped" before calling a sound change tested.
+- A test must not hang on a score near a line the code decides by. The full CC0 siren scores
+  about 0.92, right at the review question's line (0.925 with threshold 0.85): asked or not by
+  where the 2-s windows fall. The e2e plays it quietly (`/play?sound=siren&gain=0.1`: about 0.6,
+  heard from 0.5, asked below 0.75). One sound can also be asked about as two (a siren as a smoke
+  alarm too): answer whichever question shows and count the queue before and after.
+- Playwright's `hasText` matches a case-insensitive substring: "Our siren heard" contains "siren
+  heard". Find a row by its exact heading: `filter({ has: page.getByText('Siren heard', { exact: true }) })`.
+- The fake camera serves every stream its own copy of what `/play` plays. It once shared one queue
+  (a sound went to whichever stream took it first), and a stream that ended could remove another
+  stream's queue (`list.remove` compares equal lists, and empty queues are equal), so after the
+  wizard tried a stream nothing reached the sensor. A test helper with threads needs the same care
+  as app code.
+
 - The UI polls frames and status, so the network never goes idle — wait for elements or for
   `img.complete`, never for `networkidle`.
 - History rows and retrains happen *after* a value or state is published. Never read them right
