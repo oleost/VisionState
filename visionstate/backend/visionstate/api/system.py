@@ -144,6 +144,7 @@ def ui_config() -> dict:
         ],
         "reading_device_classes": READING_DEVICE_CLASSES,
         "reading_counter_cell_share": READING["counter_cell_share"],
+        "reading_dials": {k: READING[k] for k in ("max_dials", "dial_radius", "dial_reach")},
         "reading_export_meter_max_chars": READING["export_meter_max_chars"],
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,

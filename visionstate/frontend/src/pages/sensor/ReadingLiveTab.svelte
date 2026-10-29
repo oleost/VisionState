@@ -83,7 +83,10 @@
         <img class="seen" src={api.readingImageUrl(sensor.id, last.at)} alt="The region as the number reader saw it" />
         <p class="xsmall muted">
           {#if reading.display === 'counter'}
-            One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}. If a
+            One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}{reading
+              .dials?.length
+              ? ', then each pointer dial with the needle that was found drawn on it'
+              : ''}. If a
             digit is cut off or sits in two fields, adjust the region or the number of digits on the Settings tab.
           {:else}
             If digits are cut off or faint segments show up here, draw the region tighter around the number or pick the

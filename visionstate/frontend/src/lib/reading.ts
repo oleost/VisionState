@@ -79,7 +79,11 @@ export function readingRoi(p: Prediction, sensor: Pick<Sensor, 'roi'>): Roi | nu
  * readers.right_value + format_value in the backend: with a point or comma as written, digits only
  * the way the meter shows them ("0629558" with 3 decimals → "629.558"), time left as minutes or h:mm.
  */
-export function rightValue(text: string, settings: Pick<ReadingSettings, 'mode' | 'decimals'>): string | null {
+export function rightValue(
+  text: string,
+  settings: Pick<ReadingSettings, 'mode' | 'decimals' | 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+): string | null {
+  const decimals = valueDecimals(settings);
   const t = text.trim();
   if (!t) return null;
   if (settings.mode === 'time_left') {
@@ -87,9 +91,23 @@ export function rightValue(text: string, settings: Pick<ReadingSettings, 'mode' 
     if (!m || (m[2] !== undefined && Number(m[2]) > 59)) return null;
     return String(m[2] === undefined ? Number(m[1]) : Number(m[1]) * 60 + Number(m[2]));
   }
-  const n = /^\d+$/.test(t) ? Number(t) / 10 ** settings.decimals : Number(t.replace(',', '.'));
-  return Number.isFinite(n) ? n.toFixed(settings.decimals) : null;
+  const n = /^\d+$/.test(t) ? Number(t) / 10 ** decimals : Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? n.toFixed(decimals) : null;
 }
+
+/** Digits a counter read by a wheel reader reads beyond its wheels: one per pointer dial, else one for
+ * the last wheel's fraction (settings.extra_digits). */
+export function extraDigits(
+  settings: Pick<ReadingSettings, 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+): number {
+  if (settings.display !== 'counter' || settings.counter_reader !== 'wheels') return 0;
+  return settings.dials?.length ? settings.dials.length : settings.fraction ? 1 : 0;
+}
+
+/** Decimals of the value: the counter's own and its extra digits (settings.value_decimals). */
+export const valueDecimals = (
+  settings: Pick<ReadingSettings, 'decimals' | 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+) => settings.decimals + extraDigits(settings);
 
 /** Share as a percentage with one decimal ("2.4 %"), or "—" without readings. */
 export const rate = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(1)} %` : '—');

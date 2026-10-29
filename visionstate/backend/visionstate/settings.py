@@ -102,6 +102,16 @@ READING_DEFAULTS = {
     # turned. Off for sensors saved before it was offered (they read as they did); a new sensor
     # starts with READING_NEW_SENSOR.
     "straighten": False,
+    # Mechanical counters read by a wheel reader (settings.extra_digits): "fraction" reads the last
+    # wheel as the digit it has passed (not rounded half way) with its tenth as one more decimal;
+    # "dials" are the meter's pointer dials, each one more decimal (the first ×0.1 of the last
+    # wheel, then ×0.01 …; docs/POINTER_DIAL_PLAN.md): circles in the plane the counter is read in
+    # (imaging.reading_plane), in units of the region's height from its top-left corner — {"x", "y",
+    # "r", "ccw"}
+    # (ccw: the dial turns anticlockwise). With dials, "fraction" is not used: the dials are finer.
+    # Off and none for sensors saved before; a new sensor starts with READING_NEW_SENSOR.
+    "fraction": False,
+    "dials": [],
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -203,6 +213,27 @@ READING = {
     # registry): a wheel's share is the model's probability within this many bins of where the
     # value puts it.
     "wheel_weakest_bins": 4,
+    # A counter with extra digits (extra_digits: the last wheel's tenth, or pointer dials): its last
+    # digit jitters by a step or two between readings. A reading this many steps below the value
+    # keeps it ("settling"), as one step does without them, instead of being rejected as going down.
+    "settle_steps_fine": 2,
+    # Pointer dials (dials.py): at most this many per counter, their radius within dial_radius and
+    # their centre at most dial_reach beyond the region (both in units of the region's height); the
+    # dial editor shows the meter face that far around the region, face_size pixels on its longest
+    # side. Each dial is cut from the plane this much larger than its circle and scaled to dial_size
+    # pixels. A needle found clearly becomes a peak this many bins wide (of 100: 0.1 of a digit
+    # each) for the decode, an unclear one (its pixels agree less on one direction, down to
+    # dial_spread_floor: none) up to dial_sigma_bins[1]; with less than dial_min_needle of the
+    # dial's area as needle, the dial is not read.
+    "max_dials": 6,
+    "dial_radius": (0.1, 4.0),
+    "dial_reach": 6.0,
+    "face_size": 720,
+    "dial_margin": 1.15,
+    "dial_size": 96,
+    "dial_sigma_bins": (2.5, 15.0),
+    "dial_min_needle": 0.01,
+    "dial_spread_floor": 0.5,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones
@@ -687,7 +718,21 @@ def active_custom(objects: dict) -> list[dict]:
 
 
 # What a new reading sensor starts with where it differs from what a stored one without it has.
-READING_NEW_SENSOR = {"straighten": True}
+READING_NEW_SENSOR = {"straighten": True, "fraction": True}
+
+
+def extra_digits(reading: dict) -> int:
+    """Digits a reading sensor reads beyond its wheels: one per pointer dial, or without dials the
+    last wheel's tenth ("fraction"). Only a mechanical counter read by a wheel reader has them."""
+    if reading.get("display") != "counter" or reading.get("counter_reader") != "wheels":
+        return 0
+    dials = reading.get("dials") or []
+    return len(dials) if dials else int(bool(reading.get("fraction")))
+
+
+def value_decimals(reading: dict) -> int:
+    """Decimals of the value a reading sensor publishes: its own, and one more per extra digit."""
+    return int(reading.get("decimals", 0)) + extra_digits(reading)
 
 
 def merge_reading(stored: dict | None) -> dict:

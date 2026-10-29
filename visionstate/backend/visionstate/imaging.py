@@ -6,6 +6,7 @@ import hashlib
 import io
 import math
 import weakref
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -278,10 +279,50 @@ def straighten(image: Image.Image, corners: list[list[float]], margin: float = 0
     return straightened_box(image, corners, margin)[0]
 
 
-def straightened_box(
-    image: Image.Image, corners: list[list[float]], margin: float = 0.0
-) -> tuple[Image.Image, tuple[int, int, int, int]]:
-    """``straighten``, and where the area itself sits in the image it returns (pixels x1, y1, x2, y2)."""
+@dataclass(frozen=True)
+class Plane:
+    """The straightened plane of a four-cornered area of an image (its top edge first): the area is
+    the rectangle (0, 0)-(width, height) of the plane, in pixels; ``coeffs`` take a point of the
+    plane to the image (PIL's perspective transform). Pointer dials sit in the same plane as a
+    counter's wheels, so they are cut from it (``crop``)."""
+
+    coeffs: tuple[float, ...]
+    width: int
+    height: int
+
+    def crop(self, image: Image.Image, box: tuple[float, float, float, float], size: tuple[int, int]) -> Image.Image:
+        """The part ``box`` (x1, y1, x2, y2 in plane pixels, may reach beyond the area) of the
+        plane, at ``size`` pixels; outside the image: black."""
+        a, b, c, d, e, f, g, h = self.coeffs
+        x0, y0, x1, y1 = box
+        sx, sy = (x1 - x0) / size[0], (y1 - y0) / size[1]
+        # Output pixel (i, j) is plane point (x0 + sx·i, y0 + sy·j): fold that into the transform,
+        # scaled so its constant stays 1.
+        k = g * x0 + h * y0 + 1
+        coeffs = (
+            a * sx / k,
+            b * sy / k,
+            (a * x0 + b * y0 + c) / k,
+            d * sx / k,
+            e * sy / k,
+            (d * x0 + e * y0 + f) / k,
+            g * sx / k,
+            h * sy / k,
+        )
+        return image.transform(size, Image.Transform.PERSPECTIVE, coeffs, Image.Resampling.BICUBIC)
+
+    def from_image(self, x: float, y: float) -> tuple[float, float]:
+        """A point of the image (pixels) in the plane (pixels)."""
+        a, b, c, d, e, f, g, h = self.coeffs
+        forward = np.linalg.inv(np.array([[a, b, c], [d, e, f], [g, h, 1.0]]))
+        u, v, w = forward @ np.array([x, y, 1.0])
+        return float(u / w), float(v / w)
+
+
+def plane(image: Image.Image, corners: list[list[float]]) -> Plane | None:
+    """The straightened plane of the four-cornered area ``corners`` (normalised, its top edge
+    first); None for corners that do not make an area (three on one line). Its width is the mean of
+    the top and bottom edges, its height of the sides, as for a rectangle seen at an angle."""
     width, height = image.size
     p = [(c[0] * width, c[1] * height) for c in corners]
     # Corners going round the other way would mirror it: walk the top edge the other way instead.
@@ -290,23 +331,58 @@ def straightened_box(
         p = [p[1], p[0], p[3], p[2]]
     out_w = max(1, round((math.dist(p[0], p[1]) + math.dist(p[3], p[2])) / 2))
     out_h = max(1, round((math.dist(p[0], p[3]) + math.dist(p[1], p[2])) / 2))
-    # The perspective transform maps each output pixel to the image: solve it from the corners.
+    # The perspective transform maps each point of the plane to the image: solve it from the corners.
     rows, values = [], []
     for (u, v), (x, y) in zip(((0, 0), (out_w, 0), (out_w, out_h), (0, out_h)), p, strict=True):
         rows += [[u, v, 1, 0, 0, 0, -u * x, -v * x], [0, 0, 0, u, v, 1, -u * y, -v * y]]
         values += [x, y]
     try:
-        a, b, c, d, e, f, g, h = np.linalg.solve(np.array(rows, dtype=np.float64), np.array(values, dtype=np.float64))
-    except np.linalg.LinAlgError:  # three corners on one line: nothing to straighten
+        coeffs = np.linalg.solve(np.array(rows, dtype=np.float64), np.array(values, dtype=np.float64))
+    except np.linalg.LinAlgError:
+        return None
+    return Plane(tuple(float(c) for c in coeffs), out_w, out_h)
+
+
+def straightened_box(
+    image: Image.Image, corners: list[list[float]], margin: float = 0.0
+) -> tuple[Image.Image, tuple[int, int, int, int]]:
+    """``straighten``, and where the area itself sits in the image it returns (pixels x1, y1, x2, y2)."""
+    flat = plane(image, corners)
+    if flat is None:  # three corners on one line: nothing to straighten
         box = pixel_box(image, region_box({"points": corners}))
         return image.crop(box), (0, 0, box[2] - box[0], box[3] - box[1])
-    # The margin shifts the output: the same transform of (u - mx, v - my), scaled so its constant is 1.
-    mx, my = round(out_w * margin), round(out_h * margin)
-    k = 1 - g * mx - h * my
-    coeffs = [a / k, b / k, (c - a * mx - b * my) / k, d / k, e / k, (f - d * mx - e * my) / k, g / k, h / k]
-    size = (out_w + 2 * mx, out_h + 2 * my)
-    out = image.transform(size, Image.Transform.PERSPECTIVE, tuple(coeffs), Image.Resampling.BICUBIC)
-    return out, (mx, my, mx + out_w, my + out_h)
+    mx, my = round(flat.width * margin), round(flat.height * margin)
+    out = flat.crop(image, (-mx, -my, flat.width + mx, flat.height + my), (flat.width + 2 * mx, flat.height + 2 * my))
+    return out, (mx, my, mx + flat.width, my + flat.height)
+
+
+def reading_plane(image: Image.Image, roi: dict | None, straightened: bool = False) -> Plane | None:
+    """The plane a counter is read in, where its pointer dials are placed: its region straightened
+    (``straightened``, four corners), else the region's bounding box (the whole frame without a
+    region). None for corners that do not make an area."""
+    corners = region_corners(roi) if straightened else None
+    if corners is None:
+        x0, y0, x1, y1 = region_box(roi)
+        corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    return plane(image, corners)
+
+
+def meter_face(image: Image.Image, flat: Plane, reach: float, longest: int) -> tuple[Image.Image, list[float]]:
+    """The meter face around a counter, straightened: as much of the plane as the image shows, at
+    most ``reach`` × the region's height beyond it on every side, ``longest`` pixels on its longest
+    side. Returns the picture and the part of the plane it shows (x1, y1, x2, y2 in units of the
+    region's height, from its top-left corner) — where pointer dials are placed."""
+    width, height = image.size
+    seen = [flat.from_image(x, y) for x, y in ((0, 0), (width, 0), (width, height), (0, height))]
+    unit = flat.height
+    x0 = max(min(p[0] for p in seen) / unit, -reach)
+    y0 = max(min(p[1] for p in seen) / unit, -reach)
+    x1 = min(max(p[0] for p in seen) / unit, flat.width / unit + reach)
+    y1 = min(max(p[1] for p in seen) / unit, 1 + reach)
+    scale = longest / max(x1 - x0, y1 - y0)
+    size = (max(1, round((x1 - x0) * scale)), max(1, round((y1 - y0) * scale)))
+    picture = flat.crop(image, (x0 * unit, y0 * unit, x1 * unit, y1 * unit), size)
+    return picture, [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)]
 
 
 def region_image(image: Image.Image, roi: dict | None, straightened: bool = False) -> Image.Image:

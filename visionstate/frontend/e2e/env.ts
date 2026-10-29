@@ -24,3 +24,8 @@ export const TURNED_COUNTER_URL = (value: number, turn: number) => `${COUNTER_UR
 export const TURNED_COUNTER_REGION = (turn: number) => `${CAMERA_URL}/counter-region.json?digits=7&turn=${turn}`;
 /** The window with the seven wheels in that frame (backend/tests/displays.py, counter_box(7)). */
 export const COUNTER_BOX = { x: 99 / 800, y: 118 / 360, w: 602 / 800, h: 130 / 360 };
+/** A drawn water meter: a counter of `digits` whole m³ and four pointer dials (×0.1 first), the camera turned by
+ * `turn` degrees and tilted; its region and its dials as a sensor stores them (scripts/fake_camera.py). */
+export const METER_URL = (value: number, turn = 0, tilt = 0) =>
+  `${CAMERA_URL}/meter.jpg?value=${value}&digits=5&dials=4&turn=${turn}&tilt=${tilt}`;
+export const METER_REGION = (turn = 0, tilt = 0) => `${CAMERA_URL}/meter-region.json?digits=5&dials=4&turn=${turn}&tilt=${tilt}`;

@@ -305,6 +305,31 @@ First choose **what it looks like**:
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
 
+**The last wheel's fraction** (wheel reader only; on for a new counter, counters made before keep
+reading as they did until you turn it on): the last wheel counts the digit it has passed, not the
+one coming — a wheel half way from 3 to 4 is 3, as you read a meter — and how far it has turned is
+one more digit: a counter of 45.730 m³ reads 45.7304 m³. That tenth moves a little between
+readings; a reading up to two steps of it below the value keeps the value (*Last wheel turning*),
+and what is sent never goes down.
+
+**Pointer dials** — the small dials many water meters have beside the wheels (×0.1, ×0.01, ×0.001,
+×0.0001 m³), each a needle turning over the numbers 0–9. A mechanical counter read by the wheel
+reader can add them: in the wizard switch the picture to **Edit: Dials**, in Settings use the
+**Pointer dials** card. The meter face is shown straightened the way the counter is read (the
+dashed box is the counter): **Add dial** puts a circle on it, labelled with what one turn of that
+dial is worth — the first is ×0.1 of the last wheel, the next ×0.01 and so on, so add them in that
+order. Drag a circle onto its dial and its handle to the dial's edge; set **Anticlockwise** for a
+dial whose numbers go the other way (on some gas and electricity meters every second dial does).
+Each dial is one more digit after the counter's own decimals, and the wheels and dials are read
+together: the last wheel's digit is settled by the ×0.1 dial, a needle standing on a number by the
+dial after it — the way a person reads a meter — so a last wheel that already shows the next digit
+coming is read right. The needle is found by its red colour, or by being the darkest part of the
+dial when the picture has no colour (an infrared camera at night). *What the reader sees* shows
+each dial after the wheels with the needle it found drawn on it; the Pointer dials card says where
+each needle was found, or *No needle found*. A dial needs a few dozen pixels across in the picture
+to be read: move the camera closer, or use its zoom, if the dials are tiny. With dials, the last
+wheel's fraction is not used.
+
 **A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:
 with **Straighten the region** (on for a new reading sensor; sensors made before keep reading as
 they did until you turn it on) the region is read upright. Put its four corners on the corners of
@@ -335,8 +360,9 @@ objects the region stays a border.
   dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
   as 8.
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
-  five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
-  wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
+  five black and three red wheels has 8 digits and 3 digits after the decimal point (the last
+  wheel's fraction and pointer dials, above, add digits after those). Without its fraction, the
+  last wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
   a limit on how fast it may go up (see *Counter limit* below) catches a misread that is too
   high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
@@ -397,7 +423,8 @@ objects the region stays a border.
 - **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
   checked and the ones nobody checked, accepted or rejected (marked as unchecked) — only the region of each,
   not the whole picture — with what was read and what was right, which reader read it and (for
-  the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
+  the wheel reader) where it saw each wheel — and, for a meter with pointer dials, a picture of
+  each dial as it was read and where its needle was found. Each image is cut with the region the reading was
   made in, so moving the region later does not spoil the readings from before. Write what the
   meter is in *What meter is this?* (make, type, camera, light) first. The ZIP stays under 24 MB
   so GitHub takes it (about 1,000 readings, newest first). Look through the ZIP, then share it in
@@ -421,8 +448,10 @@ objects the region stays a border.
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
-  other meters may need a tighter region. Small pointer dials (the red hands on some water
-  meters) are not read.
+  other meters may need a tighter region. Pointer dials are read without a model (by the needle's
+  colour or darkness): drawn dials are read to about a tenth of a number; on real meters glare,
+  dirt on the glass or a needle as dark as the numbers can still fool it — an export of such
+  readings helps.
 - Feedback on reading helps a lot, above all from meters and displays it has not seen yet: what
   the display or meter is, whether it read correctly, and a screenshot of *What the reader sees* —
   or an export (above) — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions).

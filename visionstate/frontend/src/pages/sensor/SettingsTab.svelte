@@ -3,6 +3,7 @@
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
+  import DialsEditor from '../../lib/components/DialsEditor.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LightEditor from '../../lib/components/LightEditor.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
@@ -23,7 +24,7 @@
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
-  import type { ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
+  import type { ReadPreview, ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -59,6 +60,26 @@
   const straightened = $derived(readingSensor && reading.straighten);
   $effect(() => {
     if (straightened && roi && toPoints(roi).length > 4) roi = toRectangle(roi);
+  });
+  // A counter read by a wheel reader: its pointer dials, placed on a fresh frame's meter face (read with
+  // the settings being edited, so it shows what they would read).
+  const canDial = $derived(readingSensor && reading.display === 'counter' && reading.counter_reader === 'wheels');
+  let dialPreview = $state<ReadPreview | null>(null);
+  let dialBusy = $state(false);
+  let dialError = $state('');
+  async function readDials() {
+    dialBusy = true;
+    dialError = '';
+    try {
+      dialPreview = await api.previewRead(sourceType, source, roi, $state.snapshot(reading));
+    } catch (err) {
+      dialError = (err as Error).message;
+    } finally {
+      dialBusy = false;
+    }
+  }
+  $effect(() => {
+    if (canDial && !untrack(() => dialPreview || dialBusy)) untrack(readDials);
   });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
@@ -177,6 +198,27 @@
         <h3>Reading</h3>
         <ReadingEditor bind:value={reading} seen={sensor.reading?.last?.text} />
       </section>
+      {#if canDial}
+        <section class="card pad col" data-testid="dials-card">
+          <div class="card-title">
+            <h3>Pointer dials</h3>
+            <button class="btn sm" onclick={readDials} disabled={dialBusy}>
+              <Icon name="refresh" size={14} /> {dialBusy ? 'Reading…' : 'Read now'}
+            </button>
+          </div>
+          <p class="small muted">
+            The small dials beside the wheels (×0.1, ×0.01 …): each one more digit, read with the wheels. The face is
+            straightened the way the counter is read.
+          </p>
+          {#if dialError}<p class="notice danger small">{dialError}</p>{/if}
+          <DialsEditor preview={dialPreview} bind:dials={reading.dials} decimals={reading.decimals} />
+          {#if dialPreview?.value}
+            <span class="small">
+              Read <strong class="mono">{dialPreview.value}</strong>{dialPreview.dials.length !== reading.dials.length ? ' before your last change' : ''}
+            </span>
+          {/if}
+        </section>
+      {/if}
     {:else if objectSensor}
       <section class="card pad col">
         <h3>Objects</h3>

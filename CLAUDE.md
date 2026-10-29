@@ -118,7 +118,10 @@ itself (`__main__.py`).
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
   `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and
-  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten).
+  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten) and
+  `/meter.jpg?value=187.34565&turn=20&tilt=0.2` (a drawn water meter: five wheels and four pointer
+  dials; `/meter-region.json` with the same `turn` and `tilt` gives its region and its dials as a
+  sensor stores them).
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.

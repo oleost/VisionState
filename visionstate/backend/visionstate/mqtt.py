@@ -25,6 +25,7 @@ from .settings import (
     UNKNOWN_STATE,
     VERSION,
     Settings,
+    value_decimals,
 )
 
 log = logging.getLogger(__name__)
@@ -315,7 +316,7 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
         "state_class": state_class,
     }
     if mode != "time_left":
-        payload["suggested_display_precision"] = int(reading.get("decimals", 0))
+        payload["suggested_display_precision"] = value_decimals(reading)
     return {k: v for k, v in payload.items() if v is not None}
 
 
@@ -352,7 +353,7 @@ def rate_precision(reading: dict) -> int:
     Home Assistant may show a rate such as 0.03 m³/h as 0."""
     _, _, factor = rate_unit(reading)
     hours = float(reading.get("rate_window_min") or 60) / 60
-    step = 10 ** -int(reading.get("decimals", 0)) / hours * factor
+    step = 10 ** -value_decimals(reading) / hours * factor
     return max(0, math.ceil(-math.log10(step) - 1e-9))
 
 

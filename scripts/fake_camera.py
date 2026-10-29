@@ -12,6 +12,11 @@ GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter 
                                  &turn=125 turns the picture (a camera hanging askew above the meter),
                                  &tilt=0.4 also sees it at an angle (the far end 40 % narrower)
 GET /counter-region.json?digits=7&turn=125&tilt=0.4   the region of its wheels in that picture: four corners, top edge first
+GET /meter.jpg?value=187.3456&digits=5&dials=4   a drawn water meter: a counter of whole m³ and pointer
+                                 dials below it (×0.1 first; &ccw=0,1 turns the second anticlockwise);
+                                 &turn and &tilt as for counter.jpg
+GET /meter-region.json?digits=5&dials=4&ccw=0,1&turn=125&tilt=0.4   its region (as counter-region.json) and
+                                 its dials as a reading sensor stores them (placed in the straightened region)
 GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wider (a camera that changed
                                  its picture size after a restart); wider=0 sets it back
 """
@@ -29,7 +34,7 @@ from PIL import Image, ImageDraw
 TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "tests"
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
-from displays import STYLES, counter_box, render_counter, turned  # noqa: E402  (shared with the backend tests)
+from displays import STYLES, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
 from displays import render as render_display  # noqa: E402
 
 STATE = {"state": "closed", "night": False}
@@ -118,6 +123,25 @@ class Handler(BaseHTTPRequestHandler):
                 return
             region = turned(render_counter(0, digits), turn, counter_box(digits), tilt)[1]
             self._send(json.dumps(region).encode(), "application/json")
+        elif url.path in ("/meter.jpg", "/meter-region.json"):
+            query = parse_qs(url.query)
+            try:
+                value = min(10**8, max(0.0, float(query.get("value", ["0"])[0])))
+                digits = min(8, max(1, int(query.get("digits", ["5"])[0])))
+                count = min(4, max(0, int(query.get("dials", ["4"])[0])))
+                ccw = tuple(c.strip() == "1" for c in query.get("ccw", [""])[0].split(",") if c.strip())
+                turn = float(query.get("turn", ["0"])[0])
+                tilt = min(0.9, max(0.0, float(query.get("tilt", ["0"])[0])))
+            except ValueError:
+                self.send_error(400)
+                return
+            image, region, placed = turned_meter(value, turn, tilt, digits, count, ccw)
+            if url.path == "/meter-region.json":
+                self._send(json.dumps({"region": region, "dials": placed}).encode(), "application/json")
+                return
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
+            self._send(buf.getvalue(), "image/jpeg")
         elif url.path.startswith("/photo/"):
             photo = PHOTOS / Path(url.path).name  # name only: no paths outside the folder
             if photo.suffix != ".jpg" or not photo.is_file():

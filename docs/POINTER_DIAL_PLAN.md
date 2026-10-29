@@ -4,7 +4,8 @@ Reading the small **pointer dials** many water meters have beside their counter 
 ×0.001, ×0.0001 m³), and the **last wheel's fraction** on counters without them, so a reading
 sensor gives litres instead of whole cubic metres. It applies to the `reading` sensor kind only,
 mechanical counters. Asked for in issue #59 (a meter of five wheels and four dials). Researched and
-decided with the maintainer on 2026-10-29; nothing of it is built yet (§8).
+decided with the maintainer on 2026-10-29; phases 1 and 2 are built, not yet tried on a real meter
+(§8, and what is left in §10).
 
 ## 1. The idea in one paragraph
 
@@ -62,44 +63,55 @@ pictures, so neither is used here (CLAUDE.md: test images and model data need a 
   its colour and contrast, its angle from the centre gives the position. A model only if that is
   not good enough (phase 3).
 - **One decode for wheels and dials**, not a threshold per transition (§5).
-- **Dials are read in the straightened plane** of the counter's region (`imaging.region_image`, the
-  straightening of issue #58): the dials lie in the same plane as the wheels, so the same transform
-  makes a dial seen at an angle round and puts its 0 at the region's top. A dial needs *Straighten
-  the region* on (it is on for a new reading sensor).
+- **Dials are read in the plane the counter is read in** (`imaging.reading_plane`): the region
+  straightened (issue #58) when *Straighten the region* is on, else its box. The dials lie in the
+  same plane as the wheels, so the same transform makes a dial seen at an angle round and puts its
+  0 at the region's top.
+- **Dials are placed on the straightened meter face, not on the camera picture** (decided while
+  building it): the editor shows the plane around the region (`imaging.meter_face`), so a circle
+  drawn there is the dial as it is read. Placed on the camera picture, a dial seen at an angle
+  would be an ellipse, and a region's width and height come from its corners only (the mean of
+  opposite edges): positions taken from anything else than that plane land beside the dial.
 - **Phase 1 first**, on its own: it fixes problem 2 for every counter and gives one more decimal.
 
 ## 4. Phase 1: the last wheel's fraction
 
 - The last wheel's digit is `floor` of its position, not rounded; its fraction (0.0–0.9) is one
-  more decimal of the value, when the reader is sure enough of it (a setting, *Read the last
-  wheel's fraction*, on for a new counter, like straightening).
-- The fraction jitters by a tenth or two from reading to reading. A counter that "goes down" by
-  less than that is the same reading, not a rejected one: the check that a counter never goes down
-  takes a small tolerance on the last decimal, and what is published never goes down.
-- The wheel reader's benchmark (`tools/wheelreader`) counts "right" within ±1 on the last wheel; it
-  gets a second measure for the fraction (how far off, in tenths) before the setting is on by
-  default.
-- Docs: DOCS.md (*Reading sensors*), the readings export already holds the value with the fraction
-  (`"wheels"` → `"value"`).
+  more digit of the value: the setting *Read the last wheel's fraction* (`reading["fraction"]`), on
+  for a new counter read by the wheel reader (`settings.READING_NEW_SENSOR`), off for counters
+  saved before. Built: `WheelReader.read_counter(fraction=…)`; how many digits a reading has is
+  `settings.extra_digits` / `value_decimals`, used by `parse`, `format_value`, the digit-count
+  check, Home Assistant's display precision and the rate's precision.
+- The fraction jitters by a tenth or two from reading to reading. A reading up to
+  `READING["settle_steps_fine"]` steps below the value is *settling* (`readers.settling`): it keeps
+  the value without counting as rejected, so what is published never goes down. The change limit
+  stays in the counter's own decimals (a step of the wheels, not of the fraction).
+- Not done yet: a second measure in the wheel reader's benchmark (`tools/wheelreader`): how far
+  off the fraction is, in tenths. The setting went on for new counters without it (the
+  maintainer's call: fix the early last digit for everyone); the benchmark should confirm it on
+  the shared real meters.
 
 ## 5. Phase 2: pointer dials
 
 **Settings** (in a mechanical counter's reading settings, so they go with export, import and a
-backup): a list of dials, each a circle in the straightened plane (centre and radius, as shares of
-the region's size, so they move with the region) and a direction (clockwise by default); the
-order gives the factor (×0.1 first). At most a few (a setting; four on the meter of issue #59).
+backup): `reading["dials"]`, a list of circles in the plane the counter is read in (centre and
+radius in units of the region's height, from its top-left corner, so they move with the region)
+and a direction (`ccw`, clockwise by default); the order gives the factor (×0.1 first). At most
+`READING["max_dials"]`, within `dial_radius` and `dial_reach` (`DialIn` in `api/common.py`).
 
-**Reading a needle** (a function of the dial's picture, no model):
-1. The dial is cut from the straightened plane, a little larger than its circle, and scaled to a
-   fixed size.
-2. The needle: red (hue and saturation) where there is colour; else the darkest elongated part
-   against the dial's light face (an infrared camera at night sees a red needle grey).
-3. The hub is the needle's mass nearest the centre; the tip the part farthest out. The angle from
-   the centre to the tip, measured from the region's top and in the dial's direction, is the
-   position (0.0–9.9).
-4. Its certainty: how much needle was found and how clearly one direction stands out; the position
-   becomes a probability over the decode's 100 bins (a narrow peak for a clear needle, wide for an
-   unclear one).
+**Reading a needle** (`dials.read_needle`, no model):
+1. The dial is cut from the plane, `dial_margin` larger than its circle, and scaled to `dial_size`
+   pixels (`dials.read_needles`).
+2. The needle: red pixels between the hub and the numbers; where there is no red (an infrared
+   camera at night sees a red needle grey), the pixels darker than half way between the darkest
+   and the face, well inside the numbers (which are dark too).
+3. Its direction: the mean of the needle pixels' directions from the centre, weighted by distance²
+   so the tip counts most and the hub and the short tail behind it do not turn it. 0 at the top,
+   in the dial's direction: the position (0.0–9.9).
+4. Its certainty: how much the needle's pixels agree on one direction (from `dial_spread_floor`,
+   none, to 1); the position becomes a wrapped Gaussian over the decode's 100 bins, `dial_sigma_bins`
+   wide (narrow for a clear needle). Less needle than `dial_min_needle` of the dial: not read (an
+   even distribution, *No needle found*).
 
 **Putting it together.** `readers.wheel_decode` finds the most likely value of all wheels at
 once, right to left, with one rule between neighbours: a wheel stands on its digit and only turns
@@ -116,19 +128,25 @@ half a digit off what the dial says; how early a meter's wheel turns could later
 its own readings, as a counter's change limit is.
 
 **What it gives.** The value with as many more decimals as there are dials (the counter's
-decimals plus the dials); the confidence the decode's, with the dials' certainty in it; the
+decimals plus the dials); the confidence the wheels' (as before) times the weakest dial's share
+(its needle's probability within `wheel_weakest_bins` of where the value puts it — a needle is
+never as sharp as a wheel the model knows, so not its probability at one position); the
 plausibility checks of a counter on the total. Nothing new is sent to Home Assistant: the same
 value, finer (the rate entity gains the most). *What the reader sees* shows each dial with the
 needle it found drawn on it and its position; History, Review and the readings export carry the
 dials (a format version more).
 
-**Interface.**
-- Wizard: after the reading test of a mechanical counter, *Has the meter pointer dials?* → the same
-  view switched to *Dials*.
-- Settings, *Pointer dials* card: *+ Add dial* puts a circle on the picture, labelled with its
-  factor (×0.1, ×0.01 …); drag it to move it, its handle to size it; per dial the direction and
-  *Remove*. Touch-first, like the region editor; an e2e test for every gesture.
-- Live: the dials in *What the reader sees*; a dial that could not be read is named.
+**Interface** (`DialsEditor.svelte`, on the meter face `POST /preview/read` returns: `face`,
+`face_box`, `region_width`, and each dial's needle).
+- Wizard: a mechanical counter read by the wheel reader gets *Edit: Counter | Dials* above the test
+  picture; *Counter* is the region editor, *Dials* the dial editor, with the hint *Has the meter
+  pointer dials?* while there are none.
+- Settings, *Pointer dials* card (reads a fresh frame with the settings being edited, *Read now*):
+  *Add dial* puts a circle beside the last one (the first below the counter), labelled with its
+  factor (×0.1, ×0.01 …); drag it to move it, its handle to size it; per dial where its needle was
+  found, *Clockwise / Anticlockwise* and remove. Touch-first, like the region editor.
+- Live: the dials in *What the reader sees*, after the wheels, each with the needle it found drawn
+  on it.
 
 **Tests.** Dials drawn by our own code beside the drawn counter (`visionstate/backend/tests/displays.py`):
 clockwise and anticlockwise, a needle between two numbers and near 0, a red needle in greyscale (a
@@ -160,10 +178,11 @@ like the wheel readers (`readers.json`). The decode and the interface stay the s
 
 | Step | What | Status |
 |---|---|---|
-| 1 | The last wheel's fraction, `floor` instead of rounding (§4) | planned |
-| 2 | Drawn dials in the tests, the needle reader, the decode with *smooth* links (§5) | planned |
-| 3 | Dials in the settings, the editor (*Edit: Counter \| Dials*, *+ Add dial*), the wizard question, Live, History, export (§5) | planned |
-| 4 | A dial model, only if step 2 is not good enough (§6) | if needed |
+| 1 | The last wheel's fraction, `floor` instead of rounding (§4) | **built** (not released) |
+| 2 | Drawn dials in the tests, the needle reader, the decode with *smooth* links (§5) | **built** (not released) |
+| 3 | Dials in the settings, the editor (*Edit: Counter \| Dials*, *Add dial*), Live, History, export (§5) | **built** (not released) |
+| 4 | Tried on real meters, by day and at night, and on a phone; the fraction measured in the benchmark (§10) | next |
+| 5 | A dial model, only if step 4 shows the needle reader is not good enough (§6) | if needed |
 
 ## 9. References
 
@@ -176,3 +195,33 @@ like the wheel readers (`readers.json`). The decode and the interface stay the s
   (no licence found).
 - [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): the wheel reader and its benchmark, which phase 1
   extends.
+
+## 10. What is built, and what is left
+
+Built, phases 1 and 2 of §4–§5 (on top of the straightening of issue #58): settings and API (`settings.py`, `DialIn` in `api/common.py`, `/config` → `reading_dials`), the
+needle reader (`dials.py`), the joint decode (`readers.wheel_decode` links, `read_counter`), the
+plane and meter face (`imaging.Plane`, `reading_plane`, `meter_face`), the engine
+(`engine/models.read_number` reads the needles from the frame before the region is straightened),
+history rows with the dials as read (`probs["dials"]`), the readings export (format 7: each dial's
+picture), MQTT precision, the UI (`DialsEditor.svelte`, the wizard switch, the Settings card, the
+fraction checkbox in `ReadingEditor.svelte`). Tests: `tests/test_dials.py` (decode links, needles
+clockwise and anticlockwise, greyscale, no needle, a drawn meter turned and at an angle, the
+preview and a sensor end to end with History and export), the e2e test *a water meter with pointer
+dials* (every gesture, on desktop, Pixel and iPhone), and `scripts/fake_camera.py` `/meter.jpg`
+and `/meter-region.json` (a drawn meter with four dials, `&turn`, `&tilt`, `&ccw`).
+
+Left before a release (for whoever takes it on):
+- **A real meter.** Only drawn dials have been read. Try the meter of issue #59 (the photo in its
+  thread, or better a readings export from its author: Quality → *Export readings*, by day and by
+  night) and any meter with dials at hand: are the needles found (red, small, under glass with
+  glare), is the confidence sensible, does the last wheel agree with the ×0.1 dial?
+- **Night pictures.** The dark-needle path is tested on a drawn dial made grey; a real infrared
+  picture has glare and a dark rim. If it fails, that is the case for phase 3 (§6).
+- **By hand on a phone** (the UI routine in CLAUDE.md): placing four dials on a real meter face at
+  390 px, and how small the face gets when the region is small in the picture.
+- **The fraction in the benchmark** (§4, `tools/wheelreader`): how far off the tenth is on the
+  shared real meters.
+- **A meter whose last wheel snaps** instead of turning with the ×0.1 dial (§7): the *smooth* link
+  from the last wheel to the first dial may then read it a digit off near the turn; a setting or a
+  learned link if a real meter shows it.
+- Answer issue #59 at release (what to set: *Read the last wheel's fraction*, the dials).

@@ -61,11 +61,12 @@ API as `request.app.state.runtime`.
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
+| `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by colour (or darkness at night), its direction a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
 | `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`), change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
@@ -159,7 +160,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…) |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, a counter's pointer dials (`DialsEditor`, on the meter face `POST /preview/read` returns), states, limits that inherit (`LimitsEditor`)…) |
 
 ## Recipes
 

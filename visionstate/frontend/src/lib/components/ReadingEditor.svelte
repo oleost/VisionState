@@ -42,6 +42,8 @@
   // A mechanical counter shows all its wheels, so the example has as many digits as it has wheels.
   const exampleDigits = $derived(type === 'counter' ? '123456789012'.slice(0, Math.max(value.decimals + 1, value.digits)) : '1234567');
   const example = $derived((Number(exampleDigits) / 10 ** value.decimals).toFixed(value.decimals));
+  // The same wheels with the last one about four tenths on (its fraction read as one more digit).
+  const fractionExample = $derived((Number(exampleDigits + '4') / 10 ** (value.decimals + 1)).toFixed(value.decimals + 1));
 
   function setType(next: ReadingType) {
     if (next === type) return;
@@ -177,6 +179,23 @@
       A counter that reads lower than before is rejected; under <em>Sensor output</em> you can also limit how much it
       may change at once.
     </p>
+  {/if}
+
+  {#if type === 'counter' && value.counter_reader === 'wheels' && value.mode !== 'time_left'}
+    <label class="check straighten">
+      <input type="checkbox" bind:checked={value.fraction} disabled={!!value.dials?.length} aria-label="Read the last wheel's fraction" />
+      <span class="col" style="gap:2px">
+        <strong class="small">Read the last wheel's fraction</strong>
+        <span class="xsmall faint">
+          {#if value.dials?.length}
+            The pointer dials give {value.dials.length} more digit{value.dials.length === 1 ? '' : 's'} instead.
+          {:else}
+            The last wheel counts the digit it has passed, not the one coming, and how far it has turned is one more
+            digit: <span class="mono">{example}</span> → <span class="mono">{fractionExample}</span>.
+          {/if}
+        </span>
+      </span>
+    </label>
   {/if}
 
   <label class="check straighten">

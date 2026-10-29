@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from .. import backbones, detectors, imaging, readers
 from ..db import Sensor
+from ..dials import read_needles
 from ..readers import uses_wheels, wheel_reader_of
 from ..redact import redact
 from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES, merge_reading
@@ -155,15 +156,25 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         """Read the region of ``image``; returns the text and the image the reader used.
 
         The text's ``details`` name the reader that read it (``reader``). A straightened region
-        (``reading["straighten"]``) is read upright: the readers get it already straightened."""
+        (``reading["straighten"]``) is read upright: the readers get it already straightened. A
+        counter's pointer dials (``reading["dials"]``) are read from the whole frame first: they lie
+        around the region, in the plane it is read in."""
         straightened = bool(reading.get("straighten")) and imaging.region_corners(roi) is not None
         if uses_wheels(reading):
             wheels = await self.ensure_wheel_reader(wheel_reader_of(reading))
+            needles = await asyncio.to_thread(read_needles, image, roi, reading, straightened)
             if straightened:
                 image = await asyncio.to_thread(imaging.region_image, image, roi, True)
             box = None if straightened else imaging.pixel_box(image, imaging.region_box(roi))
             async with self._sem:
-                text, used = await asyncio.to_thread(wheels.read_counter, image, int(reading["digits"]), box)
+                text, used = await asyncio.to_thread(
+                    wheels.read_counter,
+                    image,
+                    int(reading["digits"]),
+                    box,
+                    bool(reading.get("fraction")),
+                    needles,
+                )
             return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
         region = await asyncio.to_thread(imaging.region_image, image, roi, straightened)
         reader = await self.ensure_reader()

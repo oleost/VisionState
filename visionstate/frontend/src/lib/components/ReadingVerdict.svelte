@@ -19,7 +19,7 @@
   }: {
     item: Prediction;
     /** The sensor's reading settings (where the decimal point goes). */
-    reading: Pick<ReadingSettings, 'mode' | 'decimals'> | null;
+    reading: Pick<ReadingSettings, 'mode' | 'decimals' | 'display' | 'counter_reader' | 'fraction' | 'dials'> | null;
     unit?: string;
     large?: boolean;
     /** Called after an answer was saved, with the new verdict. */

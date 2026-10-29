@@ -29,6 +29,7 @@ from ..settings import (
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    READING,
     READING_CHANGE_LIMITS,
     READING_DEFAULTS,
     READING_DEVICE_CLASSES,
@@ -295,6 +296,16 @@ _dlo = {k: v[0] for k, v in READING_LIMITS.items()}
 _dhi = {k: v[1] for k, v in READING_LIMITS.items()}
 
 
+class DialIn(BaseModel):
+    """A pointer dial of a counter (settings.READING_DEFAULTS["dials"]): its circle in units of the
+    region's height from its top-left corner, and whether it turns anticlockwise."""
+
+    x: float = Field(ge=-READING["dial_reach"], le=READING_LIMITS["digits"][1] * 2 + READING["dial_reach"])
+    y: float = Field(ge=-READING["dial_reach"], le=1 + READING["dial_reach"])
+    r: float = Field(ge=READING["dial_radius"][0], le=READING["dial_radius"][1])
+    ccw: bool = False
+
+
 class ReadingIn(BaseModel):
     """How a reading sensor turns what it reads into a value. Defaults and limits: settings.READING_*."""
 
@@ -307,6 +318,8 @@ class ReadingIn(BaseModel):
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
     straighten: bool = READING_NEW_SENSOR["straighten"]
+    fraction: bool = READING_NEW_SENSOR["fraction"]
+    dials: list[DialIn] = Field(default=[], max_length=READING["max_dials"])
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]
     max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])

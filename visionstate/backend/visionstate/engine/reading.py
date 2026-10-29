@@ -237,14 +237,15 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         spot = reason is None and not changed and random.random() < float(cfg.reading["spot_rate"])
         if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
-            # The region it was read in (and whether straightened): the frame is whole, and the
-            # region may be moved later.
+            # The region it was read in (whether straightened, and its pointer dials): the frame is
+            # whole, and the region may be moved later.
             details = {
                 "text": text.text,
                 "value": shown,
                 "reason": reason,
                 "roi": cfg.roi,
                 "straighten": cfg.reading["straighten"],
+                **({"dials": cfg.reading["dials"]} if cfg.reading.get("dials") else {}),
                 **(text.details or {}),
                 "app": VERSION,
                 "lamp": lit,

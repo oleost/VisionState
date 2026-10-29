@@ -33,7 +33,7 @@ of a meter. Neither needs training.
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
 - Reading needle gauges (a pressure or temperature gauge). The pointer dials of a water meter are
-  planned: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md).
+  read as part of its counter: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md).
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -278,6 +278,23 @@ Reading sensors only (decided 2026-10-29): for states and objects the region is 
 corners there are not a rectangle to straighten. A new reading sensor straightens; one saved before
 has no key and reads as it did (`settings.READING_NEW_SENSOR`). Each reading records whether it was
 straightened, so History, Review and the export cut its frame the same way.
+
+**A counter read by the wheel reader reads finer than its wheels** (issue #59,
+[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md)): with `reading["fraction"]` the last wheel's digit
+is the one it has passed (not rounded half way, which made a meter's last digit come early) and its
+tenth is one more digit; with `reading["dials"]` the meter's pointer dials add one digit each
+(`settings.extra_digits`, `settings.value_decimals`). Dials are circles in the plane the counter
+is read in (`imaging.reading_plane`: the straightened region, or its box), in units of the region's
+height, so they move with the region and a dial seen at an angle is cut round with its 0 up. A
+needle is read without a model (`dials.read_needle`: red, else the darkest part of the face; its
+direction a probability over 100 positions) and the wheels and dials are decoded together
+(`readers.wheel_decode` with *smooth* links: a wheel or dial's tenth is the next one's digit), so
+the ×0.1 dial settles the last wheel and a needle on a number is settled by the next dial. The
+editor places dials on the straightened meter face around the region (`imaging.meter_face`), not
+on the camera picture, so circles stay round. Both are on for a new counter only where they apply:
+`fraction` (`READING_NEW_SENSOR`); dials when the user adds them. The change limit stays in the
+counter's own decimals; the settling tolerance and Home Assistant's display precision follow the
+value's.
 
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
@@ -754,12 +771,13 @@ as a busy database would otherwise stop every sensor, MQTT and the API with it.
   `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
   region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 5`; 4 had no `"confidence_rule"`, 3 no `"box"`, 2 left out
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 7`; 6 had no pointer dials, 5 no `"straightened"`, 4 no `"confidence_rule"`, 3 no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
   the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability (the one the confidence is made
-  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction), the reading
+  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction; a meter's
+  pointer dials as more rows with where the needle was found, and each dial's picture as read), the reading
   settings without anything that tells where the sensor is (no source, name or region), the
   user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
   be used in tests and evaluations. Images are crops of the stored frames at their resolution.
@@ -869,7 +887,7 @@ is part of backups and needs no restart.
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at release | not released |
-| **Pointer dials** | The last wheel's digit as passed, not rounded, with its fraction as a decimal; then a water meter's pointer dials, placed in the same view and read together with the wheels — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | planned |
+| **Pointer dials** | The last wheel's digit as passed, not rounded, with its fraction as a decimal; a water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle). Left: try it on real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

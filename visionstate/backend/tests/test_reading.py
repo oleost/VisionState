@@ -997,7 +997,14 @@ class NoticeHa:
 def test_camera_changed_holds_readings(settings):
     """A camera that comes back with another picture size holds the readings until it is checked."""
     camera = CounterCamera(89931)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "change_limit": "off"}
+    reading = {
+        "mode": "counter",
+        "display": "counter",
+        "digits": 7,
+        "decimals": 3,
+        "change_limit": "off",
+        "fraction": False,
+    }
     body = {
         "name": "Water meter",
         "kind": "reading",
@@ -1070,7 +1077,15 @@ def test_wheel_counter_sensor_flow(settings):
     """A counter read with the wheel reader (the default): turning wheels, the preview, the export."""
     camera = CounterCamera(89949.8)
     # The counter jumps between checks seconds apart: no limit.
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "unit": "m³", "change_limit": "off"}
+    reading = {
+        "mode": "counter",
+        "display": "counter",
+        "digits": 7,
+        "decimals": 3,
+        "unit": "m³",
+        "change_limit": "off",
+        "fraction": False,
+    }
     body = {
         "name": "Gas meter",
         "kind": "reading",
@@ -1144,7 +1159,7 @@ def test_wheel_counter_sensor_flow(settings):
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 6 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 7 and manifest["meter"] is None and manifest["left_out"] == 0
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
@@ -1223,7 +1238,7 @@ def test_each_counter_reads_with_the_wheel_reader_it_names(settings):
     other = dataclasses.replace(readers.WHEEL_READERS["wheels-v1"], id="wheels-test", name="Test wheel reader")
     settings.models_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(MODEL_DIR / "wheels-v1.onnx", settings.models_dir / other.filename)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "change_limit": "off"}
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "change_limit": "off", "fraction": False}
     body = {"kind": "reading", "source_type": "http", "source": "http://fake", "roi": counter_box(7), "interval_s": 1}
 
     def loaded():
@@ -1348,7 +1363,7 @@ def test_a_turned_counter_is_read_with_its_region_straightened(settings):
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
         roi = camera.roi
-        reading = {"mode": "counter", "display": "counter", "digits": 7}
+        reading = {"mode": "counter", "display": "counter", "digits": 7, "fraction": False}
         preview = {"source_type": "http", "source": "http://fake", "roi": roi}
         read = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "straighten": True}}).json()
         assert read["text"] == "0089932"
@@ -1386,6 +1401,6 @@ def test_a_counter_seen_at_an_angle_is_read_with_its_region_straightened(setting
     camera = TurnedCounter(angle, tilt=0.45)  # the far end of the picture about half as wide
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
-        reading = {"mode": "counter", "display": "counter", "digits": 7, "straighten": True}
+        reading = {"mode": "counter", "display": "counter", "digits": 7, "straighten": True, "fraction": False}
         preview = {"source_type": "http", "source": "http://fake", "roi": camera.roi, "reading": reading}
         assert client.post("/api/v1/preview/read", json=preview).json()["text"] == "0089932"

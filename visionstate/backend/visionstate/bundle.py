@@ -107,10 +107,11 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 6  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+READINGS_FORMAT = 7  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
 # 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
 # 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's);
-# 6: "straightened" (the region read upright, its perspective undone, and so is the image)
+# 6: "straightened" (the region read upright, its perspective undone, and so is the image);
+# 7: pointer dials (each dial's picture, its needle in "wheels"), "fraction" and "dials" in "settings"
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -130,7 +131,12 @@ the size of the whole camera picture in pixels ("frame_size"; a camera that chan
 a restart moves what the region shows).
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
 image), how sure it was ("p"), its most likely positions, the common shift of all wheels and the
-value with the last wheel's fraction. "confidence_rule" says how the reading's confidence was made
+value with the last wheel's fraction. A counter read with the last wheel's fraction ("fraction" in
+"settings") has one more digit in "read"; one with pointer dials has one more per dial: "dials"
+lists each dial's picture as it was read (straightened, 0 at the top; "ccw": it turns
+anticlockwise), the first ×0.1 of the last wheel, and the rows of "per_wheel" after the wheels are
+the dials, with "needle" where the needle was found (null: none seen) and "certainty".
+"confidence_rule" says how the reading's confidence was made
 of the wheels' "p": "mean" (their geometric mean) or "weakest" (the smallest; "p" is then the
 probability that the wheel stands near that position). Readings made before VisionState 0.10.1
 (beta 0.10.1b3) have no "confidence_rule": their "p" is always the "mean" kind, whichever rule
@@ -179,7 +185,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
     ``meter``: what the user says the meter is. Returns the suggested download filename; raises
     LookupError when there is nothing to export.
     """
-    from . import imaging, readers
+    from . import dials, imaging, readers
     from .settings import READING, merge_reading
 
     with db.session() as s:
@@ -224,12 +230,25 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                 width, height = frame.size
                 read, scale = imaging.region_box(roi), (width, height, width, height)
                 inside = [int(read[i] * scale[i]) - int(box[i % 2] * scale[i]) for i in range(4)]
+            placed = details.get("dials") or []
+            flat = imaging.reading_plane(frame, roi, bool(corners)) if placed else None
+            size = (READING["dial_size"], READING["dial_size"])
+            dial_images = [
+                imaging.encode_jpeg(flat.crop(frame, dials.dial_box(d, flat.height), size)) for d in placed if flat
+            ]
             # Room for readings.json still to come: it compresses to well under a fifth.
-            if items and file.tell() + len(image) + listed // 4 + 100_000 > budget:
+            weight = len(image) + sum(len(d) for d in dial_images)
+            if items and file.tell() + weight + listed // 4 + 100_000 > budget:
                 left_out += 1
                 continue
             name = f"images/{len(items) + 1:04d}.jpg"
             archive.writestr(name, image, compress_type=zipfile.ZIP_STORED)  # JPEG does not shrink
+            dial_files = []
+            for k, (dial, jpeg) in enumerate(zip(placed, dial_images, strict=False)):
+                dial_files.append(
+                    {"file": f"images/{len(items) + 1:04d}-dial{k + 1}.jpg", "ccw": bool(dial.get("ccw"))}
+                )
+                archive.writestr(dial_files[-1]["file"], jpeg, compress_type=zipfile.ZIP_STORED)
             items.append(
                 {
                     "file": name,
@@ -250,6 +269,7 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "frame_size": list(frame.size),
                     "lamp": details.get("lamp"),
                     **({"wheels": details["wheels"]} if "wheels" in details else {}),
+                    **({"dials": dial_files} if dial_files else {}),
                 }
             )
             listed += len(json.dumps(items[-1]))
@@ -269,6 +289,8 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "digits",
                     "counter_reader",
                     "decimals",
+                    "fraction",
+                    "dials",
                     "unit",
                     "max_step",
                     "change_limit",

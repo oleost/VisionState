@@ -119,6 +119,11 @@ export interface ReadingSettings {
   wheel_reader: string;
   /** Read the region straightened: four corners, the first edge its top (imaging.region_image). */
   straighten: boolean;
+  /** counter_reader "wheels": the last wheel's digit is the one it has passed, its tenth one more decimal. */
+  fraction: boolean;
+  /** counter_reader "wheels": the meter's pointer dials, ×0.1 first (each one more decimal; with dials,
+   * fraction is not used). */
+  dials: Dial[];
   /** Values and times left, and counters with change_limit "step": the largest change between two
    * readings (0 = no limit). */
   max_step: number;
@@ -159,6 +164,21 @@ export interface ReadingQuality {
 }
 
 /** What the number reader makes of a fresh frame (new sensor wizard). */
+/** A pointer dial: its circle in units of the region's height from its top-left corner, in the plane
+ * the counter is read in (straightened); ccw = it turns anticlockwise. */
+export interface Dial {
+  x: number;
+  y: number;
+  r: number;
+  ccw: boolean;
+}
+
+/** A pointer dial as read: where its needle was found (0.0-9.9; null = none seen) and how sure (0-1). */
+export interface DialRead {
+  needle: number | null;
+  certainty: number;
+}
+
 export interface ReadPreview {
   image: string;
   read_image: string;
@@ -167,6 +187,13 @@ export interface ReadPreview {
   value: string | null;
   /** A mechanical counter read with another number of digits than it has wheels. */
   wrong_digit_count: boolean;
+  /** Counters read by a wheel reader: the meter face around the region, straightened as it is read, and
+   * the part of the plane it shows ([x1, y1, x2, y2] in units of the region's height): where dials go. */
+  face?: string;
+  face_box?: [number, number, number, number];
+  /** The region in the same units: from 0, 0 to region_width, 1. */
+  region_width?: number;
+  dials: DialRead[];
 }
 
 /** The last read of a reading sensor; reason = why it was rejected (null = accepted). */
@@ -569,6 +596,9 @@ export interface AppConfig {
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
+  /** Pointer dials: at most max_dials, radius within dial_radius, centre at most dial_reach outside the
+   * region (both in units of the region's height). */
+  reading_dials: { max_dials: number; dial_radius: [number, number]; dial_reach: number };
   /** Longest "What meter is this?" text of a readings export. */
   reading_export_meter_max_chars: number;
   storage_defaults: { history_max_gb: number };

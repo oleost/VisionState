@@ -249,6 +249,10 @@ export const READING_TYPE_MODES: Record<ReadingType, ReadingMode[]> = {
   counter: ['counter', 'value'],
 };
 
+/** A new pointer dial (DialsEditor): its radius in units of the counter region's height, and how far
+ * beside the last dial it is put (in its radii). */
+export const DIAL_NEW = { radius: 0.6, gap: 2.4 };
+
 /** Default Home Assistant device class for a unit (the user can change it). */
 export const UNIT_DEVICE_CLASS: Record<string, string> = {
   kWh: 'energy',
