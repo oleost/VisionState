@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from visionstate import backbones, detectors, faces, readers
+from visionstate import backbones, detectors, faces, readers, sounds
 
 MODEL_DIR = Path(os.environ.get("VISIONSTATE_TEST_MODELS", Path(__file__).parent.parent / "models"))
 ASSETS = Path(__file__).parent / "assets"  # real photos (CC0), see assets/README.md
@@ -54,4 +54,13 @@ _sface = faces.RECOGNISERS[faces.DEFAULT_RECOGNISER]
 requires_faces = pytest.mark.skipif(
     not all((MODEL_DIR / spec.filename).exists() for spec in (_default, _detector, faces.DETECTOR, _sface)),
     reason=f"Face models not downloaded; run `python -m visionstate.backbones {MODEL_DIR} --all`",
+)
+
+
+_sound = sounds.MODELS[sounds.DEFAULT_MODEL]
+# The sound model is never bundled: on disk after `python -m visionstate.backbones models --all` once it
+# is published, until then made with tools/soundmodel/make_model.py (see its README).
+requires_sound = pytest.mark.skipif(
+    not (MODEL_DIR / _sound.filename).exists(),
+    reason=f"Sound model not in {MODEL_DIR}; see tools/soundmodel/README.md",
 )

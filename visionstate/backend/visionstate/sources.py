@@ -11,9 +11,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
+import numpy as np
 
 from .redact import redact
-from .settings import RUNTIME, SUPERVISOR_URL, Settings
+from .settings import RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
 log = logging.getLogger(__name__)
 
@@ -360,3 +361,123 @@ class RtspStream:
         finally:
             with self._changed:
                 self._changed.notify_all()
+
+
+class AudioStream:
+    """The sound of a stream (sound sensors), kept open for as long as the sensor listens.
+
+    A thread of its own opens the stream, decodes its audio track — video packets are dropped
+    undecoded — to SOUND["rate"] Hz mono and keeps the last SOUND["buffer_s"] seconds. A stream
+    that fails, or sends no audio for SOUND["stall_s"], is opened again after a pause that doubles
+    from SOUND["reconnect_min_s"] up to SOUND["reconnect_max_s"] (back to the minimum once audio
+    flows). ``total`` counts every sample received, so readers ask for what is new since their last
+    look (``since``) and clips are cut by sample number (``segment``).
+    """
+
+    def __init__(self, url: str):
+        self.url = url
+        self.rate = SOUND["rate"]
+        self._buf = np.zeros(int(SOUND["buffer_s"] * self.rate), dtype=np.float32)
+        self.total = 0  # samples received since the stream was first opened
+        self.error = ""  # why the stream is not delivering sound now ("" while it is)
+        self.connected = False  # audio arrived within SOUND["stall_s"]
+        self.info: dict = {}  # the stream's audio: codec, sample_rate, channels
+        self._last_audio = 0.0
+        self._lock = threading.Lock()
+        self._closed = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="audio-stream", daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._closed.set()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed.is_set()
+
+    def since(self, total: int) -> tuple[np.ndarray, int]:
+        """The samples received after sample number ``total`` (at most the buffer), and the new total."""
+        with self._lock:
+            count = min(self.total - total, len(self._buf))
+            return self._last(count), self.total
+
+    def tail(self, seconds: float) -> np.ndarray:
+        """The last ``seconds`` received (fewer at the start)."""
+        with self._lock:
+            return self._last(min(int(seconds * self.rate), self.total, len(self._buf)))
+
+    def segment(self, start: int, end: int) -> np.ndarray | None:
+        """Samples ``start`` to ``end`` (sample numbers, see ``total``); None when they are not all
+        received yet or no longer in the buffer."""
+        with self._lock:
+            if end > self.total or start < self.total - len(self._buf) or start >= end:
+                return None
+            return self._last(self.total - start)[: end - start]
+
+    def _last(self, count: int) -> np.ndarray:
+        if count <= 0:
+            return np.zeros(0, dtype=np.float32)
+        end = self.total % len(self._buf)
+        if count <= end:
+            return self._buf[end - count : end].copy()
+        return np.concatenate([self._buf[len(self._buf) - (count - end) :], self._buf[:end]])
+
+    def _append(self, samples: np.ndarray) -> None:
+        samples = samples[-len(self._buf) :]
+        with self._lock:
+            start = self.total % len(self._buf)
+            first = min(len(samples), len(self._buf) - start)
+            self._buf[start : start + first] = samples[:first]
+            self._buf[: len(samples) - first] = samples[first:]
+            self.total += len(samples)
+            self._last_audio = time.monotonic()
+            self.connected = True
+            self.error = ""
+
+    def _run(self) -> None:
+        pause = SOUND["reconnect_min_s"]
+        while not self._closed.is_set():
+            got = self._listen()
+            self.connected = False
+            if got:
+                pause = SOUND["reconnect_min_s"]
+            if self._closed.wait(pause):
+                return
+            pause = min(pause * 2, SOUND["reconnect_max_s"])
+
+    def _listen(self) -> bool:
+        """Open the stream and read its audio until it fails, stalls or the stream is closed.
+        Returns whether any audio arrived."""
+        import av
+
+        got = False
+        options = {"timeout": STREAM_OPTIONS["timeout"]}
+        if self.url.lower().startswith(("rtsp://", "rtsps://")):
+            options["rtsp_transport"] = STREAM_OPTIONS["rtsp_transport"]
+        try:
+            with av.open(self.url, options=options, timeout=10) as container:
+                if not container.streams.audio:
+                    self.error = "The stream has no sound (is the camera's microphone switched on?)"
+                    return False
+                stream = container.streams.audio[0]
+                ctx = stream.codec_context
+                self.info = {"codec": ctx.name, "sample_rate": stream.sample_rate, "channels": ctx.channels}
+                resampler = av.AudioResampler(format="flt", layout="mono", rate=self.rate)
+                self._last_audio = time.monotonic()
+                for packet in container.demux(stream):
+                    if self._closed.is_set():
+                        return got
+                    for frame in packet.decode():
+                        for out in resampler.resample(frame):
+                            self._append(out.to_ndarray().reshape(-1))
+                            got = True
+                    if time.monotonic() - self._last_audio > SOUND["stall_s"]:
+                        self.error = f"No sound for {SOUND['stall_s']:g} s"
+                        return got
+                self.error = "The stream ended"
+        except av.FFmpegError as err:
+            self.error = redact(str(err)) or type(err).__name__
+        except Exception as err:  # noqa: BLE001 - the thread must go on (and reconnect) whatever happens
+            self.error = redact(str(err)) or type(err).__name__
+            log.warning("Sound of %s failed: %s", redact(self.url), self.error)
+        return got

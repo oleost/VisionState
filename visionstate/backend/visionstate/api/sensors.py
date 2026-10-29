@@ -20,6 +20,7 @@ from ..redact import redact
 from ..settings import (
     KIND_OBJECTS,
     KIND_READING,
+    KIND_SOUND,
     KIND_STATES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
@@ -29,6 +30,7 @@ from ..settings import (
     SENSOR_KINDS,
     SENSOR_LIMITS,
     SENSOR_PUBLISH_DEFAULT,
+    SOUND_SENSOR_DEFAULTS,
     STATE_PALETTE,
     merge_objects,
     merge_teach,
@@ -40,6 +42,7 @@ from .common import (
     ReadingIn,
     ReviewOverrides,
     Roi,
+    SoundIn,
     StateIn,
     Triggers,
     check_faces,
@@ -70,6 +73,7 @@ class SensorIn(BaseModel):
     states: list[StateIn] = Field(default_factory=list)  # state sensors
     objects: ObjectsIn | None = None  # object sensors
     reading: ReadingIn | None = None  # reading sensors
+    sound: SoundIn | None = None  # sound sensors
     # Unset: the defaults of the sensor's kind (SENSOR_DEFAULTS / OBJECT_SENSOR_DEFAULTS).
     interval_s: float | None = Field(None, ge=lo["interval_s"], le=hi["interval_s"])
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
@@ -90,12 +94,20 @@ class SensorIn(BaseModel):
             raise HTTPException(400, "Only object sensors have objects")
         if self.kind != KIND_READING and self.reading is not None:
             raise HTTPException(400, "Only reading sensors have reading settings")
+        if self.kind != KIND_SOUND and self.sound is not None:
+            raise HTTPException(400, "Only sound sensors have sound settings")
+        if self.kind == KIND_SOUND and self.source_type != "rtsp":
+            raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
         if self.kind == KIND_OBJECTS:
             self.objects = self.objects or ObjectsIn()
             defaults = OBJECT_SENSOR_DEFAULTS
         elif self.kind == KIND_READING:
             self.reading = self.reading or ReadingIn()
             defaults = READING_SENSOR_DEFAULTS
+        elif self.kind == KIND_SOUND:
+            self.sound = self.sound or SoundIn()
+            self.roi = None  # nothing to draw a region on
+            defaults = SOUND_SENSOR_DEFAULTS
         else:
             validate_states(self.states)
             defaults = SENSOR_DEFAULTS
@@ -122,6 +134,7 @@ class SensorIn(BaseModel):
             review=self.review.stored() if self.review else None,
             objects=self.objects.stored() if self.objects else None,
             reading=self.reading.model_dump() if self.reading else None,
+            sound=self.sound.stored() if self.sound else None,
         )
         _apply_states(sensor, self.states)
         return sensor
@@ -143,6 +156,7 @@ class SensorPatch(BaseModel):
     review: ReviewOverrides | None = None
     objects: ObjectsIn | None = None
     reading: ReadingIn | None = None
+    sound: SoundIn | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -217,6 +231,10 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 raise HTTPException(400, "Only object sensors have objects")
             if sensor.kind != KIND_READING and body.reading is not None:
                 raise HTTPException(400, "Only reading sensors have reading settings")
+            if sensor.kind != KIND_SOUND and body.sound is not None:
+                raise HTTPException(400, "Only sound sensors have sound settings")
+            if sensor.kind == KIND_SOUND and body.source_type not in (None, "rtsp"):
+                raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
             old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
             for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
                 value = getattr(body, field)
@@ -240,6 +258,9 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
             if body.reading is not None:
                 sensor.reading = body.reading.model_dump()
+            if body.sound is not None:
+                # Merged, so own sounds (made by teaching) and fields an older UI does not send stay.
+                sensor.sound = {**(sensor.sound or {}), **body.sound.stored(exclude_unset=True)}
             if sensor.roi != old_roi or sensor.source != old_source:
                 sensor.frame_size = None  # the next frame's size is the one the region is drawn on
             s.flush()

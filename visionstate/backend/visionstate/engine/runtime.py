@@ -13,11 +13,12 @@ from .. import backbones, classifier, detectors, faces, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, fetch_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
-from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Settings, merge_triggers
+from ..settings import KIND_OBJECTS, KIND_READING, KIND_SOUND, KIND_STATES, RUNTIME, Settings, merge_triggers
 from .checks import ChecksMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
 from .reminders import RemindersMixin
+from .sound import room_path
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
         await self.faces_settled()  # sensors that recognise faces: load the face model in the background
+        self._spawn(self.sound_settled())  # sound sensors with own sounds: their heads
         await self.refresh_trigger_entities()
         self.ha_events.start()
         self.mqtt.start()
@@ -87,6 +89,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await action(self.mqtt)
 
     async def stop(self) -> None:
+        for sensor_id in list(self.live):
+            self.stop_listening(sensor_id)
         for handle in self._retrain_handles.values():
             handle.cancel()
         for task in [*self._tasks.values(), *self._background]:
@@ -103,6 +107,9 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.embedder = self.detector = self.reader = None
         self.wheel_readers.clear()
         self.face_model = self.face_index = None
+        self.sound_model = None
+        self.sound_heads.clear()
+        self.sound_room.clear()
         self.heads.clear()
         self.taught.clear()
         self.live.clear()
@@ -157,6 +164,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await self.faces_settled()
         if cfg.kind == KIND_READING:
             await self.release_wheel_readers()  # a counter may read with another one now
+        if cfg.is_sound:
+            await self.train_sound_head(cfg)  # own sounds, or learning the room, may have changed
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
@@ -165,7 +174,11 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         task = self._tasks.pop(sensor_id, None)
         if task:
             task.cancel()
+        self.stop_listening(sensor_id)
         self.live.pop(sensor_id, None)
+        self.sound_heads.pop(sensor_id, None)
+        self.sound_room.pop(sensor_id, None)
+        room_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
         self.heads.pop(sensor_id, None)
         self.taught.pop(sensor_id, None)
         self._person_last = {k: v for k, v in self._person_last.items() if v[1] != sensor_id}
@@ -184,6 +197,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             self.reader = None
         if descriptor.kind == KIND_READING:
             await self.release_wheel_readers()
+        if descriptor.kind == KIND_SOUND and not await asyncio.to_thread(self._sensor_ids, KIND_SOUND):
+            self.sound_model = None
         await asyncio.to_thread(backbones.release_memory)
 
     def set_global_review(self, rules: dict) -> None:

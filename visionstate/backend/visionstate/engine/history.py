@@ -209,8 +209,9 @@ class HistoryMixin(PublishingMixin, RuntimeBase):
         before = time.time() - HISTORY_CLEANUP["orphan_age_s"]
         removed = 0
         candidates: list[tuple[Path, bool]] = []
-        history = self.settings.history_dir
-        if history.is_dir():
+        for history in (self.settings.history_dir, self.settings.clips_dir):
+            if not history.is_dir():
+                continue
             for folder in history.iterdir():
                 if folder.is_dir() and folder.name.isdigit():
                     sensor_id = int(folder.name)

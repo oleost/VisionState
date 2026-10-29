@@ -10,6 +10,8 @@ from PIL import Image
 from . import imaging
 from .settings import THUMB_SIZE, Settings
 
+CLIP_SUFFIX = ".m4a"  # a sound clip (AAC), see sounds.encode_clip
+
 
 class Storage:
     def __init__(self, settings: Settings):
@@ -36,6 +38,10 @@ class Storage:
         return self.settings.faces_dir / filename
 
     def history_path(self, sensor_id: int, filename: str) -> Path:
+        """A history frame, or a sound sensor's clip (``.m4a``: in the app's own storage, see
+        Settings.clips_dir)."""
+        if filename.endswith(CLIP_SUFFIX):
+            return self.settings.clips_dir / str(sensor_id) / filename
         return self.settings.history_dir / str(sensor_id) / filename
 
     def thumb_path(self, kind: str, item_id: int) -> Path:
@@ -46,14 +52,17 @@ class Storage:
     def new_filename() -> str:
         return f"{uuid.uuid4().hex}.jpg"
 
-    def _write(self, path: Path, image: Image.Image, data: bytes | None = None) -> None:
+    def _write(self, path: Path, image: Image.Image | None, data: bytes | None = None) -> None:
         """Whole or not at all: written next to it, then put in its place (a power cut or a full
         disk never leaves half a picture under the name a row lists). ``data``: the JPEG to write
         as it is (otherwise ``image`` is encoded)."""
         path.parent.mkdir(parents=True, exist_ok=True)
         part = path.with_name(f"{path.name}.part")
         try:
-            part.write_bytes(data if data is not None else imaging.encode_jpeg(image))
+            if data is None:
+                assert image is not None
+                data = imaging.encode_jpeg(image)
+            part.write_bytes(data)
             part.replace(path)
         except BaseException:
             part.unlink(missing_ok=True)
@@ -81,6 +90,18 @@ class Storage:
         self._write(self.history_path(sensor_id, filename), image, imaging.original_jpeg(image))
         return filename
 
+    def save_clip(self, sensor_id: int, data: bytes) -> str:
+        """A sound sensor's clip for the history (sounds.encode_clip)."""
+        filename = f"{uuid.uuid4().hex}{CLIP_SUFFIX}"
+        self._write(self.history_path(sensor_id, filename), None, data)
+        return filename
+
+    def save_sample_clip(self, sensor_id: int, data: bytes) -> str:
+        """A clip taught to a sound sensor (an own sound, or "not this")."""
+        filename = f"{uuid.uuid4().hex}{CLIP_SUFFIX}"
+        self._write(self.new_sample_path(sensor_id, filename), None, data)
+        return filename
+
     def thumbnail(self, kind: str, item_id: int, source: Path) -> Path:
         """Cached thumbnail for a sample or history frame."""
         target = self.thumb_path(kind, item_id)
@@ -106,8 +127,12 @@ class Storage:
         return sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) if folder.exists() else 0
 
     def history_bytes(self) -> int:
-        """History frames and their thumbnails on disk."""
-        return self._folder_bytes(self.settings.history_dir) + self._folder_bytes(self.settings.thumbs_dir / "history")
+        """History frames, sound clips and the frames' thumbnails on disk."""
+        return (
+            self._folder_bytes(self.settings.history_dir)
+            + self._folder_bytes(self.settings.clips_dir)
+            + self._folder_bytes(self.settings.thumbs_dir / "history")
+        )
 
     def samples_bytes(self) -> int:
         """Training images (and taught faces) and their thumbnails on disk."""
@@ -124,5 +149,6 @@ class Storage:
             self.settings.samples_dir / str(sensor_id),
             self.settings.old_samples_dir / str(sensor_id),
             self.settings.history_dir / str(sensor_id),
+            self.settings.clips_dir / str(sensor_id),
         ):
             shutil.rmtree(directory, ignore_errors=True)

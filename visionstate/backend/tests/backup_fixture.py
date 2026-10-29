@@ -24,9 +24,20 @@ def picture(seed: int, size: tuple[int, int] = (160, 90)) -> Image.Image:
     return image
 
 
+def clip(frequency: float) -> bytes:
+    """Half a second of a tone as a clip, the way a sound sensor stores one."""
+    import numpy as np
+
+    from visionstate.sounds import encode_clip
+
+    t = np.arange(8000) / 16000
+    return encode_clip((0.3 * np.sin(2 * np.pi * frequency * t)).astype(np.float32), 16000)
+
+
 def populate(settings) -> dict:  # noqa: ANN001
     """One sensor of each kind with what each keeps (training images, a taught box, a person with
-    a face, history, a counter's watch, a model file), the way the app stores them. Returns
+    a face, history, a counter's watch, a taught clip and a clip in the history, a model file), the
+    way the app stores them. Returns
     what is in it."""
     from visionstate.db import (
         Database,
@@ -71,7 +82,19 @@ def populate(settings) -> dict:  # noqa: ANN001
                 reading={"mode": "counter", "display": "counter", "digits": 7, "decimals": 3},
                 **common,
             )
-            s.add_all([door, drive, meter])
+            alarm = Sensor(
+                slug="hallway",
+                name="Hallway",
+                kind="sound",
+                source="rtsp://admin:secret@10.0.0.9/audio",
+                sound={
+                    "sounds": ["smoke_alarm", "dog_bark"],
+                    "clips": True,
+                    "custom": [{"key": "doorbell", "name": "Doorbell"}],
+                },
+                **{**common, "source_type": "rtsp"},
+            )
+            s.add_all([door, drive, meter, alarm])
             s.flush()
             for n in range(4):
                 sample = Sample(sensor_id=door.id, filename=storage.save_sample(door.id, picture(n)), origin="snapshot")
@@ -102,6 +125,25 @@ def populate(settings) -> dict:  # noqa: ANN001
                     face=face,
                 )
             )
+            s.add(
+                Sample(
+                    sensor_id=alarm.id,
+                    filename=storage.save_sample_clip(alarm.id, clip(660)),
+                    origin="history",
+                    object_label="doorbell",
+                )
+            )
+            s.add(
+                Prediction(
+                    sensor_id=alarm.id,
+                    state_key="smoke_alarm",
+                    published_key="on",
+                    confidence=0.4,
+                    probs={"level_db": -20.0},
+                    frame=storage.save_clip(alarm.id, clip(3100)),
+                    is_change=True,
+                )
+            )
             for n, (sensor, key) in enumerate(((door, "open"), (drive, "car"), (meter, "reading"))):
                 s.add(
                     Prediction(
@@ -117,13 +159,14 @@ def populate(settings) -> dict:  # noqa: ANN001
             s.add(ReadingStat(sensor_id=meter.id, day="2026-10-01", reads=10, accepted=9, rejected={"too_high": 1}))
             s.add(ReadingWatch(sensor_id=meter.id, value="89939.512", seen_at=1.0, accepted_at=1.0))
             s.add(ModelInfo(sensor_id=door.id, backbone="test", n_samples=4))
-            ids = {"door": door.id, "drive": drive.id, "meter": meter.id}
+            ids = {"door": door.id, "drive": drive.id, "meter": meter.id, "alarm": alarm.id}
         db.set_setting("storage", {"history_days": 9})
         (settings.heads_dir / f"{ids['door']}.npz").write_bytes(b"head")
+        (settings.heads_dir / f"{ids['alarm']}.room.npy").write_bytes(b"room")
         (settings.models_dir / "downloaded.onnx").write_bytes(b"model")
     finally:
         db.engine.dispose()
-    return {"slugs": {"garage_door", "driveway", "water_meter"}, "people": {"emma"}, "ids": ids}
+    return {"slugs": {"garage_door", "driveway", "water_meter", "hallway"}, "people": {"emma"}, "ids": ids}
 
 
 def make(target: Path) -> Path:

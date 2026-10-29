@@ -11,7 +11,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
-from .. import detectors
+from .. import detectors, sounds
 from ..change_limit import Watch
 from ..db import Person, Sensor
 from ..mqtt import SensorDescriptor
@@ -20,15 +20,19 @@ from ..settings import (
     FACES,
     KIND_OBJECTS,
     KIND_READING,
+    KIND_SOUND,
     KIND_STATES,
     RUNTIME,
+    SOUND,
     TEACH,
     active_custom,
     faces_on,
     merge_objects,
     merge_reading,
+    merge_sound,
     merge_triggers,
 )
+from ..sources import AudioStream
 
 
 @dataclass
@@ -51,6 +55,7 @@ class SensorConfig:
     kind: str = KIND_STATES
     objects: dict = field(default_factory=lambda: merge_objects(None))  # object sensors only
     reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
+    sound: dict = field(default_factory=lambda: merge_sound(None))  # sound sensors only
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
     publish: bool = True  # see db.Sensor.publish
     frame_size: list | None = None  # see db.Sensor.frame_size
@@ -66,6 +71,23 @@ class SensorConfig:
     @property
     def is_reading(self) -> bool:
         return self.kind == KIND_READING
+
+    @property
+    def is_sound(self) -> bool:
+        return self.kind == KIND_SOUND
+
+    @property
+    def sound_keys(self) -> list[str]:
+        """What a sound sensor reports: the model's sounds it listens for, then its own sounds."""
+        if not self.is_sound:
+            return []
+        own = [c["key"] for c in self.sound["custom"]]
+        return [*(k for k in self.sound["sounds"] if k in sounds.SOUNDS), *own]
+
+    @property
+    def sound_names(self) -> dict[str, str]:
+        """Sound key -> its name (the model's, or the own sound's)."""
+        return {**{k: s.name for k, s in sounds.SOUNDS.items()}, **{c["key"]: c["name"] for c in self.sound["custom"]}}
 
     @property
     def custom_labels(self) -> list[dict]:
@@ -100,7 +122,14 @@ class SensorConfig:
             else []
         )
         reading = self.reading if self.is_reading else None
-        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading, self.entity_prefix)
+        heard = []
+        for key in self.sound_keys:
+            spec = sounds.SOUNDS.get(key)
+            name = self.sound_names[key]
+            heard.append((key, name, spec.icon, spec.device_class) if spec else (key, name, "mdi:ear-hearing", "sound"))
+        return SensorDescriptor(
+            self.slug, self.name, self.state_keys, self.kind, objects, reading, self.entity_prefix, heard
+        )
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
@@ -122,6 +151,7 @@ class SensorConfig:
             kind=row.kind or KIND_STATES,
             objects=with_people(merge_objects(row.objects), object_session(row)),
             reading=merge_reading(row.reading),
+            sound=merge_sound(row.sound),
             entity_prefix=bool(row.entity_prefix),
             publish=bool(row.publish),
             frame_size=row.frame_size,
@@ -186,6 +216,35 @@ class FaceBurst:
 
 
 @dataclass
+class SoundTrack:
+    """What a sound sensor publishes for one sound, and the windows that decide it (logic.hear)."""
+
+    on: bool = False
+    recent: deque = field(default_factory=lambda: deque(maxlen=SOUND["of_windows"]))  # passed its threshold
+    last_heard: float = 0.0  # last window above the lower threshold while on
+    score: float = 0.0  # the last window's score
+    best: float = 0.0  # the best score since it was heard (for the history)
+
+
+@dataclass
+class SoundLive:
+    """A sound sensor between two windows: its stream, levels, sounds and clips still to cut."""
+
+    stream: AudioStream | None = None  # while the sensor listens
+    consumed: int = 0  # the stream's samples looked at
+    levels: deque = field(default_factory=lambda: deque(maxlen=SOUND["live_levels"]))  # dBFS per hop, newest last
+    background: deque = field(
+        default_factory=lambda: deque(maxlen=int(SOUND["background_s"] / SOUND["hop_s"]))
+    )  # levels the background is learned from
+    line: float | None = None  # the level a window must reach to be analysed
+    analysed: bool = False  # the newest window was loud enough and analysed
+    scores: dict[str, float] = field(default_factory=dict)  # the last analysed window's, per sound
+    tracks: dict[str, SoundTrack] = field(default_factory=dict)
+    clips: list[dict] = field(default_factory=list)  # {"row", "start", "end", "key"}: cut once received
+    room_at: float = 0.0  # when a window of the room was last kept as "other" (own sounds)
+
+
+@dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
     debouncer: Debouncer = field(default_factory=Debouncer)
@@ -241,6 +300,7 @@ class LiveState:
     # ({"from": [w, h], "to": [w, h], "since": epoch seconds}); readings are held until it is
     # back or the user accepts it (engine/reading.py).
     camera_changed: dict | None = None
+    sound: SoundLive | None = None  # sound sensors, while they listen
     # Sent to Home Assistant when it changed: topic -> (what it showed, when), see PublishingMixin._send_on_change.
     sent_on_change: dict[str, tuple[object, float]] = field(default_factory=dict)
 

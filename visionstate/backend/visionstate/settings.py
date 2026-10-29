@@ -32,12 +32,14 @@ UNKNOWN_STATE = "unknown"
 #
 # "single_state": learns the user's own states from labelled examples (one state at a time).
 # "objects": finds common objects (people, cars, animals …) with a pretrained detector, no training.
+# "sound": hears sounds in a stream (sirens, alarms, a dog; own sounds taught from clips).
 # The kind is chosen when the sensor is created and never changes.
 
 KIND_STATES = "single_state"
 KIND_OBJECTS = "objects"
 KIND_READING = "reading"  # a number read from a display or counter (OCR), no training
-SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS, KIND_READING)
+KIND_SOUND = "sound"  # sounds heard in a stream's audio (docs/SOUND_PLAN.md)
+SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS, KIND_READING, KIND_SOUND)
 
 # Object sensors reuse threshold ("minimum confidence") and debounce ("detections in a row
 # before on"), with their own defaults. Limits are the same as in SENSOR_LIMITS.
@@ -210,6 +212,70 @@ READING = {
     "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
     # The notification in Home Assistant when a camera's picture changed size (+ the sensor's slug)
     "camera_notification_id": f"{APP_SLUG}_camera_changed_",
+}
+
+# Sound sensors listen all the time (engine/sound.py): they have no interval, threshold or debounce
+# of their own; the row's columns hold these. What a sound needs to be heard is in SOUND and the
+# model's registry (sounds.json: a score threshold per sound).
+SOUND_SENSOR_DEFAULTS = {
+    "interval_s": 10.0,
+    "threshold": 0.5,
+    "debounce": 1,
+}
+SOUND_DEFAULTS = {
+    "sounds": ["smoke_alarm"],  # the model's sounds it listens for (keys of the model's sounds in sounds.json)
+    # Which windows are analysed at all. "auto": a window this many dB above the background the
+    # sensor learns (a running low percentile of its level); "fixed": a window above fixed_db (dBFS).
+    "level": "auto",
+    "above_db": 10.0,
+    "fixed_db": -45.0,
+    "clear_after_s": 10.0,  # a sound stays "heard" this long after it was last heard
+    "clips": False,  # keep the seconds around a sound that was heard (speech silenced first)
+    # Own sounds learn what this room sounds like: loud windows that matched none of them are kept as
+    # "other" (SOUND["room_kept"]). Off: only what a person answered "not this" for is "other".
+    "learn_room": True,
+    "thresholds": {},  # sound key -> this sensor's own threshold (missing = the model's)
+    "custom": [],  # own sounds, taught from clips: [{"key", "name"}]
+}
+SOUND_LEVELS = ("auto", "fixed")
+SOUND_LIMITS = {
+    "above_db": (0.0, 40.0),
+    "fixed_db": (-90.0, 0.0),
+    "clear_after_s": (1.0, 600.0),
+    "threshold": (0.01, 0.99),
+}
+SOUND = {
+    "rate": 16_000,  # samples per second the model takes (mono)
+    "window_s": 2.0,  # what one analysis hears
+    "hop_s": 0.5,  # how often the newest window is analysed (when it is loud enough)
+    # A sound is "heard" when its score passed its threshold in on_windows of the last of_windows
+    # windows; it stays heard while it scores above off_share of its threshold (hysteresis), and
+    # for clear_after_s after that.
+    "on_windows": 2,
+    "of_windows": 3,
+    "off_share": 0.5,
+    # The background level ("auto"): this percentile of the level of the last background_s
+    # seconds (in hops). Nothing quieter than floor_db (dBFS) is analysed, whatever the line says.
+    "background_s": 120.0,
+    "background_percentile": 20,
+    "floor_db": -70.0,
+    "buffer_s": 30.0,  # audio kept in memory (the window, a clip's seconds before, the Live view)
+    "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
+    "clip_after_s": 5.0,
+    "clip_bitrate": 48_000,  # AAC, bits per second
+    # Before a clip is stored, each second of it with a speech score of at least this is silenced:
+    # lower than the "speech" sound's threshold, so speech is rather silenced once too often.
+    "speech_mute": 0.2,
+    "speech_key": "speech",  # the model's sound for "someone is talking": never keeps a clip
+    "reconnect_min_s": 2.0,  # a stream that failed is opened again after this, doubling up to the max
+    "reconnect_max_s": 60.0,
+    "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
+    "live_levels": 120,  # levels (one per hop) the Live tab shows
+    "max_custom": 10,  # own sounds per sensor (one entity each)
+    "max_taught": 50,  # clips taught per own sound
+    "own_threshold": 0.8,  # an own sound is heard at this probability of the sensor's head
+    "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
+    "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
 }
 
 DETECTION = {
@@ -580,6 +646,7 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
     KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
+    KIND_SOUND: ("heard", "quiet"),  # a sound began to be heard; it was no longer heard
 }
 
 # --- Runtime ------------------------------------------------------------------
@@ -681,6 +748,15 @@ def active_custom(objects: dict) -> list[dict]:
     return [label for label in objects["custom"] if label["parent"] in objects["classes"]]
 
 
+def merge_sound(stored: dict | None) -> dict:
+    """Sound settings of a sensor: stored values on top of SOUND_DEFAULTS."""
+    merged = {**SOUND_DEFAULTS, **(stored or {})}
+    merged["sounds"] = list(merged.get("sounds") or [])
+    merged["thresholds"] = {k: float(v) for k, v in (merged.get("thresholds") or {}).items() if v is not None}
+    merged["custom"] = [dict(label) for label in merged.get("custom") or []]
+    return merged
+
+
 def merge_reading(stored: dict | None) -> dict:
     """Reading settings of a sensor: stored values on top of READING_DEFAULTS."""
     return {**READING_DEFAULTS, **(stored or {})}
@@ -732,7 +808,7 @@ BACKUP_PARTS: dict[str, dict] = {
     "history": {
         "optional": True,
         "tables": ("prediction", "reading_stat"),
-        "folders": ("history_dir",),
+        "folders": ("history_dir", "clips_dir"),
         "restore": "replace",
     },
     "models": {"optional": True, "tables": (), "folders": ("models_dir",), "restore": "add"},
@@ -815,6 +891,12 @@ class Settings:
         return self.media_dir / "thumbs"
 
     @property
+    def clips_dir(self) -> Path:
+        """Sound clips of the history: in the app's own storage, never in the media folder (Home
+        Assistant's media browser shows that to every user, and a clip may hold people's voices)."""
+        return self.data_dir / "clips"
+
+    @property
     def is_supervised(self) -> bool:
         return bool(self.supervisor_token)
 
@@ -828,6 +910,7 @@ class Settings:
             self.sample_thumbs_dir,
             self.history_dir,
             self.thumbs_dir,
+            self.clips_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

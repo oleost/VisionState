@@ -18,6 +18,7 @@ from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from .. import imaging
 from ..db import Prediction, Sensor
 from ..settings import HISTORY, HISTORY_EVENTS, KIND_READING, SENSOR_KINDS
+from ..storage import CLIP_SUFFIX
 from .common import API_PREFIX, iso, runtime
 
 router = APIRouter(prefix=API_PREFIX, tags=["history"])
@@ -35,6 +36,8 @@ EVENT_ROWS: dict[str, ColumnElement[bool]] = {
     "value": Prediction.published_key.is_not(None),
     "rejected": Prediction.published_key.is_(None),
     "verified": Prediction.read_ok.is_not(None),
+    "heard": Prediction.published_key == "on",
+    "quiet": Prediction.published_key == "off",
 }
 _MAX_VALUES = HISTORY["max_filter_values"]
 
@@ -52,7 +55,8 @@ def prediction_view(p: Prediction) -> dict:
         "is_change": p.is_change,
         "review_reason": p.review_reason,
         "reviewed": p.reviewed,
-        "has_frame": bool(p.frame),
+        "has_frame": bool(p.frame) and not p.frame.endswith(CLIP_SUFFIX),
+        "has_clip": bool(p.frame) and p.frame.endswith(CLIP_SUFFIX),  # a sound sensor's clip
         "detections": p.detections,
         "read_ok": p.read_ok,
         "correct_value": p.correct_value,
@@ -230,7 +234,7 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
     rt = runtime(request)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
-        if row is None or not row.frame:
+        if row is None or not row.frame or row.frame.endswith(CLIP_SUFFIX):
             raise HTTPException(404, "Frame not found")
         path = rt.storage.history_path(row.sensor_id, row.frame)
         sensor = s.get(Sensor, row.sensor_id)
@@ -244,3 +248,17 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
     if size == "thumb":
         path = rt.storage.thumbnail("history", prediction_id, path)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
+@router.get("/history/{prediction_id}/clip")
+def history_clip(prediction_id: int, request: Request) -> Response:
+    """A sound sensor's clip (AAC in MP4; ranges served, as Safari asks for them)."""
+    rt = runtime(request)
+    with rt.db.session() as s:
+        row = s.get(Prediction, prediction_id)
+        if row is None or not row.frame or not row.frame.endswith(CLIP_SUFFIX):
+            raise HTTPException(404, "Clip not found")
+        path = rt.storage.history_path(row.sensor_id, row.frame)
+    if not path.exists():
+        raise HTTPException(404, "Clip file missing")
+    return FileResponse(path, media_type="audio/mp4", headers={"Cache-Control": "max-age=86400"})

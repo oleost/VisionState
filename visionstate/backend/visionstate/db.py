@@ -31,7 +31,7 @@ from sqlalchemy.pool import QueuePool
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -57,6 +57,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     # 14: what a counter's limit learns per day (and a new table: reading_watch).
     14: [("reading_stat", "peak", "FLOAT"), ("reading_stat", "total", "FLOAT")],
     15: [("sensor", "frame_size", "JSON")],
+    17: [("sensor", "sound", "JSON")],
 }
 
 
@@ -149,8 +150,8 @@ class Sensor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(128))
-    # settings.SENSOR_KINDS: "single_state" (learned states), "objects" (detector) or "reading"
-    # (number on a display, OCR). Fixed at creation.
+    # settings.SENSOR_KINDS: "single_state" (learned states), "objects" (detector), "reading"
+    # (number on a display, OCR) or "sound" (sounds in a stream's audio). Fixed at creation.
     kind: Mapped[str] = mapped_column(String(32), default="single_state")
     source_type: Mapped[str] = mapped_column(String(32))  # see sources.SOURCE_TYPES
     source: Mapped[str] = mapped_column(String(1024))
@@ -167,6 +168,8 @@ class Sensor(Base):
     objects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Reading sensors: mode, decimals, unit …; see settings.READING_DEFAULTS.
     reading: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Sound sensors: the sounds it listens for, levels, clips …; see settings.SOUND_DEFAULTS.
+    sound: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Older sensors suggest "visionstate_<slug>…" entity IDs to Home Assistant, and keep doing so
     # (also when exported and imported), so entities that come back get the same ID. Newer sensors
     # let Home Assistant name them after the device and entity, like other integrations.

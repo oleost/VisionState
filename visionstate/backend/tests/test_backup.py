@@ -127,7 +127,7 @@ def test_snapshot_leaves_out_parts_and_masks_passwords(tmp_path):
     manifest = json.loads(archive.read("backup.json"))
     assert manifest["parts"] == ["samples", "sensors"]
     assert manifest["schema"] == SCHEMA_VERSION and manifest["format"] == BACKUP["format"]
-    assert sorted(manifest["masked"]) == ["Garage door", "Water meter"]
+    assert sorted(manifest["masked"]) == ["Garage door", "Hallway", "Water meter"]
     names = archive.namelist()
     assert any(n.startswith("files/samples_dir/") for n in names)
     assert any(n.startswith("files/heads_dir/") for n in names)  # the sensors' part: always
@@ -138,7 +138,7 @@ def test_snapshot_leaves_out_parts_and_masks_passwords(tmp_path):
     try:
         assert con.execute("SELECT count(*) FROM prediction").fetchone()[0] == 0
         assert con.execute("SELECT count(*) FROM person").fetchone()[0] == 0
-        assert con.execute("SELECT count(*) FROM sample").fetchone()[0] == 5
+        assert con.execute("SELECT count(*) FROM sample").fetchone()[0] == 6
         sources = {r[0] for r in con.execute("SELECT source FROM sensor")}
         assert "rtsp://***@10.0.0.9/live" in sources and not any("secret" in s for s in sources)
     finally:
@@ -182,7 +182,7 @@ def test_export_is_streamed_and_checks_its_parts(tmp_path):
         assert "visionstate-backup-" in resp.headers["content-disposition"]
         manifest = json.loads(zipfile.ZipFile(io.BytesIO(resp.content)).read("backup.json"))
         assert manifest["parts"] == ["faces", "samples", "sensors"]
-        assert [s["name"] for s in manifest["sensors"]] == ["Garage door", "Driveway", "Water meter"]
+        assert [s["name"] for s in manifest["sensors"]] == ["Garage door", "Driveway", "Water meter", "Hallway"]
 
 
 def test_a_stopped_download_ends_the_writer(tmp_path):
@@ -236,15 +236,15 @@ def test_restore_replaces_everything(tmp_path, removed):
         resp = restore(client, data)
         assert resp.status_code == 200, resp.text
         result = resp.json()
-        assert result["sensors"] == 3 and result["people"] == 1
-        assert [m["name"] for m in result["masked"]] == ["Garage door", "Water meter"]
+        assert result["sensors"] == 4 and result["people"] == 1
+        assert [m["name"] for m in result["masked"]] == ["Garage door", "Hallway", "Water meter"]
         # Entities go once the restored data runs and MQTT is connected, not before.
         assert removed == {"sensors": [], "people": [], "classes": []}
         connected(client)
         assert removed["sensors"] == ["old_one"]  # its entities go; the others keep theirs
         assert removed["classes"] == ["driveway/dog"]
         sensors = client.get("/api/v1/sensors").json()
-        assert sorted(s["name"] for s in sensors) == ["Driveway", "Garage door", "Water meter"]
+        assert sorted(s["name"] for s in sensors) == ["Driveway", "Garage door", "Hallway", "Water meter"]
         assert client.get("/api/v1/status").status_code == 200
         assert client.get("/api/v1/people").json()["people"][0]["name"] == "Emma"
         rt = client.app.state.runtime
@@ -254,11 +254,11 @@ def test_restore_replaces_everything(tmp_path, removed):
         assert before.embedder is None and before.detector is None and not before.heads
         assert not any(live.frames for live in before.live.values())
     assert files_listed(target) == {
-        "samples": 5,
+        "samples": 6,
         "samples_missing": 0,
         "faces": 1,
         "faces_missing": 0,
-        "history": 3,
+        "history": 4,
         "history_missing": 0,
     }
     assert (target.models_dir / "here-already.onnx").exists()  # models are added, never removed
@@ -281,7 +281,7 @@ def test_restore_without_history_removes_the_history_here(tmp_path, removed):
     assert removed["people"] == ["emma"]
     assert files_listed(source)["history"] == 0
     assert not any(source.history_dir.rglob("*.jpg"))
-    assert files_listed(source)["samples"] == 5
+    assert files_listed(source)["samples"] == 6
 
 
 def connected(client) -> None:

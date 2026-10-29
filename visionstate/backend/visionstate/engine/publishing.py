@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 
 from ..db import Prediction, Sensor
-from ..mqtt import REVIEW_TOPICS, object_topics, topics
+from ..mqtt import REVIEW_TOPICS, object_topics, sound_topics, topics
 from ..settings import PUBLISH
 from .base import RuntimeBase
 from .state import SensorConfig
@@ -70,6 +70,11 @@ class PublishingMixin(RuntimeBase):
             for key in self._published_classes.get(cfg.id, set()) - current:
                 await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
             self._published_classes[cfg.id] = current
+        if cfg.is_sound:
+            current = set(cfg.sound_keys)
+            for key in self._published_classes.get(cfg.id, set()) - current:
+                await self.mqtt.remove_sound(cfg.slug, key)  # no longer listened for: remove its entity
+            self._published_classes[cfg.id] = current
         if cfg.is_reading and cfg.reading["mode"] != "counter":
             await self.mqtt.remove_rate(cfg.slug)  # only counters have a rate
         await self.mqtt.publish_discovery(cfg.descriptor)
@@ -87,6 +92,13 @@ class PublishingMixin(RuntimeBase):
         if cfg.is_objects:
             for key, track in (live.tracks if live else {}).items():
                 await self._send(cfg, object_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
+        elif cfg.is_sound:
+            heard = live.sound if live else None
+            for key in cfg.sound_keys:
+                track = heard.tracks.get(key) if heard else None
+                await self._send(
+                    cfg, sound_topics(cfg.slug, key)["state"], "ON" if track and track.on else "OFF", retain=True
+                )
         elif live and live.debouncer.published is not None:
             # Re-send the last state so it is not lost when discovery is (re)published.
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)

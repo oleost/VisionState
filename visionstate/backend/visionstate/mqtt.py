@@ -18,6 +18,7 @@ from .settings import (
     HA_DEVICE_CLASS_UNITS,
     KIND_OBJECTS,
     KIND_READING,
+    KIND_SOUND,
     KIND_STATES,
     READING_PROBLEMS,
     READING_RATE_UNITS,
@@ -64,6 +65,12 @@ def object_topics(slug: str, key: str) -> dict[str, str]:
     return {"state": f"{base}/state", "count": f"{base}/count", "attributes": f"{base}/attributes"}
 
 
+def sound_topics(slug: str, key: str) -> dict[str, str]:
+    """Topics of one sound of a sound sensor."""
+    base = f"{APP_SLUG}/{slug}/sounds/{key}"
+    return {"state": f"{base}/state"}
+
+
 @dataclass
 class SensorDescriptor:
     slug: str
@@ -73,16 +80,31 @@ class SensorDescriptor:
     objects: list[tuple[str, str, str]] = field(default_factory=list)  # (key, display name, icon) per class
     reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
+    # sound sensors: (key, display name, icon, device class) per sound
+    sounds: list[tuple[str, str, str, str]] = field(default_factory=list)
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
     """Home Assistant MQTT discovery configs for one sensor: one device, its entities.
 
-    The entities of its kind (``_state_entities``, ``_object_entities``, ``_reading_entities``),
-    then those every sensor has: the last frame, "check now" and the pause switch. Unique IDs
+    The entities of its kind (``_state_entities``, ``_object_entities``, ``_reading_entities``,
+    ``_sound_entities``), then those every sensor has: the last frame, "check now" and the pause
+    switch (a sound sensor listens all the time and has no frame: only the pause switch). Unique IDs
     and topics are never changed once released: Home Assistant's entities are bound to them.
     """
     d = _Discovery(prefix, sensor)
+    pause = {
+        "name": "Enabled",
+        **d.suggest("switch", "enabled"),
+        "command_topic": d.t["enabled_set"],
+        "state_topic": d.t["enabled"],
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "entity_category": "config",
+        **d.bridge_only,
+    }
+    if sensor.kind == KIND_SOUND:
+        return [*_sound_entities(d), d.config("switch", "enabled", pause)]
     if sensor.kind == KIND_READING:
         kind_specific = _reading_entities(d)
     elif sensor.kind == KIND_OBJECTS:
@@ -105,16 +127,6 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         "icon": "mdi:camera-iris",
         **d.bridge_only,
     }
-    pause = {
-        "name": "Enabled",
-        **d.suggest("switch", "enabled"),
-        "command_topic": d.t["enabled_set"],
-        "state_topic": d.t["enabled"],
-        "payload_on": "ON",
-        "payload_off": "OFF",
-        "entity_category": "config",
-        **d.bridge_only,
-    }
     return [
         *kind_specific,
         d.config("image", "frame", frame),
@@ -130,7 +142,7 @@ class _Discovery:
         self.prefix, self.sensor = prefix, sensor
         self.t = topics(sensor.slug)
         self.uid = f"{APP_SLUG}_{sensor.slug}"
-        models = {KIND_OBJECTS: "Object sensor", KIND_READING: "Reading sensor"}
+        models = {KIND_OBJECTS: "Object sensor", KIND_READING: "Reading sensor", KIND_SOUND: "Sound sensor"}
         self.device = {
             "identifiers": [self.uid],
             "name": sensor.name,
@@ -218,6 +230,25 @@ def _object_entities(d: _Discovery) -> list[tuple[str, dict]]:
             **d.with_camera,
         }
         entities += [d.config("binary_sensor", key, present), d.config("sensor", f"{key}_count", count)]
+    return entities
+
+
+def _sound_entities(d: _Discovery) -> list[tuple[str, dict]]:
+    """A sound sensor: per sound, whether it is heard (on/off). Smoke and fire alarms have the
+    device class "smoke" (Home Assistant shows them as such), the others "sound"."""
+    entities = []
+    for key, name, icon, device_class in d.sensor.sounds:
+        heard = {
+            "name": name,
+            **d.suggest("binary_sensor", key),
+            "state_topic": sound_topics(d.sensor.slug, key)["state"],
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device_class": device_class,
+            "icon": icon,
+            **d.with_camera,
+        }
+        entities.append(d.config("binary_sensor", key, heard))
     return entities
 
 
@@ -388,6 +419,16 @@ def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
     the user changed it) is in Home Assistant's entity registry, see ha_events.fetch_entity_ids.
     """
     uid = f"{APP_SLUG}_{sensor.slug}"
+    if sensor.kind == KIND_SOUND:
+        return [
+            (
+                f"{uid}_{key}",
+                f"binary_sensor.{uid}_{key}"
+                if sensor.entity_prefix
+                else f"binary_sensor.{ha_slug(f'{sensor.name} {name}')}",
+            )
+            for key, name, _icon, _class in sensor.sounds
+        ]
     if sensor.kind != KIND_OBJECTS:
         expected = f"sensor.{uid}" if sensor.entity_prefix else f"sensor.{ha_slug(sensor.name)}"
         return [(f"{uid}_state", expected)]
@@ -646,6 +687,8 @@ class MqttBridge:
             await self.publish(topic, "", retain=True)
         for key, *_ in sensor.objects:
             await self.remove_object_class(sensor.slug, key, discovery=False)
+        for key, *_ in sensor.sounds:
+            await self.publish(sound_topics(sensor.slug, key)["state"], "", retain=True)
 
     async def remove_stale(self, before: SensorDescriptor, after: SensorDescriptor) -> None:
         """The same sensor (slug) with other entities: forget the ones it no longer has (a restored
@@ -659,12 +702,22 @@ class MqttBridge:
         for key, *_ in before.objects:
             if key not in kept_keys:
                 await self.remove_object_class(before.slug, key)
+        kept_sounds = {key for key, *_ in after.sounds}
+        for key, *_ in before.sounds:
+            if key not in kept_sounds:
+                await self.remove_sound(before.slug, key)
 
     async def remove_rate(self, slug: str) -> None:
         """Forget the rate entity of a reading sensor that is no longer a counter."""
         uid = f"{APP_SLUG}_{slug}"
         await self.publish(f"{self.settings.discovery_prefix}/sensor/{uid}/rate/config", "", retain=True)
         await self.publish(topics(slug)["rate"], "", retain=True)
+
+    async def remove_sound(self, slug: str, key: str) -> None:
+        """Forget one sound of a sound sensor (no longer listened for): its entity and retained value."""
+        uid = f"{APP_SLUG}_{slug}"
+        await self.publish(f"{self.settings.discovery_prefix}/binary_sensor/{uid}/{key}/config", "", retain=True)
+        await self.publish(sound_topics(slug, key)["state"], "", retain=True)
 
     async def remove_object_class(self, slug: str, key: str, discovery: bool = True) -> None:
         """Forget one class of an object sensor (deselected): its entities and retained values."""

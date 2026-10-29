@@ -20,12 +20,13 @@ from .base import RuntimeBase
 from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
+from .sound import SoundMixin
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
 
 
-class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
+class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase):
     async def _sensor_loop(self, sensor_id: int) -> None:
         event = self._wake[sensor_id]
         last_error = ""
@@ -56,6 +57,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, RuntimeBase):
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
         if cfg is None:
             return False
+        if cfg.is_sound:
+            return await self._listen(cfg)  # listens all the time instead of checking frames
         live = self.live_state(sensor_id)
         due_at, kind = next_check_at(cfg, live, time.time())
         if not cfg.enabled and not live.force_paused:

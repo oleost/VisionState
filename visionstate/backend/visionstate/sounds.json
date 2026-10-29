@@ -1,0 +1,72 @@
+{
+  "default": "ced-tiny",
+  "models": {
+    "ced-tiny": {
+      "name": "CED-Tiny",
+      "description": "Recognises several hundred everyday sounds and turns a sound into an embedding for own sounds; about 8 ms per second of audio on a desktop CPU.",
+      "url": "",
+      "sha256": "3917c2fafedac1c9903817ddf025c0f289a4422f3aaa5594790d570ab7067235",
+      "size": 6682315,
+      "rate": 16000,
+      "license": "Apache-2.0",
+      "data": "Trained on AudioSet: Google's labels (CC BY 4.0) of YouTube videos, whose sound is not licensed for reuse.",
+      "source": "https://huggingface.co/mispeech/ced-tiny",
+      "made_by": "tools/soundmodel/make_model.py (CED-Tiny with an embedding output)",
+      "bundled": false,
+      "ram_mb": 40,
+      "time_ms": 16,
+      "accuracy": 3,
+      "sounds": {
+        "smoke_alarm": {
+          "name": "Smoke or fire alarm",
+          "classes": [399, 400],
+          "threshold": 0.3,
+          "device_class": "smoke",
+          "icon": "mdi:smoke-detector-variant-alert"
+        },
+        "siren": {
+          "name": "Siren",
+          "classes": [396, 323, 324, 325, 397],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:alarm-light"
+        },
+        "dog_bark": {
+          "name": "Dog barking",
+          "classes": [75],
+          "threshold": 0.15,
+          "device_class": "sound",
+          "icon": "mdi:dog"
+        },
+        "crying": {
+          "name": "Crying",
+          "classes": [22, 23],
+          "threshold": 0.1,
+          "device_class": "sound",
+          "icon": "mdi:emoticon-cry-outline"
+        },
+        "speech": {
+          "name": "Someone talking",
+          "classes": [0],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:account-voice"
+        },
+        "shout_scream": {
+          "name": "Shouting or screaming",
+          "classes": [8, 11, 14],
+          "threshold": 0.15,
+          "device_class": "sound",
+          "icon": "mdi:bullhorn"
+        },
+        "knock": {
+          "name": "Knocking",
+          "classes": [359],
+          "threshold": 0.6,
+          "device_class": "sound",
+          "icon": "mdi:door"
+        }
+      }
+    }
+  }
+}

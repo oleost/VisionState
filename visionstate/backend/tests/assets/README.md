@@ -45,3 +45,17 @@ The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
 `backups/` holds a backup made by each database version and backup format (`backup-format<F>-schema<S>.zip`),
 drawn by our own code (`tests/backup_fixture.py`): every later version's tests restore each of
 them. Never change or remove one; add the next with `python -m tests.backup_fixture`.
+
+## Test sounds
+
+Real recordings for the sound sensor tests (the sound model must hear real sounds: drawn ones are
+not heard as what they are). All are CC0 (public domain dedication) from Freesound, as listed in
+the CC0 part of the FSD50K data set (its clip metadata gives each clip's licence and uploader): six
+seconds of each (the part the tests use), 16 kHz mono, as AAC in `sounds/`.
+
+| File | What the tests expect | Source (Freesound, uploader) |
+|---|---|---|
+| `sounds/siren.m4a` | a siren | [fire.wav](https://freesound.org/s/53448/), guitarguy1985 |
+| `sounds/dog_bark.m4a` | a small dog barking | [Small Dog Barking](https://freesound.org/s/361544/), josepharaoh99 |
+| `sounds/smoke_alarm.m4a` | a smoke alarm in the next room | [Smoke detector alarm, distant neighboring room](https://freesound.org/s/369847/), SpliceSound |
+| `sounds/speech.m4a` | a woman speaking (numbers in German) | [Numbers 0-9, German, Female Voice](https://freesound.org/s/414063/), Kinoton |
