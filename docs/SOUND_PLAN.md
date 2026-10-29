@@ -225,7 +225,19 @@ Design rules that follow:
 4. **Clips are kept where only the app can read them** (`/data`, not `/media`, which Home
    Assistant's media browser shows to every user of the house), under the normal history limits,
    and are part of the backup (§8).
-5. **Only a human adds to taught sounds**, never the model's own answers.
+5. **Only a human adds to taught sounds**, never the model's own answers. The one exception is
+   *other* (below): what the room sounds like, never an example of a sound.
+
+**The room's sounds as *other*** (the maintainer's decision, 2026-10-29: both ways, the first on by
+default). A head for own sounds needs examples of what is *not* one of them. A per-sensor setting,
+*Learn the room's sounds*:
+- **On (default):** loud windows the sensor heard become *other* — only windows that scored below
+  every own sound's lower threshold, a limited number kept per sensor (the newest replace the
+  oldest), spread over the day rather than one noisy hour. The head knows the room from the start;
+  the rare window that held the sound itself is outweighed by the taught clips.
+- **Off:** *other* is only what a person answered *not this* for in Review.
+- Either way a human answer wins: a *not this* answer stays *other*, a clip taught as a sound is
+  never *other*, and the windows heard are never exported as samples.
 
 ## 7. Plan
 
@@ -307,18 +319,15 @@ As for images: CC0 / public domain, or drawn by our own code.
 
 ## 11. Open questions for the maintainer
 
-1. **Background as *other*:** a head for own sounds needs examples of what is *not* one of them.
-   Should the sensor take loud windows it heard (not reviewed) as *other*, or only clips a person
-   answered *not this* for? Taking heard windows teaches it the room's sounds from the start, but
-   is a step away from "only human answers are labels" (a window could hold the doorbell itself).
-2. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
+1. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
    enough, or must a Home Assistant camera entity or stock ESPHome come first?
-3. **The name:** VisionState that also hears — fine as it is, or a line in the README?
+2. **The name:** VisionState that also hears — fine as it is, or a line in the README?
 
 Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
 Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
 reason to leave the Pi out; clips are in the first release (off by default, speech silenced, §6);
-smoke and fire alarms get device class *smoke* (§8).
+smoke and fire alarms get device class *smoke* (§8); own sounds learn the room's sounds as
+*other*, on by default (§6).
 
 ## 12. Pitfalls to avoid
 
