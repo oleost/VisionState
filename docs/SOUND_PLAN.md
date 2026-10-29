@@ -323,14 +323,20 @@ As for images: CC0 / public domain, or drawn by our own code.
 
 ## 11. Decisions
 
-None of the maintainer's questions is open. Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
-Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
-reason to leave the Pi out; clips are in the first release (off by default, speech silenced, §6);
-smoke and fire alarms get device class *smoke* (§8); own sounds learn the room's sounds as
-*other*, on by default (§6); phase 1 listens to RTSP and HTTP streams (go2rtc restreams and ESP32
-microphones among them), a Home Assistant camera's own sound is wanted and looked into when testing
-with real microphones and Home Assistant (§10), voice satellites are left out for now; the name stays
-VisionState, and the README and the store text say it hears too once sound sensors ship.
+No question for the maintainer is open. Decided on 2026-10-29:
+
+- Sound sensors run on everything VisionState runs on, x86-64 and aarch64, with a Raspberry Pi 4
+  as the minimum; how many a machine carries is a limit phase 0 measures, not a reason to leave the
+  Pi out.
+- Models trained on AudioSet are accepted, downloaded when the first sound sensor is made (§5).
+- Clips are in the first release, off by default, speech silenced (§6).
+- Own sounds learn the room's sounds as *other*, on by default (§6).
+- Smoke and fire alarms get device class *smoke* (§8).
+- Phase 1 listens to RTSP and HTTP streams, go2rtc restreams and ESP32 microphones among them; no
+  push (§10). A Home Assistant camera's own sound is wanted and looked into when testing with real
+  microphones and Home Assistant; voice satellites are left out for now.
+- The name stays VisionState; the README and the store text say it hears too once sound sensors
+  ship.
 
 ## 12. Pitfalls to avoid
 
