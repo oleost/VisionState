@@ -386,6 +386,7 @@ class SoundIn(BaseModel):
         default=SOUND_DEFAULTS["clear_after_s"], ge=_slo["clear_after_s"], le=_shi["clear_after_s"]
     )
     clips: bool = SOUND_DEFAULTS["clips"]
+    video: bool = SOUND_DEFAULTS["video"]
     learn_room: bool = SOUND_DEFAULTS["learn_room"]
     # A sound's own threshold (None or missing: the model's, or SOUND["own_threshold"] for own sounds).
     thresholds: dict[str, float | None] = Field(default_factory=dict)

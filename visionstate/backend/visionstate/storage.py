@@ -11,6 +11,12 @@ from . import imaging
 from .settings import THUMB_SIZE, Settings
 
 CLIP_SUFFIX = ".m4a"  # a sound clip (AAC), see sounds.encode_clip
+VIDEO_CLIP_SUFFIX = ".mp4"  # a sound sensor's clip with the camera's video (sources.AudioStream.video_clip)
+
+
+def is_clip(filename: str | None) -> bool:
+    """A sound sensor's clip (sound only, or with video), not a camera frame."""
+    return bool(filename) and str(filename).endswith((CLIP_SUFFIX, VIDEO_CLIP_SUFFIX))
 
 
 class Storage:
@@ -38,9 +44,8 @@ class Storage:
         return self.settings.faces_dir / filename
 
     def history_path(self, sensor_id: int, filename: str) -> Path:
-        """A history frame, or a sound sensor's clip (``.m4a``: in the app's own storage, see
-        Settings.clips_dir)."""
-        if filename.endswith(CLIP_SUFFIX):
+        """A history frame, or a sound sensor's clip (in the app's own storage, see Settings.clips_dir)."""
+        if is_clip(filename):
             return self.settings.clips_dir / str(sensor_id) / filename
         return self.settings.history_dir / str(sensor_id) / filename
 
@@ -90,9 +95,9 @@ class Storage:
         self._write(self.history_path(sensor_id, filename), image, imaging.original_jpeg(image))
         return filename
 
-    def save_clip(self, sensor_id: int, data: bytes) -> str:
-        """A sound sensor's clip for the history (sounds.encode_clip)."""
-        filename = f"{uuid.uuid4().hex}{CLIP_SUFFIX}"
+    def save_clip(self, sensor_id: int, data: bytes, video: bool = False) -> str:
+        """A sound sensor's clip for the history (sounds.encode_clip, or with video)."""
+        filename = f"{uuid.uuid4().hex}{VIDEO_CLIP_SUFFIX if video else CLIP_SUFFIX}"
         self._write(self.history_path(sensor_id, filename), None, data)
         return filename
 

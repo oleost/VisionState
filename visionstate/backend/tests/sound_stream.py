@@ -43,9 +43,11 @@ def wav_header(rate: int = RATE) -> bytes:
 
 class SoundServer:
     """Serves ``/sound.wav``: ``background`` (looped), with ``play``-ed sounds mixed in once each.
-    ``speed`` above 1 sends faster than real time (tests that need not wait)."""
+    ``speed`` above 1 sends faster than real time (tests that need not wait). With ``video``,
+    ``url`` is a camera instead: ``/camera.ts``, H.264 video (a bar moving across, a key frame every
+    two seconds) with the same sound as AAC, in MPEG-TS."""
 
-    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0):
+    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0, video: bool = False):
         self.background = noise(5.0) if background is None else background
         self.speed = speed
         self._queue: list[np.ndarray] = []
@@ -58,9 +60,12 @@ class SoundServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 self.send_response(200)
-                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Type", "video/mp2t" if self.path.endswith(".ts") else "audio/wav")
                 self.end_headers()
                 try:
+                    if self.path.endswith(".ts"):
+                        server._send_camera(self.wfile)
+                        return
                     self.wfile.write(wav_header())
                     server._send(self.wfile)
                 except BrokenPipeError, ConnectionResetError:
@@ -68,7 +73,8 @@ class SoundServer:
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.httpd.daemon_threads = True
-        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/sound.wav"
+        name = "camera.ts" if video else "sound.wav"
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/{name}"
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self._thread.start()
 
@@ -76,7 +82,7 @@ class SoundServer:
         with self._lock:
             self._queue.append(samples.astype(np.float32))
 
-    def _send(self, out) -> None:  # noqa: ANN001 - the response's file
+    def _chunks(self):  # noqa: ANN202 - endless tenths of a second of sound
         chunk = RATE // 10
         position = 0
         playing = np.zeros(0, dtype=np.float32)
@@ -90,9 +96,34 @@ class SoundServer:
                 extra = playing[:chunk]
                 part[: len(extra)] += extra
                 playing = playing[chunk:]
-            out.write((np.clip(part, -1, 1) * 32767).astype("<i2").tobytes())
-            out.flush()
+            yield np.clip(part, -1, 1).astype(np.float32)
             time.sleep(chunk / RATE / self.speed)
+
+    def _send(self, out) -> None:  # noqa: ANN001 - the response's file
+        for part in self._chunks():
+            out.write((part * 32767).astype("<i2").tobytes())
+            out.flush()
+
+    def _send_camera(self, out) -> None:  # noqa: ANN001 - the response's file
+        import av
+
+        with av.open(out, mode="w", format="mpegts") as container:
+            video = container.add_stream("libx264", rate=10)
+            video.width, video.height, video.pix_fmt = 320, 180, "yuv420p"
+            video.options = {"g": "20", "preset": "ultrafast", "tune": "zerolatency"}
+            audio = container.add_stream("aac", rate=RATE, layout="mono")
+            for n, part in enumerate(self._chunks()):
+                picture = np.zeros((180, 320, 3), dtype=np.uint8)
+                picture[:, (n * 4) % 300 : (n * 4) % 300 + 20] = 255
+                frame = av.VideoFrame.from_ndarray(picture, format="rgb24")
+                frame.pts = n
+                for packet in video.encode(frame):
+                    container.mux(packet)
+                sound = av.AudioFrame.from_ndarray(part[None, :], format="flt", layout="mono")
+                sound.sample_rate, sound.pts = RATE, n * len(part)
+                for packet in audio.encode(sound):
+                    container.mux(packet)
+                out.flush()
 
     def close(self) -> None:
         self.httpd.shutdown()

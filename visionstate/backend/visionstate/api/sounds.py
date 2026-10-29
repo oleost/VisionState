@@ -18,7 +18,7 @@ from ..db import Prediction, Sample, Sensor
 from ..engine import Runtime
 from ..settings import KIND_SOUND, SOUND, UPLOAD_LIMITS, merge_sound
 from ..sources import AudioStream, SourceError, check_source
-from ..storage import CLIP_SUFFIX
+from ..storage import CLIP_SUFFIX, is_clip
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 
 router = APIRouter(prefix=API_PREFIX, tags=["sounds"])
@@ -141,13 +141,18 @@ async def teach_history_clip(rt: Runtime, sensor_id: int, body: TeachClipIn) -> 
     def clip() -> bytes:
         with rt.db.session() as s:
             row = s.get(Prediction, body.history_id)
-            if row is None or row.sensor_id != sensor_id or not (row.frame or "").endswith(CLIP_SUFFIX):
+            if row is None or row.sensor_id != sensor_id or not is_clip(row.frame):
                 raise HTTPException(404, "No clip in this history row")
             path = rt.storage.history_path(sensor_id, row.frame or "")
         try:
-            return path.read_bytes()
+            data = path.read_bytes()
         except OSError as err:
             raise HTTPException(404, "The clip is gone") from err
+        if path.suffix == CLIP_SUFFIX:
+            return data
+        # A clip with video: only its sound is taught.
+        rate = sounds.MODELS[sounds.DEFAULT_MODEL].rate
+        return sounds.encode_clip(sounds.decode_audio(data, rate), rate)
 
     data = await asyncio.to_thread(clip)
     result = await asyncio.to_thread(_add_clip, rt, sensor_id, data, body.label, body.new_name, "history")

@@ -344,3 +344,49 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
             assert bad.status_code == 400
     finally:
         server.close()
+
+
+@requires_sound
+def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
+    server = SoundServer(speed=1.0, video=True)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"sounds": ["siren"], "clips": True, "clear_after_s": 2}
+            made = client.post(
+                "/api/v1/sensors",
+                json={"name": "Porch", "kind": "sound", "source_type": "rtsp", "source": server.url, "sound": body},
+            ).json()
+            sid = made["id"]
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            assert view()["sound"]["stream"]["video"] == {"codec": "h264", "width": 320, "height": 180}
+            server.play(recording("siren"))
+
+            def heard() -> list[dict]:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": "heard"}).json()["items"]
+
+            assert wait_for(lambda: heard() and heard()[0]["has_clip"], timeout=40)
+            row = heard()[0]
+            assert row["clip_video"]
+            clip = client.get(f"/api/v1/history/{row['id']}/clip")
+            assert clip.headers["content-type"] == "video/mp4"
+            import io
+
+            import av
+
+            with av.open(io.BytesIO(clip.content), mode="r") as container:
+                kinds = sorted(s.type for s in container.streams)
+                frames = sum(1 for _ in container.decode(video=0))
+            assert kinds == ["audio", "video"] and frames >= 10  # at least a second of the camera
+            assert 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= 6.0
+            # Sound only, when asked: the next clip has no video.
+            client.patch(f"/api/v1/sensors/{sid}", json={"sound": {**body, "video": False}})
+            assert wait_for(lambda: not next(s for s in view()["sound"]["live"] if s["key"] == "siren")["on"])
+            server.play(recording("siren"))
+            assert wait_for(lambda: len(heard()) == 2 and heard()[0]["has_clip"], timeout=40)
+            assert not heard()[0]["clip_video"]
+    finally:
+        server.close()

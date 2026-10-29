@@ -18,7 +18,7 @@ from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from .. import imaging
 from ..db import Prediction, Sensor
 from ..settings import HISTORY, HISTORY_EVENTS, KIND_READING, SENSOR_KINDS
-from ..storage import CLIP_SUFFIX
+from ..storage import VIDEO_CLIP_SUFFIX, is_clip
 from .common import API_PREFIX, iso, runtime
 
 router = APIRouter(prefix=API_PREFIX, tags=["history"])
@@ -55,8 +55,9 @@ def prediction_view(p: Prediction) -> dict:
         "is_change": p.is_change,
         "review_reason": p.review_reason,
         "reviewed": p.reviewed,
-        "has_frame": bool(p.frame) and not p.frame.endswith(CLIP_SUFFIX),
-        "has_clip": bool(p.frame) and p.frame.endswith(CLIP_SUFFIX),  # a sound sensor's clip
+        "has_frame": bool(p.frame) and not is_clip(p.frame),
+        "has_clip": is_clip(p.frame),  # a sound sensor's clip
+        "clip_video": is_clip(p.frame) and (p.frame or "").endswith(VIDEO_CLIP_SUFFIX),  # ... with the camera's video
         "detections": p.detections,
         "read_ok": p.read_ok,
         "correct_value": p.correct_value,
@@ -234,7 +235,7 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
     rt = runtime(request)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
-        if row is None or not row.frame or row.frame.endswith(CLIP_SUFFIX):
+        if row is None or not row.frame or is_clip(row.frame):
             raise HTTPException(404, "Frame not found")
         path = rt.storage.history_path(row.sensor_id, row.frame)
         sensor = s.get(Sensor, row.sensor_id)
@@ -252,13 +253,16 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
 
 @router.get("/history/{prediction_id}/clip")
 def history_clip(prediction_id: int, request: Request) -> Response:
-    """A sound sensor's clip (AAC in MP4; ranges served, as Safari asks for them)."""
+    """A sound sensor's clip: AAC in MP4, with the camera's video when it had one (ranges are
+    served, as Safari asks for them)."""
     rt = runtime(request)
     with rt.db.session() as s:
         row = s.get(Prediction, prediction_id)
-        if row is None or not row.frame or not row.frame.endswith(CLIP_SUFFIX):
+        if row is None or not is_clip(row.frame):
             raise HTTPException(404, "Clip not found")
-        path = rt.storage.history_path(row.sensor_id, row.frame)
+        filename = row.frame or ""
+        path = rt.storage.history_path(row.sensor_id, filename)
     if not path.exists():
         raise HTTPException(404, "Clip file missing")
-    return FileResponse(path, media_type="audio/mp4", headers={"Cache-Control": "max-age=86400"})
+    media = "video/mp4" if filename.endswith(VIDEO_CLIP_SUFFIX) else "audio/mp4"
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "max-age=86400"})

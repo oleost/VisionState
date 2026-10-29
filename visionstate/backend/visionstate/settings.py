@@ -231,6 +231,7 @@ SOUND_DEFAULTS = {
     "fixed_db": -45.0,
     "clear_after_s": 10.0,  # a sound stays "heard" this long after it was last heard
     "clips": False,  # keep the seconds around a sound that was heard (speech silenced first)
+    "video": True,  # clips of a stream with video show it too (off: sound only, much smaller)
     # Own sounds learn what this room sounds like: loud windows that matched none of them are kept as
     # "other" (SOUND["room_kept"]). Off: only what a person answered "not this" for is "other".
     "learn_room": True,
@@ -260,6 +261,10 @@ SOUND = {
     "background_percentile": 20,
     "floor_db": -70.0,
     "buffer_s": 30.0,  # audio kept in memory (the window, a clip's seconds before, the Live view)
+    # A camera's video kept for clips with video (undecoded packets: about 4 MB at 2 Mbit/s): a clip's
+    # seconds before and after, the window, and a key frame interval to spare.
+    "video_buffer_s": 15.0,
+    "video_wait_s": 10.0,  # how long a clip waits for its video (else it is sound only)
     "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
     "clip_after_s": 5.0,
     "clip_bitrate": 48_000,  # AAC, bits per second

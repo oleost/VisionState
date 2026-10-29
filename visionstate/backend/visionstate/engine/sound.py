@@ -92,10 +92,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             return None
         started = time.monotonic()
         stream = heard.stream
-        if stream is None or stream.url != cfg.source or stream.closed:
+        video = bool(cfg.sound["clips"] and cfg.sound["video"])  # keep the camera's video for clips
+        if stream is None or stream.url != cfg.source or stream.closed or stream.video != video:
             if stream is not None:
                 stream.close()
-            stream = heard.stream = AudioStream(cfg.source)
+            stream = heard.stream = AudioStream(cfg.source, video)
             heard.consumed = 0
         try:
             model = await self.ensure_sound_model()
@@ -246,13 +247,19 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             if samples is None:
                 continue  # the stream was opened again meanwhile: the seconds are gone
             async with self._sem:
-                await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], model, samples, stream.rate)
+                quiet, muted = await asyncio.to_thread(model.silence_speech, samples, SOUND["speech_mute"])
+            # With the camera's video when the stream has one (made by the stream's thread), else sound only.
+            future = stream.video_clip(quiet, clip["start"])
+            with_video = await asyncio.to_thread(future.result, SOUND["video_wait_s"])
+            await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], quiet, muted, stream.rate, with_video)
 
     def _store_clip(
-        self, sensor_id: int, row_id: int, model: sounds.SoundModel, samples: np.ndarray, rate: int
+        self, sensor_id: int, row_id: int, quiet: np.ndarray, muted: int, rate: int, with_video: bytes | None
     ) -> None:
-        quiet, muted = model.silence_speech(samples, SOUND["speech_mute"])
-        filename = self.storage.save_clip(sensor_id, sounds.encode_clip(quiet, rate))
+        if with_video:
+            filename = self.storage.save_clip(sensor_id, with_video, video=True)
+        else:
+            filename = self.storage.save_clip(sensor_id, sounds.encode_clip(quiet, rate))
         with self.db.session() as s:
             row = s.get(Prediction, row_id)
             if row is None:  # removed meanwhile (the sensor was deleted)
