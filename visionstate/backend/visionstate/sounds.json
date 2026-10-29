@@ -12,6 +12,7 @@
       "data": "Trained on AudioSet: Google's labels (CC BY 4.0) of YouTube videos, whose sound is not licensed for reuse.",
       "source": "https://huggingface.co/mispeech/ced-tiny",
       "made_by": "tools/soundmodel/make_model.py (CED-Tiny with an embedding output)",
+      "other": "ced-tiny-other.npy",
       "bundled": false,
       "ram_mb": 40,
       "time_ms": 16,

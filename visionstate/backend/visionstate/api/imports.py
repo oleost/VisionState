@@ -11,15 +11,18 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 
-from .. import bundle, detectors, faces, imaging, readers
-from ..db import Person, keep_change_step, keep_text_reader, keep_wheel_reader
+from .. import bundle, detectors, faces, imaging, readers, sounds
+from ..db import Person, Sample, keep_change_step, keep_text_reader, keep_wheel_reader
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
     KIND_OBJECTS,
+    KIND_SOUND,
     KIND_STATES,
+    SOUND,
     UPLOAD_LIMITS,
 )
+from ..storage import CLIP_SUFFIX
 from . import teach
 from .common import (
     API_PREFIX,
@@ -83,11 +86,13 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
         # own confirmation (and download).
         faces_off = bool(spec.objects.faces.enabled)
         spec.objects.faces.enabled = False
-    samples = manifest.get("samples", []) if spec.kind in (KIND_STATES, KIND_OBJECTS) else []
+    samples = manifest.get("samples", []) if spec.kind in (KIND_STATES, KIND_OBJECTS, KIND_SOUND) else []
     if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
         raise ValueError("too many samples in bundle")
     # Object sensors: own labels and taught boxes come along (the rest of "objects" is validated above).
     custom = teach.import_custom((data.get("objects") or {}).get("custom")) if spec.kind == KIND_OBJECTS else []
+    # Sound sensors: own sounds and their taught clips come along.
+    own_sounds = import_own_sounds((data.get("sound") or {}).get("custom")) if spec.kind == KIND_SOUND else []
     spec.enabled = True
     with rt.db.session() as s:
         spec.name = unique_name(s, spec.name)
@@ -97,11 +102,13 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
         sensor.entity_prefix = bool(data.get("entity_prefix", True))
         if custom:
             sensor.objects = {**(sensor.objects or {}), "custom": custom}
+        if own_sounds:
+            sensor.sound = {**(sensor.sound or {}), "custom": own_sounds}
         s.add(sensor)
         s.flush()
         sensor_id = sensor.id
         state_ids = {st.key: st.id for st in sensor.states}
-    own = {label["key"] for label in custom}
+    own = {label["key"] for label in custom} | {label["key"] for label in own_sounds}
     skipped = 0
     # The sensor exists now: a broken image is skipped (like in an uploaded ZIP) instead of
     # failing the import halfway and leaving a sensor that was never started.
@@ -130,6 +137,7 @@ SENSOR_FIELDS = (
     "states",
     "objects",
     "reading",
+    "sound",
     "interval_s",
     "threshold",
     "debounce",
@@ -198,7 +206,34 @@ def _import_face(rt: Runtime, path: Path, sensor_id: int, item: dict) -> None:
         add_face_row(s, person.id, sensor_id, filename, image, face, "import")
 
 
+def import_own_sounds(raw: object) -> list[dict]:
+    """A bundle's own sounds ({key, name}), as far as they are valid here; keys stay (the entity IDs)."""
+    if not isinstance(raw, list):
+        return []
+    kept: list[dict] = []
+    for item in raw[: SOUND["max_custom"]]:
+        if not isinstance(item, dict):
+            continue
+        key, name = item.get("key"), item.get("name")
+        if not isinstance(key, str) or not isinstance(name, str) or not name.strip() or len(name) > 64:
+            continue
+        if slugify(key, "") != key or key in sounds.SOUNDS or key == sounds.OTHER or key in {k["key"] for k in kept}:
+            continue
+        kept.append({"key": key, "name": name.strip()})
+    return kept
+
+
 def _import_sample(rt: Runtime, path: Path, sensor_id: int, kind: str, item: dict, own: set, state_ids: dict) -> None:
+    if kind == KIND_SOUND:
+        label, filename = item.get("object_label"), str(item["file"])
+        if (label not in own and label != sounds.OTHER) or not filename.endswith(CLIP_SUFFIX):
+            return
+        data = bundle.read_sample_bytes(path, filename)
+        sounds.decode_audio(data, sounds.MODELS[sounds.DEFAULT_MODEL].rate)  # a clip that plays, or ValueError
+        stored = rt.storage.save_sample_clip(sensor_id, data)
+        with rt.db.session() as s:
+            s.add(Sample(sensor_id=sensor_id, filename=stored, origin="import", object_label=label))
+        return
     if kind == KIND_OBJECTS:
         if not teach.importable_label(item.get("object_label"), own):
             return

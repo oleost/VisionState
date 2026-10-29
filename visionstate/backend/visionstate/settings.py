@@ -274,6 +274,10 @@ SOUND = {
     "max_custom": 10,  # own sounds per sensor (one entity each)
     "max_taught": 50,  # clips taught per own sound
     "own_threshold": 0.8,  # an own sound is heard at this probability of the sensor's head
+    # A sound that was heard, but never scored above its threshold plus this share of the way from
+    # there to 1, is asked about in the review queue ("Was this a siren?"), when its clip is kept and
+    # the sensor's review rules allow (a siren at 0.3: below 0.65; an own sound at 0.8: below 0.9).
+    "unsure_share": 0.5,
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
 }

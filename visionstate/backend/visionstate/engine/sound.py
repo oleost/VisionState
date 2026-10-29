@@ -178,6 +178,9 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         await self._send(cfg, sound_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
         score = track.best if not track.on else track.score
         row = await asyncio.to_thread(self._record_sound, cfg.id, key, track.on, score, level)
+        if not track.on and track.row is not None:
+            await self._maybe_ask(cfg, key, track)
+        track.row = row if track.on else None
         if track.on and cfg.sound["clips"] and key != SOUND["speech_key"]:
             onset = stream.total - int(SOUND["window_s"] * stream.rate)
             heard.clips.append(
@@ -190,6 +193,30 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             )
         if not track.on:
             track.best = 0.0
+
+    async def _maybe_ask(self, cfg: SensorConfig, key: str, track: SoundTrack) -> None:
+        """A sound that is no longer heard, and never scored well above its threshold: ask in the
+        review queue whether it was that sound (only with its clip kept, and as the sensor's review
+        rules allow). The answer teaches the clip (api/review.py)."""
+        if not cfg.sound["clips"] or key == SOUND["speech_key"]:
+            return
+        threshold = self.sound_threshold(cfg, key)
+        if track.best >= threshold + (1.0 - threshold) * SOUND["unsure_share"]:
+            return
+        rules = self.review_rules(cfg)
+        live = self.live_state(cfg.id)
+        now = time.time()
+        if not rules["enabled"] or now - live.last_flag < rules["cooldown_s"]:
+            return
+        live.last_flag = now
+        await asyncio.to_thread(self._ask_sound, track.row, track.best)
+        await self.publish_review_count()
+
+    def _ask_sound(self, row_id: int | None, best: float) -> None:
+        with self.db.session() as s:
+            row = s.get(Prediction, row_id) if row_id is not None else None
+            if row is not None:
+                row.review_reason, row.reviewed, row.confidence = "unsure", False, round(best, 4)
 
     def _record_sound(self, sensor_id: int, key: str, on: bool, score: float, level: float) -> int:
         with self.db.session() as s:
@@ -335,6 +362,9 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if not x:
             self.sound_heads.pop(cfg.id, None)
             return
+        everyday = await asyncio.to_thread(sounds.other_sounds, model.id)
+        x += list(everyday)
+        y += [sounds.OTHER] * len(everyday)
         head = await asyncio.to_thread(sounds.train_head, model.id, np.stack(x), y)
         if head is None:
             self.sound_heads.pop(cfg.id, None)

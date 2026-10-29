@@ -224,6 +224,7 @@ class SoundTrack:
     last_heard: float = 0.0  # last window above the lower threshold while on
     score: float = 0.0  # the last window's score
     best: float = 0.0  # the best score since it was heard (for the history)
+    row: int | None = None  # the history row of the time it began to be heard
 
 
 @dataclass

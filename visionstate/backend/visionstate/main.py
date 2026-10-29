@@ -15,6 +15,7 @@ from starlette.types import Scope
 from . import backup
 from .api import backup as backup_api
 from .api import cameras, faces, history, imports, review, samples, sensors, system, teach
+from .api import sounds as sounds_api
 from .api.common import API_PREFIX
 from .db import Database
 from .engine import Runtime
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(teach.router)
     app.include_router(faces.router)
     app.include_router(faces.people_router)
+    app.include_router(sounds_api.router)
 
     frontend = settings.frontend_dir.resolve()
     index = frontend / "index.html"

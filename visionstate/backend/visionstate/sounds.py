@@ -11,6 +11,7 @@ removed once released (their texts, footprint and thresholds may be).
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import threading
@@ -53,6 +54,7 @@ class SoundModelSpec:
     source: str
     made_by: str
     sounds: dict[str, SoundSpec]
+    other: str = ""  # the embeddings of everyday sounds every head learns as OTHER (tools/soundmodel/make_other.py)
     bundled: bool = False
     footprint: Footprint = field(default_factory=lambda: Footprint())
 
@@ -77,6 +79,7 @@ def load_registry() -> tuple[str, dict[str, SoundModelSpec]]:
             data=v.get("data", ""),
             source=v.get("source", ""),
             made_by=v.get("made_by", ""),
+            other=v.get("other", ""),
             sounds={
                 k: SoundSpec(
                     key=k,
@@ -142,6 +145,16 @@ class SoundModel:
         for i in np.flatnonzero(loud):
             out[i * rate : (i + 1) * rate] = 0.0
         return out, int(loud.sum())
+
+
+@functools.cache
+def other_sounds(model_id: str) -> np.ndarray:
+    """Everyday sounds (CC0 recordings, embedded by the model) every own-sound head learns as OTHER
+    from the start, besides what its sensor heard: N × 576, or none for a model without them."""
+    spec = MODELS[model_id]
+    if not spec.other:
+        return np.zeros((0, 0), dtype=np.float32)
+    return np.load(REGISTRY_FILE.with_name(spec.other)).astype(np.float32)
 
 
 def level_db(samples: np.ndarray) -> float:

@@ -253,3 +253,94 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
         assert config["history_events"]["sound"] == ["heard", "quiet"]
     time.sleep(0)  # the stream's thread ends on its own (closed with the runtime)
+
+
+def chime(seconds: float = 3.0, gain: float = 0.3, seed: int = 0) -> np.ndarray:
+    """A drawn two-tone doorbell (ding-dong) with a little noise."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    out = np.zeros_like(t)
+    for start, freq in ((0.3, 784.0), (1.0, 622.0)):
+        m = t >= start
+        decay = np.exp(-(t[m] - start) * 2.5)
+        out[m] += gain * decay * (np.sin(2 * np.pi * freq * t[m]) + 0.3 * np.sin(2 * np.pi * 2 * freq * t[m]))
+    return (out + noise(seconds, 0.002, seed)).astype(np.float32)
+
+
+@requires_sound
+def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(SOUND, "unsure_share", 0.99)  # every sound is asked about
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            sensor = client.post(
+                "/api/v1/sensors",
+                json={
+                    "name": "Hall",
+                    "kind": "sound",
+                    "source_type": "rtsp",
+                    "source": server.url,
+                    "sound": {"sounds": ["siren"], "clips": True, "clear_after_s": 2},
+                },
+            ).json()
+            sid = sensor["id"]
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            def waiting() -> list[dict]:
+                return client.get("/api/v1/review", params={"sensor": sid}).json()["items"]
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            server.play(recording("siren"))
+            assert wait_for(lambda: bool(waiting()), timeout=40)
+            item = waiting()[0]
+            assert item["state_key"] == "siren" and item["review_reason"] == "unsure" and item["has_clip"]
+            assert item["sensor"]["sounds"] == [{"key": "siren", "name": "Siren", "own": False}]
+            # "That was our own siren": a new own sound from the clip.
+            answer = client.post(f"/api/v1/review/{item['id']}", json={"action": "new", "value": "Our siren"})
+            assert answer.status_code == 200, answer.text
+            assert [c["key"] for c in view()["sound"]["custom"]] == ["our_siren"]
+            assert view()["entity_ids"][-1] == "binary_sensor.hall_our_siren"
+
+            # Teach a doorbell from recordings (drawn), and what other sounds are.
+            files = [
+                ("files", (f"bell{i}.m4a", sounds.encode_clip(chime(gain=0.2 + 0.05 * i, seed=i), RATE), "audio/mp4"))
+                for i in range(5)
+            ]
+            made = client.post(f"/api/v1/sensors/{sid}/sounds/upload", files=files, data={"new_name": "Doorbell"})
+            assert made.status_code == 201, made.text
+            assert [a["label"] for a in made.json()["added"]] == ["doorbell"] * 5
+            others = [
+                ("files", (f"{n}.m4a", sounds.encode_clip(recording(n), RATE), "audio/mp4"))
+                for n in ("dog_bark", "speech")
+            ]
+            assert (
+                client.post(f"/api/v1/sensors/{sid}/sounds/upload", files=others, data={"label": "other"}).status_code
+                == 201
+            )
+            taught = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()
+            assert taught["counts"] == {"our_siren": 1, "doorbell": 5, "other": 2} and taught["trained"]
+            assert client.get(f"/api/v1/sound-clips/{taught['clips'][0]['id']}").headers["content-type"] == "audio/mp4"
+
+            server.play(chime(seed=9))
+            assert wait_for(lambda: next(s for s in view()["sound"]["live"] if s["key"] == "doorbell")["on"])
+
+            # Answering again replaces what the first answer taught.
+            again = client.post(f"/api/v1/review/{item['id']}", json={"action": "sound", "state_key": "doorbell"})
+            assert again.status_code == 200
+            counts = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()["counts"]
+            assert counts == {"doorbell": 6, "other": 2}
+            # Export and import: the own sounds and their clips come along.
+            exported = client.get(f"/api/v1/sensors/{sid}/export")
+            imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
+            assert imported.status_code == 201, imported.text
+            copy = imported.json()["id"]
+            assert client.get(f"/api/v1/sensors/{copy}/sounds/taught").json()["counts"] == {"doorbell": 6, "other": 2}
+            assert client.delete(f"/api/v1/sensors/{copy}").status_code == 204
+            # Forget an own sound: its clips and its entity go.
+            assert client.delete(f"/api/v1/sensors/{sid}/sounds/our_siren").status_code == 204
+            assert [c["key"] for c in view()["sound"]["custom"]] == ["doorbell"]
+            bad = client.post(f"/api/v1/sensors/{sid}/sounds/upload", files=files[:1], data={"label": "unicorn"})
+            assert bad.status_code == 400
+    finally:
+        server.close()

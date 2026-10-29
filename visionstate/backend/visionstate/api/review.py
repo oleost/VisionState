@@ -13,10 +13,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .. import imaging, readers
+from .. import imaging, readers, sounds
 from ..db import Face, Prediction, ReadingWatch, Sample, SampleLabel, Sensor
 from ..engine import Runtime, with_people
-from ..settings import FACE_UNKNOWN_KEY, KIND_OBJECTS, KIND_READING, REVIEW_QUEUE, merge_objects, merge_reading
+from ..settings import (
+    FACE_UNKNOWN_KEY,
+    KIND_OBJECTS,
+    KIND_READING,
+    KIND_SOUND,
+    REVIEW_QUEUE,
+    merge_objects,
+    merge_reading,
+    merge_sound,
+)
 from .common import (
     API_PREFIX,
     get_sensor,
@@ -35,7 +44,8 @@ class ReviewIn(BaseModel):
     # State sensors: confirm | label (state_key) | skip. Reading sensors: read_ok | misread
     # (optionally the value that was right) | skip. Object sensors ("Is this Our car?"): yes | no | skip;
     # about a face ("Is this Kari?", "Who is this?") also person (state_key: who it is) and new
-    # (value: the new person's name).
+    # (value: the new person's name). Sound sensors ("Was this a siren?"): yes | no | sound (state_key:
+    # one of its own sounds) | new (value: a new own sound's name) | skip.
     action: str
     state_key: str | None = None
     value: str | None = Field(None, max_length=64)
@@ -83,6 +93,8 @@ def review_queue(
                         "labels": with_people(merge_objects(sensor.objects), s)["custom"]
                         if sensor.kind == KIND_OBJECTS
                         else [],
+                        # sound sensors: the sounds it listens for, and its own sounds an answer can name
+                        "sounds": _sound_names(sensor) if sensor.kind == KIND_SOUND else [],
                     },
                 }
             )
@@ -157,6 +169,8 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
     kind = await asyncio.to_thread(kind_of)
     if kind == KIND_OBJECTS:
         return await _answer_object(rt, request, prediction_id, body)
+    if kind == KIND_SOUND:
+        return await _answer_sound(rt, prediction_id, body)
 
     def answer_reading() -> tuple[int, str, datetime] | None:
         """Checks that the answer fits the kind; stores a reading's. Returns the reading to anchor on, if any."""
@@ -312,6 +326,66 @@ async def _answer_face(
     face = FaceTeachIn(history_id=prediction_id, box=question["box"], score=score, person=person, new_person=new_person)
     result = await teach_face(sensor_id, face, request)
     await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
+
+
+def _sound_names(sensor: Sensor) -> list[dict]:
+    """A sound sensor's sounds as an answer offers them: {key, name, own}."""
+    settings = merge_sound(sensor.sound)
+    model = [{"key": k, "name": sounds.SOUNDS[k].name, "own": False} for k in settings["sounds"] if k in sounds.SOUNDS]
+    return model + [{"key": c["key"], "name": c["name"], "own": True} for c in settings["custom"]]
+
+
+async def _answer_sound(rt: Runtime, prediction_id: int, body: ReviewIn) -> dict:
+    """ "Was this a siren?" — the answer is kept with the row (``probs["answer"]``), and teaches its
+    clip where it can: yes about an own sound adds the clip to it; sound / new teach it as one of
+    the own sounds or a new one; no teaches it as another sound (``sounds.OTHER``) when the sensor
+    has own sounds. The model's own sounds are not changed by an answer. Answering again replaces
+    the clip the first answer taught."""
+    from .sounds import TeachClipIn, teach_history_clip
+
+    if body.action not in ("yes", "no", "sound", "new", "skip"):
+        raise HTTPException(400, "Answer yes, no, sound, new or skip")
+
+    def take_out() -> tuple[int, str, dict, int | None]:
+        with rt.db.session() as s:
+            row = s.get(Prediction, prediction_id)
+            if row is None:
+                raise HTTPException(404, "Review item not found")
+            sensor = get_sensor(s, row.sensor_id)
+            taught = row.sample_id
+            row.reviewed, row.sample_id = True, None
+            if body.action != "skip":
+                answer = (
+                    body.state_key if body.action == "sound" else body.value if body.action == "new" else body.action
+                )
+                row.probs = {**(row.probs or {}), "answer": answer}
+            if taught is not None and (sample := s.get(Sample, taught)) is not None:
+                rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor.id, sample.id, sample.filename))
+                s.delete(sample)
+            return sensor.id, row.state_key, merge_sound(sensor.sound), taught
+
+    sensor_id, key, settings, taught = await asyncio.to_thread(take_out)
+    own = {c["key"] for c in settings["custom"]}
+    teach: TeachClipIn | None = None
+    if body.action == "yes" and key in own:
+        teach = TeachClipIn(history_id=prediction_id, label=key)
+    elif body.action == "sound":
+        if body.state_key not in own:
+            raise HTTPException(400, "Name one of the sensor's own sounds")
+        teach = TeachClipIn(history_id=prediction_id, label=body.state_key)
+    elif body.action == "new":
+        if not (body.value or "").strip():
+            raise HTTPException(400, "Give the new sound a name")
+        teach = TeachClipIn(history_id=prediction_id, new_name=(body.value or "").strip())
+    elif body.action == "no" and own:
+        teach = TeachClipIn(history_id=prediction_id, label=sounds.OTHER)
+    if teach is not None:
+        result = await teach_history_clip(rt, sensor_id, teach)
+        await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
+    elif taught is not None:
+        await rt.sensor_updated(sensor_id, retrain=False)  # the clip the first answer taught is gone
+    await rt.publish_review_count()
+    return {"ok": True}
 
 
 def _link_answer(rt: Runtime, prediction_id: int, sample_id: int) -> None:
