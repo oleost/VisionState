@@ -117,7 +117,8 @@ Face revision and SHA-256, checked against real inputs in the tests.
 | **CLAP** (LAION, `laion/clap-htsat-unfused`; ONNX in `Xenova/clap-htsat-unfused`) | Apache-2.0 | Audio encoder 34–118 MB, plus a text encoder | Matches a sound with a *text* ("a washing machine beeping"). Too big as a default; maybe later (phase 4). |
 
 **CED-Tiny, measured** (its ONNX at revision `ace276d`, one thread of a 2.8 GHz Xeon server, drawn
-sounds; a Raspberry Pi 4 is several times slower and is measured in phase 0):
+sounds; a Raspberry Pi 4 — the minimum VisionState runs on, and a sound sensor must run there too
+— is several times slower and is measured in phase 0):
 
 - It takes the **raw 16 kHz waveform**: the spectrogram is computed inside the model, so the app
   needs no feature code. Its output is named `logits` but **already holds probabilities** (the
@@ -169,7 +170,7 @@ Design rules that follow:
 1. **Created on purpose:** the wizard says what is analysed and what is kept.
 2. **Windows are analysed and forgotten.** Only the decision and, when clips are on, the seconds
    around a sound that turned on are kept.
-3. **Clips are off by default.** When on, every part of a clip in which speech was detected is
+3. **Clips are in from the first release, off by default per sensor.** When on, every part of a clip in which speech was detected is
    **silenced before it is stored** — for every sound (a doorbell clip can hold a conversation). A
    *Speech* event never keeps a clip. Speech is also the class that fires most (Frigate's docs warn
    about it), another reason to keep its events lean.
@@ -182,9 +183,9 @@ Design rules that follow:
 
 | Phase | What | Done when |
 |---|---|---|
-| **0. Spike** (local, `/VisionStateLocal/`) | Audio from the household's cameras: codecs (AAC, G.711, Opus), sample rates, whether PyAV gets a usable track, how many connections a camera allows. CED-Tiny and YAMNet on a Raspberry Pi 4: time per second of audio. Scores per class on real CC0 recordings (§9), to set the registry's thresholds; false alarms over a day of a household's background and TV. Own sounds on real recordings: clips needed, the hidden-layer embedding against the class scores (§5). ESP32: which firmware to recommend, what ESPHome offers (§10). Read the weights' and data's terms. | A model and thresholds chosen with numbers, a verdict on the Pi 4 and on licences. Or "not good enough", a valid outcome. |
-| **1. Listening** | The `sound` kind; RTSP and HTTP audio streams (an ESP32 among them, §10); pretrained classes from a curated list (§2) → a binary sensor per sound; level line and live scores in the Live tab; no clips. | A real CC0 siren and smoke alarm turn their sensors on in a backend test; wizard and Live tab pass e2e on desktop, Android and iPhone. |
-| **2. Clips and review** | Clips around events (opt-in, speech silenced), history with playback, review questions, history filters. | e2e: a clip plays after a tap on every device. |
+| **0. Spike** (local, `/VisionStateLocal/`) | Audio from common cameras: codecs (AAC, G.711, Opus), sample rates, whether PyAV gets a usable track, how many connections a camera allows. CED-Tiny and YAMNet on a Raspberry Pi 4 and an x86 machine: time per second of audio, and so how many sound sensors a Pi 4 carries beside its image sensors (the limit DOCS.md states). Scores per class on real CC0 recordings (§9), to set the registry's thresholds; false alarms over a day of a household's background and TV. Own sounds on real recordings: clips needed, the hidden-layer embedding against the class scores (§5). ESP32: which firmware to recommend, what ESPHome offers (§10). Read the weights' and data's terms. | A model and thresholds chosen with numbers, the number of sound sensors a Pi 4 carries, a verdict on licences. Or "not good enough", a valid outcome. |
+| **1. Listening** | The `sound` kind; RTSP and HTTP audio streams (an ESP32 among them, §10); pretrained classes from a curated list (§2) → a binary sensor per sound; level line and live scores in the Live tab; clips around events (opt-in, speech silenced) with playback in the history. | A real CC0 siren and smoke alarm turn their sensors on in a backend test; wizard, Live tab and a clip played after a tap pass e2e on desktop, Android and iPhone. |
+| **2. Review** | Review questions for uncertain sounds ("Was this the doorbell?"), history filters per sound. | e2e on every device. |
 | **3. Own sounds** | Teach a sound from a clip in the history or an uploaded file; the small head (§5), its ask band and Quality tab (clips per sound, look-alikes); export/import. | Own sounds taught from five clips each are told apart in a backend test and on the spike data. |
 | **4. Later** | A Home Assistant *event* entity per sound; uploads of audio and video for teaching; stock ESPHome and voice-satellite microphones (§10); CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
 
@@ -205,8 +206,9 @@ Following the existing structure (names are proposals):
   WebM Opus unreliably in an audio element; PyAV encodes AAC) in a folder under `/data` that joins
   the `history` part of `settings.BACKUP_PARTS`; taught clips as `sample` rows whose file is a clip,
   in the `samples` part. A new database version gets its kept backup in `tests/assets/backups/`.
-- Entities: a `binary_sensor` per sound with device class *sound* (or *smoke* for smoke and fire
-  alarms, §11), new unique IDs that never change.
+- Entities: a `binary_sensor` per sound with device class *sound*, and *smoke* for smoke and fire
+  alarms (the maintainer's decision, 2026-10-29: Home Assistant shows them as what they are; DOCS.md
+  still says it is no replacement for a certified detector); new unique IDs that never change.
 - UI: the wizard gets *Sound* as a kind and a stream as the source (a Home Assistant camera snapshot
   has no sound); the Live tab shows the level against its line and each sound's score against its
   thresholds; clips play only after a tap (iOS allows nothing else); no hover-only controls.
@@ -259,12 +261,12 @@ As for images: CC0 / public domain, or drawn by our own code.
    if not bundled?
 2. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
    enough, or must a Home Assistant camera entity or stock ESPHome come first?
-3. **Raspberry Pi 4:** must a sound sensor run there beside the image sensors? Phase 0 measures it;
-   on the server above CED-Tiny is cheap (§5).
-4. **Clips:** off by default with speech silenced (§6), or no clips at all in the first release?
-5. **Smoke and fire alarms:** device class *smoke* (Home Assistant treats it as a safety sensor) or
-   only *sound*, to keep the "not a safety device" line clear?
-6. **The name:** VisionState that also hears — fine as it is, or a line in the README?
+3. **The name:** VisionState that also hears — fine as it is, or a line in the README?
+
+Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
+Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
+reason to leave the Pi out; clips are in the first release (off by default, speech silenced, §6);
+smoke and fire alarms get device class *smoke* (§8).
 
 ## 12. Pitfalls to avoid
 
