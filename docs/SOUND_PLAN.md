@@ -219,9 +219,9 @@ Design rules that follow:
 2. **Windows are analysed and forgotten.** Only the decision and, when clips are on, the seconds
    around a sound that turned on are kept.
 3. **Clips are in from the first release, off by default per sensor.** When on, every part of a
-   clip in which speech was detected is **silenced before it is stored** — for every sound (a doorbell clip can hold a conversation). A
-   *Speech* event never keeps a clip. Speech is also the class that fires most (Frigate's docs warn
-   about it), another reason to keep its events lean.
+   clip in which speech was detected is **silenced before it is stored** — for every sound (a
+   doorbell clip can hold a conversation). A *Speech* event never keeps a clip. Speech is also the
+   class that fires most (Frigate's docs warn about it), another reason to keep its events lean.
 4. **Clips are kept where only the app can read them** (`/data`, not `/media`, which Home
    Assistant's media browser shows to every user of the house), under the normal history limits,
    and are part of the backup (§8).
