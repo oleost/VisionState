@@ -53,12 +53,6 @@ Pick from 80 objects — no training. Name people by their face once; every came
   <em>A few photos from your phone are enough to start; faces never leave your Home Assistant.</em>
 </p>
 
-### 🔢 Readings
-
-*The water, gas or power meter*, the minutes left on the washer.
-
-Draw a box around the number. Counters only go up and land in the Energy dashboard.
-
 ### 🔊 Sounds
 
 *The smoke alarm is going off*, a siren, the dog barking, the baby crying — and your own doorbell or the washing machine beeping when it is done.
@@ -69,6 +63,12 @@ Pick from about 80 sounds, or teach your own from a few clips. A camera's microp
   <img src="docs/promo/sound.png" alt="A sound sensor hearing a smoke alarm, with its level and each sound's score" width="900"><br>
   <em>A smoke alarm heard in the hallway; the doorbell is an own sound, taught from a few clips.</em>
 </p>
+
+### 🔢 Readings
+
+*The water, gas or power meter*, the minutes left on the washer.
+
+Draw a box around the number. Counters only go up and land in the Energy dashboard.
 
 ## Read a water, gas or power meter with an ESP32-CAM
 
