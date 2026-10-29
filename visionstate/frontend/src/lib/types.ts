@@ -119,10 +119,7 @@ export interface ReadingSettings {
   wheel_reader: string;
   /** Read the region straightened: four corners, the first edge its top (imaging.region_image). */
   straighten: boolean;
-  /** counter_reader "wheels": the last wheel's digit is the one it has passed, its tenth one more decimal. */
-  fraction: boolean;
-  /** counter_reader "wheels": the meter's pointer dials, ×0.1 first (each one more decimal; with dials,
-   * fraction is not used). */
+  /** counter_reader "wheels": the meter's pointer dials, ×0.1 first (each one more decimal). */
   dials: Dial[];
   /** Values and times left, and counters with change_limit "step": the largest change between two
    * readings (0 = no limit). */

@@ -530,13 +530,11 @@ class WheelReader:
         image: Image.Image,
         digits: int,
         box: Pixels | None = None,
-        fraction: bool = False,
         needles: Sequence[dials.Needle] = (),
     ) -> tuple[Text, Image.Image]:
         """Read ``digits`` wheels; returns the read and the cells used.
 
-        The read is all the digits, the last wheel rounded to the nearest; with ``fraction`` the
-        last wheel's digit is the one it has passed and its tenth one more digit; with pointer dials
+        The read is all the digits, the last wheel rounded to the nearest; with pointer dials
         (``needles``, as read by dials.read_needle, ×0.1 first) one more digit per dial, decoded
         together with the wheels (``wheel_decode``: the last wheel and the dials turn on with the
         dial to their right). A region drawn a little above or below the digits shifts every wheel
@@ -561,8 +559,6 @@ class WheelReader:
         value, score, at, shift = best
         if extra:
             shown, number = digits + extra, math.floor(value) % 10 ** (digits + extra)
-        elif fraction:
-            shown, number = digits + 1, math.floor(value * 10) % 10 ** (digits + 1)
         else:
             shown, number = digits, math.floor(value + 0.5) % 10**digits
         p = self.wheel_p(probs, logp, at[:digits], shift)
@@ -702,7 +698,7 @@ def settling(value: float | None, last: float | None, settings: dict) -> bool:
     A wheel between two digits is read as the one or the other; once the higher one was published,
     every right reading until the counter gets there is one step lower. Such a reading keeps the
     value without counting as rejected, so it neither floods the review queue nor the statistics.
-    One step of its last digit; with extra digits (the last wheel's tenth, pointer dials), whose
+    One step of its last digit; with extra digits (pointer dials), whose
     last digit jitters, up to ``READING["settle_steps_fine"]`` steps.
     """
     if settings["mode"] != "counter" or value is None or last is None:

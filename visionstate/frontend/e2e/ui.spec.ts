@@ -385,7 +385,7 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.goto('#/sensors/new');
   await page.getByPlaceholder('Garage door').fill('Gas meter');
   await press(page.getByText('HTTP snapshot URL'), info);
-  await page.getByLabel('Source URL').fill(COUNTER_URL(45730.4)); // the last wheel four tenths on
+  await page.getByLabel('Source URL').fill(COUNTER_URL(45730.4)); // the last wheel four tenths on: rounded
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.locator('.roi img')).toBeVisible();
   await press(page.getByRole('button', { name: 'Next' }), info); // whole frame for now
@@ -408,15 +408,15 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
     at(COUNTER_BOX.x + COUNTER_BOX.w, COUNTER_BOX.y + COUNTER_BOX.h),
   );
   await expect(preview.locator('.handle.corner')).toHaveCount(4);
-  // A new counter reads the last wheel's fraction: one digit more than it has wheels.
-  await expect(page.getByText(/Read “00457304”/)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByLabel("Read the last wheel's fraction")).toBeChecked();
+  await expect(page.getByText(/Read “0045730”/)).toBeVisible({ timeout: 30_000 });
+  // A new reading sensor corrects rotation and perspective; the switch is with the region it changes.
+  await expect(page.locator('.read-images').getByLabel('Correct rotation and perspective')).toBeChecked();
   // The cells follow the region.
   const cells = (await preview.getByTestId('digit-cells').boundingBox())!;
   expect(Math.abs(cells.width - box.width * COUNTER_BOX.w)).toBeLessThan(box.width * 0.03);
   await page.getByLabel('Digits after the decimal point').fill('3');
   await page.getByLabel('Unit').fill('m³');
-  await expect(page.getByText('45.7304 m³')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
   // Read by the wheel reader (the default), which reads every field; the text reader instead
   // reads the digits it sees: told there are eight wheels, the seven digits it reads are not accepted.
   const readWith = page.getByLabel('Read with');
@@ -427,7 +427,7 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await expect(page.getByText(/digits, not 8/)).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Number of digits').fill('7');
   await readWith.selectOption('wheels:wheels-v2');
-  await expect(page.getByText('45.7304 m³')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('45.730 m³')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .kind, .mode, .card');
@@ -436,7 +436,7 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await press(page.getByRole('button', { name: 'Next' }), info);
   await press(page.getByRole('button', { name: 'Create sensor' }), info);
   await expect(page).toHaveURL(/\/live$/);
-  await expect(page.locator('.value-card .value')).toHaveText('45.7304 m³', { timeout: 60_000 });
+  await expect(page.locator('.value-card .value')).toHaveText('45.730 m³', { timeout: 60_000 });
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
   // The settings page shows the same fields over the region.
   await page.goto(`#/sensors/${sensorId}/settings`);
@@ -459,7 +459,7 @@ test('a counter the camera sees turned is read with its region straightened', as
       source_type: 'http',
       source: TURNED_COUNTER_URL(89932, 125),
       roi,
-      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', fraction: false },
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³' },
     },
   });
   expect(made.ok(), await made.text()).toBeTruthy();
@@ -470,7 +470,7 @@ test('a counter the camera sees turned is read with its region straightened', as
 
   // Settings: the region has four corners and no "+" to add one, its top marked; Turn moves the top.
   await page.goto(`#/sensors/${sensor.id}/settings`);
-  await expect(page.getByLabel('Straighten the region')).toBeChecked();
+  await expect(page.getByLabel('Correct rotation and perspective')).toBeChecked();
   const frame = page.locator('.frame .roi');
   await expect(frame.locator('.handle.corner')).toHaveCount(4);
   await expect(frame.locator('.handle.add')).toHaveCount(0);
@@ -508,12 +508,10 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     const card = page.getByTestId('dials-card');
     const editor = card.getByTestId('dials-editor');
     await expect(editor.locator('img')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByLabel("Read the last wheel's fraction")).toBeChecked();
     // Add a dial: a circle labelled ×0.1 below the counter; dragged it moves, its handle sizes it.
     await card.scrollIntoViewIfNeeded();
     await press(card.getByTestId('dial-add'), info);
     await expect(card.getByTestId('dial-label')).toHaveText(['×0.1']);
-    await expect(page.getByLabel("Read the last wheel's fraction")).toBeDisabled(); // the dials are finer
     const circle = editor.locator('circle').first();
     const before = (await circle.boundingBox())!;
     const centre = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
@@ -1703,7 +1701,7 @@ test('a camera that changed its picture size holds the readings until the region
       source_type: 'http',
       source: `${COUNTER_URL(89931)}&camera=${camera}`,
       roi: COUNTER_BOX,
-      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, change_limit: 'off', fraction: false },
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, change_limit: 'off' },
       interval_s: 3600,
       debounce: 1,
     },

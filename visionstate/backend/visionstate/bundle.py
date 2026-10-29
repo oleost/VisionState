@@ -111,7 +111,8 @@ READINGS_FORMAT = 7  # readings.json; 2 added per-reading reader details, "meter
 # 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
 # 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's);
 # 6: "straightened" (the region read upright, its perspective undone, and so is the image);
-# 7: pointer dials (each dial's picture, its needle in "wheels"), "fraction" and "dials" in "settings"
+# 7: pointer dials (each dial's picture, its needle in "wheels"), "dials" in "settings" ("fraction" in
+# 0.12.0b1 only: the last wheel's tenth as one more digit)
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -131,8 +132,8 @@ the size of the whole camera picture in pixels ("frame_size"; a camera that chan
 a restart moves what the region shows).
 For the wheel reader, "wheels" says where it saw each wheel (positions 0.0-9.9, as seen in the
 image), how sure it was ("p"), its most likely positions, the common shift of all wheels and the
-value with the last wheel's fraction. A counter read with the last wheel's fraction ("fraction" in
-"settings") has one more digit in "read"; one with pointer dials has one more per dial: "dials"
+value with the last wheel's fraction. A counter with pointer dials has one more digit in "read"
+per dial: "dials"
 lists each dial's picture as it was read (straightened, 0 at the top; "ccw": it turns
 anticlockwise), the first ×0.1 of the last wheel, and the rows of "per_wheel" after the wheels are
 the dials, with "needle" where the needle was found (null: none seen) and "certainty".
@@ -289,7 +290,6 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "digits",
                     "counter_reader",
                     "decimals",
-                    "fraction",
                     "dials",
                     "unit",
                     "max_step",

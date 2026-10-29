@@ -1,4 +1,4 @@
-"""Pointer dials and the last wheel's fraction (issue #59, docs/POINTER_DIAL_PLAN.md)."""
+"""Pointer dials (issue #59, docs/POINTER_DIAL_PLAN.md)."""
 
 import io
 import json
@@ -50,16 +50,15 @@ def cut(dial: Image.Image) -> Image.Image:
 def test_extra_digits_and_value_decimals():
     wheels = merge_reading({"mode": "counter", "display": "counter", "decimals": 3, "digits": 7})
     assert extra_digits(wheels) == 0 and value_decimals(wheels) == 3
-    assert extra_digits({**wheels, "fraction": True}) == 1 and value_decimals({**wheels, "fraction": True}) == 4
-    dialled = {**wheels, "fraction": True, "decimals": 0, "digits": 5, "dials": [{"x": 0, "y": 2, "r": 0.5}] * 4}
-    assert extra_digits(dialled) == 4 and value_decimals(dialled) == 4  # the dials, not the fraction
-    assert extra_digits({**wheels, "fraction": True, "counter_reader": "ocr"}) == 0  # only the wheel reader
+    assert extra_digits({**wheels, "fraction": True}) == 0  # stored by 0.12.0b1 only: no longer read
+    dialled = {**wheels, "decimals": 0, "digits": 5, "dials": [{"x": 0, "y": 2, "r": 0.5}] * 4}
+    assert extra_digits(dialled) == 4 and value_decimals(dialled) == 4
+    assert extra_digits({**dialled, "counter_reader": "ocr"}) == 0  # only the wheel reader
     assert readers.parse("001873456", dialled) == pytest.approx(187.3456)
     assert readers.format_value(187.3456, dialled) == "187.3456"
     assert not readers.wrong_digit_count("001873456", dialled) and readers.wrong_digit_count("00187", dialled)
     # The finer last digit jitters: two steps below the value still keep it, three do not.
-    fine = {**wheels, "fraction": True}
-    assert readers.settling(89.9312, 89.9314, fine) and not readers.settling(89.9311, 89.9314, fine)
+    assert readers.settling(187.3454, 187.3456, dialled) and not readers.settling(187.3453, 187.3456, dialled)
     assert not readers.settling(89.930, 89.932, wheels)
 
 
@@ -144,8 +143,9 @@ class MeterCamera:
 
 
 @requires_reader
-def test_the_last_wheel_is_read_with_its_fraction(settings):
-    """Half way to the next digit is still the digit it has passed, with its tenth one more decimal."""
+def test_the_last_wheel_is_rounded_without_dials(settings):
+    """Without pointer dials the last wheel is rounded to the nearest digit — also for a counter that
+    stored "fraction" (the last wheel's tenth as one more digit, offered in 0.12.0b1 only)."""
 
     class Camera:
         value = 89931.6
@@ -162,13 +162,11 @@ def test_the_last_wheel_is_read_with_its_fraction(settings):
         client.app.state.runtime.grabber = Camera()
         reading = {"mode": "counter", "display": "counter", "digits": 7, "decimals": 3, "straighten": False}
         preview = {"source_type": "http", "source": "http://fake", "roi": counter_box(7)}
-        fine = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
-        assert fine["text"][:7] == "0089931" and len(fine["text"]) == 8  # a new counter reads the fraction
-        assert fine["value"].startswith("89.931") and not fine["wrong_digit_count"]
-        whole = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "fraction": False}}).json()
-        assert whole["text"] == "0089932"  # rounded, as counters saved before read
-        assert client.get("/api/v1/config").json()["reading_defaults"]["fraction"] is True
-        assert merge_reading({"mode": "counter"})["fraction"] is False
+        whole = client.post("/api/v1/preview/read", json={**preview, "reading": reading}).json()
+        assert whole["text"] == "0089932" and whole["value"] == "89.932" and not whole["wrong_digit_count"]
+        stored = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "fraction": True}}).json()
+        assert stored["text"] == "0089932"
+        assert "fraction" not in client.get("/api/v1/config").json()["reading_defaults"]
 
 
 @requires_reader

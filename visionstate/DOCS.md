@@ -305,13 +305,6 @@ First choose **what it looks like**:
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
 
-**The last wheel's fraction** (wheel reader only; on for a new counter, counters made before keep
-reading as they did until you turn it on): the last wheel counts the digit it has passed, not the
-one coming — a wheel half way from 3 to 4 is 3, as you read a meter — and how far it has turned is
-one more digit: a counter of 45.730 m³ reads 45.7304 m³. That tenth moves a little between
-readings; a reading up to two steps of it below the value keeps the value (*Last wheel turning*),
-and what is sent never goes down.
-
 **Pointer dials** — the small dials many water meters have beside the wheels (×0.1, ×0.01, ×0.001,
 ×0.0001 m³), each a needle turning over the numbers 0–9. A mechanical counter read by the wheel
 reader can add them: in the wizard switch the picture to **Edit: Dials**, in Settings use the
@@ -327,12 +320,12 @@ coming is read right. The needle is found by its red colour, or by being the dar
 dial when the picture has no colour (an infrared camera at night). *What the reader sees* shows
 each dial after the wheels with the needle it found drawn on it; the Pointer dials card says where
 each needle was found, or *No needle found*. A dial needs a few dozen pixels across in the picture
-to be read: move the camera closer, or use its zoom, if the dials are tiny. With dials, the last
-wheel's fraction is not used.
+to be read: move the camera closer, or use its zoom, if the dials are tiny.
 
 **A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:
-with **Straighten the region** (on for a new reading sensor; sensors made before keep reading as
-they did until you turn it on) the region is read upright. Put its four corners on the corners of
+with **Correct rotation and perspective** (with the region: under the picture in the wizard, in
+the Region card in Settings; on for a new reading sensor, sensors made before keep reading as they
+did until you turn it on) the region is read upright. Put its four corners on the corners of
 the digits or the wheels: the edge marked **Top** goes on their top edge, and **Turn** moves the
 mark to the next edge (for a meter turned a quarter or upside down). Drag the corners where they
 belong and the region follows the meter at any angle, its perspective undone as well, as if the
@@ -360,9 +353,9 @@ objects the region stays a border.
   dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
   as 8.
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
-  five black and three red wheels has 8 digits and 3 digits after the decimal point (the last
-  wheel's fraction and pointer dials, above, add digits after those). Without its fraction, the
-  last wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
+  five black and three red wheels has 8 digits and 3 digits after the decimal point (pointer
+  dials, above, add digits after those). Without dials, the last wheel is rounded to the nearest
+  digit. A counter that reads lower than before is rejected, and
   a limit on how fast it may go up (see *Counter limit* below) catches a misread that is too
   high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the

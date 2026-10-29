@@ -318,7 +318,6 @@ class ReadingIn(BaseModel):
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
     straighten: bool = READING_NEW_SENSOR["straighten"]
-    fraction: bool = READING_NEW_SENSOR["fraction"]
     dials: list[DialIn] = Field(default=[], max_length=READING["max_dials"])
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]

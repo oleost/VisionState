@@ -382,9 +382,9 @@ most:
   data says otherwise.
 - **Refuse a frame that is too dark or flat** before reading it, instead of stretching noise into
   digits.
-- The last wheel's fraction as one more digit, and pointer dials, are built:
-  [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) (its step 2 adds a measure of the fraction to the
-  benchmark).
+- Pointer dials are built: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md). The last wheel's
+  fraction as one more digit was tried and taken out (its §4); it needs a measure of the fraction
+  in the benchmark before it comes back.
 
 ## 9. Order and status
 

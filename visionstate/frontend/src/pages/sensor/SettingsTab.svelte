@@ -17,6 +17,7 @@
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
+  import StraightenSwitch from '../../lib/components/StraightenSwitch.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
@@ -164,6 +165,7 @@
           <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
         </span>
       </div>
+      {#if readingSensor}<StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />{/if}
       <p class="small muted">
         {straightened
           ? 'Put its four corners on the corners of the display or counter, the edge marked Top at its top; it is read upright.'

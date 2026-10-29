@@ -1003,7 +1003,6 @@ def test_camera_changed_holds_readings(settings):
         "digits": 7,
         "decimals": 3,
         "change_limit": "off",
-        "fraction": False,
     }
     body = {
         "name": "Water meter",
@@ -1084,7 +1083,6 @@ def test_wheel_counter_sensor_flow(settings):
         "decimals": 3,
         "unit": "m³",
         "change_limit": "off",
-        "fraction": False,
     }
     body = {
         "name": "Gas meter",
@@ -1238,7 +1236,7 @@ def test_each_counter_reads_with_the_wheel_reader_it_names(settings):
     other = dataclasses.replace(readers.WHEEL_READERS["wheels-v1"], id="wheels-test", name="Test wheel reader")
     settings.models_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(MODEL_DIR / "wheels-v1.onnx", settings.models_dir / other.filename)
-    reading = {"mode": "counter", "display": "counter", "digits": 7, "change_limit": "off", "fraction": False}
+    reading = {"mode": "counter", "display": "counter", "digits": 7, "change_limit": "off"}
     body = {"kind": "reading", "source_type": "http", "source": "http://fake", "roi": counter_box(7), "interval_s": 1}
 
     def loaded():
@@ -1363,7 +1361,7 @@ def test_a_turned_counter_is_read_with_its_region_straightened(settings):
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
         roi = camera.roi
-        reading = {"mode": "counter", "display": "counter", "digits": 7, "fraction": False}
+        reading = {"mode": "counter", "display": "counter", "digits": 7}
         preview = {"source_type": "http", "source": "http://fake", "roi": roi}
         read = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "straighten": True}}).json()
         assert read["text"] == "0089932"
@@ -1401,6 +1399,6 @@ def test_a_counter_seen_at_an_angle_is_read_with_its_region_straightened(setting
     camera = TurnedCounter(angle, tilt=0.45)  # the far end of the picture about half as wide
     with TestClient(create_app(settings)) as client:
         client.app.state.runtime.grabber = camera
-        reading = {"mode": "counter", "display": "counter", "digits": 7, "straighten": True, "fraction": False}
+        reading = {"mode": "counter", "display": "counter", "digits": 7, "straighten": True}
         preview = {"source_type": "http", "source": "http://fake", "roi": camera.roi, "reading": reading}
         assert client.post("/api/v1/preview/read", json=preview).json()["text"] == "0089932"

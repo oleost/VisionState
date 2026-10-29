@@ -8,6 +8,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
+  import StraightenSwitch from '../../lib/components/StraightenSwitch.svelte';
   import { pct } from '../../lib/format';
   import { digitsSeen, extraDigits, readingUnit } from '../../lib/reading';
   import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
@@ -116,6 +117,7 @@
             <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />
           {/if}
         </RoiEditor>
+        <StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />
         {#if reading.straighten && roi}
           <div class="row wrap" style="gap:8px">
             <button class="btn sm" onclick={() => roi && (roi = turnTop(roi))} title="The edge clockwise from it becomes the top" data-testid="roi-turn">

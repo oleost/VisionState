@@ -273,17 +273,19 @@ ESP32-CAM that cannot hang straight above a meter): its four corners, the first 
 turned into an upright rectangle by one perspective transform (`imaging.region_image`), so
 rotation at any angle and perspective are undone in one step — width and height the mean of the
 opposite edges, as for a rectangle seen at an angle. It is the region the user already draws, no
-new tool: the editor keeps it at four corners and marks the top (`RoiEditor` `quad`, *Turn*).
+new tool: the editor keeps it at four corners and marks the top (`RoiEditor` `quad`, *Turn*), and
+the switch (*Correct rotation and perspective*, `StraightenSwitch.svelte`) sits with the region it
+changes, not with the reading settings.
 Reading sensors only (decided 2026-10-29): for states and objects the region is a border, and four
 corners there are not a rectangle to straighten. A new reading sensor straightens; one saved before
 has no key and reads as it did (`settings.READING_NEW_SENSOR`). Each reading records whether it was
 straightened, so History, Review and the export cut its frame the same way.
 
-**A counter read by the wheel reader reads finer than its wheels** (issue #59,
-[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md)): with `reading["fraction"]` the last wheel's digit
-is the one it has passed (not rounded half way, which made a meter's last digit come early) and its
-tenth is one more digit; with `reading["dials"]` the meter's pointer dials add one digit each
-(`settings.extra_digits`, `settings.value_decimals`). Dials are circles in the plane the counter
+**A counter read by the wheel reader reads finer than its wheels with pointer dials** (issue #59,
+[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md)): with `reading["dials"]` the meter's pointer dials
+add one digit each (`settings.extra_digits`, `settings.value_decimals`). The last wheel's tenth as
+one more digit without dials (`reading["fraction"]`) was offered in 0.12.0b1 and taken out again
+(the plan's §4 says why). Dials are circles in the plane the counter
 is read in (`imaging.reading_plane`: the straightened region, or its box), in units of the region's
 height, so they move with the region and a dial seen at an angle is cut round with its 0 up. A
 needle is read without a model (`dials.read_needle`: red, else the darkest part of the face; its
@@ -291,9 +293,8 @@ direction a probability over 100 positions) and the wheels and dials are decoded
 (`readers.wheel_decode` with *smooth* links: a wheel or dial's tenth is the next one's digit), so
 the ×0.1 dial settles the last wheel and a needle on a number is settled by the next dial. The
 editor places dials on the straightened meter face around the region (`imaging.meter_face`), not
-on the camera picture, so circles stay round. Both are on for a new counter only where they apply:
-`fraction` (`READING_NEW_SENSOR`); dials when the user adds them. The change limit stays in the
-counter's own decimals; the settling tolerance and Home Assistant's display precision follow the
+on the camera picture, so circles stay round. A counter has dials when the user adds them. The
+change limit stays in the counter's own decimals; the settling tolerance and Home Assistant's display precision follow the
 value's.
 
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
@@ -887,7 +888,7 @@ is part of backups and needs no restart.
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at release | not released |
-| **Pointer dials** | The last wheel's digit as passed, not rounded, with its fraction as a decimal; a water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle). Left: try it on real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
+| **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle). Left: try it on real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

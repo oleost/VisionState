@@ -102,15 +102,11 @@ READING_DEFAULTS = {
     # turned. Off for sensors saved before it was offered (they read as they did); a new sensor
     # starts with READING_NEW_SENSOR.
     "straighten": False,
-    # Mechanical counters read by a wheel reader (settings.extra_digits): "fraction" reads the last
-    # wheel as the digit it has passed (not rounded half way) with its tenth as one more decimal;
-    # "dials" are the meter's pointer dials, each one more decimal (the first ×0.1 of the last
-    # wheel, then ×0.01 …; docs/POINTER_DIAL_PLAN.md): circles in the plane the counter is read in
+    # Mechanical counters read by a wheel reader (settings.extra_digits): the meter's pointer dials,
+    # each one more decimal (the first ×0.1 of the last wheel, then ×0.01 …;
+    # docs/POINTER_DIAL_PLAN.md): circles in the plane the counter is read in
     # (imaging.reading_plane), in units of the region's height from its top-left corner — {"x", "y",
-    # "r", "ccw"}
-    # (ccw: the dial turns anticlockwise). With dials, "fraction" is not used: the dials are finer.
-    # Off and none for sensors saved before; a new sensor starts with READING_NEW_SENSOR.
-    "fraction": False,
+    # "r", "ccw"} (ccw: the dial turns anticlockwise).
     "dials": [],
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
@@ -213,9 +209,9 @@ READING = {
     # registry): a wheel's share is the model's probability within this many bins of where the
     # value puts it.
     "wheel_weakest_bins": 4,
-    # A counter with extra digits (extra_digits: the last wheel's tenth, or pointer dials): its last
-    # digit jitters by a step or two between readings. A reading this many steps below the value
-    # keeps it ("settling"), as one step does without them, instead of being rejected as going down.
+    # A counter with extra digits (extra_digits: pointer dials): its last digit jitters by a step or
+    # two between readings. A reading this many steps below the value keeps it ("settling"), as one
+    # step does without them, instead of being rejected as going down.
     "settle_steps_fine": 2,
     # Pointer dials (dials.py): at most this many per counter, their radius within dial_radius and
     # their centre at most dial_reach beyond the region (both in units of the region's height); the
@@ -718,16 +714,16 @@ def active_custom(objects: dict) -> list[dict]:
 
 
 # What a new reading sensor starts with where it differs from what a stored one without it has.
-READING_NEW_SENSOR = {"straighten": True, "fraction": True}
+READING_NEW_SENSOR = {"straighten": True}
 
 
 def extra_digits(reading: dict) -> int:
-    """Digits a reading sensor reads beyond its wheels: one per pointer dial, or without dials the
-    last wheel's tenth ("fraction"). Only a mechanical counter read by a wheel reader has them."""
+    """Digits a reading sensor reads beyond its wheels: one per pointer dial. Only a mechanical
+    counter read by a wheel reader has them. ("fraction", the last wheel's tenth as one more digit,
+    was offered in 0.12.0b1 only: a sensor that stored it reads as one without it.)"""
     if reading.get("display") != "counter" or reading.get("counter_reader") != "wheels":
         return 0
-    dials = reading.get("dials") or []
-    return len(dials) if dials else int(bool(reading.get("fraction")))
+    return len(reading.get("dials") or [])
 
 
 def value_decimals(reading: dict) -> int:

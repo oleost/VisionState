@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0b2
+
+Still an early beta: straightened regions and pointer dials are tested on drawn meters only.
+
+### Changed
+
+- **Correct rotation and perspective** (was *Straighten the region*) is now with the region it
+  changes: under the picture in the wizard, and in the Region card in Settings.
+- **Read the last wheel's fraction is gone.** Without pointer dials, the last wheel is rounded to
+  the nearest digit again, as before 0.12: reading the digit a wheel has passed made a wheel at
+  rest that the reader saw a hair below its digit read a whole digit too low. On a meter with
+  pointer dials, the ×0.1 dial settles the last wheel instead. A counter made in 0.12.0b1 loses
+  its extra decimal by itself (Home Assistant may show one decimal less) and holds its last value
+  until the meter has gone up one more step.
+
 ## 0.12.0b1
 
 **An early beta, lightly tested.** The two features below pass the automated tests on drawn

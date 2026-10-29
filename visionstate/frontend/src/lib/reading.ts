@@ -81,7 +81,7 @@ export function readingRoi(p: Prediction, sensor: Pick<Sensor, 'roi'>): Roi | nu
  */
 export function rightValue(
   text: string,
-  settings: Pick<ReadingSettings, 'mode' | 'decimals' | 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+  settings: Pick<ReadingSettings, 'mode' | 'decimals' | 'display' | 'counter_reader' | 'dials'>,
 ): string | null {
   const decimals = valueDecimals(settings);
   const t = text.trim();
@@ -95,18 +95,18 @@ export function rightValue(
   return Number.isFinite(n) ? n.toFixed(decimals) : null;
 }
 
-/** Digits a counter read by a wheel reader reads beyond its wheels: one per pointer dial, else one for
- * the last wheel's fraction (settings.extra_digits). */
+/** Digits a counter read by a wheel reader reads beyond its wheels: one per pointer dial
+ * (settings.extra_digits). */
 export function extraDigits(
-  settings: Pick<ReadingSettings, 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+  settings: Pick<ReadingSettings, 'display' | 'counter_reader' | 'dials'>,
 ): number {
   if (settings.display !== 'counter' || settings.counter_reader !== 'wheels') return 0;
-  return settings.dials?.length ? settings.dials.length : settings.fraction ? 1 : 0;
+  return settings.dials?.length ?? 0;
 }
 
 /** Decimals of the value: the counter's own and its extra digits (settings.value_decimals). */
 export const valueDecimals = (
-  settings: Pick<ReadingSettings, 'decimals' | 'display' | 'counter_reader' | 'fraction' | 'dials'>,
+  settings: Pick<ReadingSettings, 'decimals' | 'display' | 'counter_reader' | 'dials'>,
 ) => settings.decimals + extraDigits(settings);
 
 /** Share as a percentage with one decimal ("2.4 %"), or "—" without readings. */

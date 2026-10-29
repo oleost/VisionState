@@ -172,7 +172,6 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
                     image,
                     int(reading["digits"]),
                     box,
-                    bool(reading.get("fraction")),
                     needles,
                 )
             return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used

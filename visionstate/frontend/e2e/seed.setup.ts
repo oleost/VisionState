@@ -100,8 +100,7 @@ setup('seed a mechanical counter sensor', async ({ request }) => {
       source_type: 'http',
       source: COUNTER_URL(89939.5), // the last two wheels are half way to the next digit
       roi: COUNTER_BOX,
-      // Whole wheels (the last rounded), as counters set up before the last wheel's fraction was read.
-      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', device_class: 'water', fraction: false },
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³', device_class: 'water' },
       interval_s: 5,
       debounce: 1,
     },
