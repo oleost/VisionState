@@ -28,19 +28,24 @@ model also learns the room and the distance helps here): the doorbell; a washing
 dishwasher beeping when done; a microwave or oven timer; the garage door running; a fridge or
 freezer door alarm; a water leak, CO or low-battery beeper; a particular door or the letterbox flap.
 
-**Pretrained classes** (from the AudioSet ontology the models are trained on): speech ("someone is
-talking"), dog barking, baby crying, sirens (ambulance, police, fire engine), smoke and fire alarms,
-glass breaking, knocking, shouting and screaming.
+**Pretrained classes** (from the AudioSet ontology the models are trained on), as measured on real
+recordings (§5): **dog barking, sirens (ambulance, police, fire engine), smoke and fire alarms and
+crying** are recognised well; **speech** ("someone is talking"), **shouting and screaming** and
+**knocking** fairly — offered, not used as examples. **Glass breaking, a doorbell, a door slamming
+and a microwave** are recognised poorly by the pretrained classes: the doorbell, the door and the
+microwave are taught as own sounds instead (they are the same sound every time); glass breaking is
+not offered (too weak, worse still in telephone-band audio, and it reads like a security promise).
 
 **Not promised:**
 - telling individuals apart (which dog, which person): sound models learn categories, not
-  individuals — even two doorbells lie close together (§5) — and a voice is the privacy line (§6);
+  individuals (two doorbells are told apart only from their own taught clips, §5) — and a voice is
+  the privacy line (§6);
 - sounds drowned by a TV or music, or faint ones far from the microphone (a siren behind a closed
   window);
 - every smoke alarm: most beep near 3.1 kHz in the "temporal-3" pattern (three beeps, a pause), but
   low-frequency alarms (a 520 Hz square wave, made to wake heavy sleepers and the hard of hearing)
-  and CO alarms sound different. A drawn 520 Hz alarm was not recognised as a smoke alarm (§5); the
-  docs tell the user to teach their own alarm as an own sound;
+  and CO alarms sound different: a drawn 520 Hz alarm came out as *Beep, bleep* and *Siren* at 0.08,
+  not as a smoke alarm. The docs tell the user to teach their own alarm as an own sound;
 - a safety device: a smoke alarm sensor is an extra notification, never a replacement for a
   certified detector.
 
@@ -112,30 +117,68 @@ Face revision and SHA-256, checked against real inputs in the tests.
 | Model | Licence | Size | Notes |
 |---|---|---|---|
 | **CED-Tiny** (`mispeech/ced-tiny`) | Apache-2.0 | 5.5 M parameters; ONNX 6.7 MB (8-bit weights) | A small transformer distilled from larger AudioSet models; mAP 48.1 on AudioSet per its card. Mini (9.6 M) and Small (22 M) are a little more accurate. |
-| **YAMNet** (Google; ONNX by Qualcomm AI Hub, `qualcomm/YamNet`) | Google's original Apache-2.0; Qualcomm's page says MIT | 3.7 M parameters, 14.2 MB | The classic small one (MobileNet v1, windows of 0.96 s), clearly less accurate. Qualcomm's ONNX downloads from Amazon S3, not Hugging Face: it would need a re-host or our own conversion to be pinned. The baseline. |
+| **YAMNet** (Google; ONNX by Qualcomm AI Hub, `qualcomm/YamNet`) | Google's original Apache-2.0; Qualcomm's page says MIT | 3.7 M parameters, 14.2 MB | The classic small one (MobileNet v1, windows of 0.96 s); less accurate than CED in our measurement (§5). Takes a log-mel patch, so the app would compute the features. Qualcomm's ONNX downloads from Amazon S3, not Hugging Face: it would need a re-host or our own conversion to be pinned. The baseline. |
 | PANNs CNN6 / CNN10 / CNN14 | Code MIT; re-hosts tagged Apache-2.0 by a third party | CNN6 24 MB | No ONNX on Hugging Face; older than CED and not better per parameter. |
 | **CLAP** (LAION, `laion/clap-htsat-unfused`; ONNX in `Xenova/clap-htsat-unfused`) | Apache-2.0 | Audio encoder 34–118 MB, plus a text encoder | Matches a sound with a *text* ("a washing machine beeping"). Too big as a default; maybe later (phase 4). |
 
-**CED-Tiny, measured** (its ONNX at revision `ace276d`, one thread of a 2.8 GHz Xeon server, drawn
-sounds; a Raspberry Pi 4 — the minimum VisionState runs on, and a sound sensor must run there too
-— is several times slower and is measured in phase 0):
+**Measured** (2026-10-29, CED-Tiny's ONNX at revision `ace276d`, on an x86 server; a Raspberry
+Pi 4 — the minimum VisionState runs on, and a sound sensor must run there too — is several times
+slower and is measured in phase 0):
 
-- It takes the **raw 16 kHz waveform**: the spectrogram is computed inside the model, so the app
-  needs no feature code. Its output is named `logits` but **already holds probabilities** (the
-  graph ends in a sigmoid) — applying a sigmoid again squeezes every score to about 0.5.
-- **About 8 ms per second of audio** (16 ms for a 2-s window, 73 ms for 10 s): small next to the
-  image models, even listening all day.
-- A drawn 3.1 kHz temporal-3 alarm comes out as *Smoke detector, smoke alarm* first, but at **0.22**;
-  appliance beeps as *Beep, bleep* at 0.53; a drawn two-tone doorbell as *Music*. Scores of the
-  right class can be low: thresholds must be set per class from real recordings.
-- **Own sounds need a hidden layer, not the class scores.** Used as an embedding, the 527 class
-  scores separate categories (a doorbell from a beep) but put two different doorbells at a cosine
-  of 0.98, and five clips per sound recognised 43 of 50 test clips of five drawn sounds. The
-  model's pooled hidden state (192 numbers, the input of its last layer; the graph only needs it
-  added as an output) standardised over the sensor's taught clips recognised 48 of 50, with a
-  median margin of 0.30 over the next sound. So the registry entry is our own copy of the ONNX with
-  that second output, published pinned like the others, and own sounds get a small head per sensor
-  (as state sensors do) rather than a raw nearest-clip match.
+- CED **takes the raw 16 kHz waveform** (the spectrogram is computed inside the model: no feature
+  code in the app). Its output is named `logits` but **already holds probabilities** (the graph ends
+  in a sigmoid) — a second sigmoid squeezes every score to about 0.5.
+- **About 8 ms per second of audio** on one thread (16 ms for a 2-s window); YAMNet about 7 ms with
+  its features. Both are small next to the image models.
+
+**Pretrained classes on real recordings:** 747 CC0 clips of FSD50K (Freesound recordings, so not
+the YouTube audio the models learned from; its own labels, which are noisy): about 40 clips per
+class where there were that many (9 smoke and fire alarms, found by their titles, 15 of crying, 17
+doorbells) and 400 clips of other sounds. A clip's score is the best 2-s window of its first 30 s.
+*Recall* is the share of a class's clips found at the threshold where 1 of the 400 other clips
+passes — a strict operating point, because a sensor hears many windows a day:
+
+| Class | CED-Tiny | CED-Tiny, 8 kHz audio | YAMNet | CED threshold there |
+|---|---|---|---|---|
+| Dog barking | 90 % | 90 % | 82 % | 0.02 |
+| Smoke / fire alarm (9 clips) | 89 % | 89 % | 56 % | 0.07 |
+| Siren | 82 % | 82 % | 76 % | 0.13 |
+| Crying (15 clips) | 73 % | 40 % | 47 % | 0.05 |
+| Knocking | 52 % | 48 % | 22 % | 0.78 |
+| Microwave oven | 42 % | 42 % | 40 % | 0.17 |
+| Shouting, screaming | 38 % | 45 % | 24 % | 0.26 |
+| Speech | 36 % | 25 % | 28 % | 0.69 |
+| Doorbell (17 clips) | 24 % | 29 % | 29 % | 0.08 |
+| Door slam | 20 % | 17 % | 0 % | 0.09 |
+| Glass breaking | 18 % | 5 % | 37 % | 0.40 |
+
+What follows: **CED-Tiny beats YAMNet** on 9 of 11 (YAMNet only on glass, which we do not offer;
+YAMNet's features were computed by our own code and may differ slightly from its training);
+**thresholds differ by a factor of forty** between classes (0.02 for a bark, 0.78 for a knock), so
+they are per class in the registry; **telephone-band audio** costs crying and glass a lot and the
+alarm, siren and bark nothing; speech's low number partly reflects FSD50K's labels (speech in the
+background of other sounds) — it is measured again on clean speech in phase 0.
+
+**Own sounds on real recordings:** ten real CC0 recordings (three doorbells, three microwave
+beeps, two knocks, two smoke alarms) taught from five clips each, every clip and test clip a new
+mix (gain, a CC0 background sound 5–25 dB or 12–25 dB below it, a random room echo, a time
+shift); a logistic regression head per sensor with 50 background windows as *other*; tested on 10
+new mixes per sound, 300 clips of other sounds and 14 untaught recordings of the same kinds (other
+doorbells, other microwaves). Per single 2-s window, at a head probability of 0.8:
+
+| Embedding | Own sounds recognised | Other sounds taken for one | Untaught same kind taken |
+|---|---|---|---|
+| Class scores (527) | 78–80 % | 11 % | 25 % |
+| Pooled hidden state (192) | 80–88 % | 3 % | 25 % |
+| **Hidden tokens, mean + std + max (576)** | **79–90 %** | **1 %** | **0–12 %** |
+
+So **own sounds use the model's hidden tokens** (the input of its last layer, 48 tokens of 192 for a
+2-s window, pooled three ways), not the class scores: our own copy of the ONNX with that output
+added, published pinned like the others, and a small head per sensor as state sensors have. Per
+event the numbers are better than per window (N of M, §4); 1 % of loud windows of other sounds is
+still too many on its own, which is what N of M and the *not this* answers in Review are for.
+Mixing a recording with noise is easier than a real room; phase 0 repeats this on real recordings
+made at home.
 
 **The training data question** (as for faces): every model above is trained on AudioSet — Google's
 labels are CC BY 4.0, the audio is YouTube videos not licensed for reuse. The weights are not the
@@ -147,7 +190,7 @@ says what the model learned from, Settings → AI model shows its licence and tr
 model is not bundled — it is downloaded when the first sound sensor is created (most users never
 make one).
 
-**Leaning:** CED-Tiny for both the classes and own sounds, YAMNet as the baseline in phase 0.
+**Chosen:** CED-Tiny for both the classes and own sounds; YAMNet is not needed.
 
 ## 6. Privacy and the law
 
@@ -175,8 +218,8 @@ Design rules that follow:
 1. **Created on purpose:** the wizard says what is analysed and what is kept.
 2. **Windows are analysed and forgotten.** Only the decision and, when clips are on, the seconds
    around a sound that turned on are kept.
-3. **Clips are in from the first release, off by default per sensor.** When on, every part of a clip in which speech was detected is
-   **silenced before it is stored** — for every sound (a doorbell clip can hold a conversation). A
+3. **Clips are in from the first release, off by default per sensor.** When on, every part of a
+   clip in which speech was detected is **silenced before it is stored** — for every sound (a doorbell clip can hold a conversation). A
    *Speech* event never keeps a clip. Speech is also the class that fires most (Frigate's docs warn
    about it), another reason to keep its events lean.
 4. **Clips are kept where only the app can read them** (`/data`, not `/media`, which Home
@@ -188,7 +231,7 @@ Design rules that follow:
 
 | Phase | What | Done when |
 |---|---|---|
-| **0. Spike** (local, `/VisionStateLocal/`) | Audio from common cameras: codecs (AAC, G.711, Opus), sample rates, whether PyAV gets a usable track, how many connections a camera allows. CED-Tiny and YAMNet on a Raspberry Pi 4 and an x86 machine: time per second of audio, and so how many sound sensors a Pi 4 carries beside its image sensors (the limit DOCS.md states). Scores per class on real CC0 recordings (§9), to set the registry's thresholds; false alarms over a day of a household's background and TV. Own sounds on real recordings: clips needed, the hidden-layer embedding against the class scores (§5). ESP32: which firmware to recommend, what ESPHome offers (§10). Read the weights' and data's terms. | A model and thresholds chosen with numbers, the number of sound sensors a Pi 4 carries, a verdict on licences. Or "not good enough", a valid outcome. |
+| **0. Spike** (local, `/VisionStateLocal/`) | Audio from common cameras: codecs (AAC, G.711, Opus), sample rates, whether PyAV gets a usable track, how many connections a camera allows. CED-Tiny on a Raspberry Pi 4: time per second of audio, and so how many sound sensors a Pi 4 carries beside its image sensors (the limit DOCS.md states). Clean speech; false alarms over a day of a household's background and TV; own sounds recorded at home. *Done in the cloud* (§5): per-class scores and thresholds on CC0 recordings, CED-Tiny against YAMNet, telephone-band audio, the embedding for own sounds. ESP32: which firmware to recommend, what ESPHome offers (§10). Read the weights' and data's terms. | A model and thresholds chosen with numbers, the number of sound sensors a Pi 4 carries, a verdict on licences. Or "not good enough", a valid outcome. |
 | **1. Listening** | The `sound` kind; RTSP and HTTP audio streams (an ESP32 among them, §10); pretrained classes from a curated list (§2) → a binary sensor per sound; level line and live scores in the Live tab; clips around events (opt-in, speech silenced) with playback in the history. | A real CC0 siren and smoke alarm turn their sensors on in a backend test; wizard, Live tab and a clip played after a tap pass e2e on desktop, Android and iPhone. |
 | **2. Review** | Review questions for uncertain sounds ("Was this the doorbell?"), history filters per sound. | e2e on every device. |
 | **3. Own sounds** | Teach a sound from a clip in the history or an uploaded file; the small head (§5), its ask band and Quality tab (clips per sound, look-alikes); export/import. | Own sounds taught from five clips each are told apart in a backend test and on the spike data. |
@@ -225,10 +268,11 @@ Following the existing structure (names are proposals):
 
 As for images: CC0 / public domain, or drawn by our own code.
 
-- **Real recordings** for every pretrained class we promise: CC0 clips from Freesound (its CC0
-  filter), sources in `tests/assets/README.md`. Not ESC-50 (CC BY-NC), and only the CC0 clips of
-  FSD50K. Drawn sounds do not stand in for these: the pretrained model hears a drawn doorbell as
-  *Music* and scores a drawn smoke alarm low (§5).
+- **Real recordings** for every pretrained class we promise: CC0 clips of FSD50K (each clip's
+  licence is in its metadata; individual files are on Hugging Face in `Fhrozen/FSD50k`) or from
+  Freesound (its CC0 filter), sources in `tests/assets/README.md`; not ESC-50 (CC BY-NC). Drawn
+  sounds do not stand in for these: CED-Tiny heard a drawn two-tone doorbell as *Music* and gave a
+  drawn 3.1 kHz alarm 0.22.
 - **Drawn** (a module like `tests/displays.py`): temporal-3 alarms at 3.1 kHz and 520 Hz, two-tone
   doorbells, appliance beep patterns, background noise at chosen levels — for the pipeline (level
   line, thresholds, reconnects) and for own sounds, where telling drawn sounds apart is a fair test.
@@ -263,9 +307,13 @@ As for images: CC0 / public domain, or drawn by our own code.
 
 ## 11. Open questions for the maintainer
 
-1. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
+1. **Background as *other*:** a head for own sounds needs examples of what is *not* one of them.
+   Should the sensor take loud windows it heard (not reviewed) as *other*, or only clips a person
+   answered *not this* for? Taking heard windows teaches it the room's sounds from the start, but
+   is a step away from "only human answers are labels" (a window could hold the doorbell itself).
+2. **Sources:** RTSP and HTTP streams in phase 1, an ESP32 sending a stream as a first-class case —
    enough, or must a Home Assistant camera entity or stock ESPHome come first?
-2. **The name:** VisionState that also hears — fine as it is, or a line in the README?
+3. **The name:** VisionState that also hears — fine as it is, or a line in the README?
 
 Decided (2026-10-29): sound sensors run on everything VisionState runs on, x86-64 and aarch64 with a
 Raspberry Pi 4 as the minimum — how many a machine carries is a limit phase 0 measures, not a
@@ -280,8 +328,8 @@ smoke and fire alarms get device class *smoke* (§8).
 - **The TV.** Sirens, dogs and doorbells on TV are real sounds to a model. Own sounds help (they
   learn this microphone and this room); the docs say so.
 - **Telephone-band audio.** Many cameras send G.711 at 8 kHz: nothing above 4 kHz survives. A
-  3.1 kHz alarm does (drawn through a 3.8 kHz cut it still scored as a smoke alarm); breaking glass
-  loses much of what identifies it. The wizard shows the sample rate; the docs name the trade-off.
+  3.1 kHz alarm does, and so do sirens and barks; crying and breaking glass lose much of what
+  identifies them (measured, §5). The wizard shows the sample rate; the docs name the trade-off.
 - **Camera audio processing:** automatic gain and noise suppression change the level and can cut
   steady beeps — the level line follows the learned background for that reason.
 - **Uncalibrated "decibels"** are relative (dBFS): never promise sound pressure levels, never copy a
