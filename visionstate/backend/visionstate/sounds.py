@@ -34,6 +34,7 @@ class SoundSpec:
 
     key: str
     name: str
+    group: str  # where it is listed in the picker ("Alarms and signals", "Animals" …)
     classes: tuple[int, ...]
     threshold: float
     device_class: str
@@ -53,7 +54,8 @@ class SoundModelSpec:
     data: str  # what it was trained on
     source: str
     made_by: str
-    sounds: dict[str, SoundSpec]
+    sounds: dict[str, SoundSpec]  # in the order the picker lists them
+    popular: tuple[str, ...] = ()  # shown first; the rest behind "Show all"
     other: str = ""  # the embeddings of everyday sounds every head learns as OTHER (tools/soundmodel/make_other.py)
     bundled: bool = False
     footprint: Footprint = field(default_factory=lambda: Footprint())
@@ -84,6 +86,7 @@ def load_registry() -> tuple[str, dict[str, SoundModelSpec]]:
                 k: SoundSpec(
                     key=k,
                     name=s["name"],
+                    group=s.get("group", ""),
                     classes=tuple(int(c) for c in s["classes"]),
                     threshold=float(s["threshold"]),
                     device_class=s.get("device_class", "sound"),
@@ -91,6 +94,7 @@ def load_registry() -> tuple[str, dict[str, SoundModelSpec]]:
                 )
                 for k, s in v["sounds"].items()
             },
+            popular=tuple(v.get("popular", [])),
             bundled=bool(v.get("bundled", False)),
             footprint=Footprint.of(v),
         )

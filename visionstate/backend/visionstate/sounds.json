@@ -20,54 +20,870 @@
       "sounds": {
         "smoke_alarm": {
           "name": "Smoke or fire alarm",
-          "classes": [399, 400],
+          "group": "Alarms and signals",
+          "classes": [
+            399,
+            400
+          ],
           "threshold": 0.3,
           "device_class": "smoke",
           "icon": "mdi:smoke-detector-variant-alert"
         },
         "siren": {
           "name": "Siren",
-          "classes": [396, 323, 324, 325, 397],
+          "group": "Alarms and signals",
+          "classes": [
+            396,
+            323,
+            324,
+            325,
+            397
+          ],
           "threshold": 0.3,
           "device_class": "sound",
           "icon": "mdi:alarm-light"
         },
-        "dog_bark": {
-          "name": "Dog barking",
-          "classes": [75],
-          "threshold": 0.15,
+        "car_alarm": {
+          "name": "Car alarm",
+          "group": "Alarms and signals",
+          "classes": [
+            310
+          ],
+          "threshold": 0.3,
           "device_class": "sound",
-          "icon": "mdi:dog"
+          "icon": "mdi:car-emergency"
         },
-        "crying": {
-          "name": "Crying",
-          "classes": [22, 23],
-          "threshold": 0.1,
+        "alarm_clock": {
+          "name": "Alarm clock",
+          "group": "Alarms and signals",
+          "classes": [
+            395
+          ],
+          "threshold": 0.3,
           "device_class": "sound",
-          "icon": "mdi:emoticon-cry-outline"
+          "icon": "mdi:alarm"
+        },
+        "beeping": {
+          "name": "Beeping or buzzer",
+          "group": "Alarms and signals",
+          "classes": [
+            481,
+            398
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bell-ring-outline"
+        },
+        "phone_ringing": {
+          "name": "Phone ringing",
+          "group": "Alarms and signals",
+          "classes": [
+            389,
+            390,
+            391
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:phone-ring"
+        },
+        "knock": {
+          "name": "Knocking",
+          "group": "Alarms and signals",
+          "classes": [
+            359
+          ],
+          "threshold": 0.6,
+          "device_class": "sound",
+          "icon": "mdi:door"
+        },
+        "whistle": {
+          "name": "Whistle or kettle",
+          "group": "Alarms and signals",
+          "classes": [
+            402,
+            403
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:kettle-steam"
         },
         "speech": {
           "name": "Someone talking",
-          "classes": [0],
+          "group": "People",
+          "classes": [
+            0
+          ],
           "threshold": 0.5,
           "device_class": "sound",
           "icon": "mdi:account-voice"
         },
         "shout_scream": {
           "name": "Shouting or screaming",
-          "classes": [8, 11, 14],
+          "group": "People",
+          "classes": [
+            8,
+            11,
+            14
+          ],
           "threshold": 0.15,
           "device_class": "sound",
           "icon": "mdi:bullhorn"
         },
-        "knock": {
-          "name": "Knocking",
-          "classes": [359],
-          "threshold": 0.6,
+        "crying": {
+          "name": "Crying",
+          "group": "People",
+          "classes": [
+            22,
+            23
+          ],
+          "threshold": 0.1,
           "device_class": "sound",
-          "icon": "mdi:door"
+          "icon": "mdi:emoticon-cry-outline"
+        },
+        "laughter": {
+          "name": "Laughter",
+          "group": "People",
+          "classes": [
+            16,
+            17
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:emoticon-lol-outline"
+        },
+        "cough": {
+          "name": "Coughing",
+          "group": "People",
+          "classes": [
+            47
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:account-voice"
+        },
+        "sneeze": {
+          "name": "Sneezing",
+          "group": "People",
+          "classes": [
+            49
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:account-voice"
+        },
+        "snoring": {
+          "name": "Snoring",
+          "group": "People",
+          "classes": [
+            43
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:sleep"
+        },
+        "footsteps": {
+          "name": "Footsteps",
+          "group": "People",
+          "classes": [
+            53,
+            51
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:shoe-print"
+        },
+        "clapping": {
+          "name": "Clapping",
+          "group": "People",
+          "classes": [
+            63,
+            67
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:hand-clap"
+        },
+        "singing": {
+          "name": "Singing",
+          "group": "People",
+          "classes": [
+            27
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:microphone-variant"
+        },
+        "whistling": {
+          "name": "Whistling",
+          "group": "People",
+          "classes": [
+            40
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:account-music"
+        },
+        "children_playing": {
+          "name": "Children playing",
+          "group": "People",
+          "classes": [
+            71,
+            13
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:human-child"
+        },
+        "crowd": {
+          "name": "Crowd or chatter",
+          "group": "People",
+          "classes": [
+            68,
+            69,
+            70
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:account-group"
+        },
+        "dog_bark": {
+          "name": "Dog barking",
+          "group": "Animals",
+          "classes": [
+            75
+          ],
+          "threshold": 0.15,
+          "device_class": "sound",
+          "icon": "mdi:dog"
+        },
+        "dog_howl": {
+          "name": "Dog howling",
+          "group": "Animals",
+          "classes": [
+            77
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:dog-side"
+        },
+        "dog_growl": {
+          "name": "Dog growling",
+          "group": "Animals",
+          "classes": [
+            79
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:dog"
+        },
+        "dog_whimper": {
+          "name": "Dog whimpering",
+          "group": "Animals",
+          "classes": [
+            80
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:dog"
+        },
+        "cat": {
+          "name": "Cat meowing",
+          "group": "Animals",
+          "classes": [
+            83,
+            85
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:cat"
+        },
+        "cat_hiss": {
+          "name": "Cat hissing",
+          "group": "Animals",
+          "classes": [
+            84
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:cat"
+        },
+        "birds": {
+          "name": "Birds",
+          "group": "Animals",
+          "classes": [
+            111,
+            112,
+            113
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bird"
+        },
+        "rooster": {
+          "name": "Rooster crowing",
+          "group": "Animals",
+          "classes": [
+            101
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bird"
+        },
+        "chicken": {
+          "name": "Chickens",
+          "group": "Animals",
+          "classes": [
+            99,
+            100
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:egg-outline"
+        },
+        "owl": {
+          "name": "Owl",
+          "group": "Animals",
+          "classes": [
+            119,
+            120
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:owl"
+        },
+        "crow": {
+          "name": "Crow",
+          "group": "Animals",
+          "classes": [
+            117,
+            118
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bird"
+        },
+        "horse": {
+          "name": "Horse",
+          "group": "Animals",
+          "classes": [
+            87,
+            89
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:horse"
+        },
+        "cattle": {
+          "name": "Cattle",
+          "group": "Animals",
+          "classes": [
+            90,
+            91
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:cow"
+        },
+        "sheep": {
+          "name": "Sheep or goat",
+          "group": "Animals",
+          "classes": [
+            95,
+            96,
+            97
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:sheep"
+        },
+        "pig": {
+          "name": "Pig",
+          "group": "Animals",
+          "classes": [
+            93,
+            94
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:pig"
+        },
+        "mice": {
+          "name": "Mice or rats",
+          "group": "Animals",
+          "classes": [
+            123,
+            124
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:rodent"
+        },
+        "insects": {
+          "name": "Insects buzzing",
+          "group": "Animals",
+          "classes": [
+            126,
+            128,
+            129,
+            130,
+            131
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bee"
+        },
+        "frog": {
+          "name": "Frogs",
+          "group": "Animals",
+          "classes": [
+            132,
+            133
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:paw"
+        },
+        "cupboard": {
+          "name": "Cupboard or drawer",
+          "group": "Home",
+          "classes": [
+            362,
+            363
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:wardrobe-outline"
+        },
+        "dishes": {
+          "name": "Dishes or cutlery",
+          "group": "Home",
+          "classes": [
+            364,
+            365
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:silverware-fork-knife"
+        },
+        "water_tap": {
+          "name": "Water tap or sink",
+          "group": "Home",
+          "classes": [
+            370,
+            371
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:faucet"
+        },
+        "bath": {
+          "name": "Bath filling",
+          "group": "Home",
+          "classes": [
+            372
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bathtub-outline"
+        },
+        "toilet_flush": {
+          "name": "Toilet flushing",
+          "group": "Home",
+          "classes": [
+            374
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:toilet"
+        },
+        "dripping": {
+          "name": "Dripping water",
+          "group": "Home",
+          "classes": [
+            448,
+            450
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:water-outline"
+        },
+        "boiling": {
+          "name": "Boiling or frying",
+          "group": "Home",
+          "classes": [
+            456,
+            367,
+            490
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:pot-steam-outline"
+        },
+        "blender": {
+          "name": "Blender",
+          "group": "Home",
+          "classes": [
+            369
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:blender-outline"
+        },
+        "vacuum": {
+          "name": "Vacuum cleaner",
+          "group": "Home",
+          "classes": [
+            377
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:robot-vacuum"
+        },
+        "hair_dryer": {
+          "name": "Hair dryer",
+          "group": "Home",
+          "classes": [
+            373
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:hair-dryer-outline"
+        },
+        "fan": {
+          "name": "Fan or air conditioning",
+          "group": "Home",
+          "classes": [
+            412,
+            413
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:fan"
+        },
+        "printer": {
+          "name": "Printer",
+          "group": "Home",
+          "classes": [
+            415
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:printer"
+        },
+        "typing": {
+          "name": "Typing",
+          "group": "Home",
+          "classes": [
+            384,
+            386
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:keyboard-outline"
+        },
+        "keys": {
+          "name": "Keys jangling",
+          "group": "Home",
+          "classes": [
+            379
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:key-variant"
+        },
+        "tv": {
+          "name": "Television",
+          "group": "Home",
+          "classes": [
+            524
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:television"
+        },
+        "music": {
+          "name": "Music",
+          "group": "Home",
+          "classes": [
+            137
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:music"
+        },
+        "car": {
+          "name": "Car",
+          "group": "Outside and vehicles",
+          "classes": [
+            307,
+            314
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:car"
+        },
+        "car_horn": {
+          "name": "Car horn",
+          "group": "Outside and vehicles",
+          "classes": [
+            308,
+            309
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bullhorn-outline"
+        },
+        "engine_starting": {
+          "name": "Engine starting",
+          "group": "Outside and vehicles",
+          "classes": [
+            351
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:engine-outline"
+        },
+        "reversing_beeps": {
+          "name": "Reversing beeps",
+          "group": "Outside and vehicles",
+          "classes": [
+            319
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:truck-alert-outline"
+        },
+        "truck": {
+          "name": "Truck",
+          "group": "Outside and vehicles",
+          "classes": [
+            316,
+            317
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:truck"
+        },
+        "motorcycle": {
+          "name": "Motorcycle",
+          "group": "Outside and vehicles",
+          "classes": [
+            326
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:motorbike"
+        },
+        "bus": {
+          "name": "Bus",
+          "group": "Outside and vehicles",
+          "classes": [
+            321
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bus"
+        },
+        "train": {
+          "name": "Train",
+          "group": "Outside and vehicles",
+          "classes": [
+            329,
+            330,
+            331,
+            332
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:train"
+        },
+        "aircraft": {
+          "name": "Aircraft",
+          "group": "Outside and vehicles",
+          "classes": [
+            335,
+            336,
+            337,
+            340
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:airplane"
+        },
+        "helicopter": {
+          "name": "Helicopter",
+          "group": "Outside and vehicles",
+          "classes": [
+            339
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:helicopter"
+        },
+        "traffic": {
+          "name": "Traffic",
+          "group": "Outside and vehicles",
+          "classes": [
+            327
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:highway"
+        },
+        "bicycle_bell": {
+          "name": "Bicycle bell",
+          "group": "Outside and vehicles",
+          "classes": [
+            203
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bicycle"
+        },
+        "lawn_mower": {
+          "name": "Lawn mower",
+          "group": "Outside and vehicles",
+          "classes": [
+            346
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:mower"
+        },
+        "chainsaw": {
+          "name": "Chainsaw",
+          "group": "Outside and vehicles",
+          "classes": [
+            347
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:saw-blade"
+        },
+        "power_tool": {
+          "name": "Drill or power tool",
+          "group": "Outside and vehicles",
+          "classes": [
+            424,
+            425
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:power-plug"
+        },
+        "hammering": {
+          "name": "Hammering",
+          "group": "Outside and vehicles",
+          "classes": [
+            419,
+            420
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:hammer"
+        },
+        "gunshot": {
+          "name": "Gunshot",
+          "group": "Outside and vehicles",
+          "classes": [
+            427,
+            428,
+            429
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:pistol"
+        },
+        "explosion": {
+          "name": "Explosion or bang",
+          "group": "Outside and vehicles",
+          "classes": [
+            426,
+            436,
+            466
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:bomb"
+        },
+        "fireworks": {
+          "name": "Fireworks",
+          "group": "Outside and vehicles",
+          "classes": [
+            432,
+            433
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:firework"
+        },
+        "rain": {
+          "name": "Rain",
+          "group": "Weather and fire",
+          "classes": [
+            289,
+            290,
+            291
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:weather-rainy"
+        },
+        "thunder": {
+          "name": "Thunder",
+          "group": "Weather and fire",
+          "classes": [
+            286,
+            287
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:weather-lightning"
+        },
+        "wind": {
+          "name": "Wind",
+          "group": "Weather and fire",
+          "classes": [
+            283,
+            284
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:weather-windy"
+        },
+        "running_water": {
+          "name": "Running water",
+          "group": "Weather and fire",
+          "classes": [
+            288,
+            292,
+            293
+          ],
+          "threshold": 0.5,
+          "device_class": "sound",
+          "icon": "mdi:waves"
+        },
+        "fire": {
+          "name": "Fire crackling",
+          "group": "Weather and fire",
+          "classes": [
+            298,
+            299
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:fire"
         }
-      }
+      },
+      "popular": [
+        "smoke_alarm",
+        "siren",
+        "dog_bark",
+        "crying",
+        "speech",
+        "shout_scream",
+        "knock"
+      ]
     }
   }
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
-  // A sound sensor's own sounds: each with the clips it was taught from (play, forget), recordings
-  // to add (a phone's voice memo, a video: their loudest seconds are kept), and "other sounds".
+  // A sound sensor's own sounds, laid out like the People page: "Add an own sound" (a name and its
+  // first recordings), then one card per sound with the clips it was taught from (play, forget) and
+  // "Add recordings", and "Other sounds" (what they are not). A recording is a phone's voice memo
+  // or any sound or video file: its loudest seconds are kept.
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
@@ -13,40 +15,38 @@
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
 
+  const ACCEPT = 'audio/*,video/*';
   let taught = $state<SoundTaught | null>(null);
-  let target = $state<string>(''); // an own sound's key, 'other', or '' for a new one
   let newName = $state('');
-  let busy = $state(false);
-  let input: HTMLInputElement;
+  let adding = $state<string | null>(null); // the label recordings are being added to ('' = a new sound)
   const max = $derived(app.config?.sound.max_custom ?? 10);
+  const full = $derived((taught?.sounds.length ?? 0) >= max);
 
   async function load() {
     try {
       taught = await api.soundTaught(sensor.id);
-      if (target && target !== 'other' && !taught.sounds.some((s) => s.key === target)) target = '';
     } catch (err) {
       toastError(err);
     }
   }
   load();
 
-  async function add(e: Event) {
-    const files = [...((e.currentTarget as HTMLInputElement).files ?? [])];
+  /** Recordings for an own sound or "other" (`label`), or the first ones of a new sound (`label` ''). */
+  async function add(e: Event, label: string) {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = [...(input.files ?? [])];
     if (!files.length) return;
-    busy = true;
+    adding = label;
     try {
-      const made = await api.uploadSoundClips(sensor.id, files, target || null, target ? undefined : newName.trim());
+      const made = await api.uploadSoundClips(sensor.id, files, label || null, label ? undefined : newName.trim());
       toast(`${plural(made.added.length, 'clip')} taught`);
-      if (!target) {
-        target = made.added[0]?.label ?? '';
-        newName = '';
-      }
+      if (!label) newName = '';
       await load();
       onchange();
     } catch (err) {
       toastError(err);
     } finally {
-      busy = false;
+      adding = null;
       input.value = '';
     }
   }
@@ -64,7 +64,7 @@
   async function forgetSound(key: string, name: string) {
     try {
       await api.forgetSound(sensor.id, key);
-      toast(`${name} forgotten`);
+      toast(`${name} forgotten, with its clips and entity`);
       await load();
       onchange();
     } catch (err) {
@@ -73,8 +73,27 @@
   }
 
   const clipsOf = (label: string) => (taught?.clips ?? []).filter((c) => c.label === label);
-  const canAdd = $derived(!busy && (target !== '' || (newName.trim().length > 0 && (taught?.sounds.length ?? 0) < max)));
 </script>
+
+{#snippet addButton(label: string, id: string, text: string, disabled: boolean, primary = false)}
+  <input type="file" accept={ACCEPT} multiple class="sr-only" {id} onchange={(e) => add(e, label)} {disabled} />
+  <label class="btn {primary ? 'primary' : 'sm'}" for={id} class:disabled>
+    <Icon name="mic" size={14} /> {adding === label ? 'Adding…' : text}
+  </label>
+{/snippet}
+
+{#snippet clipList(label: string)}
+  <div class="col clips">
+    {#each clipsOf(label) as c (c.id)}
+      <div class="row wrap clip">
+        <ClipPlayer src={api.soundClipUrl(c.id)} label="Play the clip" />
+        <span class="xsmall faint">{SAMPLE_ORIGINS[c.origin] ?? c.origin} · {dateTime(c.created_at)}</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn sm ghost" onclick={() => forgetClip(c.id)} aria-label="Forget this clip"><Icon name="x" size={14} /></button>
+      </div>
+    {/each}
+  </div>
+{/snippet}
 
 <div class="col page-gap">
   <p class="small muted">
@@ -84,73 +103,52 @@
     and add clips of what it is not as “other sounds”.
   </p>
 
-  <section class="card pad col add">
-    <h3>Add recordings</h3>
-    <div class="row wrap" style="gap:var(--space-3)">
-      <label class="field grow">
-        As
-        <select class="input" bind:value={target}>
-          <option value="">A new own sound…</option>
-          {#each taught?.sounds ?? [] as s (s.key)}<option value={s.key}>{s.name}</option>{/each}
-          <option value="other">Other sounds (what they are not)</option>
-        </select>
-      </label>
-      {#if target === ''}
-        <label class="field grow">
-          Name
-          <input class="input" bind:value={newName} placeholder="Doorbell" maxlength="64" />
-        </label>
-      {/if}
-    </div>
-    <input bind:this={input} id="sound-files" class="sr-only" type="file" accept="audio/*,video/*" multiple onchange={add} disabled={!canAdd} />
-    <label class="btn primary pick" class:disabled={!canAdd} for="sound-files" aria-disabled={!canAdd}>
-      <Icon name="mic" size={16} /> {busy ? 'Adding…' : 'Choose or record'}
-    </label>
-    <p class="xsmall faint">Any sound or video file; its loudest four seconds are kept. On a phone, this can record right away.</p>
+  <section class="card pad col add" data-testid="add-own-sound">
+    <h3>Add an own sound</h3>
+    <p class="small muted">A name, and a few recordings of it: any sound or video file (its loudest four seconds are kept). On a phone, this can record right away.</p>
+    {#if full}
+      <p class="small warn-text">This sensor has {max} own sounds, the most it can have. Forget one to add another.</p>
+    {:else}
+      <div class="row wrap add-row">
+        <input class="input" bind:value={newName} placeholder="Name, e.g. Doorbell" maxlength="64" aria-label="Name of the new own sound" />
+        {@render addButton('', 'sound-files', 'Add recordings', !newName.trim() || adding !== null, true)}
+      </div>
+    {/if}
   </section>
 
   {#if taught}
     {#each taught.sounds as s (s.key)}
       <section class="card pad col" data-testid="own-sound-{s.key}">
         <div class="card-title">
-          <h3>{s.name}</h3>
-          <span class="chip {s.clips ? 'ok' : 'warn'}">{plural(s.clips, 'clip')}</span>
-          <span class="spacer"></span>
-          <ConfirmButton class="btn sm" onconfirm={() => forgetSound(s.key, s.name)} confirmLabel="Tap again to forget {s.name}">
-            <Icon name="trash" size={14} /> Forget
-          </ConfirmButton>
+          <div class="col" style="gap:2px">
+            <h3>{s.name} <span class="faint count">{s.clips}</span></h3>
+            <span class="xsmall faint">{s.clips ? plural(s.clips, 'clip') : 'No clips: it is never heard until it is taught some'}</span>
+          </div>
+          <div class="row wrap actions">
+            {@render addButton(s.key, `sound-files-${s.key}`, 'Add recordings', adding !== null)}
+            <ConfirmButton class="btn sm danger" onconfirm={() => forgetSound(s.key, s.name)} confirmLabel="Tap again to forget {s.name}">
+              <Icon name="trash" size={14} /> Forget
+            </ConfirmButton>
+          </div>
         </div>
-        {#if !s.clips}<p class="small muted">No clips: it is never heard until it is taught some.</p>{/if}
-        <div class="col clips">
-          {#each clipsOf(s.key) as c (c.id)}
-            <div class="row wrap clip">
-              <ClipPlayer src={api.soundClipUrl(c.id)} label="Play the clip" />
-              <span class="xsmall faint">{SAMPLE_ORIGINS[c.origin] ?? c.origin} · {dateTime(c.created_at)}</span>
-              <span class="spacer"></span>
-              <button type="button" class="btn sm ghost" onclick={() => forgetClip(c.id)} aria-label="Forget this clip"><Icon name="x" size={14} /></button>
-            </div>
-          {/each}
-        </div>
+        {@render clipList(s.key)}
       </section>
     {/each}
     <section class="card pad col">
-      <div class="card-title"><h3>Other sounds</h3><span class="chip muted">{plural(taught.counts.other ?? 0, 'clip')}</span></div>
+      <div class="card-title">
+        <div class="col" style="gap:2px">
+          <h3>Other sounds <span class="faint count">{taught.counts.other ?? 0}</span></h3>
+          <span class="xsmall faint">What your own sounds are not</span>
+        </div>
+        <div class="row wrap actions">{@render addButton('other', 'sound-files-other', 'Add recordings', adding !== null)}</div>
+      </div>
       <p class="small muted">
-        What your own sounds are not. Each sensor also starts from 200 everyday sounds{sensor.sound?.learn_room
+        Each sensor also starts from 200 everyday sounds{sensor.sound?.learn_room
           ? `, and learns this room as it listens (${plural(taught.room, 'sound')} so far)`
           : ''}.
         {taught.trained ? '' : 'Teach an own sound to start.'}
       </p>
-      <div class="col clips">
-        {#each clipsOf('other') as c (c.id)}
-          <div class="row wrap clip">
-            <ClipPlayer src={api.soundClipUrl(c.id)} label="Play the clip" />
-            <span class="xsmall faint">{SAMPLE_ORIGINS[c.origin] ?? c.origin} · {dateTime(c.created_at)}</span>
-            <span class="spacer"></span>
-            <button type="button" class="btn sm ghost" onclick={() => forgetClip(c.id)} aria-label="Forget this clip"><Icon name="x" size={14} /></button>
-          </div>
-        {/each}
-      </div>
+      {@render clipList('other')}
     </section>
   {/if}
 </div>
@@ -163,17 +161,28 @@
   .add {
     gap: var(--space-3);
   }
-  .grow {
+  .add-row {
+    gap: var(--space-2);
+  }
+  .add-row input {
     flex: 1 1 220px;
+    max-width: 360px;
     min-width: 0;
   }
-  .pick {
-    align-self: flex-start;
-    min-height: var(--touch);
+  .count {
+    font-weight: 400;
+    margin-left: 4px;
   }
-  .pick.disabled {
+  .actions {
+    gap: var(--space-2);
+    justify-content: flex-end;
+  }
+  label.disabled {
     opacity: 0.5;
     pointer-events: none;
+  }
+  .warn-text {
+    color: var(--c-warn-text);
   }
   .clips {
     gap: var(--space-2);
@@ -181,9 +190,5 @@
   .clip {
     gap: var(--space-3);
     align-items: center;
-  }
-  .clip :global(audio) {
-    flex: 1 1 240px;
-    min-width: 0;
   }
 </style>

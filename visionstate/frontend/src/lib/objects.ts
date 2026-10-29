@@ -2,6 +2,34 @@
 import { app } from './app.svelte';
 import type { Detection, FaceProblem, OwnLabel, PhotoResult, Sensor } from './types';
 
+/** What LabelPicker shows for object sensors: the detector's objects, popular ones first. */
+export function objectPicker() {
+  const config = app.config;
+  return {
+    labels: config?.object_labels ?? [],
+    popular: config?.object_popular ?? [],
+    max: config?.object_max_classes ?? 0,
+    noun: 'objects',
+    example: 'bicycle',
+  };
+}
+
+/** LiveChips of an object sensor: each class and own label it reports, with its count. */
+export function objectChips(sensor: Sensor) {
+  const keys = objectKeys(sensor);
+  const own = sensor.objects?.custom ?? [];
+  return {
+    chips: (sensor.objects?.live ?? []).map((o) => ({
+      key: o.key,
+      name: objectName(o.key, own),
+      on: o.on,
+      color: objectColor(keys, o.key),
+      count: o.count,
+    })),
+    summary: objectSummary(sensor),
+  };
+}
+
 /**
  * Display name of an object class ("traffic_light" → "Traffic light"), from the backend label
  * list, or of one of a sensor's own labels ("Our car") when `own` is given.

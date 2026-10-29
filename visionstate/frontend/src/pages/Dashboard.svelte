@@ -5,14 +5,13 @@
   import AnalysedFrame from '../lib/components/AnalysedFrame.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import LiveFrame from '../lib/components/LiveFrame.svelte';
-  import ObjectChips from '../lib/components/ObjectChips.svelte';
+  import LiveChips from '../lib/components/LiveChips.svelte';
   import LevelChart from '../lib/components/sound/LevelChart.svelte';
-  import SoundChips from '../lib/components/sound/SoundChips.svelte';
-  import { isSoundSensor } from '../lib/sound';
+  import { isSoundSensor, soundChips } from '../lib/sound';
   import StatePill from '../lib/components/StatePill.svelte';
   import Timeline from '../lib/components/Timeline.svelte';
   import { plural, pct } from '../lib/format';
-  import { facesBusy, isObjectSensor, objectName } from '../lib/objects';
+  import { facesBusy, isObjectSensor, objectChips, objectName } from '../lib/objects';
   import { pollWhileVisible } from '../lib/poll';
   import { isReadingSensor, readingText, readingUnit } from '../lib/reading';
   import { READING_MODE_INFO } from '../lib/ui';
@@ -109,10 +108,10 @@
           <a class="thumb" href={href(paths.sensor(s.id))} aria-label="Open {s.name}">
             {#if isObjectSensor(s)}
               <AnalysedFrame sensor={s} labels={false} />
-              <span class="pill-pos"><ObjectChips sensor={s} overlay /></span>
+              <span class="pill-pos"><LiveChips {...objectChips(s)} overlay /></span>
             {:else if isSoundSensor(s)}
               <span class="levels"><LevelChart levels={s.sound?.levels ?? []} line={s.sound?.line ?? null} /></span>
-              <span class="pill-pos"><SoundChips sensor={s} overlay /></span>
+              <span class="pill-pos"><LiveChips {...soundChips(s)} overlay /></span>
             {:else if isReadingSensor(s)}
               <LiveFrame sensorId={s.id} roi={s.roi} cached interval={POLL.thumbnail} showLive={false} />
               <span class="pill-pos"><StatePill overlay name={readingText(s)} color="var(--c-accent)" /></span>

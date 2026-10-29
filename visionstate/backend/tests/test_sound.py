@@ -46,6 +46,11 @@ def test_registry_is_pinned_and_its_sounds_are_safe():
         assert 0 < sound.threshold < 1
         assert re.fullmatch(r"mdi:[a-z0-9-]+", sound.icon)
         assert sound.device_class in ("sound", "smoke")
+        assert sound.group  # the picker lists them by group
+    assert set(SPEC.popular) <= set(SPEC.sounds) and len(SPEC.popular) <= SOUND["max_sounds"]
+    # Two sounds never share a class: one class heard would turn on both.
+    classes = [c for sound in SPEC.sounds.values() for c in sound.classes]
+    assert len(classes) == len(set(classes))
     assert SPEC.sounds["smoke_alarm"].device_class == "smoke"
     assert SOUND["speech_key"] in SPEC.sounds
 
@@ -243,6 +248,8 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert client.post("/api/v1/sensors", json=body).status_code == 422
         body["sound"] = {"sounds": ["siren"], "thresholds": {"siren": 1.5}}
         assert client.post("/api/v1/sensors", json=body).status_code == 422
+        body["sound"] = {"sounds": list(SPEC.sounds)[: SOUND["max_sounds"] + 1]}  # more than a sensor may have
+        assert client.post("/api/v1/sensors", json=body).status_code == 422
         body["sound"] = {"sounds": ["siren"], "thresholds": {"siren": 0.4}}
         made = client.post("/api/v1/sensors", json=body).json()
         assert made["sound"]["thresholds"] == {"siren": 0.4}
@@ -251,6 +258,8 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert cleared.json()["sound"]["thresholds"] == {}
         config = client.get("/api/v1/config").json()
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
+        assert all(s["group"] for s in config["sounds"]) and config["sound_popular"] == list(SPEC.popular)
+        assert config["sound"]["max_sounds"] == SOUND["max_sounds"]
         assert config["history_events"]["sound"] == ["heard", "quiet"]
     time.sleep(0)  # the stream's thread ends on its own (closed with the runtime)
 

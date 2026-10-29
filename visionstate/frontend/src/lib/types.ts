@@ -653,9 +653,20 @@ export interface AppConfig {
   sound_defaults: SoundSettings;
   sound_limits: Record<'above_db' | 'fixed_db' | 'clear_after_s' | 'threshold', [number, number]>;
   sound_levels: SoundLevel[];
-  sound: { hop_s: number; window_s: number; live_levels: number; max_custom: number; max_taught: number; own_threshold: number; floor_db: number };
+  sound: {
+    hop_s: number;
+    window_s: number;
+    live_levels: number;
+    max_sounds: number;
+    max_custom: number;
+    max_taught: number;
+    own_threshold: number;
+    floor_db: number;
+  };
   /** The model's sounds a sensor can listen for. */
-  sounds: { key: string; name: string; threshold: number; device_class: string; icon: string }[];
+  sounds: { key: string; name: string; group: string; threshold: number; device_class: string; icon: string }[];
+  /** The sounds LabelPicker shows first. */
+  sound_popular: string[];
 }
 
 export interface Status {

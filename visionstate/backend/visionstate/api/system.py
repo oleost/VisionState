@@ -155,12 +155,29 @@ def ui_config() -> dict:
         "sound_levels": SOUND_LEVELS,
         "sound": {
             k: SOUND[k]
-            for k in ("hop_s", "window_s", "live_levels", "max_custom", "max_taught", "own_threshold", "floor_db")
+            for k in (
+                "hop_s",
+                "window_s",
+                "live_levels",
+                "max_sounds",
+                "max_custom",
+                "max_taught",
+                "own_threshold",
+                "floor_db",
+            )
         },
         "sounds": [
-            {"key": s.key, "name": s.name, "threshold": s.threshold, "device_class": s.device_class, "icon": s.icon}
+            {
+                "key": s.key,
+                "name": s.name,
+                "group": s.group,
+                "threshold": s.threshold,
+                "device_class": s.device_class,
+                "icon": s.icon,
+            }
             for s in sounds.SOUNDS.values()
         ],
+        "sound_popular": list(sounds.MODELS[sounds.DEFAULT_MODEL].popular),
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,
         "history": HISTORY,

@@ -5,9 +5,9 @@
   import ExportButton from '../lib/components/ExportButton.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import HistoryView from '../lib/components/history/HistoryView.svelte';
-  import ObjectChips from '../lib/components/ObjectChips.svelte';
+  import LiveChips from '../lib/components/LiveChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
-  import { facesBusy, isObjectSensor } from '../lib/objects';
+  import { facesBusy, isObjectSensor, objectChips } from '../lib/objects';
   import { pollWhileVisible } from '../lib/poll';
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
@@ -21,9 +21,7 @@
   import ReadingQualityTab from './sensor/ReadingQualityTab.svelte';
   import SoundLiveTab from './sensor/SoundLiveTab.svelte';
   import SoundOwnTab from './sensor/SoundOwnTab.svelte';
-  import SoundSettingsTab from './sensor/SoundSettingsTab.svelte';
-  import SoundChips from '../lib/components/sound/SoundChips.svelte';
-  import { isSoundSensor } from '../lib/sound';
+  import { isSoundSensor, soundChips } from '../lib/sound';
   import QualityTab from './sensor/QualityTab.svelte';
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
@@ -84,9 +82,9 @@
           <div class="row wrap">
             <h1>{sensor.name}</h1>
             {#if isObjectSensor(sensor)}
-              <ObjectChips {sensor} />
+              <LiveChips {...objectChips(sensor)} />
             {:else if isSoundSensor(sensor)}
-              <SoundChips {sensor} />
+              <LiveChips {...soundChips(sensor)} />
             {:else if isReadingSensor(sensor)}
               <StatePill name={readingText(sensor)} color="var(--c-accent)" />
             {:else}
@@ -134,8 +132,6 @@
       <SoundLiveTab {sensor} onchange={load} />
     {:else if tab === 'quality' && isSoundSensor(sensor)}
       <SoundOwnTab {sensor} onchange={load} />
-    {:else if tab === 'settings' && isSoundSensor(sensor)}
-      <SoundSettingsTab {sensor} onchange={load} />
     {:else if tab === 'live'}
       <LiveTab {sensor} onchange={load} />
     {:else if tab === 'label'}

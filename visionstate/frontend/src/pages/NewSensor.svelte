@@ -31,7 +31,6 @@
   const SOUND_STEPS = [
     { title: 'Stream', sub: 'Name and sound source' },
     { title: 'Listen', sub: 'What to hear' },
-    { title: 'Home Assistant', sub: 'Send it there' },
   ];
 
   // Look at the picture (states, objects, a number) or listen (a sound sensor).
@@ -251,13 +250,15 @@
           <SourcePicker bind:sourceType bind:source />
           <div style="max-width:640px"><LightEditor bind:triggers /></div>
         {/if}
-      {:else if mode === 'sound' && step === 1}
-        <SoundStep source={streamSource.trim()} bind:sound />
       {:else if mode === 'sound'}
         <div class="col" style="gap:6px">
-          <h2>Send it to Home Assistant</h2>
-          <p class="muted">Each sound becomes an on/off sensor ({sound.sounds.length} now; own sounds join them once taught).</p>
+          <h2>What should it listen for?</h2>
+          <p class="muted">
+            Each sound becomes an on/off sensor. Sounds of your own — your doorbell, the washing machine — are taught once
+            the sensor runs.
+          </p>
         </div>
+        <SoundStep source={streamSource.trim()} name={name.trim()} bind:sound />
         <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
       {:else if step === 1}
         <div class="row wrap">
@@ -345,7 +346,11 @@
         {#if step < STEPS.length - 1}
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
-          <button class="btn primary" disabled={(mode === 'picture' && !detectValid) || saving} onclick={create}>
+          <button
+            class="btn primary"
+            disabled={(mode === 'picture' ? !detectValid : !sound.sounds.length) || saving}
+            onclick={create}
+          >
             {saving ? 'Creating…' : mode === 'picture' && kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
           </button>
         {/if}

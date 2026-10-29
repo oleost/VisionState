@@ -2,6 +2,7 @@
   // Reading sensors: the published value, the last read and exactly what the reader saw.
   import { api } from '../../lib/api';
   import { app, toastError } from '../../lib/app.svelte';
+  import EntitiesCard from '../../lib/components/EntitiesCard.svelte';
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct } from '../../lib/format';
@@ -125,12 +126,7 @@
       </div>
     </section>
 
-    <section class="card pad">
-      <div class="card-title"><h3>In Home Assistant</h3></div>
-      <ul class="entities">
-        {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
-      </ul>
-    </section>
+    <EntitiesCard {sensor} />
   </aside>
 </div>
 
@@ -174,15 +170,6 @@
     font-size: 34px;
     font-weight: 600;
     line-height: 1.1;
-    overflow-wrap: anywhere;
-  }
-  .entities {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     overflow-wrap: anywhere;
   }
   .trigger {

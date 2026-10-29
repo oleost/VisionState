@@ -3,8 +3,9 @@
   // level a window must reach to be analysed, how long a sound stays heard, clips and learning the
   // room. Defaults and limits come from the backend (config).
   import { app } from '../../app.svelte';
-  import { pct } from '../../format';
+  import { soundPicker } from '../../sound';
   import type { OwnSound, SoundSettings } from '../../types';
+  import LabelPicker from '../LabelPicker.svelte';
 
   let {
     value = $bindable(),
@@ -19,10 +20,6 @@
     ...own.map((c) => ({ key: c.key, name: c.name, model: config.sound.own_threshold })),
   ]);
 
-  function toggle(key: string, on: boolean) {
-    value.sounds = on ? [...value.sounds, key] : value.sounds.filter((k) => k !== key);
-  }
-
   function setThreshold(key: string, percent: number, model: number) {
     const next = { ...value.thresholds };
     const v = Math.round(percent) / 100;
@@ -35,14 +32,7 @@
 <div class="col editor">
   <fieldset class="col">
     <legend class="field">Sounds to listen for</legend>
-    <div class="sounds">
-      {#each config.sounds as s (s.key)}
-        <label class="check pick" class:on={value.sounds.includes(s.key)}>
-          <input type="checkbox" checked={value.sounds.includes(s.key)} onchange={(e) => toggle(s.key, e.currentTarget.checked)} />
-          <span>{s.name}</span>
-        </label>
-      {/each}
-    </div>
+    <LabelPicker bind:selected={value.sounds} {...soundPicker()} />
     <p class="xsmall muted">
       Each is an on/off sensor in Home Assistant (a smoke alarm as a smoke sensor — on top of your smoke detectors, never
       instead of them). For a sound of your own, such as your doorbell, teach it under Own sounds.
@@ -51,19 +41,23 @@
 
   {#if chosen.length}
     <fieldset class="col">
-      <legend class="field">Heard from</legend>
+      <legend class="field">Heard when the AI is at least this sure</legend>
       {#each chosen as s (s.key)}
         {@const current = value.thresholds[s.key] ?? s.model}
-        <label class="col threshold">
-          <span class="row small"><span>{s.name}</span><span class="spacer"></span><span class="mono muted">{pct(current)}</span></span>
-          <input
-            type="range"
-            min={Math.round(limits.threshold[0] * 100)}
-            max={Math.round(limits.threshold[1] * 100)}
-            value={Math.round(current * 100)}
-            oninput={(e) => setThreshold(s.key, Number(e.currentTarget.value), s.model)}
-            aria-label="{s.name}: heard from"
-          />
+        <label class="line">
+          <span>{s.name}</span>
+          <span class="row"
+            ><input
+              class="input sm num"
+              type="number"
+              min={Math.round(limits.threshold[0] * 100)}
+              max={Math.round(limits.threshold[1] * 100)}
+              step="5"
+              value={Math.round(current * 100)}
+              oninput={(e) => setThreshold(s.key, Number(e.currentTarget.value), s.model)}
+              aria-label="{s.name}: heard from"
+            /> %</span
+          >
         </label>
       {/each}
       <p class="xsmall muted">
@@ -157,27 +151,13 @@
     margin: 0;
     gap: var(--space-2);
   }
-  .sounds {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: var(--space-2);
-  }
-  .pick {
+  .line {
+    display: flex;
     align-items: center;
-    padding: 10px 12px;
-    min-height: var(--touch);
-    border: 1px solid var(--c-border-strong);
-    border-radius: var(--radius-md);
-  }
-  .pick.on {
-    border-color: var(--c-accent-line);
-    background: var(--c-accent-soft);
-  }
-  .threshold {
-    gap: 4px;
-  }
-  .threshold input {
-    width: 100%;
+    justify-content: space-between;
+    gap: var(--space-4);
+    font-size: var(--fs-base);
+    color: var(--c-text-2);
   }
   .inline {
     flex-direction: row;

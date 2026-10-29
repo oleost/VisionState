@@ -1,16 +1,17 @@
 <script lang="ts">
   // New sound sensor: listen to the stream for a few seconds (does it have sound, how loud, which of
-  // the model's sounds it hears), then pick what to listen for.
+  // the model's sounds it hears), pick what to listen for, and see its entities in Home Assistant.
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { app } from '../../lib/app.svelte';
-  import Icon from '../../lib/components/Icon.svelte';
   import LevelChart from '../../lib/components/sound/LevelChart.svelte';
   import SoundEditor from '../../lib/components/sound/SoundEditor.svelte';
-  import { pct } from '../../lib/format';
+  import { haSlug, pct } from '../../lib/format';
   import type { SoundPreview, SoundSettings } from '../../lib/types';
+  import HaPreview from './HaPreview.svelte';
+  import TestCard from './TestCard.svelte';
 
-  let { source, sound = $bindable() }: { source: string; sound: SoundSettings } = $props();
+  let { source, name: sensorName, sound = $bindable() }: { source: string; name: string; sound: SoundSettings } = $props();
 
   let preview = $state<SoundPreview | null>(null);
   let listening = $state(false);
@@ -34,52 +35,64 @@
   });
 
   const name = (key: string) => app.config?.sounds.find((s) => s.key === key)?.name ?? key;
+  const hasVideo = $derived(preview?.stream ? !!preview.stream.video : null);
 </script>
 
-<div class="col" style="gap:6px">
-  <h2>What should it listen for?</h2>
-  <p class="muted">Pick the sounds that matter here. Sounds of your own — your doorbell, the washing machine — are taught once the sensor runs.</p>
+<div class="col" style="gap:var(--space-3)">
+  <h3>Which sounds?</h3>
+  <SoundEditor bind:value={sound} {hasVideo} />
 </div>
 
-<section class="card pad col test" data-testid="sound-test">
-  <div class="row wrap">
-    <strong class="small">The stream</strong>
-    <span class="spacer"></span>
-    <button class="btn sm" disabled={listening} onclick={listen}><Icon name="refresh" size={14} /> {listening ? 'Listening…' : 'Listen again'}</button>
-  </div>
-  {#if listening && !preview}
-    <p class="small muted">Listening for a few seconds…</p>
-  {:else if error}
-    <div class="notice danger small"><Icon name="alert" /><span>{error}</span></div>
-  {:else if preview && !preview.ok}
-    <div class="notice danger small" data-testid="sound-test-error">
-      <Icon name="alert" /><span>{preview.error}. Check the address, and that the camera's microphone (its audio) is switched on.</span>
-    </div>
-  {:else if preview}
-    <span class="small">
-      <Icon name="sound" size={14} /> {preview.stream?.codec}, {(preview.stream?.sample_rate ?? 0) / 1000} kHz
-      {#if preview.stream?.video} · <Icon name="camera" size={14} /> video {preview.stream.video.width}×{preview.stream.video.height} (clips can show it){/if}
-    </span>
-    {#if preview.levels?.length}<LevelChart levels={preview.levels} line={null} />{/if}
-    {#if preview.model_error}
-      <span class="xsmall warn-text">{preview.model_error}</span>
-    {:else if preview.sounds?.length}
-      <span class="xsmall muted">
-        Loudest moment:
-        {preview.sounds.slice(0, 3).map((s) => `${name(s.key)} ${pct(s.score)}`).join(' · ')}
-      </span>
+<div data-testid="sound-test">
+  <TestCard busy={listening} onretest={listen}>
+    {#snippet status()}
+      {#if listening && !preview}
+        Listening for a few seconds…
+      {:else if error}
+        <span class="danger-text">{error}</span>
+      {:else if preview && !preview.ok}
+        <span class="danger-text" data-testid="sound-test-error"
+          >{preview.error}. Check the address, and that the camera's microphone (its audio) is switched on.</span
+        >
+      {:else if preview}
+        {preview.stream?.codec}, {(preview.stream?.sample_rate ?? 0) / 1000} kHz
+        {#if preview.stream?.video}· video {preview.stream.video.width}×{preview.stream.video.height} (clips can show it){/if}
+      {/if}
+    {/snippet}
+    {#if preview?.ok}
+      <div class="col heard">
+        {#if preview.levels?.length}<LevelChart levels={preview.levels} line={null} />{/if}
+        {#if preview.model_error}
+          <span class="xsmall warn-text">{preview.model_error}</span>
+        {:else if preview.sounds?.length}
+          <span class="xsmall muted">
+            Loudest moment:
+            {preview.sounds.slice(0, 3).map((s) => `${name(s.key)} ${pct(s.score)}`).join(' · ')}
+          </span>
+        {/if}
+      </div>
     {/if}
-  {/if}
-</section>
+  </TestCard>
+</div>
 
-<SoundEditor bind:value={sound} hasVideo={preview?.stream ? !!preview.stream.video : null} />
+<HaPreview>
+  {#each sound.sounds as key (key)}
+    <span class="mono small">binary_sensor.{haSlug(`${sensorName} ${name(key)}`)}</span>
+  {:else}
+    <span class="xsmall muted">Pick at least one sound.</span>
+  {/each}
+  <span class="xsmall muted">Own sounds join them once taught.</span>
+</HaPreview>
 
 <style>
-  .test {
-    gap: var(--space-3);
-    max-width: 760px;
+  .heard {
+    gap: var(--space-2);
+    padding: 0 16px 16px;
   }
   .warn-text {
     color: var(--c-warn-text);
+  }
+  .danger-text {
+    color: var(--c-danger-text);
   }
 </style>

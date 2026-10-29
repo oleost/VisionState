@@ -5,10 +5,10 @@
   import { api } from '../../lib/api';
   import DetectionBoxes from '../../lib/components/DetectionBoxes.svelte';
   import FaceConsent from '../../lib/components/FaceConsent.svelte';
-  import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import LabelPicker from '../../lib/components/LabelPicker.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { haSlug } from '../../lib/format';
-  import { objectCount } from '../../lib/objects';
+  import { objectCount, objectPicker } from '../../lib/objects';
   import type { Detection, FaceModelInfo, Roi } from '../../lib/types';
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
@@ -80,7 +80,7 @@
 
 <div class="col" style="gap:var(--space-3)">
   <h3>Which objects?</h3>
-  <ObjectPicker bind:selected={classes} />
+  <LabelPicker bind:selected={classes} {...objectPicker()} />
   {#if classes.includes('person')}
     <label class="check" data-testid="wizard-faces">
       <input

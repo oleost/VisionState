@@ -8,12 +8,15 @@
     value = $bindable(),
     inherited = null,
     threshold = null,
+    fields = REVIEW_FIELDS.map((f) => f.key),
   }: {
     value: ReviewRules | ReviewOverrides;
     /** Global rules; set in sensor mode so empty fields show what they inherit. */
     inherited?: ReviewRules | null;
     /** Sensor reporting threshold: the review limit never goes below it. */
     threshold?: number | null;
+    /** The rules that apply to the sensor (a sound sensor asks only by its own rule: just the cooldown). */
+    fields?: string[];
   } = $props();
 
   const sensorMode = $derived(inherited !== null);
@@ -51,7 +54,7 @@
 
   {#if limits}
     <div class="col fields" class:dim={!effectiveEnabled}>
-      {#each REVIEW_FIELDS as f (f.key)}
+      {#each REVIEW_FIELDS.filter((f) => fields.includes(f.key)) as f (f.key)}
         {@const lim = limits[f.key]}
         <label class="line">
           <span>{f.label}</span>

@@ -34,7 +34,12 @@ crying** are recognised well; **speech** ("someone is talking"), **shouting and 
 **knocking** fairly — offered, not used as examples. **Glass breaking, a doorbell, a door slamming
 and a microwave** are recognised poorly by the pretrained classes: the doorbell, the door and the
 microwave are taught as own sounds instead (they are the same sound every time); glass breaking is
-not offered (too weak, worse still in telephone-band audio, and it reads like a security promise).
+not offered (too weak, worse still in telephone-band audio, and it reads like a security promise). Those
+seven are shown first in the picker (the `popular` of `sounds.json`); behind *Show all* the
+picker (the one object sensors use) lists about 70 more classes for a home, grouped — other alarms
+and signals, people, animals, the home, outside and vehicles, the weather — each one or more
+AudioSet classes, never two sounds with the same class. They are not measured yet (§13): DOCS.md
+says so and tells the user to try one on the Live tab and set its threshold.
 
 **Not promised:**
 - telling individuals apart (which dog, which person): sound models learn categories, not
@@ -398,7 +403,13 @@ recordings in `tests/assets/sounds/`) and e2e tests.
    - a day of a household's background and TV: false alarms per day, the thresholds in
      `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*;
    - own sounds recorded at home (a doorbell, an appliance beep): clips needed, `own_threshold`.
-5. **At release**: the README and the store text (`visionstate/README.md`) say VisionState hears
+5. **Measure the unmeasured sounds.** Only the seven popular sounds of `sounds.json` were measured
+   (§5); the others behind *Show all* have 0.3 (0.5 for background sounds: music, TV, traffic, wind,
+   rain, running water, a fan, a crowd) as a first guess. Measure them like §5 on the CC0 part of
+   FSD50K (many of its 200 classes are among them) and set each threshold from that (thresholds
+   may change after a release; keys may not). A sound that comes out as poor as glass breaking is
+   removed before the release, not after.
+6. **At release**: the README and the store text (`visionstate/README.md`) say VisionState hears
    too (§11); the roadmap row in SCOPE.md gets its version; screenshots of a sound sensor for
    `docs/promo/` if wanted (and `scripts/seed_demo.py` could seed one).
 

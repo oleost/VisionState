@@ -1,29 +1,25 @@
 <script lang="ts">
-  // What an object sensor reports right now: one chip per class (count when detected).
-  // `overlay` = one compact pill for use on top of an image (dashboard).
-  import { objectColor, objectKeys, objectName, objectSummary } from '../objects';
-  import type { Sensor } from '../types';
+  // What a sensor finds right now, one chip each: the objects an object sensor sees (with their
+  // count), the sounds a sound sensor hears. `overlay` = one compact pill with `summary` (dashboard).
+  // Their chips and summary come from objectChips (objects.ts) and soundChips (sound.ts).
+  type Chip = { key: string; name: string; on: boolean; color: string; count?: number };
+  let { chips, summary, overlay = false }: { chips: Chip[]; summary: string; overlay?: boolean } = $props();
 
-  let { sensor, overlay = false }: { sensor: Sensor; overlay?: boolean } = $props();
-
-  const classes = $derived(objectKeys(sensor));
-  const own = $derived(sensor.objects?.custom ?? []);
-  const live = $derived(sensor.objects?.live ?? []);
-  const anyOn = $derived(live.some((o) => o.on));
+  const anyOn = $derived(chips.some((c) => c.on));
 </script>
 
 {#if overlay}
   <span class="pill overlay">
     <span class="dot" style:background={anyOn ? 'var(--c-accent)' : 'var(--c-unknown)'}></span>
-    {objectSummary(sensor)}
+    {summary}
   </span>
 {:else}
   <span class="row wrap chips">
-    {#each live as o (o.key)}
-      <span class="pill" class:off={!o.on}>
-        <span class="dot" style:background={o.on ? objectColor(classes, o.key) : 'var(--c-unknown)'}></span>
-        {objectName(o.key, own)}
-        <span class="count mono">{o.on ? o.count : 0}</span>
+    {#each chips as c (c.key)}
+      <span class="pill" class:off={!c.on}>
+        <span class="dot" style:background={c.on ? c.color : 'var(--c-unknown)'}></span>
+        {c.name}
+        {#if c.count !== undefined}<span class="count mono">{c.on ? c.count : 0}</span>{/if}
       </span>
     {/each}
   </span>

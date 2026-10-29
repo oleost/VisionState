@@ -4,10 +4,12 @@
   import { api } from '../../api';
   import { toast, toastError } from '../../app.svelte';
   import type { Sensor } from '../../types';
+  import Icon from '../Icon.svelte';
 
   let { sensor, historyId, onchange = () => {} }: { sensor: Sensor; historyId: number; onchange?: () => void } = $props();
 
   let name = $state('');
+  let naming = $state(false);
   let busy = $state(false);
   let taught = $state<string | null>(null);
   const own = $derived(sensor.sound?.custom ?? []);
@@ -33,22 +35,30 @@
     <span class="small ok">Taught as {taught} ✓</span>
   {:else}
     <span class="xsmall muted">Teach this clip as</span>
-    <div class="row wrap" style="gap:var(--space-2)">
-      {#each own as c (c.key)}
-        <button type="button" class="btn sm" disabled={busy} onclick={() => teach(c.key)}>{c.name}</button>
-      {/each}
-      <button type="button" class="btn sm" disabled={busy} onclick={() => teach('other')}>Another sound</button>
-    </div>
-    <form
-      class="row wrap new"
-      onsubmit={(e) => {
-        e.preventDefault();
-        if (name.trim()) teach(null, name.trim());
-      }}
-    >
-      <input class="input sm" bind:value={name} placeholder="A new own sound, e.g. Doorbell" maxlength="64" aria-label="Name of a new own sound" />
-      <button class="btn sm primary" disabled={busy || !name.trim()}>Teach</button>
-    </form>
+    {#if naming}
+      <form
+        class="row wrap new"
+        onsubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) teach(null, name.trim());
+        }}
+      >
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input sm" bind:value={name} placeholder="Name" maxlength="64" aria-label="Name of the new sound" autofocus />
+        <button class="btn sm primary" type="submit" disabled={busy || !name.trim()}>Add sound</button>
+        <button class="btn sm" type="button" onclick={() => (naming = false)}>Back</button>
+      </form>
+    {:else}
+      <div class="row wrap" style="gap:var(--space-2)">
+        {#each own as c (c.key)}
+          <button type="button" class="btn sm" disabled={busy} onclick={() => teach(c.key)}>{c.name}</button>
+        {/each}
+        <button type="button" class="btn sm accent-outline" disabled={busy} onclick={() => (naming = true)}>
+          <Icon name="plus" size={14} /> New sound…
+        </button>
+        <button type="button" class="btn sm ghost" disabled={busy} onclick={() => teach('other')}>Another sound</button>
+      </div>
+    {/if}
   {/if}
 </div>
 

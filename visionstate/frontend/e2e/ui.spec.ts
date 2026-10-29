@@ -1644,15 +1644,21 @@ test('new sound sensor through the wizard: a microphone stream is tried, sounds 
   // The stream is listened to: sound only (an ESP32 microphone sends WAV).
   await expect(page.getByTestId('sound-test')).toContainText('16 kHz', { timeout: 20_000 });
   await expect(page.getByTestId('sound-test')).not.toContainText('video');
-  await press(page.getByText('Siren', { exact: true }), info);
-  await expect(page.getByRole('checkbox', { name: 'Siren' })).toBeChecked();
-  await expect(page.getByRole('slider', { name: 'Siren: heard from' })).toBeVisible();
+  // The same picker as for objects: popular sounds first, every other one behind "Show all".
+  await press(page.getByRole('button', { name: 'Siren', exact: true }), info);
+  await expect(page.getByRole('button', { name: 'Siren', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await press(page.getByRole('button', { name: /Show all \d+ sounds/ }), info);
+  await page.getByPlaceholder(/Search \d+ sounds/).fill('kettle');
+  await press(page.getByRole('button', { name: 'Whistle or kettle' }), info);
+  await press(page.getByRole('button', { name: 'Show fewer' }), info);
+  await expect(page.getByRole('button', { name: 'Whistle or kettle' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('spinbutton', { name: 'Siren: heard from' })).toBeVisible();
+  await expect(page.getByText('binary_sensor.wizard_sound_whistle_or_kettle')).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
   await press(page.getByRole('button', { name: 'Create sensor' }), info);
   await expect(page).toHaveURL(/\/live$/);
-  await expect(page.getByTestId('sound-siren')).toBeVisible();
+  await expect(page.getByTestId('bar-siren')).toBeVisible();
   await expect(page.getByText('Analysed above')).toBeVisible({ timeout: 20_000 });
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
   errors.expectNone();
@@ -1688,9 +1694,11 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   await expect(page.getByText('Was this')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  // The question may name another sound (a siren can score as a smoke alarm too): answer yes to it.
+  // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
+  // answer yes to it, and it leaves the queue.
+  const before = await waiting();
   await press(page.getByRole('button', { name: /^Yes, / }), info);
-  await expect.poll(waiting).toBe(0);
+  await expect.poll(waiting).toBe(before - 1);
   errors.expectNone();
 });
 
@@ -1701,10 +1709,9 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   await page.goto(`#/sensors/${id}/quality`);
   await expect(page.getByTestId('own-sound-our_siren')).toBeVisible();
   const name = `Bark ${info.project.name}`;
-  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Name of the new own sound').fill(name);
   const recording = path.resolve(import.meta.dirname, '..', '..', 'backend', 'tests', 'assets', 'sounds', 'dog_bark.m4a');
   await page.locator('#sound-files').setInputFiles(recording);
-  // The add card lists the new sound among its choices too: find its own card by key.
   const card = page.getByTestId(`own-sound-bark_${info.project.name}`);
   await expect(card).toContainText('1 clip');
   await press(card.getByRole('button', { name: 'Play the clip' }), info);

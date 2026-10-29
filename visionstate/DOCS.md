@@ -439,17 +439,25 @@ The wizard listens to the stream for a few seconds and shows what it sends (code
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it
 runs.
 
-**What it recognises out of the box** (pick them in the wizard or under Settings): a dog barking,
-a siren, a smoke or fire alarm and crying are recognised well; someone talking, shouting or
-screaming and knocking fairly. The smoke alarm is a *smoke* sensor in Home Assistant — a
+**What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
+of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised
+well; someone talking, shouting or screaming and knocking fairly — these are shown first. *Show
+all* lists many more, grouped and searchable: other alarms and signals (a car alarm, an alarm
+clock, a phone ringing, beeping), people (laughter, coughing, snoring, footsteps), animals (a cat,
+birds, a rooster), the home (a tap, a toilet flushing, a vacuum cleaner, the TV), outside (a car,
+a lawn mower, a chainsaw, fireworks) and the weather (rain, thunder, wind). They have not been
+measured on real recordings like the first ones: try one on the Live tab, and set its threshold
+(below) to what you see. The smoke alarm is a *smoke* sensor in Home Assistant — a
 notification on top of your smoke detectors, **never instead of them**. Most smoke alarms beep at
 about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms sound different:
 teach yours as an own sound. A sound on TV is a real sound to the sensor.
 
 **Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
 door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
-(with clips on: *Teach this clip as*), or from recordings made with a phone (any sound or video
-file; its loudest four seconds are kept). About five clips is a good start. Each own sound is an
+(with clips on: *Teach this clip as*), or from recordings made with a phone (*Add an own sound*,
+or *Add recordings* on a sound: any sound or video file; its loudest four seconds are kept). A
+doorbell, a door, a microwave and breaking glass are not among the sounds out of the box: the
+model hears them poorly, while an own sound learns your doorbell from its own clips. About five clips is a good start. Each own sound is an
 on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts
 from 200 everyday sounds as *other sounds*, learns what its room sounds like as it listens
 (*Learn the room's sounds*, on by default), and takes clips you add as *Other sounds*.
@@ -461,7 +469,8 @@ line it must cross. A sound that matters but stays below it — a beep two rooms
 lower the line. The levels are relative to the loudest the stream can be (dBFS), not sound
 pressure: the same room shows other numbers on another microphone.
 
-**When a sound counts.** Each sound has a threshold (*Heard from*, under Settings): it is heard
+**When a sound counts.** Each sound has a threshold (*Heard when the AI is at least this sure*,
+under Settings): it is heard
 when its score passes the threshold in two of the last three windows, and stays heard while it
 scores above half of it. The Live tab shows each sound's score against its threshold: lower it
 when a sound is missed, raise it when something else is taken for it.

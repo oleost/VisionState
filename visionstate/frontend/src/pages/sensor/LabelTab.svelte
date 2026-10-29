@@ -125,7 +125,10 @@
     <section class="card pad">
       <div class="card-title"><h3>Current prediction</h3><span class="xsmall faint">{ago(sensor.live.last_run)}</span></div>
       {#if sensor.trained}
-        <ProbBars states={sensor.states} probs={sensor.live.probs} threshold={sensor.threshold} />
+        <ProbBars
+          bars={sensor.states.map((st) => ({ key: st.key, name: st.name, color: st.color, value: sensor.live.probs[st.key] ?? 0 }))}
+          threshold={sensor.threshold}
+        />
         <p class="xsmall faint" style="margin-top:12px">
           Line = {pct(sensor.threshold)} threshold. Below it the sensor reports {app.config?.unknown_state ?? 'unknown'}.
         </p>

@@ -2,6 +2,7 @@
   // Object sensors: the last analysed frame with its boxes, and what each class reports now.
   import { api } from '../../lib/api';
   import { toastError } from '../../lib/app.svelte';
+  import EntitiesCard from '../../lib/components/EntitiesCard.svelte';
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct, plural } from '../../lib/format';
@@ -122,12 +123,7 @@
       </div>
     </section>
 
-    <section class="card pad">
-      <div class="card-title"><h3>In Home Assistant</h3></div>
-      <ul class="entities">
-        {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
-      </ul>
-    </section>
+    <EntitiesCard {sensor} />
   </aside>
 </div>
 
@@ -148,18 +144,13 @@
   aside {
     gap: var(--space-4);
   }
-  .classes,
-  .entities {
+  .classes {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-  }
-  .entities {
-    gap: 6px;
-    overflow-wrap: anywhere;
   }
   .count {
     min-width: 32px;

@@ -79,6 +79,9 @@ Every fact has **one** home; other files link to it instead of repeating it.
   `api.ts`, app paths in `router.svelte.ts`. There is **no formatter** for the frontend (single
   quotes, ~120-character lines, kept by hand) — never run Prettier on it. Backend: ruff format.
 - Never rely on Ctrl/Shift/hover-only interactions; hide keyboard hints with `.kbd-only`.
+- A new sensor kind or feature uses the UI the others use (the picker, chips, score bars, review
+  answers, settings page: `docs/ARCHITECTURE.md` lists them). When it needs more, improve the shared
+  component for every kind; never a copy of it for one.
 - Test images must be CC0 / public domain (sources in `tests/assets/README.md`) or drawn by our own
   code (`tests/displays.py`). Local experiment data lives in `/VisionStateLocal/` (ignored by git,
   outside the Docker build context): images with other licences may be used there for trying things

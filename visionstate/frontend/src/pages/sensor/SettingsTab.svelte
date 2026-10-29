@@ -8,22 +8,25 @@
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import PublishSwitch from '../../lib/components/PublishSwitch.svelte';
-  import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import LabelPicker from '../../lib/components/LabelPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
   import FacesCard from '../../lib/components/FacesCard.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
+  import SoundEditor from '../../lib/components/sound/SoundEditor.svelte';
+  import StreamField from '../../lib/components/sound/StreamField.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
-  import { isObjectSensor } from '../../lib/objects';
+  import { isObjectSensor, objectPicker } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
   import { isPolygon, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
-  import type { ReviewRules, Roi, Sensor, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
+  import { isSoundSensor } from '../../lib/sound';
+  import type { ReviewRules, Roi, Sensor, SoundSettings, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
   import { REDACTED_MARK } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
@@ -55,6 +58,19 @@
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
+  const soundSensor = isSoundSensor(initial);
+  const { custom: _sc, live: _sl, levels: _sv, line: _sn, analysed: _sa, stream: _ss, ...initialSound } =
+    initial.sound ?? ({} as NonNullable<typeof initial.sound>);
+  let sound = $state<SoundSettings>({ ...app.config!.sound_defaults, ...initialSound });
+  const thresholdsBefore = { ...(initialSound.thresholds ?? {}) };
+  const hasVideo = $derived(sensor.sound?.stream ? !!sensor.sound.stream.video : null);
+
+  /** A sound sensor's settings: a threshold set back to the model's is sent as null (removed). */
+  function soundUpdate() {
+    const thresholds: Record<string, number | null> = { ...sound.thresholds };
+    for (const key of Object.keys(thresholdsBefore)) if (!(key in thresholds)) thresholds[key] = null;
+    return { name, source, publish, review, sound: { ...sound, thresholds } };
+  }
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
@@ -62,22 +78,27 @@
   async function save() {
     saving = true;
     try {
-      await api.updateSensor(sensor.id, {
-        name,
-        source_type: sourceType,
-        source,
-        ...(roi ? { roi } : { clear_roi: true }),
-        ...(objectSensor
-          ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
-          : readingSensor
-            ? { reading }
-            : { states, review }),
-        interval_s,
-        threshold,
-        debounce,
-        triggers,
-        publish,
-      });
+      await api.updateSensor(
+        sensor.id,
+        soundSensor
+          ? soundUpdate()
+          : {
+              name,
+              source_type: sourceType,
+              source,
+              ...(roi ? { roi } : { clear_roi: true }),
+              ...(objectSensor
+                ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
+                : readingSensor
+                  ? { reading }
+                  : { states, review }),
+              interval_s,
+              threshold,
+              debounce,
+              triggers,
+              publish,
+            },
+      );
       toast('Settings saved');
       onchange();
     } catch (err) {
@@ -118,44 +139,50 @@
     <section class="card pad col">
       <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>
-      <SourcePicker bind:sourceType bind:source />
-      <LightEditor bind:triggers lightError={sensor.live.light_error} />
+      {#if soundSensor}
+        <StreamField bind:source />
+      {:else}
+        <SourcePicker bind:sourceType bind:source />
+        <LightEditor bind:triggers lightError={sensor.live.light_error} />
+      {/if}
       <PublishSwitch bind:publish />
     </section>
 
-    <section class="card pad col">
-      <div class="card-title">
-        <h3>Region</h3>
-        <span class="row region-actions" style="gap:8px">
-          {#if isPolygon(roi)}
-            <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
-          {/if}
-          <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
-        </span>
-      </div>
-      <p class="small muted">
-        Drag to draw a new box, move it, or shape it with corners.
-        {objectSensor
-          ? 'An object counts when it stands inside it (the bottom of its box).'
-          : readingSensor
-            ? reading.display === 'counter'
-              ? 'Cover the wheels from the first to the last, so each field holds one wheel. A little room above and below is fine.'
-              : 'Draw it tightly around the digits only — no labels or units.'
-            : 'Changing it retrains the model.'}
-      </p>
-      <div class="frame">
-        <LiveFrame
-          sensorId={sensor.id}
-          bind:roi
-          editable
-          showLive={false}
-          interval={10_000}
-          light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
-        >
-          {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
-        </LiveFrame>
-      </div>
-    </section>
+    {#if !soundSensor}
+      <section class="card pad col">
+        <div class="card-title">
+          <h3>Region</h3>
+          <span class="row region-actions" style="gap:8px">
+            {#if isPolygon(roi)}
+              <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
+            {/if}
+            <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
+          </span>
+        </div>
+        <p class="small muted">
+          Drag to draw a new box, move it, or shape it with corners.
+          {objectSensor
+            ? 'An object counts when it stands inside it (the bottom of its box).'
+            : readingSensor
+              ? reading.display === 'counter'
+                ? 'Cover the wheels from the first to the last, so each field holds one wheel. A little room above and below is fine.'
+                : 'Draw it tightly around the digits only — no labels or units.'
+              : 'Changing it retrains the model.'}
+        </p>
+        <div class="frame">
+          <LiveFrame
+            sensorId={sensor.id}
+            bind:roi
+            editable
+            showLive={false}
+            interval={10_000}
+            light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
+          >
+            {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
+          </LiveFrame>
+        </div>
+      </section>
+    {/if}
   </div>
 
   <div class="col" style="gap:var(--space-5)">
@@ -168,7 +195,7 @@
       <section class="card pad col">
         <h3>Objects</h3>
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
-        <ObjectPicker bind:selected={classes} />
+        <LabelPicker bind:selected={classes} {...objectPicker()} />
       </section>
       <FacesCard {sensor} {onchange} />
       {#if taughtSomething}
@@ -202,6 +229,11 @@
           {/if}
         </section>
       {/if}
+    {:else if soundSensor}
+      <section class="card pad col">
+        <h3>Listening</h3>
+        <SoundEditor bind:value={sound} own={sensor.sound?.custom ?? []} {hasVideo} />
+      </section>
     {:else}
       <section class="card pad col">
         <h3>States</h3>
@@ -210,6 +242,7 @@
       </section>
     {/if}
 
+    {#if !soundSensor}
     <section class="card pad col">
       <h3>When to check</h3>
       <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} />
@@ -238,18 +271,26 @@
         <SensorParams bind:threshold bind:debounce />
       {/if}
     </section>
+    {/if}
 
     {#if !objectSensor && !readingSensor}
       <section class="card pad col">
         <h3>Review</h3>
+        {#if soundSensor}
+          <p class="small muted">With clips on, a sound that was only just heard is asked about: listen, and answer.</p>
+        {/if}
         {#if globalReview}
-          <ReviewRulesEditor bind:value={review} inherited={globalReview} {threshold} />
+          {#if soundSensor}
+            <ReviewRulesEditor bind:value={review} inherited={globalReview} threshold={null} fields={['cooldown_s']} />
+          {:else}
+            <ReviewRulesEditor bind:value={review} inherited={globalReview} {threshold} />
+          {/if}
         {/if}
       </section>
     {/if}
 
     <div class="row">
-      <button class="btn primary" disabled={saving || (objectSensor && !classes.length)} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+      <button class="btn primary" disabled={saving || (objectSensor && !classes.length) || (soundSensor && !source.trim())} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
       <span class="spacer"></span>
       <ConfirmButton onconfirm={remove} confirmLabel="Click again to delete everything">
         <Icon name="trash" size={14} /> Delete sensor

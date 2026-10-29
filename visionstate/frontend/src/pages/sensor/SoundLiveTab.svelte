@@ -2,6 +2,8 @@
   // Sound sensors: what the stream sounds like now (its level and the line a window must reach to
   // be analysed), each sound's score against its threshold, and the stream itself.
   import { app } from '../../lib/app.svelte';
+  import EntitiesCard from '../../lib/components/EntitiesCard.svelte';
+  import ProbBars from '../../lib/components/ProbBars.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LevelChart from '../../lib/components/sound/LevelChart.svelte';
   import { pct } from '../../lib/format';
@@ -43,26 +45,19 @@
 
     <section class="card pad col">
       <div class="card-title"><h3>Sounds</h3><span class="xsmall faint">the last loud window, against each sound's threshold</span></div>
-      <div class="col sounds">
-        {#each sound.live as s (s.key)}
-          <div class="col sound" data-testid="sound-{s.key}">
-            <div class="row small">
-              <span class="dot" style:background={s.on ? soundColor(sensor, s.key) : 'var(--c-unknown)'}></span>
-              <strong>{s.name}</strong>
-              {#if s.own}<span class="chip muted">own</span>{/if}
-              {#if s.on}<span class="chip ok">Heard</span>{/if}
-              <span class="spacer"></span>
-              <span class="mono muted">{pct(s.score)}</span>
-            </div>
-            <div class="track">
-              <div class="fill" style:width="{s.score * 100}%" style:background={soundColor(sensor, s.key)}></div>
-              <div class="threshold" style:left="{s.threshold * 100}%" title="Threshold {pct(s.threshold)}"></div>
-            </div>
-          </div>
-        {:else}
-          <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.</p>
-        {/each}
-      </div>
+      {#if sound.live.length}
+        <ProbBars
+          bars={sound.live.map((s) => ({ key: s.key, name: s.name, color: soundColor(sensor, s.key), value: s.score, threshold: s.threshold }))}
+        >
+          {#snippet tags(key)}
+            {@const s = sound.live.find((x) => x.key === key)}
+            {#if s?.own}<span class="chip muted">own</span>{/if}
+            {#if s?.on}<span class="chip ok">Heard</span>{/if}
+          {/snippet}
+        </ProbBars>
+      {:else}
+        <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.</p>
+      {/if}
     </section>
   </div>
 
@@ -87,12 +82,7 @@
       {/if}
       <span class="xsmall faint">Clips: {sound.clips ? (sound.video && stream?.video ? 'with video' : 'sound only') : 'off'}</span>
     </section>
-    <section class="card pad">
-      <div class="card-title"><h3>In Home Assistant</h3></div>
-      <ul class="entities">
-        {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
-      </ul>
-    </section>
+    <EntitiesCard {sensor} />
   </aside>
 </div>
 
@@ -107,34 +97,6 @@
   aside {
     gap: var(--space-4);
   }
-  .sounds {
-    gap: var(--space-4);
-  }
-  .sound {
-    gap: 6px;
-  }
-  .sound .row {
-    gap: var(--space-2);
-  }
-  .track {
-    position: relative;
-    height: 8px;
-    border-radius: 4px;
-    background: var(--c-surface-3);
-  }
-  .fill {
-    height: 8px;
-    border-radius: 4px;
-    transition: width 0.3s;
-  }
-  .threshold {
-    position: absolute;
-    top: -3px;
-    width: 2px;
-    height: 14px;
-    background: var(--c-text);
-    opacity: 0.5;
-  }
   .stream {
     gap: var(--space-2);
   }
@@ -143,15 +105,6 @@
   }
   .warn-text {
     color: var(--c-warn-text);
-  }
-  .entities {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    overflow-wrap: anywhere;
   }
   @media (max-width: 1000px) {
     .layout {

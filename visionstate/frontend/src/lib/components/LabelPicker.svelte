@@ -1,23 +1,38 @@
 <script lang="ts">
-  // Pick the object classes a sensor looks for: popular ones first, all others behind "Show all".
-  // Labels, groups, popular list and the maximum come from the backend config.
-  import { app } from '../app.svelte';
+  // Pick from a model's labels: the popular ones first, every other behind "Show all", searched and
+  // grouped. Object sensors pick the detector's objects with it, sound sensors the sound model's
+  // sounds; the labels, the popular ones and the maximum come from the backend config.
   import Icon from './Icon.svelte';
 
-  let { selected = $bindable([]) }: { selected: string[] } = $props();
+  type Label = { key: string; name: string; group: string };
+  let {
+    selected = $bindable([]),
+    labels,
+    popular: popularKeys,
+    max,
+    noun,
+    example,
+  }: {
+    selected: string[];
+    labels: Label[];
+    popular: string[];
+    max: number;
+    /** What the labels are, in the plural ("objects", "sounds"). */
+    noun: string;
+    /** A label to search for in the placeholder, e.g. "bicycle". */
+    example: string;
+  } = $props();
 
   let showAll = $state(false);
   let query = $state('');
 
-  const labels = $derived(app.config?.object_labels ?? []);
-  const max = $derived(app.config?.object_max_classes ?? 20);
   const byKey = $derived(new Map(labels.map((l) => [l.key, l])));
-  const popular = $derived((app.config?.object_popular ?? []).map((k) => byKey.get(k)).filter((l) => l !== undefined));
-  // Selected classes that are not popular stay visible while the full list is collapsed.
+  const popular = $derived(popularKeys.map((k) => byKey.get(k)).filter((l) => l !== undefined));
+  // Selected labels that are not popular stay visible while the full list is collapsed.
   const extra = $derived(selected.filter((k) => !popular.some((p) => p.key === k)).map((k) => byKey.get(k)).filter((l) => l !== undefined));
   const groups = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    const result = new Map<string, typeof labels>();
+    const result = new Map<string, Label[]>();
     for (const label of labels) {
       if (q && !label.name.toLowerCase().includes(q) && !label.group.toLowerCase().includes(q)) continue;
       result.set(label.group, [...(result.get(label.group) ?? []), label]);
@@ -49,25 +64,25 @@
 
 <div class="col picker">
   {#if !showAll}
-    <div class="row wrap chips" aria-label="Popular objects">
+    <div class="row wrap chips" aria-label="Popular {noun}">
       {#each popular as label (label.key)}{@render chip(label)}{/each}
       {#each extra as label (label.key)}{@render chip(label)}{/each}
     </div>
   {:else}
-    <input class="input" type="search" placeholder="Search {labels.length} objects, e.g. bicycle" bind:value={query} />
+    <input class="input" type="search" placeholder="Search {labels.length} {noun}, e.g. {example}" bind:value={query} />
     {#each groups as [group, items] (group)}
       <div class="col" style="gap:6px">
         <span class="eyebrow">{group}</span>
         <div class="row wrap chips">{#each items as label (label.key)}{@render chip(label)}{/each}</div>
       </div>
     {:else}
-      <p class="small muted">No object matches “{query}”.</p>
+      <p class="small muted">Nothing matches “{query}”.</p>
     {/each}
   {/if}
 
   <div class="row wrap" style="gap:var(--space-3)">
     <button type="button" class="btn sm ghost" onclick={() => ((showAll = !showAll), (query = ''))}>
-      {showAll ? 'Show fewer' : `Show all ${labels.length} objects`}
+      {showAll ? 'Show fewer' : `Show all ${labels.length} ${noun}`}
     </button>
     <span class="xsmall" class:muted={!full} class:warn={full}>
       {selected.length} selected{full ? ` — the most one sensor can have (${max})` : ''}

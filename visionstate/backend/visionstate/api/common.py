@@ -399,6 +399,8 @@ class SoundIn(BaseModel):
         unknown = [key for key in cleaned if key not in sounds.SOUNDS]
         if unknown:
             raise ValueError(f"Unknown sound {unknown[0]!r}")
+        if len(cleaned) > SOUND["max_sounds"]:
+            raise ValueError(f"At most {SOUND['max_sounds']} sounds per sensor")
         return cleaned
 
     @field_validator("level")

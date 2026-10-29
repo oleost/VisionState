@@ -276,6 +276,7 @@ SOUND = {
     "reconnect_max_s": 60.0,
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
     "live_levels": 120,  # levels (one per hop) the Live tab shows
+    "max_sounds": 20,  # the model's sounds per sensor (one entity each)
     "max_custom": 10,  # own sounds per sensor (one entity each)
     "max_taught": 50,  # clips taught per own sound
     "own_threshold": 0.8,  # an own sound is heard at this probability of the sensor's head

@@ -168,7 +168,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/objects.ts`, `lib/reading.ts`, `lib/sound.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, sounds, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…); `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the review question |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`, `PublishSwitch`; each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question |
 
 ## Recipes
 
@@ -179,6 +179,11 @@ error is kept in `LiveState.error` and shown in the UI.
 4. UI: the type in `lib/types.ts`, the field in its editor (`lib/components/ReadingParams.svelte`);
    defaults and limits come from `/config`, never hard-coded.
 5. Tests: backend (`tests/test_reading.py`), and an e2e step when it changes the UI.
+
+**A new sound** (one the model can hear): an entry in `sounds.json` (`group`, `classes`, `threshold`,
+`device_class`, an icon of the set Home Assistant ships). Its key never changes once released, and
+no two sounds share a class (`tests/test_sound.py` checks). The picker lists it by its group;
+measure its threshold on real recordings (docs/SOUND_PLAN.md §5) before it joins `popular`.
 
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
 config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,

@@ -4,6 +4,26 @@ import type { Sensor } from './types';
 
 export const isSoundSensor = (s: Sensor) => s.kind === 'sound';
 
+/** What LabelPicker shows for sound sensors: the model's sounds, popular ones first. */
+export function soundPicker() {
+  const config = app.config;
+  return {
+    labels: config?.sounds ?? [],
+    popular: config?.sound_popular ?? [],
+    max: config?.sound.max_sounds ?? 0,
+    noun: 'sounds',
+    example: 'kettle',
+  };
+}
+
+/** LiveChips of a sound sensor: each sound it listens for, on while heard. */
+export function soundChips(sensor: Sensor) {
+  return {
+    chips: (sensor.sound?.live ?? []).map((s) => ({ key: s.key, name: s.name, on: s.on, color: soundColor(sensor, s.key) })),
+    summary: soundSummary(sensor),
+  };
+}
+
 /** A sound's name: the model's, or the sensor's own sound's. */
 export function soundName(key: string, sensor?: Sensor | null): string {
   const own = sensor?.sound?.custom.find((c) => c.key === key);
