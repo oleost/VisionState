@@ -65,6 +65,11 @@ Draw a box around the number. Counters only go up and land in the Energy dashboa
 
 Pick from about 80 sounds, or teach your own from a few clips. A camera's microphone or an ESP32 with a microphone; it hears what kind of sound it is, never what is said.
 
+<p align="center">
+  <img src="docs/promo/sound.png" alt="A sound sensor hearing a smoke alarm, with its level and each sound's score" width="900"><br>
+  <em>A smoke alarm heard in the hallway; the doorbell is an own sound, taught from a few clips.</em>
+</p>
+
 ## Read a water, gas or power meter with an ESP32-CAM
 
 Put an ESP32-CAM (or any camera) above the meter, add it to Home Assistant with ESPHome or use its

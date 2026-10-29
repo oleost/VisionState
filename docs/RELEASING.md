@@ -91,8 +91,8 @@ all of it and tell the maintainer what was checked and what was found.
    - prepare the **update from the last stable release**: the stable app is installed there too. It
      shares MQTT topics and unique IDs with the beta app, so never run both: stop the beta app,
      start the stable one, and give it one sensor of each kind (exports of the standing test sensors,
-     `scripts/seed_demo.py --app <slug>`, or a backup of the beta app once the stable release can
-     restore one).
+     `scripts/seed_demo.py --app <slug> --sound <a camera's RTSP stream with sound>`, or a backup of
+     the beta app once the stable release can restore one).
 3. **What changed since the last stable release**: new or upgraded dependencies have a licence that
    fits Apache-2.0 (`git diff vX.Y.Z -- visionstate/backend/requirements.txt
    visionstate/frontend/package.json`); `homeassistant:` in config.yaml still names the oldest Home

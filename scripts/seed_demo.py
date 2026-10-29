@@ -1,4 +1,4 @@
-"""Seed the demo sensors: one of each picture kind (no sound sensor), the sensors on the README screenshots.
+"""Seed the demo sensors: one of each kind, the sensors on the README screenshots.
 
     python scripts/seed_demo.py --url http://127.0.0.1:8099 --images http://127.0.0.1:8765/photo
     python scripts/seed_demo.py --app c088851d_visionstate      # an installed app, through Ingress
@@ -11,6 +11,11 @@
   counts as a person.
 - Garage door (states): trained on 36 frames drawn from one photo (closed, open, partial).
 - Water meter (reading): the wheels of a real water meter, one of them half way between digits.
+- Hallway (sound), only with ``--sound <stream URL>``: listens for a smoke alarm, a siren, a dog,
+  crying and someone talking, keeps clips, and knows the own sound "Doorbell" from five drawn
+  ding-dongs (tests/sound_stream.chime). It needs the sound model (tools/soundmodel/README.md). With
+  the fake camera: ``--sound http://127.0.0.1:<port>/camera.ts``, and ``/play?sound=smoke_alarm``
+  plays a smoke alarm into it.
 
 The cameras are HTTP snapshot URLs: ``--images`` + ``/<name>.jpg``, by default the test photos on
 GitHub (reachable from any Home Assistant). With the fake camera use ``http://127.0.0.1:<port>/photo``.
@@ -192,6 +197,10 @@ def main() -> None:
         "--images",
         default=GITHUB,
         help="where the cameras get the photos (default: GitHub)",
+    )
+    parser.add_argument(
+        "--sound",
+        help="a stream with sound for the Hallway sound sensor (left out without it)",
     )
     args = parser.parse_args()
     api = Api(args.url) if args.url else ingress(args.app)
@@ -377,6 +386,43 @@ def main() -> None:
             lambda: api.call("GET", f"/sensors/{meter['id']}")["reading"]["value"],
         )
         print("Water meter reads", value)
+    hallway = (
+        create(
+            {
+                "name": "Hallway",
+                "kind": "sound",
+                "source_type": "rtsp",
+                "source": args.sound,
+                "sound": {
+                    "sounds": ["smoke_alarm", "siren", "dog_bark", "crying", "speech"],
+                    "clips": True,
+                },
+            }
+        )
+        if args.sound
+        else None
+    )
+    if hallway:
+        sys.path.insert(0, str(ASSETS.parent.parent))  # the backend, for the drawn doorbell
+        sys.path.insert(0, str(ASSETS.parent))
+        from sound_stream import chime, wav_header  # noqa: PLC0415
+
+        def wav(samples: np.ndarray) -> bytes:
+            pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2")
+            return wav_header() + pcm.tobytes()
+
+        bells = [chime(gain=0.2 + 0.05 * i, seed=i) for i in range(5)]
+        files = [
+            ("files", (f"doorbell_{i}.wav", wav(bell), "audio/wav"))
+            for i, bell in enumerate(bells)
+        ]
+        made = api.call(
+            "POST",
+            f"/sensors/{hallway['id']}/sounds/upload",
+            files=files,
+            data={"new_name": "Doorbell"},
+        )
+        print(f"Doorbell: {len(made['added'])} clips taught")
 
 
 if __name__ == "__main__":

@@ -408,9 +408,8 @@ recordings in `tests/assets/sounds/`) and e2e tests.
    - a day of a household's background and TV: false alarms per day, the thresholds in
      `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*;
    - own sounds recorded at home (a doorbell, an appliance beep): clips needed, `own_threshold`.
-5. **At release**: the roadmap row in SCOPE.md gets its version; the README already says
-   VisionState hears (§11) — a screenshot of a sound sensor for `docs/promo/` and its README
-   section if wanted (`scripts/seed_demo.py` could seed one).
+5. **At release**: the roadmap row in SCOPE.md gets its version (the README already says
+   VisionState hears, with `docs/promo/sound.png` from the fake camera; §11).
 
 **Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
 cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the
