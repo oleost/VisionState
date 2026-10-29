@@ -33,6 +33,8 @@ of a meter. Neither needs training.
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
 - Reading pointer dials (needle gauges, the small red hands on some water meters) — see §14.
+- Understanding speech: a sound sensor may know *that* someone speaks, never *what* is said (no
+  transcription, keywords or speaker recognition) — see [`SOUND_PLAN.md`](SOUND_PLAN.md) §6.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -868,4 +870,6 @@ dials and gauges; several readings per sensor (a sign with four prices, a
 counter plus its dials); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
-detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
+detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); sound
+sensors (sirens, alarms, a dog, our own doorbell) — researched and planned in
+[`SOUND_PLAN.md`](SOUND_PLAN.md).

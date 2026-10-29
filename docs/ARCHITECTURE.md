@@ -16,7 +16,7 @@ scripts/                channel.py (stable/beta config), fake_camera.py (test ca
                         check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py
 tools/wheelreader/      training code of the wheel reader model (not part of the app image)
 docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md,
-                        FACE_RECOGNITION_PLAN.md, promo/ (README images)
+                        FACE_RECOGNITION_PLAN.md, SOUND_PLAN.md, promo/ (README images)
 .github/                CI workflow, Dependabot, issue forms
 ```
 
