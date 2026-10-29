@@ -5,8 +5,8 @@
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
 Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — **read a
-number** from a display, or **listen** for sounds — sirens, a smoke alarm, a dog, your own
-doorbell — without any training. Everything runs on this machine; no cloud.
+number** from a display, or **listen** for sounds — sirens, a smoke alarm, a dog, a doorbell
+— without any training, and learn your own sounds from a few clips. Everything runs on this machine; no cloud.
 
 ## Requirements
 
@@ -27,7 +27,8 @@ doorbell — without any training. Everything runs on this machine; no cloud.
 ## Getting started
 
 1. Open **VisionState** from the sidebar.
-2. Click **New sensor**:
+2. Click **New sensor** and choose **Watch the picture** (the steps below) or **Listen** (a sound
+   sensor: see *Sound sensors* below):
    1. Give it a name and pick a camera — and, for a camera in a dark place, a light to switch on
       (see *A light for the camera* below).
    2. Draw a box around the thing to watch (for example the garage door). The AI only looks
@@ -445,9 +446,10 @@ well; someone talking, shouting or screaming and knocking fairly — these are s
 all* lists many more, grouped and searchable: other alarms and signals (a car alarm, an alarm
 clock, a phone ringing, beeping), people (laughter, coughing, snoring, footsteps), animals (a cat,
 birds, a rooster), the home (a tap, a toilet flushing, a vacuum cleaner, the TV), outside (a car,
-a lawn mower, a chainsaw, fireworks) and the weather (rain, thunder, wind). They have not been
-measured on real recordings like the first ones: try one on the Live tab, and set its threshold
-(below) to what you see. The smoke alarm is a *smoke* sensor in Home Assistant — a
+a lawn mower, a chainsaw, fireworks, breaking glass, a doorbell) and the weather (rain, thunder,
+wind). How well a sound is heard depends on the microphone, the room and the sound itself; each
+starts from a best-guess threshold: try it on the Live tab, and set its threshold (below) to what
+you see. Nothing here is a promise — breaking glass in particular is heard poorly. The smoke alarm is a *smoke* sensor in Home Assistant — a
 notification on top of your smoke detectors, **never instead of them**. Most smoke alarms beep at
 about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms sound different:
 teach yours as an own sound. A sound on TV is a real sound to the sensor.
@@ -456,8 +458,8 @@ teach yours as an own sound. A sound on TV is a real sound to the sensor.
 door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
 (with clips on: *Teach this clip as*), or from recordings made with a phone (*Add an own sound*,
 or *Add recordings* on a sound: any sound or video file; its loudest four seconds are kept). A
-doorbell, a door, a microwave and breaking glass are not among the sounds out of the box: the
-model hears them poorly, while an own sound learns your doorbell from its own clips. About five clips is a good start. Each own sound is an
+doorbell, a door or a microwave is out of the box too, but heard much better as an own sound: it
+learns *your* doorbell from its own clips. About five clips is a good start. Each own sound is an
 on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts
 from 200 everyday sounds as *other sounds*, learns what its room sounds like as it listens
 (*Learn the room's sounds*, on by default), and takes clips you add as *Other sounds*.

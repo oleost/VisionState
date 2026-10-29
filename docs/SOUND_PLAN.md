@@ -32,14 +32,17 @@ freezer door alarm; a water leak, CO or low-battery beeper; a particular door or
 recordings (§5): **dog barking, sirens (ambulance, police, fire engine), smoke and fire alarms and
 crying** are recognised well; **speech** ("someone is talking"), **shouting and screaming** and
 **knocking** fairly — offered, not used as examples. **Glass breaking, a doorbell, a door slamming
-and a microwave** are recognised poorly by the pretrained classes: the doorbell, the door and the
-microwave are taught as own sounds instead (they are the same sound every time); glass breaking is
-not offered (too weak, worse still in telephone-band audio, and it reads like a security promise). Those
-seven are shown first in the picker (the `popular` of `sounds.json`); behind *Show all* the
-picker (the one object sensors use) lists about 70 more classes for a home, grouped — other alarms
-and signals, people, animals, the home, outside and vehicles, the weather — each one or more
-AudioSet classes, never two sounds with the same class. They are not measured yet (§13): DOCS.md
-says so and tells the user to try one on the Live tab and set its threshold.
+and a microwave** are recognised poorly by the pretrained classes; they are offered all the same
+(the maintainer's decision, 2026-10-29: VisionState promises nothing about any sound — the user
+tries it and sets its threshold), and the docs say that a doorbell, a door or a microwave is
+learned much better as an own sound (it is the same sound every time). Those seven well and fairly
+recognised sounds are shown first in the picker (the `popular` of `sounds.json`); behind *Show all*
+the picker (the one object sensors use) lists the rest of about 80 sounds for a home, grouped —
+alarms and signals, people, animals, the home, outside and vehicles, the weather — each one or more
+AudioSet classes, never two sounds with the same class. Their thresholds are a best guess (from §5
+where a class was measured, else 0.3, or 0.5 for sounds that are often in the background); nobody
+can measure every sound in every home, so DOCS.md tells the user to try a sound on the Live tab and
+set its threshold to what they see.
 
 **Not promised:**
 - telling individuals apart (which dog, which person): sound models learn categories, not
@@ -157,7 +160,7 @@ passes — a strict operating point, because a sensor hears many windows a day:
 | Door slam | 20 % | 17 % | 0 % | 0.09 |
 | Glass breaking | 18 % | 5 % | 37 % | 0.40 |
 
-What follows: **CED-Tiny beats YAMNet** on 9 of 11 (YAMNet only on glass, which we do not offer;
+What follows: **CED-Tiny beats YAMNet** on 9 of 11 (YAMNet only on glass;
 YAMNet's features were computed by our own code and may differ slightly from its training);
 **thresholds differ by a factor of forty** between classes (0.02 for a bark, 0.78 for a knock), so
 they are per class in the registry; **telephone-band audio** costs crying and glass a lot and the
@@ -337,11 +340,13 @@ No question for the maintainer is open. Decided on 2026-10-29:
 - Clips are in the first release, off by default, speech silenced (§6).
 - Own sounds learn the room's sounds as *other*, on by default (§6).
 - Smoke and fire alarms get device class *smoke* (§8).
+- Every sound of the model a home could want is offered, the poorly recognised ones too (glass, a
+  doorbell, a door, a microwave): no promises; thresholds are a best guess that users tune (§2).
 - Phase 1 listens to RTSP and HTTP streams, go2rtc restreams and ESP32 microphones among them; no
   push (§10). A Home Assistant camera's own sound is wanted and looked into when testing with real
   microphones and Home Assistant; voice satellites are left out for now.
-- The name stays VisionState; the README and the store text say it hears too once sound sensors
-  ship.
+- The name stays VisionState; the README, the store text and the app's description say it hears
+  too.
 
 ## 12. Pitfalls to avoid
 
@@ -403,15 +408,9 @@ recordings in `tests/assets/sounds/`) and e2e tests.
    - a day of a household's background and TV: false alarms per day, the thresholds in
      `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*;
    - own sounds recorded at home (a doorbell, an appliance beep): clips needed, `own_threshold`.
-5. **Measure the unmeasured sounds.** Only the seven popular sounds of `sounds.json` were measured
-   (§5); the others behind *Show all* have 0.3 (0.5 for background sounds: music, TV, traffic, wind,
-   rain, running water, a fan, a crowd) as a first guess. Measure them like §5 on the CC0 part of
-   FSD50K (many of its 200 classes are among them) and set each threshold from that (thresholds
-   may change after a release; keys may not). A sound that comes out as poor as glass breaking is
-   removed before the release, not after.
-6. **At release**: the README and the store text (`visionstate/README.md`) say VisionState hears
-   too (§11); the roadmap row in SCOPE.md gets its version; screenshots of a sound sensor for
-   `docs/promo/` if wanted (and `scripts/seed_demo.py` could seed one).
+5. **At release**: the roadmap row in SCOPE.md gets its version; the README already says
+   VisionState hears (§11) — a screenshot of a sound sensor for `docs/promo/` and its README
+   section if wanted (`scripts/seed_demo.py` could seed one).
 
 **Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
 cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the

@@ -260,7 +260,15 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 sensor.reading = body.reading.model_dump()
             if body.sound is not None:
                 # Merged, so own sounds (made by teaching) and fields an older UI does not send stay.
-                sensor.sound = {**(sensor.sound or {}), **body.sound.stored(exclude_unset=True)}
+                sound = {**(sensor.sound or {}), **body.sound.stored(exclude_unset=True)}
+                # Own sounds never take a model sound's key, but one made before the model offered that
+                # sound may have it (an own "doorbell"): the two would share their entity.
+                own = {c["key"] for c in sound.get("custom", [])}
+                if clash := [k for k in sound.get("sounds", []) if k in own]:
+                    raise HTTPException(
+                        400, f"An own sound is already called {clash[0]!r}: forget it to use the model's"
+                    )
+                sensor.sound = sound
             if sensor.roi != old_roi or sensor.source != old_source:
                 sensor.frame_size = None  # the next frame's size is the one the region is drawn on
             s.flush()

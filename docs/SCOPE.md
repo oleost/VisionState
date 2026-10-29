@@ -440,7 +440,8 @@ so a long siren never becomes the background) by `above_db`, or above a fixed le
 **CED-Tiny** (Apache-2.0; trained on AudioSet, accepted 2026-10-29) with an embedding output added
 by `tools/soundmodel/make_model.py`: it takes the raw waveform and gives every AudioSet class's
 score (already probabilities) and a 576-number embedding. Each of its *sounds* in the registry is
-one or more classes with a threshold measured on CC0 recordings. A sound is heard when its score
+one or more classes with a threshold, in a group the picker lists it under; the well recognised
+ones (measured on CC0 recordings) are `popular`, the others start from a best guess users tune. A sound is heard when its score
 passed the threshold in `SOUND["on_windows"]` of the last `SOUND["of_windows"]` windows, and
 stays heard while it scores above `SOUND["off_share"]` of it and for `clear_after_s` after
 (`logic.hear`: two thresholds, more robust than a median filter).

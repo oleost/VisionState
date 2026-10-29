@@ -183,7 +183,8 @@ error is kept in `LiveState.error` and shown in the UI.
 **A new sound** (one the model can hear): an entry in `sounds.json` (`group`, `classes`, `threshold`,
 `device_class`, an icon of the set Home Assistant ships). Its key never changes once released, and
 no two sounds share a class (`tests/test_sound.py` checks). The picker lists it by its group;
-measure its threshold on real recordings (docs/SOUND_PLAN.md §5) before it joins `popular`.
+its threshold is a best guess users tune; `popular` (shown first) is for the ones recognised well
+on real recordings (docs/SOUND_PLAN.md §5).
 
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
 config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,

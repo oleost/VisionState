@@ -1,4 +1,4 @@
-"""Seed the demo sensors: one of each kind, the sensors on the README screenshots.
+"""Seed the demo sensors: one of each picture kind (no sound sensor), the sensors on the README screenshots.
 
     python scripts/seed_demo.py --url http://127.0.0.1:8099 --images http://127.0.0.1:8765/photo
     python scripts/seed_demo.py --app c088851d_visionstate      # an installed app, through Ingress

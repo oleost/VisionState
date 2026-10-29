@@ -256,6 +256,16 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert next(s for s in made["sound"]["live"] if s["key"] == "siren")["threshold"] == 0.4
         cleared = client.patch(f"/api/v1/sensors/{made['id']}", json={"sound": {"thresholds": {"siren": None}}})
         assert cleared.json()["sound"]["thresholds"] == {}
+        # An own sound made before the model offered a sound of the same key keeps it; the model's
+        # sound is then refused (the two would share an entity).
+        from visionstate.db import Sensor as SensorRow
+
+        with client.app.state.runtime.db.session() as s:
+            row = s.get(SensorRow, made["id"])
+            assert row is not None
+            row.sound = {**(row.sound or {}), "custom": [{"key": "doorbell", "name": "Doorbell"}]}
+        clash = client.patch(f"/api/v1/sensors/{made['id']}", json={"sound": {"sounds": ["siren", "doorbell"]}})
+        assert clash.status_code == 400 and "forget it" in clash.json()["detail"]
         config = client.get("/api/v1/config").json()
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
         assert all(s["group"] for s in config["sounds"]) and config["sound_popular"] == list(SPEC.popular)
@@ -307,7 +317,8 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
             ]
             made = client.post(f"/api/v1/sensors/{sid}/sounds/upload", files=files, data={"new_name": "Doorbell"})
             assert made.status_code == 201, made.text
-            assert [a["label"] for a in made.json()["added"]] == ["doorbell"] * 5
+            # The model has a "doorbell" sound too: an own sound never takes its key.
+            assert [a["label"] for a in made.json()["added"]] == ["doorbell_2"] * 5
             others = [
                 ("files", (f"{n}.m4a", sounds.encode_clip(recording(n), RATE), "audio/mp4"))
                 for n in ("dog_bark", "speech")
@@ -317,27 +328,27 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
                 == 201
             )
             taught = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()
-            assert taught["counts"] == {"our_siren": 1, "doorbell": 5, "other": 2} and taught["trained"]
+            assert taught["counts"] == {"our_siren": 1, "doorbell_2": 5, "other": 2} and taught["trained"]
             assert client.get(f"/api/v1/sound-clips/{taught['clips'][0]['id']}").headers["content-type"] == "audio/mp4"
 
             server.play(chime(seed=9))
-            assert wait_for(lambda: next(s for s in view()["sound"]["live"] if s["key"] == "doorbell")["on"])
+            assert wait_for(lambda: next(s for s in view()["sound"]["live"] if s["key"] == "doorbell_2")["on"])
 
             # Answering again replaces what the first answer taught.
-            again = client.post(f"/api/v1/review/{item['id']}", json={"action": "sound", "state_key": "doorbell"})
+            again = client.post(f"/api/v1/review/{item['id']}", json={"action": "sound", "state_key": "doorbell_2"})
             assert again.status_code == 200
             counts = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()["counts"]
-            assert counts == {"doorbell": 6, "other": 2}
+            assert counts == {"doorbell_2": 6, "other": 2}
             # Export and import: the own sounds and their clips come along.
             exported = client.get(f"/api/v1/sensors/{sid}/export")
             imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
             assert imported.status_code == 201, imported.text
             copy = imported.json()["id"]
-            assert client.get(f"/api/v1/sensors/{copy}/sounds/taught").json()["counts"] == {"doorbell": 6, "other": 2}
+            assert client.get(f"/api/v1/sensors/{copy}/sounds/taught").json()["counts"] == {"doorbell_2": 6, "other": 2}
             assert client.delete(f"/api/v1/sensors/{copy}").status_code == 204
             # Forget an own sound: its clips and its entity go.
             assert client.delete(f"/api/v1/sensors/{sid}/sounds/our_siren").status_code == 204
-            assert [c["key"] for c in view()["sound"]["custom"]] == ["doorbell"]
+            assert [c["key"] for c in view()["sound"]["custom"]] == ["doorbell_2"]
             bad = client.post(f"/api/v1/sensors/{sid}/sounds/upload", files=files[:1], data={"label": "unicorn"})
             assert bad.status_code == 400
     finally:

@@ -86,6 +86,17 @@
           "device_class": "sound",
           "icon": "mdi:phone-ring"
         },
+        "doorbell": {
+          "name": "Doorbell",
+          "group": "Alarms and signals",
+          "classes": [
+            355,
+            356
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:doorbell"
+        },
         "knock": {
           "name": "Knocking",
           "group": "Alarms and signals",
@@ -443,6 +454,18 @@
           "device_class": "sound",
           "icon": "mdi:paw"
         },
+        "door": {
+          "name": "Door opening or slamming",
+          "group": "Home",
+          "classes": [
+            354,
+            357,
+            358
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:door-open"
+        },
         "cupboard": {
           "name": "Cupboard or drawer",
           "group": "Home",
@@ -464,6 +487,17 @@
           "threshold": 0.3,
           "device_class": "sound",
           "icon": "mdi:silverware-fork-knife"
+        },
+        "glass_breaking": {
+          "name": "Glass breaking",
+          "group": "Home",
+          "classes": [
+            443,
+            441
+          ],
+          "threshold": 0.4,
+          "device_class": "sound",
+          "icon": "mdi:glass-fragile"
         },
         "water_tap": {
           "name": "Water tap or sink",
@@ -518,6 +552,16 @@
           "threshold": 0.3,
           "device_class": "sound",
           "icon": "mdi:pot-steam-outline"
+        },
+        "microwave": {
+          "name": "Microwave",
+          "group": "Home",
+          "classes": [
+            368
+          ],
+          "threshold": 0.3,
+          "device_class": "sound",
+          "icon": "mdi:microwave"
         },
         "blender": {
           "name": "Blender",
