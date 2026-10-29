@@ -1702,7 +1702,8 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   await page.getByLabel('Name', { exact: true }).fill(name);
   const recording = path.resolve(import.meta.dirname, '..', '..', 'backend', 'tests', 'assets', 'sounds', 'dog_bark.m4a');
   await page.locator('#sound-files').setInputFiles(recording);
-  const card = page.locator('section.card').filter({ hasText: name });
+  // The add card lists the new sound among its choices too: find its own card by key.
+  const card = page.getByTestId(`own-sound-bark_${info.project.name}`);
   await expect(card).toContainText('1 clip');
   await press(card.getByRole('button', { name: 'Play the clip' }), info);
   await expect(card.locator('audio')).toBeVisible();
@@ -1710,6 +1711,6 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   const forget = card.getByRole('button', { name: /Forget/ }).first();
   await press(forget, info);
   await press(card.getByRole('button', { name: /Tap again/ }), info);
-  await expect(page.locator('section.card').filter({ hasText: name })).toHaveCount(0);
+  await expect(card).toHaveCount(0);
   errors.expectNone();
 });

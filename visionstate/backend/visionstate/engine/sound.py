@@ -348,7 +348,14 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
     async def train_sound_head(self, cfg: SensorConfig) -> None:
         """Train a sound sensor's head for its own sounds again (taught clips, "not this" answers,
-        and the room's windows when it learns them); none without own sounds."""
+        and the room's windows when it learns them); none without own sounds. A failure (the model
+        cannot be loaded) is logged: the sensor goes on with the model's sounds."""
+        try:
+            await self._train_sound_head(cfg)
+        except Exception:  # noqa: BLE001
+            log.exception("Sensor %s: could not train its own sounds", cfg.slug)
+
+    async def _train_sound_head(self, cfg: SensorConfig) -> None:
         own = {c["key"] for c in cfg.sound["custom"]}
         if not own:
             self.sound_heads.pop(cfg.id, None)
@@ -383,7 +390,4 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_SOUND):
             cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
             if cfg is not None and cfg.sound["custom"]:
-                try:
-                    await self.train_sound_head(cfg)
-                except Exception:  # noqa: BLE001 - the sensor listens for the model's sounds meanwhile
-                    log.exception("Sensor %s: could not train its own sounds", cfg.slug)
+                await self.train_sound_head(cfg)
