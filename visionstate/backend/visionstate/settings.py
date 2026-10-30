@@ -220,7 +220,11 @@ READING = {
     # pixels. A needle found clearly becomes a peak this many bins wide (of 100: 0.1 of a digit
     # each) for the decode, an unclear one (its pixels agree less on one direction, down to
     # dial_spread_floor: none) up to dial_sigma_bins[1]; with less than dial_min_needle of the
-    # dial's area as needle, the dial is not read.
+    # dial's area as needle, the dial is not read. A needle's pixels are this much redder (red less
+    # the larger of green and blue) than the dial's face: a pale needle in a picture with a colour
+    # cast counts too. Its hub is what is left of it with dial_hub_erode of the dial picture's size
+    # peeled off its edges (the thick part round the axis: a hub, or a drop-shaped needle's body);
+    # its direction is that of the dial_tip_share of its pixels farthest from the hub.
     "max_dials": 6,
     "dial_radius": (0.1, 4.0),
     "dial_reach": 6.0,
@@ -230,6 +234,9 @@ READING = {
     "dial_sigma_bins": (2.5, 15.0),
     "dial_min_needle": 0.01,
     "dial_spread_floor": 0.5,
+    "dial_red_contrast": 20,
+    "dial_hub_erode": 0.07,
+    "dial_tip_share": 0.05,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones

@@ -28,6 +28,12 @@ LICENSE.txt), cut to the sensor's region. `counter_turning.jpg` is another image
 export (`0632590`, the second-to-last wheel half way from 8 to 9 while the last shows 0), cut to
 the region the same way.
 
+`meter_dials.jpg` is a real water meter with five wheels and four pointer dials (pale, drop-shaped
+needles in a picture with a greenish cast; by eye `979.1540`, the ×0.0001 dial just past 9.9): an
+image from the readings a user exported from VisionState and shared in
+[issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the export's LICENSE.txt),
+as exported (the meter's face straightened).
+
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.
 

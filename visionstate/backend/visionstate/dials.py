@@ -15,7 +15,7 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from . import imaging
 from .settings import READING
@@ -36,14 +36,16 @@ class Needle:
 
 
 def _needle_mask(rgb: np.ndarray, dist: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray]:
-    """The needle's pixels and the ring they were looked for in: red between the hub and the
-    numbers round the edge; where the dial has no red (an infrared camera at night), the darkest
-    part of its face well inside the numbers, which are dark too."""
-    ring = (dist > 0.2 * radius) & (dist < 0.8 * radius)
-    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-    red = (r - np.maximum(g, b) > 50) & (r > 90) & ring
-    if red[ring].mean() >= READING["dial_min_needle"]:
-        return red, ring
+    """The needle's pixels and the area they were looked for in: what is clearly redder than the
+    dial's face inside the numbers round the edge (``READING["dial_red_contrast"]``, so a pale
+    needle in a picture with a colour cast is found as well as a bright one); where the dial has no
+    red (an infrared camera at night), the darkest part of its face between the hub and the
+    numbers, which are dark too."""
+    face = dist < 0.8 * radius
+    redness = rgb[..., 0] - np.maximum(rgb[..., 1], rgb[..., 2])
+    red = (redness - np.median(redness[face]) > READING["dial_red_contrast"]) & face
+    if red[face].mean() >= READING["dial_min_needle"]:
+        return red, face
     ring = (dist > 0.2 * radius) & (dist < 0.62 * radius)
     grey = rgb.mean(axis=2)
     inside = grey[ring]
@@ -55,6 +57,19 @@ def _needle_mask(rgb: np.ndarray, dist: np.ndarray, radius: float) -> tuple[np.n
     if face - dark < 40:  # no contrast: nothing that stands out as a needle
         return np.zeros_like(ring), ring
     return (grey < (dark + face) / 2) & ring, ring
+
+
+def _hub(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tuple[float, float]:
+    """Where the needle turns, from the dial's centre: the middle of its thick part (a hub, or a
+    drop-shaped needle's body), what is left with its edges peeled off. A circle placed a little
+    beside the dial then still reads the needle's direction right. A thin needle without a hub
+    seen (or one found far from the centre) turns round the circle's centre."""
+    peel = 2 * round(READING["dial_hub_erode"] * mask.shape[0] / 2) + 1
+    core = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MinFilter(peel))) > 0
+    if not core.any():
+        return 0.0, 0.0
+    hx, hy = float(dx[core].mean()), float(dy[core].mean())
+    return (hx, hy) if math.hypot(hx, hy) < 0.5 * radius else (0.0, 0.0)
 
 
 def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
@@ -71,17 +86,24 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     picture = dial.convert("RGB").copy()
     if share < READING["dial_min_needle"]:
         return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
-    # The tip counts most (weights grow with the distance from the centre), so the hub and the
-    # short tail behind it do not turn the direction.
-    w = dist[mask] ** 2
-    ux, uy = dx[mask] / dist[mask], dy[mask] / dist[mask]
-    vx, vy = float((w * ux).sum() / w.sum()), float((w * uy).sum() / w.sum())
-    spread = math.hypot(vx, vy)  # 1: every needle pixel in one direction
+    # The tip gives the direction: the needle's pixels farthest from its hub (dial_tip_share of
+    # them, none close to the hub), so neither the hub, a drop-shaped needle's round body nor the
+    # short tail behind it turns it.
+    hx, hy = _hub(mask, dx, dy, radius)
+    if hx or hy:  # looked for again round the hub, so a circle placed off it does not cut the tip off
+        mask, _ = _needle_mask(rgb, np.hypot(dx - hx, dy - hy), radius)
+    ax, ay = dx[mask] - hx, dy[mask] - hy
+    away = np.maximum(np.hypot(ax, ay), 1e-9)
+    tip = away >= max(0.2 * radius, float(np.quantile(away, 1 - READING["dial_tip_share"])))
+    if not tip.any():
+        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
+    vx, vy = float((ax[tip] / away[tip]).mean()), float((ay[tip] / away[tip]).mean())
+    spread = math.hypot(vx, vy)  # 1: the whole tip in one direction
     angle = math.atan2(vx, -vy)  # 0 at the top, clockwise (y points down in an image)
     if ccw:
         angle = -angle
     position = (angle % (2 * math.pi)) / (2 * math.pi) * 10
-    # How sure: how much the needle's pixels agree on one direction (a needle's own width keeps it
+    # How sure: how much the tip's pixels agree on one direction (a needle's own width keeps it
     # under 1; dial_spread_floor and less: no direction at all).
     floor = READING["dial_spread_floor"]
     certainty = max(0.0, min(1.0, (spread - floor) / (1 - floor)))
@@ -92,11 +114,12 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     probs = np.exp(-0.5 * (offset / sigma) ** 2) + 1e-4
     probs /= probs.sum()
     draw = ImageDraw.Draw(picture)
-    tip = (
-        size / 2 + math.sin(math.atan2(vx, -vy)) * 0.75 * radius,
-        size / 2 - math.cos(math.atan2(vx, -vy)) * 0.75 * radius,
+    hub = (size / 2 + hx, size / 2 + hy)
+    end = (
+        hub[0] + math.sin(math.atan2(vx, -vy)) * 0.75 * radius,
+        hub[1] - math.cos(math.atan2(vx, -vy)) * 0.75 * radius,
     )
-    draw.line([(size / 2, size / 2), tip], fill=NEEDLE_COLOUR, width=max(2, size // 40))
+    draw.line([hub, end], fill=NEEDLE_COLOUR, width=max(2, size // 40))
     return Needle(round(position, 2), round(certainty, 3), probs, picture)
 
 

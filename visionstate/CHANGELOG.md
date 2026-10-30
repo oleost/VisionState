@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0b3
+
+Still an early beta for pointer dials: now tried on two real meters.
+
+### Better
+
+- **Pointer dials on real meters**: a needle is found by being redder than its dial's face, so
+  pale needles and pictures with a colour cast are read too (before, the first real meter shared
+  had none of its needles found). The direction is taken from the needle's own hub to its tip,
+  so drop-shaped needles are read right and a circle placed a little beside its dial still reads
+  the same.
+
 ## 0.12.0b2
 
 Still an early beta: straightened regions and pointer dials are tested on drawn meters only.

@@ -316,8 +316,10 @@ dial whose numbers go the other way (on some gas and electricity meters every se
 Each dial is one more digit after the counter's own decimals, and the wheels and dials are read
 together: the last wheel's digit is settled by the ×0.1 dial, a needle standing on a number by the
 dial after it — the way a person reads a meter — so a last wheel that already shows the next digit
-coming is read right. The needle is found by its red colour, or by being the darkest part of the
-dial when the picture has no colour (an infrared camera at night). *What the reader sees* shows
+coming is read right. The needle is found by being redder than the dial's face — pale needles and
+pictures with a colour cast too — or by being the darkest part of the dial when the picture has no
+colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
+a little beside the dial still reads right. *What the reader sees* shows
 each dial after the wheels with the needle it found drawn on it; the Pointer dials card says where
 each needle was found, or *No needle found*. A dial needs a few dozen pixels across in the picture
 to be read: move the camera closer, or use its zoom, if the dials are tiny.
@@ -442,9 +444,9 @@ objects the region stays a border.
 - Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
   other meters may need a tighter region. Pointer dials are read without a model (by the needle's
-  colour or darkness): drawn dials are read to about a tenth of a number; on real meters glare,
-  dirt on the glass or a needle as dark as the numbers can still fool it — an export of such
-  readings helps.
+  colour or darkness): drawn dials and the first real meters are read to about a tenth of a
+  number; glare, dirt on the glass or a needle as dark as the numbers can still fool it — an
+  export of such readings helps.
 - Feedback on reading helps a lot, above all from meters and displays it has not seen yet: what
   the display or meter is, whether it read correctly, and a screenshot of *What the reader sees* —
   or an export (above) — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions).

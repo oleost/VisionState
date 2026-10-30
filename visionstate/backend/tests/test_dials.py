@@ -13,7 +13,7 @@ from visionstate import dials, imaging, readers
 from visionstate.main import create_app
 from visionstate.settings import READING, extra_digits, merge_reading, value_decimals
 
-from .conftest import MODEL_DIR, requires_reader
+from .conftest import ASSETS, MODEL_DIR, requires_reader
 from .displays import counter_box, render_counter, render_dial, render_meter, turned_meter
 from .test_integration import wait_for
 
@@ -140,6 +140,38 @@ class MeterCamera:
 
     async def close(self):
         pass
+
+
+@requires_reader
+@pytest.mark.parametrize("off", [(0, 0), (-0.15, -0.15), (0.2, 0), (0, 0.2)])
+def test_a_real_meter_with_pale_needles(settings, off):
+    """A real meter (tests/assets/meter_dials.jpg, issue #59): pale, drop-shaped needles in a
+    picture with a greenish cast, read with the wheels as the meter shows them — also with the
+    circles placed a little beside the dials (``off``, in dial radii), as a user places them."""
+    jpeg = (ASSETS / "meter_dials.jpg").read_bytes()
+    width, height = Image.open(ASSETS / "meter_dials.jpg").size
+    x0, y0, x1, y1 = 104, 74, 284, 112  # the wheels' window (pixels)
+    h, r = y1 - y0, 42
+    roi = {"x": x0 / width, "y": y0 / height, "w": (x1 - x0) / width, "h": h / height}
+    centres = [(363, 186), (318, 288), (217, 326), (113, 273)]  # ×0.1, ×0.01, ×0.001, ×0.0001
+    placed = [{"x": (cx + off[0] * r - x0) / h, "y": (cy + off[1] * r - y0) / h, "r": r / h} for cx, cy in centres]
+
+    class Camera:
+        async def grab(self, source_type, source):
+            return jpeg
+
+        async def close(self):
+            pass
+
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = Camera()
+        reading = {"mode": "counter", "display": "counter", "digits": 5, "decimals": 0, "straighten": False}
+        preview = {"source_type": "http", "source": "http://fake", "roi": roi, "reading": {**reading, "dials": placed}}
+        read = client.post("/api/v1/preview/read", json=preview).json()
+        assert read["value"] == "979.1540" and read["score"] >= 0.7, read
+        needles = [d["needle"] for d in read["dials"]]
+        for found, seen in zip(needles, [1.4, 5.4, 4.1, 0.0], strict=True):
+            assert abs((found - seen + 5) % 10 - 5) < 0.3, needles
 
 
 @requires_reader

@@ -288,8 +288,8 @@ one more digit without dials (`reading["fraction"]`) was offered in 0.12.0b1 and
 (the plan's §4 says why). Dials are circles in the plane the counter
 is read in (`imaging.reading_plane`: the straightened region, or its box), in units of the region's
 height, so they move with the region and a dial seen at an angle is cut round with its 0 up. A
-needle is read without a model (`dials.read_needle`: red, else the darkest part of the face; its
-direction a probability over 100 positions) and the wheels and dials are decoded together
+needle is read without a model (`dials.read_needle`: redder than the dial's face, else its darkest
+part; its direction from its own hub to its tip, a probability over 100 positions) and the wheels and dials are decoded together
 (`readers.wheel_decode` with *smooth* links: a wheel or dial's tenth is the next one's digit), so
 the ×0.1 dial settles the last wheel and a needle on a number is settled by the next dial. The
 editor places dials on the straightened meter face around the region (`imaging.meter_face`), not

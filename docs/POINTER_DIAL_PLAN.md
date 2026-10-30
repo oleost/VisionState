@@ -105,13 +105,21 @@ and a direction (`ccw`, clockwise by default); the order gives the factor (×0.1
 **Reading a needle** (`dials.read_needle`, no model):
 1. The dial is cut from the plane, `dial_margin` larger than its circle, and scaled to `dial_size`
    pixels (`dials.read_needles`).
-2. The needle: red pixels between the hub and the numbers; where there is no red (an infrared
-   camera at night sees a red needle grey), the pixels darker than half way between the darkest
-   and the face, well inside the numbers (which are dark too).
-3. Its direction: the mean of the needle pixels' directions from the centre, weighted by distance²
-   so the tip counts most and the hub and the short tail behind it do not turn it. 0 at the top,
-   in the dial's direction: the position (0.0–9.9).
-4. Its certainty: how much the needle's pixels agree on one direction (from `dial_spread_floor`,
+2. The needle: pixels inside the numbers that are `dial_red_contrast` redder than the dial's face
+   (red less the larger of green and blue, against the face's median), so a pale needle in a
+   picture with a colour cast counts as well as a bright red one — the first real meter (issue
+   #59) had pale pink, drop-shaped needles and a greenish picture, and a fixed threshold found
+   none of them. Where there is no red (an infrared camera at night sees a red needle grey), the
+   pixels darker than half way between the darkest and the face, between the hub and the numbers
+   (which are dark too).
+3. Its hub (`dials._hub`): the middle of the needle's thick part, what is left with
+   `dial_hub_erode` peeled off its edges — a hub, or a drop's round body. The needle is looked for
+   again round it, so a circle placed up to half a radius beside the dial reads the same; a thin
+   needle without a hub seen turns round the circle's centre.
+4. Its direction: the mean direction from the hub of its `dial_tip_share` pixels farthest from the
+   hub (the tip), so neither the hub, a drop's body nor the short tail turns it. 0 at the top, in
+   the dial's direction: the position (0.0–9.9).
+5. Its certainty: how much the tip's pixels agree on one direction (from `dial_spread_floor`,
    none, to 1); the position becomes a wrapped Gaussian over the decode's 100 bins, `dial_sigma_bins`
    wide (narrow for a clear needle). Less needle than `dial_min_needle` of the dial: not read (an
    even distribution, *No needle found*).
@@ -212,10 +220,11 @@ dials* (every gesture, on desktop, Pixel and iPhone), and `scripts/fake_camera.p
 and `/meter-region.json` (a drawn meter with four dials, `&turn`, `&tilt`, `&ccw`).
 
 Left before a release (for whoever takes it on):
-- **A real meter.** Only drawn dials have been read. Try the meter of issue #59 (the photo in its
-  thread, or better a readings export from its author: Quality → *Export readings*, by day and by
-  night) and any meter with dials at hand: are the needles found (red, small, under glass with
-  glare), is the confidence sensible, does the last wheel agree with the ×0.1 dial?
+- **More real meters.** One real meter is in the tests (`tests/assets/meter_dials.jpg`, pale drops,
+  daylight; read as by eye, also with the circles placed beside the dials), and the photo in issue
+  #59 (thin red needles on red hubs, not CC0: tried locally only) reads right too. More exports,
+  by day and by night, from other meters: are the needles found under glass with glare, is the
+  confidence sensible, does the last wheel agree with the ×0.1 dial?
 - **Night pictures.** The dark-needle path is tested on a drawn dial made grey; a real infrared
   picture has glare and a dark rim. If it fails, that is the case for phase 3 (§6).
 - **By hand on a phone** (the UI routine in CLAUDE.md): placing four dials on a real meter face at
