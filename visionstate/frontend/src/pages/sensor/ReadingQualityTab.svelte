@@ -4,6 +4,7 @@
   import { app, refreshStatus, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
+  import ReadingSeen from '../../lib/components/ReadingSeen.svelte';
   import ReadingVerdict from '../../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../../lib/format';
@@ -272,6 +273,7 @@
         </div>
         {#if open === p.id && p.has_frame}
           <div class="full"><RoiEditor src={api.historyImageUrl(p.id)} roi={readingRoi(p, sensor)} /></div>
+          <ReadingSeen item={p} />
         {/if}
       </div>
     {/each}

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0b4
+
+### Better
+
+- **Check pointer dials in Review**: a rejected or spot-checked reading of a meter with pointer
+  dials now shows the wheels and each dial with the needle that was found, in the review queue and
+  on the Quality tab. Before, only the counter's region was shown, so the digits from the dials
+  could not be checked.
+
 ## 0.12.0b3
 
 Still an early beta for pointer dials: now tried on two real meters.

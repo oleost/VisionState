@@ -545,6 +545,17 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     await page.goto(`#/sensors/${sensor.id}/settings`);
     await expect(card.getByTestId('dial-label')).toHaveText(['×0.1', '×0.01', '×0.001', '×0.0001']);
     await expect(card.getByTestId('dial-row').first()).toContainText('Needle at 3.', { timeout: 60_000 });
+
+    // A reading rejected as too low waits in Review, with the dials to check it against.
+    await request.patch(`api/v1/sensors/${sensor.id}`, { data: { source: METER_URL(150.12345, 20, 0.2) } });
+    await request.post(`api/v1/sensors/${sensor.id}/classify`);
+    await expect.poll(async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).items.length, { timeout: 60_000 }).toBeGreaterThan(0);
+    await page.goto(`#/review?sensor=${sensor.id}`);
+    const seen = page.getByTestId('reading-seen').locator('img');
+    await expect(seen).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => seen.evaluate((img: HTMLImageElement) => img.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dials.png'), fullPage: true });
     errors.expectNone();
   } finally {
     await page.goto('about:blank');

@@ -59,6 +59,8 @@ export const readingDetail = (p: Prediction) =>
     roi?: Roi | null;
     repeats?: number;
     last_seen?: string;
+    /** The pointer dials it was read with. */
+    dials?: unknown[];
   };
 
 /** "Read the same 3 more times, last …" for a rejected reading that came again, or null. */

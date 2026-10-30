@@ -321,7 +321,8 @@ pictures with a colour cast too — or by being the darkest part of the dial whe
 colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
 a little beside the dial still reads right. *What the reader sees* shows
 each dial after the wheels with the needle it found drawn on it; the Pointer dials card says where
-each needle was found, or *No needle found*. A dial needs a few dozen pixels across in the picture
+each needle was found, or *No needle found*. The review queue and the Quality tab show the same
+picture for each stored reading, so the dials' digits can be checked too. A dial needs a few dozen pixels across in the picture
 to be read: move the camera closer, or use its zoom, if the dials are tiny.
 
 **A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:

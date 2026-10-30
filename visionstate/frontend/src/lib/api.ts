@@ -228,6 +228,8 @@ export const api = {
   /** region: only what the sensor looked at (a reading: the region it was read in). */
   historyImageUrl: (predictionId: number, size: 'thumb' | 'full' | 'region' = 'full') =>
     `${BASE}history/${predictionId}/image?size=${size}`,
+  /** What the reader saw in a stored reading of a meter with pointer dials: wheels and needles. */
+  historySeenUrl: (predictionId: number) => `${BASE}history/${predictionId}/seen`,
   exportUrl: (id: number, faces = false) => `${BASE}sensors/${id}/export${faces ? '?faces=true' : ''}`,
 
   teachLimits: () => request<TeachLimitsInfo>('teach-limits'),

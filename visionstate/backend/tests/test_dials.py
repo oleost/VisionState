@@ -238,6 +238,12 @@ def test_a_meter_with_pointer_dials(settings):
         assert wait_for(lambda: client.get(history).json()["items"], timeout=30)
         row = client.get(history).json()["items"][0]["probs"]
         assert row["dials"] == camera.dials and row["wheels"]["dials"] == 4
+        # What the reader saw is made again from the stored frame: wheels and dials, wider than the wheels.
+        item = client.get(history).json()["items"][0]["id"]
+        seen = Image.open(io.BytesIO(client.get(f"/api/v1/history/{item}/seen").content))
+        region = Image.open(io.BytesIO(client.get(f"/api/v1/history/{item}/image?size=region").content))
+        assert seen.width > seen.height * 4 and seen.size != region.size
+        assert client.get("/api/v1/history/999999/seen").status_code == 404
         export = client.get(f"/api/v1/sensors/{sid}/reading-export").content
         with zipfile.ZipFile(io.BytesIO(export)) as archive:
             manifest = json.loads(archive.read("readings.json"))

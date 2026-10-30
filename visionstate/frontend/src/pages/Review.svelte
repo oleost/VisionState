@@ -6,6 +6,7 @@
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
   import FaceQuestion from '../lib/components/FaceQuestion.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReadingSeen from '../lib/components/ReadingSeen.svelte';
   import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
@@ -292,6 +293,7 @@
         <button class="btn sm ghost frame-toggle" onclick={() => (wholeFrame = !wholeFrame)}>
           <Icon name={wholeFrame ? 'eye' : 'frame'} size={13} /> {wholeFrame ? 'Only the region' : 'Whole frame'}
         </button>
+        <ReadingSeen item={current} />
         <div class="col center">
           <p class="question">
             Did it read <span class="mono">“{d.text || '—'}”</span>{d.value ? ` (${d.value}${unitOf(current) ? ` ${unitOf(current)}` : ''})` : ''} right?

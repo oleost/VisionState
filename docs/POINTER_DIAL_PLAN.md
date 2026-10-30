@@ -144,8 +144,9 @@ decimals plus the dials); the confidence the wheels' (as before) times the weake
 never as sharp as a wheel the model knows, so not its probability at one position); the
 plausibility checks of a counter on the total. Nothing new is sent to Home Assistant: the same
 value, finer (the rate entity gains the most). *What the reader sees* shows each dial with the
-needle it found drawn on it and its position; History, Review and the readings export carry the
-dials (a format version more).
+needle it found drawn on it and its position; Review and Quality show the same picture for a stored
+reading (made again from its frame, `GET /history/{id}/seen`), History and the readings export
+carry the dials (a format version more).
 
 **Interface** (`DialsEditor.svelte`, on the meter face `POST /preview/read` returns: `face`,
 `face_box`, `region_width`, and each dial's needle).
