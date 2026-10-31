@@ -622,11 +622,10 @@ def test_reading_sensor_flow(settings):
             sent[topic] = payload
 
         rt.mqtt.publish = publish
-        resp = client.post("/api/v1/sensors", json=body)
+        diagnostics = {"raw": True, "problem": True, "accepted": True, "reader_image": True, "rate": True}
+        resp = client.post("/api/v1/sensors", json={**body, "ha_entities": diagnostics})
         assert resp.status_code == 201, resp.text
         sid = resp.json()["id"]
-        diagnostics = {"raw": True, "problem": True, "accepted": True, "reader_image": True, "rate": True}
-        assert client.patch(f"/api/v1/sensors/{sid}", json={"ha_entities": diagnostics}).status_code == 200
         base = "visionstate/power_meter"
         # Nothing read yet: nothing to export.
         assert client.get(f"/api/v1/sensors/{sid}/reading-export").status_code == 404
