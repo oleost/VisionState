@@ -12,8 +12,9 @@
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { HISTORY_INTRO, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import { HISTORY_INTRO, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
+  import HomeAssistantTab from './sensor/HomeAssistantTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
   import ObjectQualityTab from './sensor/ObjectQualityTab.svelte';
@@ -91,7 +92,7 @@
                 class="chip {SENSOR_STATUS[sensor.status].tone}">{SENSOR_STATUS[sensor.status].label}</span
               >{/if}
             <span class="mono xsmall muted">{isObjectSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span>
-            {#if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
+            {#if !sensor.in_ha}<span class="chip warn" title={NOT_IN_HA.help}>{NOT_IN_HA.label}</span>{:else if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
           </div>
         </div>
         <span class="spacer"></span>
@@ -138,6 +139,8 @@
       <HistoryView sensors={[sensor]} locked={sensor} intro={HISTORY_INTRO[sensor.kind]} onchange={load} />
     {:else if tab === 'settings'}
       <SettingsTab {sensor} onchange={load} />
+    {:else if tab === 'home-assistant'}
+      <HomeAssistantTab {sensor} onchange={load} />
     {/if}
   </div>
 {:else}

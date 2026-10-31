@@ -6,6 +6,7 @@ import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from functools import cached_property
 
 import numpy as np
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import detectors
 from ..change_limit import Watch
 from ..db import Person, Sensor
-from ..mqtt import SensorDescriptor
+from ..mqtt import SensorDescriptor, muted_topics
 from ..settings import (
     FACE_UNKNOWN_KEY,
     FACES,
@@ -53,6 +54,8 @@ class SensorConfig:
     reading: dict = field(default_factory=lambda: merge_reading(None))  # reading sensors only
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
     publish: bool = True  # see db.Sensor.publish
+    in_ha: bool = True  # see db.Sensor.in_ha
+    ha_entities: dict | None = field(default_factory=dict)  # see db.Sensor.ha_entities
     frame_size: list | None = None  # see db.Sensor.frame_size
 
     @property
@@ -100,7 +103,22 @@ class SensorConfig:
             else []
         )
         reading = self.reading if self.is_reading else None
-        return SensorDescriptor(self.slug, self.name, self.state_keys, self.kind, objects, reading, self.entity_prefix)
+        return SensorDescriptor(
+            self.slug,
+            self.name,
+            self.state_keys,
+            self.kind,
+            objects,
+            reading,
+            self.entity_prefix,
+            self.in_ha,
+            self.ha_entities,
+        )
+
+    @cached_property
+    def muted_topics(self) -> set[str]:
+        """Where nothing is sent: the topics of the entities it does not have in Home Assistant."""
+        return muted_topics(self.descriptor)
 
     @classmethod
     def from_row(cls, row: Sensor) -> SensorConfig:
@@ -124,6 +142,8 @@ class SensorConfig:
             reading=merge_reading(row.reading),
             entity_prefix=bool(row.entity_prefix),
             publish=bool(row.publish),
+            in_ha=row.in_ha is not False,
+            ha_entities=row.ha_entities,
             frame_size=row.frame_size,
         )
 

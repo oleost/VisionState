@@ -578,8 +578,7 @@ unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`)
 device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
 without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_trigger`. The button is "Read now".
-Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
-them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+Four more entities exist only when chosen on the sensor's Home Assistant tab (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
 `settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
 memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
@@ -588,7 +587,7 @@ counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/
 flow rate, else `<unit>/h`; `suggested_display_precision` from `mqtt.rate_precision`: enough
 decimals for the counter's smallest rise over the window, as Home Assistant otherwise showed
 0.03 m³/h as 0). A sensor that stops being a counter loses its rate entity. A fifth,
-*Reader image* (`image`, `reader_image`, diagnostic, also off by default), is the image the reader
+*Reader image* (`image`, `reader_image`, diagnostic, chosen in the same way), is the image the reader
 saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
@@ -612,8 +611,43 @@ Every other value is sent only when it differs from what that topic got last
 only throw it away. What was sent is forgotten when discovery is published (MQTT connected again,
 a sensor changed), so nothing waits for a change after the broker or Home Assistant restarted.
 
+**What a sensor has in Home Assistant** (decided 2026-10-31; the Home Assistant tab, one place
+instead of a choice here and a switch there). `mqtt.entity_options` lists what can be chosen, with
+its default (off: `settings.HA_ENTITIES_NOT_BY_DEFAULT` and the snapshots); `sensor.ha_entities`
+holds what was chosen against it, and `sensor.in_ha` off means no entities at all. What is chosen
+exists and is on: there is no `enabled_by_default` any more, as a second switch in Home Assistant
+would only make the tab wrong. Nothing is sent for what is not chosen (`mqtt.muted_topics`), so
+the broker holds no pictures nobody asked for.
+
+- *Removing is confirmed, once.* A patch first empties the configs and values with MQTT QoS 1
+  (`mqtt.MqttBridge.remove_confirmed`) and only then stores the choice; without a connection it
+  refuses (503) and nothing changes. Discovery only announces what is chosen, so nothing brings an
+  entity back, and no removal is repeated at every connection. The broker's answer does not prove Home
+  Assistant got it, but the tab is only reached through Ingress, so Home Assistant is running.
+  Without a broker at all there is nothing to remove.
+- *Home Assistant remembers a removed entity* (seen on 2026.10): when the same unique ID comes back it
+  gets its entity ID, name and switched-off state again. So what was ticked is switched on through the
+  entity registry, once (`engine.runtime.Runtime._enable_chosen`, which makes Home Assistant reload
+  its MQTT entities after about 30 s); one the user switches off there later stays off.
+- *Sensors from before the tab* have `ha_entities` null: what they had stays until
+  `engine.publishing.PublishingMixin.settle_entity_choices` reads Home Assistant's entity registry once
+  (`ha_events.our_enabled`): what is on there stays chosen, what is off there is removed. Changing
+  `enabled_by_default` alone would not have done it: Home Assistant uses it only when it first creates
+  an entity, and the tab would have shown as on what is off.
+- *Snapshots* (`image.…_<object>_snapshot`, object sensors; `imaging.snapshot`, tunables
+  `snapshot_*` in `settings.PUBLISH`, `engine.publishing.PublishingMixin._send_snapshot`): the union of
+  the object's boxes with a margin, at least a minimum size, kept inside the bounding box of the
+  region, so it shows nothing the sensor's *Last frame* does not. No boxes drawn. Sent when the count
+  changes, not at a refresh (retained on the broker, so it survives restarts with no table or folder;
+  a parked car would otherwise add a row every few minutes), and before the state, so an automation
+  the state starts finds this picture. Nothing is sent when the object is gone: the last one is
+  what "last seen" should show. Not one entity per object (a changing number of entities does not
+  fit automations), and no "better picture" while the object stays (a notification has gone by then;
+  add it if real use shows half-seen objects). Frigate's per-event picture URLs need its own
+  integration; here it is MQTT only, so an automation gets the newest picture.
+
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
-removes its entities. **Send to Home Assistant** (`sensor.publish`, default
+removes its entities. **Don't send values** (`sensor.publish`, default
 `settings.SENSOR_PUBLISH_DEFAULT`, DB migration 9 keeps existing sensors on): when off, discovery
 stays (the entities and the IDs the user gave them are kept), but no value is published (the
 engine routes every sensor value through `_send`) and the sensor's availability topic is
@@ -889,6 +923,7 @@ is part of backups and needs no restart.
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at release | not released |
 | **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
+| **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object (discussion #62) | 0.12.0b5 |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

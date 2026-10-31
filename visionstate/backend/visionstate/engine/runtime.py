@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from .. import backbones, classifier, detectors, faces, readers
 from ..db import Database, Sensor
-from ..ha_events import HaEventListener, fetch_entity_ids
+from ..ha_events import HaEventListener, enable_entities, fetch_registry, our_enabled, our_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
 from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Settings, merge_triggers
 from .checks import ChecksMixin
@@ -113,7 +113,10 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         last_error = ""
         while True:
             try:
-                self.ha_entity_ids = await fetch_entity_ids(self.ha_events.url, self.ha_events.token)
+                registry = await fetch_registry(self.ha_events.url, self.ha_events.token)
+                self.ha_entity_ids = our_entity_ids(registry)
+                await self.settle_entity_choices(our_enabled(registry))
+                await self._enable_chosen(registry)
                 last_error = ""
             except asyncio.CancelledError:
                 raise
@@ -128,6 +131,17 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             except TimeoutError:
                 continue
             await asyncio.sleep(RUNTIME["entity_registry_delay_s"])  # let Home Assistant create the entities
+
+    async def _enable_chosen(self, registry: list[dict]) -> None:
+        """Entities just ticked on a sensor's Home Assistant tab are on there, once. Home Assistant
+        gives a removed entity that comes back what it had, so one that was switched off stays off.
+        One switched off there later is the user's own choice and is left alone."""
+        found = [e for e in registry if e.get("unique_id") in self.enable_in_ha]
+        off = [e["entity_id"] for e in found if e.get("disabled_by")]
+        if off:
+            await enable_entities(self.ha_events.url, self.ha_events.token, off)
+            log.info("Switched on in Home Assistant, as chosen: %s", ", ".join(off))
+        self.enable_in_ha -= {e["unique_id"] for e in found}
 
     def _start_loop(self, sensor_id: int) -> None:
         self._wake.setdefault(sensor_id, asyncio.Event())

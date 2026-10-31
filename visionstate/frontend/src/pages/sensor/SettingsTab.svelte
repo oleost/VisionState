@@ -8,7 +8,6 @@
   import LightEditor from '../../lib/components/LightEditor.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
-  import PublishSwitch from '../../lib/components/PublishSwitch.svelte';
   import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
   import FacesCard from '../../lib/components/FacesCard.svelte';
@@ -41,7 +40,6 @@
   let threshold = $state(initial.threshold);
   let debounce = $state(initial.debounce);
   let triggers = $state(initial.triggers);
-  let publish = $state(initial.publish);
   let review = $state(initial.review);
   const objectSensor = isObjectSensor(initial);
   let classes = $state<string[]>(initial.objects?.classes ?? []);
@@ -103,7 +101,6 @@
         threshold,
         debounce,
         triggers,
-        publish,
       });
       toast('Settings saved');
       onchange();
@@ -147,7 +144,6 @@
       <label class="field">Name <input class="input" bind:value={name} /></label>
       <SourcePicker bind:sourceType bind:source />
       <LightEditor bind:triggers lightError={sensor.live.light_error} />
-      <PublishSwitch bind:publish />
     </section>
 
     <section class="card pad col">

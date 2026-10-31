@@ -58,6 +58,9 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ['objects-live', `sensors/${objectId}/live`, 'Right now'],
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
     ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
+    ['objects-home-assistant', `sensors/${objectId}/home-assistant`, 'Send values'],
+    ['sensor-home-assistant', `sensors/${id}/home-assistant`, 'Last frame'],
+    ['reading-home-assistant', `sensors/${readingId}/home-assistant`, 'Raw reading'],
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
     ['reading-history', `sensors/${readingId}/history`, 'Every new value and every rejected reading'],
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
@@ -278,8 +281,12 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   if (hasTouchScreen(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
-  // A new sensor is sent to Home Assistant unless switched off here.
-  await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
+  // A new sensor is in Home Assistant unless kept out of it here.
+  const notInHa = page.getByRole('checkbox', { name: 'Not in Home Assistant' });
+  await expect(notInHa).not.toBeChecked();
+  await press(notInHa, info);
+  await expect(notInHa).toBeChecked();
+  await press(notInHa, info);
   await expectNoHorizontalOverflow(page);
   await press(page.getByRole('button', { name: 'Create sensor and start labelling' }), info);
 
@@ -1010,23 +1017,74 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
 });
 
+test('the Home Assistant tab chooses what a sensor has there', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededObjectSensorId(request);
+  const entity = async (name: string) =>
+    (await (await request.get(`api/v1/sensors/${id}`)).json()).ha_entities.find((e: { name: string }) => e.name === name);
+  // The first tap only asks, and nothing is removed until the second. A tap right after the page
+  // scrolled can be spent on stopping the scroll (see the pitfalls in CLAUDE.md).
+  const saveTwice = async () => {
+    const again = page.getByRole('button', { name: 'Tap again to remove' });
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect(again).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    await press(again, info);
+  };
+  await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {} } });
+  try {
+    await page.goto(`#/sensors/${id}/home-assistant`);
+    const options: { object?: string }[] = (await (await request.get(`api/v1/sensors/${id}`)).json()).ha_entities;
+    const first = options.find((e) => e.object)!.object!;
+    // A snapshot is off until chosen; choosing one removes nothing, so one tap saves it.
+    const snapshot = page.getByRole('checkbox', { name: `${first} snapshot` });
+    await expect(snapshot).not.toBeChecked();
+    await press(snapshot, info);
+    await expect(page.getByTestId('ha-removing')).toHaveCount(0);
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect.poll(async () => (await entity(`${first} snapshot`)).on).toBe(true);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0); // it covers the button on a phone
+
+    // Taking one away says what happens, and asks twice.
+    await press(page.getByRole('checkbox', { name: `${first} count` }), info);
+    await expect(page.getByTestId('ha-removing')).toContainText(`${first} count`);
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await saveTwice();
+    await expect.poll(async () => (await entity(`${first} count`)).on).toBe(false);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0); // it covers the button on a phone
+
+    // Not in Home Assistant: the table goes, and it is marked like a sensor not sent.
+    await press(page.getByRole('radio', { name: 'Not in Home Assistant' }), info);
+    await expect(page.getByTestId('ha-entities')).toHaveCount(0);
+    await expect(page.getByTestId('ha-removing')).toContainText('all of this sensor');
+    await saveTwice();
+    await expect(page.locator('header .chip', { hasText: 'Not in Home Assistant' })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    // Last: a full-page screenshot drops touch emulation.
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'home-assistant-removing.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {} } });
+  }
+});
+
 test('a sensor can be kept from Home Assistant while it is tuned', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
   try {
-    await page.goto(`#/sensors/${id}/settings`);
-    const send = page.getByRole('checkbox', { name: 'Send to Home Assistant' });
-    await expect(send).toBeChecked();
-    await press(send, info);
-    await expect(page.getByText('stay unavailable')).toBeVisible();
+    await page.goto(`#/sensors/${id}/home-assistant`);
+    await expect(page.getByRole('radio', { name: 'Send values', exact: true })).toBeChecked();
+    await press(page.getByRole('radio', { name: 'Don’t send values' }), info);
     await press(page.getByRole('button', { name: 'Save changes' }), info);
-    await expect(page.getByText('Settings saved')).toBeVisible();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     expect((await (await request.get(`api/v1/sensors/${id}`)).json()).publish).toBe(false);
     // Marked on the sensor page and on the dashboard, so it is not forgotten.
-    await expect(page.locator('header .chip', { hasText: 'Not sent to Home Assistant' })).toBeVisible();
+    await expect(page.locator('header .chip', { hasText: 'Values not sent' })).toBeVisible();
     await page.goto('#/');
     const card = page.locator('.card', { hasText: READING_SENSOR_NAME }).first();
-    await expect(card.getByText('Not sent to Home Assistant')).toBeVisible();
+    await expect(card.getByText('Values not sent')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'dashboard-not-sent.png'), fullPage: true });

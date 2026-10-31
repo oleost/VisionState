@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.0b5
+
+### New
+
+- **Object snapshots**: each object on an object sensor can have its own picture entity, such as
+  *Car snapshot*: the object cut from the frame, for notifications and dashboards. It is new when the
+  count changes, sent just before the object goes on, and the last one stays after it has gone.
+  Several of the same object share one picture that covers them all. Off until you tick it.
+- **A Home Assistant tab on every sensor**: choose *Send values*, *Don't send values* (the entities
+  stay, unavailable) or *Not in Home Assistant* (no entities, nothing on MQTT), and tick which
+  entities it has. What is ticked is there and on in Home Assistant, with no second switch there.
+
+### Changed
+
+- **New sensor wizard**: the last step now offers *Not in Home Assistant*, so a sensor can be set up
+  before anything reaches Home Assistant or MQTT. *Send to Home Assistant* moved from Settings to
+  the new tab.
+- **After this update**, the optional entities of reading sensors (raw reading, problem, accepted,
+  rate, reader image) that are on in Home Assistant stay, and those that are off there are removed,
+  once. New reading sensors have them only when ticked on the tab.
+
 ## 0.12.0b4
 
 ### Better

@@ -140,7 +140,7 @@ def test_discovery_writes_the_unit_as_home_assistant_takes_it():
     would be missing. Clear spellings are corrected, otherwise the device class is left out."""
 
     def configs(reading):
-        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading))
+        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading), chosen=None)
         return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
 
     water = configs({"mode": "counter", "unit": "m3", "device_class": "water"})
@@ -164,16 +164,17 @@ def test_discovery_writes_the_unit_as_home_assistant_takes_it():
 def test_diagnostic_entities_of_reading_sensors():
     """Raw reading, problem, accepted share for every reading sensor; a rate for counters only.
 
-    All off by default in Home Assistant, and the rate in the unit Home Assistant expects.
+    There when chosen on the sensor's Home Assistant tab (here: everything from before the tab),
+    and the rate in the unit Home Assistant expects.
     """
 
     def configs(reading):
-        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading))
+        sensor = SensorDescriptor("meter", "Meter", [], KIND_READING, [], merge_reading(reading), chosen=None)
         return {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}
 
     counter = configs({"mode": "counter", "unit": "m³", "device_class": "water"})
     for key in ("raw", "problem", "accepted", "rate", "reader_image"):
-        assert counter[key]["enabled_by_default"] is False, key
+        assert "enabled_by_default" not in counter[key], key
     assert counter["reader_image"]["image_topic"] == "visionstate/meter/reader_image"
     assert counter["reader_image"]["entity_category"] == "diagnostic"
     assert counter["problem"]["options"][0] == "ok" and counter["problem"]["device_class"] == "enum"
@@ -624,6 +625,8 @@ def test_reading_sensor_flow(settings):
         resp = client.post("/api/v1/sensors", json=body)
         assert resp.status_code == 201, resp.text
         sid = resp.json()["id"]
+        diagnostics = {"raw": True, "problem": True, "accepted": True, "reader_image": True, "rate": True}
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"ha_entities": diagnostics}).status_code == 200
         base = "visionstate/power_meter"
         # Nothing read yet: nothing to export.
         assert client.get(f"/api/v1/sensors/{sid}/reading-export").status_code == 404

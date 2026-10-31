@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import change_limit, detectors, imaging, readers, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
-from ..mqtt import main_entities
+from ..mqtt import entity_options, main_entities
 from ..settings import (
     COUNTER_LIMIT,
     COUNTER_READERS,
@@ -457,6 +457,14 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
+def ha_entities_view(sensor: Sensor) -> list[dict]:
+    """The entities that can be chosen on the sensor's Home Assistant tab, and whether each is on."""
+    descriptor = SensorConfig.from_row(sensor).descriptor
+    return [
+        {**option, "on": descriptor.entity_on(option["id"], option["default"])} for option in entity_options(descriptor)
+    ]
+
+
 def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
     """An object sensor's part of its view: each class and own label (with the people while it
     recognises faces), live, and what was taught."""
@@ -573,6 +581,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
         "publish": sensor.publish,
+        "in_ha": sensor.in_ha is not False,
+        "ha_entities": ha_entities_view(sensor),
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),

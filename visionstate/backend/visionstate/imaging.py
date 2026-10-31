@@ -252,6 +252,34 @@ def pixel_box(image: Image.Image, box: Box) -> tuple[int, int, int, int]:
     return int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)
 
 
+def snapshot(image: Image.Image, boxes: list[list[float]], region: Box, margin: float, min_px: int) -> Image.Image:
+    """What covers all ``boxes``: their union plus ``margin`` × its size on each side, at least
+    ``min_px`` pixels each way when there is room, and never outside ``region`` (the picture of an
+    object shows nothing the sensor's region leaves out)."""
+    width, height = image.size
+
+    def span(low: float, high: float, floor: float, ceiling: float) -> tuple[int, int]:
+        pad = (high - low) * margin
+        low, high = low - pad, high + pad
+        grow = max(0.0, min_px - (high - low)) / 2
+        low, high = low - grow, high + grow
+        # Room missing on one side goes to the other, so a small object at the edge keeps its size.
+        if low < floor:
+            low, high = floor, high + floor - low
+        if high > ceiling:
+            low, high = low - (high - ceiling), ceiling
+        start = round(max(low, floor))
+        return start, max(start + 1, round(min(high, ceiling)))
+
+    x1, x2 = span(
+        min(b[0] for b in boxes) * width, max(b[2] for b in boxes) * width, region[0] * width, region[2] * width
+    )
+    y1, y2 = span(
+        min(b[1] for b in boxes) * height, max(b[3] for b in boxes) * height, region[1] * height, region[3] * height
+    )
+    return image.crop((x1, y1, x2, y2))
+
+
 def crop_box(image: Image.Image, box: Box) -> Image.Image:
     """Crop a normalised box without masking (a detector needs to see whole objects)."""
     return image.crop(pixel_box(image, box))

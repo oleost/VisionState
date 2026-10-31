@@ -629,7 +629,17 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
 # change of attributes, as a new state.
 PUBLISH = {
     "refresh_s": 300.0,
+    # An object's snapshot (imaging.snapshot): the boxes plus this share of their size on each side,
+    # and at least this many pixels each way when the region has that much room.
+    "snapshot_margin": 0.1,
+    "snapshot_min_px": 300,
+    "snapshot_quality": 85,
 }
+
+# Entities that exist in Home Assistant only when chosen on the sensor's Home Assistant tab
+# (mqtt.entity_options); an object's snapshot is one too. A sensor made before the tab decides once,
+# from what Home Assistant has switched on (engine.PublishingMixin.settle_entity_choices).
+HA_ENTITIES_NOT_BY_DEFAULT = frozenset({"raw", "problem", "accepted", "rate", "reader_image"})
 
 RUNTIME = {
     "max_concurrent_inferences": 2,

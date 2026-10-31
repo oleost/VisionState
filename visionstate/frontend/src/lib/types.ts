@@ -504,6 +504,10 @@ export interface Sensor {
   enabled: boolean;
   /** Values go to Home Assistant; off: its entities stay unavailable (a sensor being tuned). */
   publish: boolean;
+  /** Off: it has no entities in Home Assistant at all. */
+  in_ha: boolean;
+  /** What can be chosen on its Home Assistant tab. */
+  ha_entities: HaEntity[];
   triggers: Triggers;
   review: ReviewOverrides;
   review_effective: ReviewRules;
@@ -520,6 +524,15 @@ export interface Sensor {
   counts: Counts;
 }
 
+export interface HaEntity {
+  id: string;
+  name: string;
+  on: boolean;
+  /** An object sensor's: the class or own label it belongs to, and what it is of that object. */
+  object?: string;
+  column?: 'detected' | 'count' | 'snapshot';
+}
+
 export interface SensorInput {
   name: string;
   kind?: SensorKind;
@@ -534,6 +547,8 @@ export interface SensorInput {
   debounce?: number;
   enabled?: boolean;
   publish?: boolean;
+  in_ha?: boolean;
+  ha_entities?: Record<string, boolean>;
   triggers?: Triggers;
   review?: Partial<ReviewOverrides>;
 }
@@ -554,8 +569,6 @@ export interface AppConfig {
     [number, number]
   >;
   light_domains: string[];
-  /** Whether a new sensor sends its values to Home Assistant. */
-  publish_default: boolean;
   /** A view with live frames renews its hold on a sensor's light this often; a lease runs out after lease_s. */
   light_view: { renew_s: number; lease_s: number };
   trigger_max_entities: number;

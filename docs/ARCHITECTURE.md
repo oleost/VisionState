@@ -58,7 +58,7 @@ API as `request.app.state.runtime`.
 | `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
-| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
+| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
 | `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or darker, at night), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
@@ -97,7 +97,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `teaching.py` | Taught boxes of object sensors (index, embeddings) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
-| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`), the review queue entity, commands from it |
+| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`; an object's snapshot: `_send_snapshot`; what the sensor's Home Assistant tab leaves out is not sent), the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
 | `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
@@ -174,7 +174,8 @@ error is kept in `LiveState.error` and shown in the UI.
 
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
 config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,
-`_reading_entities`; every sensor's: `discovery_messages`), the value from the engine through `self._send`, removal in
+`_reading_entities`; every sensor's: `discovery_messages`), when it can be chosen its line in
+`mqtt.entity_options`, the value from the engine through `self._send`, removal in
 `MqttBridge.remove_discovery`. Unique IDs and topics are never changed once released (entity IDs
 in Home Assistant hang on them).
 

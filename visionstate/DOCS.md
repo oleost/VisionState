@@ -73,13 +73,29 @@ each new state in its database, so values that only move a little (a timestamp, 
 the decimal, the same picture again) would fill it. The pictures, and an object's boxes, follow
 the result at once and are otherwise sent again every few minutes.
 
-**Tuning a sensor before Home Assistant uses it:** switch off **Send to Home Assistant** (in the
-last step of the wizard, or under **Settings → General**). The sensor then runs as usual — its
-history, Quality tab and review queue fill up — but its entities in Home Assistant stay
-*unavailable*: no values, so no statistics either. Useful when the sensor takes over the entity ID
-of an older one and wrong readings must not end up in its statistics. The pause switch and the
-check-now button keep working. Turn it on once the sensor reads reliably; the value is sent right
-away. Sensors not sent are marked on the dashboard.
+**What a sensor has in Home Assistant** is set on its **Home Assistant** tab:
+
+- **Send values:** its entities exist and follow what the sensor finds.
+- **Don't send values:** the sensor runs as usual — its
+  history, Quality tab and review queue fill up — but its entities stay *unavailable*: no values, so
+  no statistics either. Useful for tuning a sensor, for example one that takes over the entity ID of
+  an older one, so wrong readings do not end up in its statistics. The pause switch and the
+  check-now button keep working.
+- **Not in Home Assistant** (also in the last step of the wizard, to set a sensor up first): no
+  entities at all and nothing on MQTT; the sensor is used in VisionState only.
+
+Below that you tick which entities it has: on an object sensor *Detected*, *Count* and *Snapshot* for
+each object, and on every sensor the optional ones such as *Last frame*. What is ticked is there and
+switched on in Home Assistant (one that was off there comes on within about a minute). What you
+untick is removed from Home Assistant, and automations using it stop working; tick it again and it
+comes back with the entity ID and name it had. Removing needs MQTT to be connected: otherwise
+nothing is saved and you are told why.
+Sensors not sent, or not in Home Assistant, are marked on the dashboard.
+
+A sensor made before this tab existed keeps what it has in use: after the update, the optional
+entities of a reading sensor (raw reading, problem, accepted, rate, reader image) that are on in Home
+Assistant stay, and those that are off there are removed. Those removed can take a while to leave
+Home Assistant's lists. From then on the tab decides.
 
 ## Object sensors
 
@@ -97,12 +113,32 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   |---|---|
   | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
   | `sensor.<name>_<object>_count` | How many there are |
+  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked on the **Home Assistant** tab |
 
-  plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
+  A **snapshot** is new when the count changes, sent just before the object goes on; several of the
+  same object share one picture that covers them all, and the last one stays after they have gone.
+  It shows nothing outside the bounding box of the sensor's region. In a phone notification, trigger
+  on the binary sensor and pass the picture as its image:
+
+  ```yaml
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.driveway_car
+      to: "on"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        message: A car in the driveway
+        data:
+          image: /api/image_proxy/image.driveway_car_snapshot
+  ```
+
+  Plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence,
   the boxes and when it was last seen; they follow at once when the object comes or goes or its
-  count changes, and every few minutes while it stays. Removing an object from the list removes
-  its entities.
+  count changes, and every few minutes while it stays, so they are not for following a moving
+  object live. `boxes` holds one `[left, top, right, bottom]` per object, from 0 to 1 of the full
+  camera frame. Removing an object from the list removes its entities.
 - **Settings tab → Sensor output**:
 
   | Setting | Default | Meaning |
@@ -432,8 +468,7 @@ objects the region stays a border.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
   `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- More entities, **off by default** — turn them on in Home Assistant (the device page, or the
-  entity's settings → *Enabled*):
+- More entities, for those who tick them on the sensor's **Home Assistant** tab:
 
   | Entity | What it is |
   |---|---|
