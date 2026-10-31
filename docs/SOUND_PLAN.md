@@ -407,10 +407,9 @@ not fail again in five runs and its error was not kept — if it comes back, kee
    disk): the backend suite, ruff, pyright, `npm run check`, `npm run build` and the e2e suite. A
    sensor on a real Home Assistant turned its entity on and off from a live HTTP WAV stream, with the
    model downloaded on first use; RTSP from a real camera is still open (4).
-3. **Look at the UI by hand** (CLAUDE.md *UI testing routine*): the wizard's *Listen*, the Live tab
-   (level chart, scores), Own sounds (record on a phone: the file input offers the microphone),
-   History (a clip with video and a sound clip, played after a tap) and Review, at desktop width
-   and at ~390 px. iOS: does an AAC `.m4a` and an fMP4 video clip play in the Home Assistant app?
+3. **Look at the UI by hand** (CLAUDE.md *UI testing routine*): Own sounds (record on a phone: the
+   file input offers the microphone) and Review. iOS: does an AAC `.m4a` and an fMP4 video clip play
+   in the Home Assistant app?
 4. **Real hardware** (none of it was possible in the cloud):
    - a Raspberry Pi 4 (or the CI's aarch64 image): time per second of audio, memory with the
      sound model loaded, how many sound sensors it carries beside the image sensors — then the

@@ -262,6 +262,7 @@ class SoundLive:
     tracks: dict[str, SoundTrack] = field(default_factory=dict)
     clips: list[dict] = field(default_factory=list)  # {"row", "start", "end", "key"}: cut once received
     room_at: float = 0.0  # when a window of the room was last kept as "other" (own sounds)
+    reported: bool = False  # "no sound" is in the log, until sound comes back
 
 
 @dataclass

@@ -304,6 +304,7 @@ SOUND = {
     # seconds before and after, the window, and a key frame interval to spare.
     "video_buffer_s": 15.0,
     "video_wait_s": 10.0,  # how long a clip waits for its video (else it is sound only)
+    "video_jump_s": 2.0,  # video times going back this far: the camera started its clock again
     "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
     "clip_after_s": 5.0,
     "clip_bitrate": 48_000,  # AAC, bits per second
@@ -314,6 +315,7 @@ SOUND = {
     "reconnect_min_s": 2.0,  # a stream that failed is opened again after this, doubling up to the max
     "reconnect_max_s": 60.0,
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
+    "offline_after_s": 20.0,  # unavailable only after this long without audio: a reconnect is not news
     "live_levels": 120,  # levels (one per hop) the Live tab shows
     "max_sounds": 20,  # the model's sounds per sensor (one entity each)
     "max_custom": 10,  # own sounds per sensor (one entity each)

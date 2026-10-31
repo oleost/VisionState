@@ -385,7 +385,8 @@ class AudioStream:
     A thread of its own opens the stream, decodes its audio track to SOUND["rate"] Hz mono and keeps
     the last SOUND["buffer_s"] seconds. A stream that fails, or sends no audio for SOUND["stall_s"],
     is opened again after a pause that doubles from SOUND["reconnect_min_s"] up to
-    SOUND["reconnect_max_s"] (back to the minimum once audio flows). ``total`` counts every sample
+    SOUND["reconnect_max_s"] (back to the minimum after audio flowed for SOUND["stall_s"]: a stream
+    that ends right after it opens is not asked again every few seconds). ``total`` counts every sample
     received, so readers ask for what is new since their last look (``since``) and clips are cut by
     sample number (``segment``).
 
@@ -423,6 +424,13 @@ class AudioStream:
     @property
     def has_video(self) -> bool:
         return bool(self.video and self.info.get("video"))
+
+    @property
+    def delivering(self) -> bool:
+        """Whether sound is coming: it is, or it was less than SOUND["offline_after_s"] ago."""
+        return self.connected or (
+            self._last_audio > 0 and time.monotonic() - self._last_audio < SOUND["offline_after_s"]
+        )
 
     def since(self, total: int) -> tuple[np.ndarray, int]:
         """The samples received after sample number ``total`` (at most the buffer), and the new total."""
@@ -488,6 +496,8 @@ class AudioStream:
         if packet.pts is None or not packet.size or packet.time_base is None:
             return
         at = float(packet.pts * packet.time_base)
+        if self._packets and at < self._packets[-1].time - SOUND["video_jump_s"]:
+            self._packets.clear()  # its clock started again: the old packets cannot go in one clip with these
         self._packets.append(
             _VideoPacket(at, bool(packet.is_keyframe), bytes(packet), packet.pts, packet.dts, packet.time_base)
         )
@@ -559,10 +569,11 @@ class AudioStream:
     def _run(self) -> None:
         pause = SOUND["reconnect_min_s"]
         while not self._closed.is_set():
+            opened = time.monotonic()
             got = self._listen()
             self.connected = False
             self._drop_requests()
-            if got:
+            if got and time.monotonic() - opened >= SOUND["stall_s"]:
                 pause = SOUND["reconnect_min_s"]
             if self._closed.wait(pause):
                 return
@@ -604,7 +615,7 @@ class AudioStream:
                 }
                 wanted = [stream, video] if self.video and video is not None else [stream]
                 resampler = av.AudioResampler(format="flt", layout="mono", rate=self.rate)
-                self._last_audio = time.monotonic()
+                opened = time.monotonic()
                 for packet in container.demux(*wanted):
                     if self._closed.is_set():
                         return got
@@ -622,7 +633,7 @@ class AudioStream:
                                 self._append(out.to_ndarray().reshape(-1), at)
                                 first = False
                                 got = True
-                    if time.monotonic() - self._last_audio > SOUND["stall_s"]:
+                    if time.monotonic() - max(opened, self._last_audio) > SOUND["stall_s"]:
                         self.error = f"No sound for {SOUND['stall_s']:g} s"
                         return got
                 self.error = "The stream ended"

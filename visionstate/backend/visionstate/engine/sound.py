@@ -89,6 +89,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         heard = live.sound
         if not cfg.enabled:
             self.stop_listening(cfg.id)
+            await self._nothing_heard(cfg, heard)
             return None
         started = time.monotonic()
         stream = heard.stream
@@ -98,26 +99,40 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 stream.close()
             stream = heard.stream = AudioStream(cfg.source, video)
             heard.consumed = 0
+            heard.clips = []  # cut by the old stream's sample numbers
         try:
             model = await self.ensure_sound_model()
         except Exception:  # noqa: BLE001 - shown on the sensor; tried again after a while
             live.available, live.error = False, f"Sound model: {self.sound_model_error}"
             return SOUND["reconnect_max_s"]
         new, heard.consumed = stream.since(heard.consumed)
-        await self._sound_availability(cfg, stream)
+        await self._sound_availability(cfg, stream, heard)
         if len(new):
             await self._hear(cfg, model, stream, heard, new)
         await self._cut_clips(cfg, model, stream, heard)
         return max(0.05, SOUND["hop_s"] - (time.monotonic() - started))
 
-    async def _sound_availability(self, cfg: SensorConfig, stream: AudioStream) -> None:
+    async def _nothing_heard(self, cfg: SensorConfig, heard: SoundLive) -> None:
+        """Paused: nothing is heard now, also a sound that was (no question about it: no clip comes)."""
+        for key, track in heard.tracks.items():
+            track.recent.clear()  # those windows must not count towards the next time it listens
+            if track.on:
+                track.on, track.row = False, None
+                await self._sound_changed(cfg, None, heard, key, track, sounds.SILENCE_DB)
+
+    async def _sound_availability(self, cfg: SensorConfig, stream: AudioStream, heard: SoundLive) -> None:
         live = self.live_state(cfg.id)
-        available = stream.connected
+        available = stream.delivering
+        if not available and live.available is None and not stream.error:
+            return  # still opening the stream for the first time
         live.error = "" if available else stream.error
         if available == live.available:
             return
-        if available is False and live.available is not False:
-            log.warning("Sensor %s: no sound: %s", cfg.slug, stream.error or "connecting")
+        if available:
+            heard.reported = False
+        elif not heard.reported:  # once: a stream that keeps coming and going is not news every time
+            heard.reported = True
+            log.warning("Sensor %s: no sound: %s", cfg.slug, stream.error or "no sound arrived")
         live.available = available
         live.last_run = time.time()
         await self._send(cfg, topics(cfg.slug)["availability"], "online" if available else "offline", retain=True)
@@ -172,7 +187,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         return spec.threshold if spec else SOUND["own_threshold"]
 
     async def _sound_changed(
-        self, cfg: SensorConfig, stream: AudioStream, heard: SoundLive, key: str, track: SoundTrack, level: float
+        self, cfg: SensorConfig, stream: AudioStream | None, heard: SoundLive, key: str, track: SoundTrack, level: float
     ) -> None:
         """A sound began or stopped to be heard: publish it, and write a history row (with a clip
         to cut once its seconds after arrived)."""
@@ -182,7 +197,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if not track.on and track.row is not None:
             await self._maybe_ask(cfg, key, track)
         track.row = row if track.on else None
-        if track.on and cfg.sound["clips"] and key != SOUND["speech_key"]:
+        if stream is not None and track.on and cfg.sound["clips"] and key != SOUND["speech_key"]:
             onset = stream.total - int(SOUND["window_s"] * stream.rate)
             heard.clips.append(
                 {
@@ -250,7 +265,10 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 quiet, muted = await asyncio.to_thread(model.silence_speech, samples, SOUND["speech_mute"])
             # With the camera's video when the stream has one (made by the stream's thread), else sound only.
             future = stream.video_clip(quiet, clip["start"])
-            with_video = await asyncio.to_thread(future.result, SOUND["video_wait_s"])
+            try:
+                with_video = await asyncio.to_thread(future.result, SOUND["video_wait_s"])
+            except TimeoutError:
+                with_video = None
             await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], quiet, muted, stream.rate, with_video)
 
     def _store_clip(

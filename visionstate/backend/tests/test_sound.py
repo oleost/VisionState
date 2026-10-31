@@ -419,3 +419,91 @@ def test_a_sound_chosen_away_on_the_home_assistant_tab():
         "dog_bark",
     }
     assert discovery_messages("ha", SensorDescriptor("h", "H", [], KIND_SOUND, sounds=sounds_of, in_ha=False)) == []
+
+
+def test_a_short_gap_in_the_sound_is_not_unavailable(monkeypatch):
+    stream = AudioStream("http://127.0.0.1:1/never")  # never connects: fed by hand
+    try:
+        assert not stream.delivering  # nothing came yet
+        stream._append(np.zeros(100, dtype=np.float32))
+        stream.connected = False  # the stream dropped: opened again in a moment
+        assert stream.delivering
+        monkeypatch.setitem(SOUND, "offline_after_s", 0.0)
+        assert not stream.delivering
+    finally:
+        stream.close()
+
+
+def test_a_stream_that_ends_at_once_is_not_asked_again_at_the_shortest_pause(monkeypatch):
+    """Sound arrived, but only for a moment: the pause goes on doubling."""
+    monkeypatch.setitem(SOUND, "reconnect_min_s", 0.05)
+    monkeypatch.setitem(SOUND, "reconnect_max_s", 10.0)
+    opened = []
+
+    def ends_at_once(self):
+        opened.append(time.monotonic())
+        return True
+
+    monkeypatch.setattr(AudioStream, "_listen", ends_at_once)
+    stream = AudioStream("http://127.0.0.1:1/never")
+    try:
+        time.sleep(1.0)
+    finally:
+        stream.close()
+    gaps = [b - a for a, b in zip(opened, opened[1:], strict=False)]
+    assert len(gaps) >= 3 and gaps[2] > gaps[0] * 2
+
+
+def test_video_times_that_start_again_leave_the_old_video_behind():
+    from fractions import Fraction
+    from types import SimpleNamespace
+
+    stream = AudioStream("http://127.0.0.1:1/never", video=True)
+    try:
+
+        def packet(at: float):
+            return SimpleNamespace(pts=int(at * 1000), dts=None, size=1, time_base=Fraction(1, 1000), is_keyframe=True)
+
+        class Bytes(SimpleNamespace):
+            def __bytes__(self):
+                return b"x"
+
+        for at in (40.0, 41.0, 40.5, 42.0):  # a little out of order is normal
+            stream._keep_packet(Bytes(**vars(packet(at))))
+        assert len(stream._packets) == 4
+        stream._keep_packet(Bytes(**vars(packet(0.0))))
+        assert [p.time for p in stream._packets] == [0.0]
+    finally:
+        stream.close()
+
+
+@requires_sound
+def test_a_paused_sensor_hears_nothing(settings, quick):  # noqa: F811
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {
+                "name": "Hallway",
+                "kind": "sound",
+                "source_type": "rtsp",
+                "source": server.url,
+                "sound": {"sounds": ["siren"]},
+            }
+            sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+            def on() -> bool:
+                return next(iter(client.get(f"/api/v1/sensors/{sid}").json()["sound"]["live"]))["on"]
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            server.play(recording("siren"))
+            assert wait_for(on)
+            assert client.patch(f"/api/v1/sensors/{sid}", json={"enabled": False}).status_code == 200
+            assert wait_for(lambda: not on())
+            rows = client.get("/api/v1/history", params={"sensor": sid, "event": "quiet"}).json()["items"]
+            assert rows and rows[0]["state_key"] == "siren"
+            # Listening again in quiet: it does not come back on the windows from before the pause.
+            assert client.patch(f"/api/v1/sensors/{sid}", json={"enabled": True}).status_code == 200
+            time.sleep(1.5)
+            assert not on()
+    finally:
+        server.close()
