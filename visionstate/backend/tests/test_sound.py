@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from visionstate import sounds
 from visionstate.engine import SoundTrack, hear
 from visionstate.main import create_app
-from visionstate.mqtt import SensorDescriptor, discovery_messages, main_entities
+from visionstate.mqtt import SensorDescriptor, discovery_messages, entity_options, main_entities, muted_topics
 from visionstate.settings import KIND_SOUND, SOUND, merge_sound
 from visionstate.sources import AudioStream
 
@@ -399,3 +399,23 @@ def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noq
             assert not heard()[0]["clip_video"]
     finally:
         server.close()
+
+
+def test_a_sound_chosen_away_on_the_home_assistant_tab():
+    """Each sound is an entity to choose; the pause switch always stays, and nothing is sent for a
+    sound without its entity. Unsettled sensors keep them all."""
+    sounds_of = [
+        ("doorbell", "Doorbell", "mdi:ear-hearing", "sound"),
+        ("dog_bark", "Dog barking", "mdi:dog", "sound"),
+    ]
+    descriptor = SensorDescriptor("hallway", "Hallway", [], KIND_SOUND, sounds=sounds_of, chosen={"dog_bark": False})
+    assert [o["id"] for o in entity_options(descriptor)] == ["doorbell", "dog_bark"]
+    assert {topic.split("/")[-2] for topic, _ in discovery_messages("ha", descriptor)} == {"doorbell", "enabled"}
+    assert muted_topics(descriptor) == {"visionstate/hallway/sounds/dog_bark/state"}
+    assert [uid for uid, _ in main_entities(descriptor)] == ["visionstate_hallway_doorbell"]
+    unsettled = SensorDescriptor("hallway", "Hallway", [], KIND_SOUND, sounds=sounds_of, chosen=None)
+    assert {o["id"] for o in entity_options(unsettled) if unsettled.entity_on(o["id"], o["default"])} == {
+        "doorbell",
+        "dog_bark",
+    }
+    assert discovery_messages("ha", SensorDescriptor("h", "H", [], KIND_SOUND, sounds=sounds_of, in_ha=False)) == []

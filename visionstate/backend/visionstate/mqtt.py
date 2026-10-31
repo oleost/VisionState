@@ -9,13 +9,14 @@ import math
 import re
 import unicodedata
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
 from .settings import (
     APP_SLUG,
     HA_DEVICE_CLASS_UNITS,
+    HA_ENTITIES_NOT_BY_DEFAULT,
     KIND_OBJECTS,
     KIND_READING,
     KIND_SOUND,
@@ -26,6 +27,7 @@ from .settings import (
     UNKNOWN_STATE,
     VERSION,
     Settings,
+    value_decimals,
 )
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,8 @@ log = logging.getLogger(__name__)
 BRIDGE_AVAILABILITY = f"{APP_SLUG}/status"
 ONLINE, OFFLINE = "online", "offline"
 RECONNECT_DELAY_S = 10
+CONFIRM_TIMEOUT_S = 10  # how long the broker may take to confirm a removal
+SNAPSHOT_SUFFIX = "_snapshot"  # the entity of an object's snapshot: "<key>_snapshot"
 
 
 def topics(slug: str) -> dict[str, str]:
@@ -62,7 +66,12 @@ def topics(slug: str) -> dict[str, str]:
 def object_topics(slug: str, key: str) -> dict[str, str]:
     """Topics of one object class of an object sensor."""
     base = f"{APP_SLUG}/{slug}/objects/{key}"
-    return {"state": f"{base}/state", "count": f"{base}/count", "attributes": f"{base}/attributes"}
+    return {
+        "state": f"{base}/state",
+        "count": f"{base}/count",
+        "attributes": f"{base}/attributes",
+        "snapshot": f"{base}/snapshot",
+    }
 
 
 def sound_topics(slug: str, key: str) -> dict[str, str]:
@@ -80,8 +89,22 @@ class SensorDescriptor:
     objects: list[tuple[str, str, str]] = field(default_factory=list)  # (key, display name, icon) per class
     reading: dict | None = None  # reading sensors: settings.READING_DEFAULTS merged
     entity_prefix: bool = False  # see db.Sensor.entity_prefix
+    in_ha: bool = True  # see db.Sensor.in_ha
+    chosen: dict[str, bool] | None = field(default_factory=dict)  # see db.Sensor.ha_entities
+
     # sound sensors: (key, display name, icon, device class) per sound
     sounds: list[tuple[str, str, str, str]] = field(default_factory=list)
+
+    def entity_on(self, entity: str, default: bool) -> bool:
+        """Whether an optional entity exists in Home Assistant. Not settled yet (None): those it had
+        before they could be chosen stay, a snapshot is new."""
+        if self.chosen is None:
+            return not entity.endswith(SNAPSHOT_SUFFIX)
+        return self.chosen.get(entity, default)
+
+    def off(self) -> set[str]:
+        """The optional entities that do not exist in Home Assistant."""
+        return {o["id"] for o in entity_options(self) if not self.entity_on(o["id"], o["default"])}
 
 
 def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str, dict]]:
@@ -91,7 +114,10 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
     ``_sound_entities``), then those every sensor has: the last frame, "check now" and the pause
     switch (a sound sensor listens all the time and has no frame: only the pause switch). Unique IDs
     and topics are never changed once released: Home Assistant's entities are bound to them.
+    Only what the sensor's Home Assistant tab keeps (``entity_options``).
     """
+    if not sensor.in_ha:
+        return []
     d = _Discovery(prefix, sensor)
     pause = {
         "name": "Enabled",
@@ -104,7 +130,10 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         **d.bridge_only,
     }
     if sensor.kind == KIND_SOUND:
-        return [*_sound_entities(d), d.config("switch", "enabled", pause)]
+        off = sensor.off()
+        return [(t, p) for t, p in _sound_entities(d) if t.rsplit("/", 2)[-2] not in off] + [
+            d.config("switch", "enabled", pause)
+        ]
     if sensor.kind == KIND_READING:
         kind_specific = _reading_entities(d)
     elif sensor.kind == KIND_OBJECTS:
@@ -127,12 +156,66 @@ def discovery_messages(prefix: str, sensor: SensorDescriptor) -> list[tuple[str,
         "icon": "mdi:camera-iris",
         **d.bridge_only,
     }
-    return [
+    off = sensor.off()
+    messages = [
         *kind_specific,
         d.config("image", "frame", frame),
         d.config("button", "classify", button),
         d.config("switch", "enabled", pause),
     ]
+    # The topic is <prefix>/<component>/<node>/<entity>/config.
+    return [(topic, payload) for topic, payload in messages if topic.rsplit("/", 2)[-2] not in off]
+
+
+def entity_options(sensor: SensorDescriptor) -> list[dict]:
+    """The entities that can be chosen on a sensor's Home Assistant tab. ``object``: the class or own
+    label it belongs to, ``column``: what it is of that object; ``default``: on unless chosen."""
+    options: list[dict] = []
+    if sensor.kind == KIND_SOUND:
+        return [{"id": key, "name": name, "default": True} for key, name, _icon, _class in sensor.sounds]
+    if sensor.kind == KIND_OBJECTS:
+        for key, name, _icon in sensor.objects:
+            options += [
+                {"id": key, "object": name, "column": "detected", "name": name, "default": True},
+                {"id": f"{key}_count", "object": name, "column": "count", "name": f"{name} count", "default": True},
+                {
+                    "id": f"{key}{SNAPSHOT_SUFFIX}",
+                    "object": name,
+                    "column": "snapshot",
+                    "name": f"{name} snapshot",
+                    "default": False,
+                },
+            ]
+    else:
+        options.append({"id": "confidence", "name": "Confidence", "default": True})
+    options.append({"id": "frame", "name": "Last frame", "default": True})
+    if sensor.kind == KIND_READING:
+        diagnostics = {
+            "raw": "Raw reading",
+            "problem": "Problem",
+            "accepted": "Accepted (24 h)",
+            "reader_image": "Reader image",
+        }
+        if (sensor.reading or {}).get("mode") == "counter":
+            diagnostics["rate"] = "Rate"
+        options += [
+            {"id": key, "name": name, "default": key not in HA_ENTITIES_NOT_BY_DEFAULT}
+            for key, name in diagnostics.items()
+        ]
+    return options
+
+
+def _value_topics(payload: dict) -> set[str]:
+    """The topics an entity's discovery config uses."""
+    return {value for key, value in payload.items() if key.endswith("_topic")}
+
+
+def muted_topics(sensor: SensorDescriptor) -> set[str]:
+    """The value topics of the entities a sensor does not have in Home Assistant (nothing is sent
+    there), without those it shares with an entity it has."""
+    everything = replace(sensor, in_ha=True, chosen={option["id"]: True for option in entity_options(sensor)})
+    kept = {t for _, payload in discovery_messages("", sensor) for t in _value_topics(payload)}
+    return {t for _, payload in discovery_messages("", everything) for t in _value_topics(payload)} - kept
 
 
 class _Discovery:
@@ -229,7 +312,19 @@ def _object_entities(d: _Discovery) -> list[tuple[str, dict]]:
             "icon": "mdi:counter",
             **d.with_camera,
         }
-        entities += [d.config("binary_sensor", key, present), d.config("sensor", f"{key}_count", count)]
+        snapshot = {
+            # The object itself, cut from the frame; the last one stays after it has gone.
+            "name": f"{name} snapshot",
+            **d.suggest("image", f"{key}{SNAPSHOT_SUFFIX}"),
+            "image_topic": ot["snapshot"],
+            "content_type": "image/jpeg",
+            **d.with_camera,
+        }
+        entities += [
+            d.config("binary_sensor", key, present),
+            d.config("sensor", f"{key}_count", count),
+            d.config("image", f"{key}{SNAPSHOT_SUFFIX}", snapshot),
+        ]
     return entities
 
 
@@ -253,12 +348,12 @@ def _sound_entities(d: _Discovery) -> list[tuple[str, dict]]:
 
 
 def _reading_entities(d: _Discovery) -> list[tuple[str, dict]]:
-    """A reading sensor: its value and the confidence, and diagnostics that are off by default
-    (raw reading, problem, accepted share, reader image) for those who want them, e.g. for leak
-    detection. A counter also gets its rate."""
+    """A reading sensor: its value and the confidence, and diagnostics (raw reading, problem,
+    accepted share, reader image) for those who choose them, e.g. for leak detection. A counter
+    also gets its rate."""
     reading, t = d.sensor.reading or {}, d.t
-    # Diagnostic entities, off until the user switches them on in Home Assistant.
-    hidden = {"entity_category": "diagnostic", "enabled_by_default": False}
+    # Diagnostic entities, there when chosen on the sensor's Home Assistant tab.
+    hidden = {"entity_category": "diagnostic"}
     value = {"name": None, **d.suggest("sensor"), **reading_entity(reading, t), **d.with_camera}
     raw = {
         "name": "Raw reading",
@@ -346,7 +441,7 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
         "state_class": state_class,
     }
     if mode != "time_left":
-        payload["suggested_display_precision"] = int(reading.get("decimals", 0))
+        payload["suggested_display_precision"] = value_decimals(reading)
     return {k: v for k, v in payload.items() if v is not None}
 
 
@@ -383,12 +478,12 @@ def rate_precision(reading: dict) -> int:
     Home Assistant may show a rate such as 0.03 m³/h as 0."""
     _, _, factor = rate_unit(reading)
     hours = float(reading.get("rate_window_min") or 60) / 60
-    step = 10 ** -int(reading.get("decimals", 0)) / hours * factor
+    step = 10 ** -value_decimals(reading) / hours * factor
     return max(0, math.ceil(-math.log10(step) - 1e-9))
 
 
 def rate_entity(reading: dict, t: dict[str, str]) -> dict:
-    """Discovery fields of a counter's rate: how fast it goes up (off by default in Home Assistant)."""
+    """Discovery fields of a counter's rate: how fast it goes up."""
     unit, device_class, _ = rate_unit(reading)
     payload = {
         "name": "Rate",
@@ -397,7 +492,6 @@ def rate_entity(reading: dict, t: dict[str, str]) -> dict:
         "device_class": device_class,
         "state_class": "measurement",
         "suggested_display_precision": rate_precision(reading),
-        "enabled_by_default": False,
         "icon": "mdi:speedometer",
     }
     return {k: v for k, v in payload.items() if v is not None}
@@ -417,8 +511,12 @@ def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
 
     The expected ID is what Home Assistant gives a new entity; the real one (it may end in _2, or
     the user changed it) is in Home Assistant's entity registry, see ha_events.fetch_entity_ids.
+    Only the ones it has there.
     """
+    if not sensor.in_ha:
+        return []
     uid = f"{APP_SLUG}_{sensor.slug}"
+    off = sensor.off()
     if sensor.kind == KIND_SOUND:
         return [
             (
@@ -428,6 +526,7 @@ def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
                 else f"binary_sensor.{ha_slug(f'{sensor.name} {name}')}",
             )
             for key, name, _icon, _class in sensor.sounds
+            if key not in off
         ]
     if sensor.kind != KIND_OBJECTS:
         expected = f"sensor.{uid}" if sensor.entity_prefix else f"sensor.{ha_slug(sensor.name)}"
@@ -439,7 +538,10 @@ def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
         else:
             on = f"binary_sensor.{ha_slug(f'{sensor.name} {name}')}"
             count = f"sensor.{ha_slug(f'{sensor.name} {name} count')}"
-        entities += [(f"{uid}_{key}", on), (f"{uid}_{key}_count", count)]
+        if key not in off:
+            entities.append((f"{uid}_{key}", on))
+        if f"{key}_count" not in off:
+            entities.append((f"{uid}_{key}_count", count))
     return entities
 
 
@@ -565,6 +667,10 @@ async def resolve_config(settings: Settings) -> MqttConfig | None:
     except (httpx.HTTPError, KeyError, ValueError) as err:
         log.warning("Could not query MQTT service: %s", err)
         return None
+
+
+class MqttNotConfirmed(Exception):
+    """The broker did not confirm a removal."""
 
 
 CommandHandler = Callable[[str, str, str], Awaitable[None]]  # (slug, command, payload)
@@ -707,6 +813,34 @@ class MqttBridge:
             if key not in kept_sounds:
                 await self.remove_sound(before.slug, key)
 
+    def removals(self, before: SensorDescriptor, after: SensorDescriptor) -> list[str]:
+        """What must be emptied when a sensor goes from ``before`` to ``after``: the discovery configs
+        of the entities it no longer has, and the retained values only they used."""
+        prefix = self.settings.discovery_prefix
+        old = dict(discovery_messages(prefix, before))
+        new = dict(discovery_messages(prefix, after))
+        gone = [topic for topic in old if topic not in new]
+        kept = {t for payload in new.values() for t in _value_topics(payload)}
+        values = {t for topic in gone for t in _value_topics(old[topic])} - kept
+        if before.in_ha and not after.in_ha:
+            values.add(topics(before.slug)["availability"])
+        return [*gone, *sorted(values)]
+
+    async def remove_confirmed(self, removals: list[str]) -> None:
+        """Empty these topics, each confirmed by the broker (MQTT QoS 1), or raise MqttNotConfirmed.
+
+        A removal that does not arrive leaves an entity behind for good: nothing sends it again."""
+        if not removals:
+            return
+        client = self._client
+        if client is None or not self.connected:
+            raise MqttNotConfirmed(self.last_error or "not connected")
+        for topic in removals:
+            try:
+                await client.publish(topic, "", qos=1, retain=True, timeout=CONFIRM_TIMEOUT_S)
+            except Exception as err:  # noqa: BLE001 - whatever it was, it did not arrive
+                raise MqttNotConfirmed(str(err) or type(err).__name__) from err
+
     async def remove_rate(self, slug: str) -> None:
         """Forget the rate entity of a reading sensor that is no longer a counter."""
         uid = f"{APP_SLUG}_{slug}"
@@ -723,7 +857,8 @@ class MqttBridge:
         """Forget one class of an object sensor (deselected): its entities and retained values."""
         if discovery:
             uid = f"{APP_SLUG}_{slug}"
-            for component, object_id in (("binary_sensor", key), ("sensor", f"{key}_count")):
+            entities = (("binary_sensor", key), ("sensor", f"{key}_count"), ("image", f"{key}{SNAPSHOT_SUFFIX}"))
+            for component, object_id in entities:
                 await self.publish(
                     f"{self.settings.discovery_prefix}/{component}/{uid}/{object_id}/config", "", retain=True
                 )

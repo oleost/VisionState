@@ -100,6 +100,8 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
         # Keep the entity ID style, so moving a sensor (e.g. between the stable and the beta app)
         # does not change its entity IDs. Bundles without the field are older: those had the prefix.
         sensor.entity_prefix = bool(data.get("entity_prefix", True))
+        sensor.in_ha = bool(data.get("in_ha", True))
+        sensor.ha_entities = data.get("ha_entities")  # older bundles: settled like any older sensor
         if custom:
             sensor.objects = {**(sensor.objects or {}), "custom": custom}
         if own_sounds:

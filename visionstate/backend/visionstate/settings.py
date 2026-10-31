@@ -99,6 +99,17 @@ READING_DEFAULTS = {
     # The wheel reader (an id in readers.json) a counter read by "wheels" uses. A new sensor
     # stores the registry's default, so a later default never changes it; "" = that default.
     "wheel_reader": "",
+    # Read the region straightened (imaging.region_image): a four-cornered region, its top edge
+    # marked, is turned upright and its perspective undone — a meter the camera sees at an angle or
+    # turned. Off for sensors saved before it was offered (they read as they did); a new sensor
+    # starts with READING_NEW_SENSOR.
+    "straighten": False,
+    # Mechanical counters read by a wheel reader (settings.extra_digits): the meter's pointer dials,
+    # each one more decimal (the first ×0.1 of the last wheel, then ×0.01 …;
+    # docs/POINTER_DIAL_PLAN.md): circles in the plane the counter is read in
+    # (imaging.reading_plane), in units of the region's height from its top-left corner — {"x", "y",
+    # "r", "ccw"} (ccw: the dial turns anticlockwise).
+    "dials": [],
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -200,6 +211,34 @@ READING = {
     # registry): a wheel's share is the model's probability within this many bins of where the
     # value puts it.
     "wheel_weakest_bins": 4,
+    # A counter with extra digits (extra_digits: pointer dials): its last digit jitters by a step or
+    # two between readings. A reading this many steps below the value keeps it ("settling"), as one
+    # step does without them, instead of being rejected as going down.
+    "settle_steps_fine": 2,
+    # Pointer dials (dials.py): at most this many per counter, their radius within dial_radius and
+    # their centre at most dial_reach beyond the region (both in units of the region's height); the
+    # dial editor shows the meter face that far around the region, face_size pixels on its longest
+    # side. Each dial is cut from the plane this much larger than its circle and scaled to dial_size
+    # pixels. A needle found clearly becomes a peak this many bins wide (of 100: 0.1 of a digit
+    # each) for the decode, an unclear one (its pixels agree less on one direction, down to
+    # dial_spread_floor: none) up to dial_sigma_bins[1]; with less than dial_min_needle of the
+    # dial's area as needle, the dial is not read. A needle's pixels are this much redder (red less
+    # the larger of green and blue) than the dial's face: a pale needle in a picture with a colour
+    # cast counts too. Its hub is what is left of it with dial_hub_erode of the dial picture's size
+    # peeled off its edges (the thick part round the axis: a hub, or a drop-shaped needle's body);
+    # its direction is that of the dial_tip_share of its pixels farthest from the hub.
+    "max_dials": 6,
+    "dial_radius": (0.1, 4.0),
+    "dial_reach": 6.0,
+    "face_size": 720,
+    "dial_margin": 1.15,
+    "dial_size": 96,
+    "dial_sigma_bins": (2.5, 15.0),
+    "dial_min_needle": 0.01,
+    "dial_spread_floor": 0.5,
+    "dial_red_contrast": 20,
+    "dial_hub_erode": 0.07,
+    "dial_tip_share": 0.05,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones
@@ -667,7 +706,17 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
 # change of attributes, as a new state.
 PUBLISH = {
     "refresh_s": 300.0,
+    # An object's snapshot (imaging.snapshot): the boxes plus this share of their size on each side,
+    # and at least this many pixels each way when the region has that much room.
+    "snapshot_margin": 0.1,
+    "snapshot_min_px": 300,
+    "snapshot_quality": 85,
 }
+
+# Entities that exist in Home Assistant only when chosen on the sensor's Home Assistant tab
+# (mqtt.entity_options); an object's snapshot is one too. A sensor made before the tab decides once,
+# from what Home Assistant has switched on (engine.PublishingMixin.settle_entity_choices).
+HA_ENTITIES_NOT_BY_DEFAULT = frozenset({"raw", "problem", "accepted", "rate", "reader_image"})
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
@@ -765,6 +814,24 @@ def merge_sound(stored: dict | None) -> dict:
     merged["thresholds"] = {k: float(v) for k, v in (merged.get("thresholds") or {}).items() if v is not None}
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     return merged
+
+
+# What a new reading sensor starts with where it differs from what a stored one without it has.
+READING_NEW_SENSOR = {"straighten": True}
+
+
+def extra_digits(reading: dict) -> int:
+    """Digits a reading sensor reads beyond its wheels: one per pointer dial. Only a mechanical
+    counter read by a wheel reader has them. ("fraction", the last wheel's tenth as one more digit,
+    was offered in 0.12.0b1 only: a sensor that stored it reads as one without it.)"""
+    if reading.get("display") != "counter" or reading.get("counter_reader") != "wheels":
+        return 0
+    return len(reading.get("dials") or [])
+
+
+def value_decimals(reading: dict) -> int:
+    """Decimals of the value a reading sensor publishes: its own, and one more per extra digit."""
+    return int(reading.get("decimals", 0)) + extra_digits(reading)
 
 
 def merge_reading(stored: dict | None) -> dict:

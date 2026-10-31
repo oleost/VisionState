@@ -371,7 +371,7 @@ No question for the maintainer is open. Decided on 2026-10-29:
 
 **Built** (on `claude/lucid-cori-j40ck3`, from `beta`; not merged, not released), as described in
 [`SCOPE.md`](SCOPE.md) §5 and in DOCS.md *Sound sensors*: phases 1–3 and the clips with video —
-the `sound` kind (database version 17, its kept backup), `sources.AudioStream` (RTSP and HTTP
+the `sound` kind (database version 18, its kept backup), `sources.AudioStream` (RTSP and HTTP
 audio, reconnecting), the level line, CED-Tiny with per-sound thresholds, `logic.hear`, a
 `binary_sensor` per sound (smoke alarms as *smoke*), clips with speech silenced (AAC, or MP4 with
 the camera's video), review questions, own sounds (taught from history clips or uploaded

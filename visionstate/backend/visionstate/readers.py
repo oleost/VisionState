@@ -19,14 +19,16 @@ import math
 import re
 import threading
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
+from . import dials
 from .backbones import Footprint, cpu_session
-from .settings import READING
+from .settings import READING, extra_digits, value_decimals
 
 REGISTRY_FILE = Path(__file__).with_name("readers.json")
 MAX_WIDTH = 1600  # widest input (pixels at height 48); longer numbers are squeezed
@@ -383,7 +385,7 @@ def wheel_context_cells(
     return np.stack(out)
 
 
-def wheel_value(logp: np.ndarray) -> tuple[float, float]:
+def wheel_value(logp: np.ndarray, links: list[str] | None = None) -> tuple[float, float]:
     """The most likely counter value for per-wheel position log probabilities (wheels x 100 bins).
 
     A mechanical counter's wheels are not independent: the last wheel turns freely and every
@@ -391,18 +393,32 @@ def wheel_value(logp: np.ndarray) -> tuple[float, float]:
     (by as much as that wheel is past 9). A dynamic programme from right to left finds the
     value whose wheel positions are most likely together. Returns the value in steps of the
     last wheel, with its fraction (0089949.8 = last wheel at 9.8), and its log probability.
+
+    ``links`` (one per pair of neighbours, left to right; all "step" by default) says how a wheel
+    follows its right neighbour: "step", a counter wheel, as above; "smooth", a wheel or pointer
+    dial that turns on all the time with it — its tenth is the neighbour's digit (a meter's last
+    wheel and its pointer dials, docs/POINTER_DIAL_PLAN.md). Pointer dials are given as more rows,
+    to the right of the wheels.
     """
-    value, score, _ = wheel_decode(logp)
+    value, score, _ = wheel_decode(logp, links)
     return value, score
 
 
-def wheel_decode(logp: np.ndarray) -> tuple[float, float, list[int]]:
+def wheel_decode(logp: np.ndarray, links: list[str] | None = None) -> tuple[float, float, list[int]]:
     """``wheel_value`` plus the bin every wheel stands at in that value (left to right)."""
     wheels, bins = logp.shape
     tenth = bins // 10
     best = logp[-1].copy()  # best score of the wheels to the right, by this wheel's bin
     back = []
     for k in range(wheels - 2, -1, -1):
+        if links is not None and links[k] == "smooth":
+            # This wheel's tenth f is its right neighbour's digit: the best neighbour bin per digit.
+            groups = best.reshape(10, tenth)
+            lead = groups.max(axis=1)
+            lead_bin = groups.argmax(axis=1) + np.arange(10) * tenth
+            best = (logp[k].reshape(10, tenth) + lead[None, :]).reshape(bins)
+            back.append(np.tile(lead_bin, 10))
+            continue
         # The right neighbour at bin b moves this wheel by f = max(0, b - 9 * tenth) bins.
         rest = int(best[: 9 * tenth + 1].argmax())
         lead = np.concatenate([[best[rest]], best[9 * tenth + 1 :]])  # best score per offset f
@@ -422,22 +438,30 @@ def wheel_decode(logp: np.ndarray) -> tuple[float, float, list[int]]:
 
 
 def wheel_details(
-    probs: np.ndarray, p: list[float], rule: str, value: float, score: float, at: list[int], shift: int
+    probs: np.ndarray,
+    p: list[float],
+    rule: str,
+    value: float,
+    score: float,
+    at: list[int],
+    shift: int,
+    wheels: int | None = None,
 ) -> dict:
     """How a wheel reading was found, in positions (0.0-9.9): per wheel where the value puts it
     as seen in the image (``at``, with the common ``shift``), its probability as the confidence
     counts it (``p``, by the spec's ``confidence_rule``: ``WheelReader.wheel_p``) and the model's
     most likely positions (``top``); the value in steps of the last wheel with its fraction, and
-    its log probability."""
+    its log probability. Rows after the first ``wheels`` are pointer dials (not shifted)."""
     bins = probs.shape[1]
     tenth = bins // 10
     top = READING["export_wheel_top"]
-    wheels = []
+    count = len(at) if wheels is None else wheels
+    rows = []
     for k, b in enumerate(at):
         order = np.argsort(probs[k])[::-1][:top]
-        wheels.append(
+        rows.append(
             {
-                "at": round((b + shift) % bins / tenth, 1),
+                "at": round((b + (shift if k < count else 0)) % bins / tenth, 1),
                 "p": round(p[k], 4),
                 "top": [[round(int(i) / tenth, 1), round(float(probs[k, i]), 4)] for i in order],
             }
@@ -445,9 +469,10 @@ def wheel_details(
     return {
         "value": round(value, 1),
         "shift": round(shift / tenth, 1),
+        **({"dials": len(at) - count} if len(at) > count else {}),
         "log_p": round(score, 3),
         "confidence_rule": rule,
-        "per_wheel": wheels,
+        "per_wheel": rows,
     }
 
 
@@ -500,32 +525,58 @@ class WheelReader:
         """Log probabilities of every wheel's position (wheels x bins), as decoded."""
         return self.with_slack(self.probabilities(image, digits, box))
 
-    def read_counter(self, image: Image.Image, digits: int, box: Pixels | None = None) -> tuple[Text, Image.Image]:
-        """Read ``digits`` wheels; returns the read (all digits, last wheel rounded) and the cells used.
+    def read_counter(
+        self,
+        image: Image.Image,
+        digits: int,
+        box: Pixels | None = None,
+        needles: Sequence[dials.Needle] = (),
+    ) -> tuple[Text, Image.Image]:
+        """Read ``digits`` wheels; returns the read and the cells used.
 
-        A region drawn a little above or below the digits shifts every wheel alike, so a few
-        common shifts are tried (each costs a little) and the most likely reading wins. The
-        confidence is the spec's (``WheelReaderSpec.confidence``). ``details`` keeps how the
-        value was found (``wheel_details``), so it can be checked without the model.
+        The read is all the digits, the last wheel rounded to the nearest; with pointer dials
+        (``needles``, as read by dials.read_needle, ×0.1 first) one more digit per dial, decoded
+        together with the wheels (``wheel_decode``: the last wheel and the dials turn on with the
+        dial to their right). A region drawn a little above or below the digits shifts every wheel
+        alike, so a few common shifts are tried (each costs a little) and the most likely reading
+        wins. The confidence is the spec's (``WheelReaderSpec.confidence``). ``details`` keeps how
+        the value was found (``wheel_details``), so it can be checked without the model.
         """
         probs = self.probabilities(image, digits, box)
         logp = self.with_slack(probs)
+        extra = len(needles)
+        dial_probs = np.array([n.probs for n in needles]).reshape(extra, probs.shape[1])
+        dial_logp = self.with_slack(dial_probs)
+        links = ["step"] * (digits - 1) + ["smooth"] * extra
         best: tuple[float, float, list[int], int] | None = None
         for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
-            value, score, at = wheel_decode(np.roll(logp, -shift, axis=1))
+            rows = np.concatenate([np.roll(logp, -shift, axis=1), dial_logp])  # the dials are not shifted
+            value, score, at = wheel_decode(rows, links)
             score -= READING["wheel_shift_penalty"] * abs(shift)
             if best is None or score > best[1]:
                 best = (value, score, at, shift)
         assert best is not None
         value, score, at, shift = best
-        number = math.floor(value + 0.5) % 10**digits
-        p = self.wheel_p(probs, logp, at, shift)
-        text = Text(
-            f"{number:0{digits}d}",
-            self.confidence(score, p),
-            {"wheels": wheel_details(probs, p, self.spec.confidence, value, score, at, shift)},
-        )
-        return text, self.cells_image(image, digits, box)
+        if extra:
+            shown, number = digits + extra, math.floor(value) % 10 ** (digits + extra)
+        else:
+            shown, number = digits, math.floor(value + 0.5) % 10**digits
+        p = self.wheel_p(probs, logp, at[:digits], shift)
+        # A dial's share: its needle's probability near where the value puts it (a needle is never
+        # as sharp as a wheel the model knows, so not its probability at one position). The wheels'
+        # confidence leaves the dials out of the score, the weakest dial is taken with it.
+        near = np.arange(-READING["wheel_weakest_bins"], READING["wheel_weakest_bins"] + 1)
+        dial_p = [float(dial_probs[k, (b + near) % probs.shape[1]].sum()) for k, b in enumerate(at[digits:])]
+        wheel_score = score - sum(float(dial_logp[k, b]) for k, b in enumerate(at[digits:]))
+        confidence = self.confidence(wheel_score, p) * min(dial_p, default=1.0)
+        p += dial_p
+        all_probs = np.concatenate([probs, dial_probs])
+        details = wheel_details(all_probs, p, self.spec.confidence, value, score, at, shift, digits)
+        for row, needle in zip(details["per_wheel"][digits:], needles, strict=True):
+            row["needle"] = needle.position  # where the needle was found (None: no needle seen)
+            row["certainty"] = needle.certainty
+        text = Text(f"{number:0{shown}d}", confidence, {"wheels": details})
+        return text, self.cells_image(image, digits, box, [n.image for n in needles])
 
     def wheel_p(self, probs: np.ndarray, logp: np.ndarray, at: list[int], shift: int) -> list[float]:
         """Every wheel's probability at where the value puts it, as the confidence counts it:
@@ -545,11 +596,13 @@ class WheelReader:
             return math.exp(score / max(1, len(p)))
         return min(p)
 
-    def cells_image(self, image: Image.Image, digits: int, box: Pixels | None = None) -> Image.Image:
+    def cells_image(
+        self, image: Image.Image, digits: int, box: Pixels | None = None, dials: Sequence[Image.Image] = ()
+    ) -> Image.Image:
         """The cells side by side as the model sees them (for the "what the reader saw" image):
         one wheel per field, so a region that cuts the wheels wrong shows. A model with context
         also sees the neighbours around each cell; they are left out here, as they would look
-        like every wheel twice."""
+        like every wheel twice. Pointer dials follow, each with the needle that was found drawn on it."""
         crop = image.crop(box) if box else image
         cells = (wheel_cells(crop, digits, self.spec.cell_width, self.spec.cell_height) * 255).astype(np.uint8)
         gap = 2
@@ -557,7 +610,15 @@ class WheelReader:
         line = Image.new("L", (len(cells) * (w + gap) - gap, h), 255)
         for i, cell in enumerate(cells):
             line.paste(Image.fromarray(cell), (i * (w + gap), 0))
-        return line.resize((line.width * 2, h * 2), Image.Resampling.NEAREST).convert("RGB")
+        picture = line.resize((line.width * 2, h * 2), Image.Resampling.NEAREST).convert("RGB")
+        if not dials:
+            return picture
+        side = picture.height
+        out = Image.new("RGB", (picture.width + len(dials) * (side + 6), side), (255, 255, 255))
+        out.paste(picture, (0, 0))
+        for i, dial in enumerate(dials):
+            out.paste(dial.convert("RGB").resize((side, side)), (picture.width + 6 + i * (side + 6), 0))
+        return out
 
 
 # --- interpretation -------------------------------------------------------------------------------
@@ -582,7 +643,7 @@ def parse(text: str, settings: dict) -> float | None:
     digits = re.sub(r"\D", "", text)
     if not digits:
         return None
-    return int(digits) / 10 ** int(settings["decimals"])
+    return int(digits) / 10 ** value_decimals(settings)
 
 
 def right_value(text: str, settings: dict) -> float | None:
@@ -608,8 +669,9 @@ def digit_count(text: str) -> int:
 
 
 def wrong_digit_count(text: str, settings: dict) -> bool:
-    """A mechanical counter always shows all its wheels: any other number of digits is a misread."""
-    return settings["display"] == "counter" and digit_count(text) != int(settings["digits"])
+    """A mechanical counter always shows all its wheels (and reads its extra digits): any other
+    number of digits is a misread."""
+    return settings["display"] == "counter" and digit_count(text) != int(settings["digits"]) + extra_digits(settings)
 
 
 def implausible(value: float, last: float | None, settings: dict, limit: float | None = None) -> str | None:
@@ -631,16 +693,20 @@ def implausible(value: float, last: float | None, settings: dict, limit: float |
 
 
 def settling(value: float | None, last: float | None, settings: dict) -> bool:
-    """Whether a counter read exactly one step of its last digit below its value: the last wheel turning.
+    """Whether a counter read just below its value: the last wheel turning.
 
     A wheel between two digits is read as the one or the other; once the higher one was published,
     every right reading until the counter gets there is one step lower. Such a reading keeps the
     value without counting as rejected, so it neither floods the review queue nor the statistics.
+    One step of its last digit; with extra digits (pointer dials), whose
+    last digit jitters, up to ``READING["settle_steps_fine"]`` steps.
     """
     if settings["mode"] != "counter" or value is None or last is None:
         return False
-    step = 10 ** -int(settings["decimals"])
-    return abs((last - value) - step) < step / 1000
+    step = 10 ** -value_decimals(settings)
+    steps = (last - value) / step
+    most = READING["settle_steps_fine"] if extra_digits(settings) else 1
+    return 1 - 1e-3 < steps < most + 1e-3
 
 
 def problem_key(reason: str | None) -> str:
@@ -683,4 +749,4 @@ def format_value(value: float | None, settings: dict) -> str | None:
         return None
     if settings["mode"] == "time_left":
         return str(int(value))
-    return f"{value:.{int(settings['decimals'])}f}"
+    return f"{value:.{value_decimals(settings)}f}"

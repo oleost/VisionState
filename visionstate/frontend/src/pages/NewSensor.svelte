@@ -7,7 +7,6 @@
   import Icon from '../lib/components/Icon.svelte';
   import LightEditor from '../lib/components/LightEditor.svelte';
   import LightHold from '../lib/components/LightHold.svelte';
-  import PublishSwitch from '../lib/components/PublishSwitch.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
@@ -16,7 +15,7 @@
   import { go, href, paths } from '../lib/router.svelte';
   import StreamField from '../lib/components/sound/StreamField.svelte';
   import type { ReadingSettings, Roi, SensorKind, SoundSettings, Triggers } from '../lib/types';
-  import { LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
+  import { HA_MODES, LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
   import ObjectsStep from './wizard/ObjectsStep.svelte';
   import ReadingStep from './wizard/ReadingStep.svelte';
   import SoundStep from './wizard/SoundStep.svelte';
@@ -58,7 +57,7 @@
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
   let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
   let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
-  let publish = $state(app.config?.publish_default ?? true);
+  let notInHa = $state(false);
   // The test in the "Detect" step of an object or reading sensor (it tests a fresh frame when shown).
   let detectStep = $state<{ test: () => void }>();
   // The camera's light (picked in step 1) is on while the region and the test show live frames.
@@ -135,7 +134,7 @@
         roi: null,
         states: [],
         sound,
-        publish,
+        in_ha: !notInHa,
       });
       toast(`${sensor.name} created`);
       go(paths.sensor(sensor.id, 'live'));
@@ -170,7 +169,7 @@
         ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
-        publish,
+        in_ha: !notInHa,
       });
       toast(learned ? `${sensor.name} created — now label some frames` : `${sensor.name} created`);
       go(paths.sensor(sensor.id, learned ? 'label' : 'live'));
@@ -181,6 +180,16 @@
     }
   }
 </script>
+
+{#snippet notInHaChoice()}
+  <label class="card pad not-in-ha" style="max-width:640px">
+    <input type="checkbox" bind:checked={notInHa} aria-label={HA_MODES.none.label} />
+    <span class="col" style="gap:2px">
+      <strong class="small">{HA_MODES.none.label}</strong>
+      <span class="xsmall faint">{HA_MODES.none.help} You can change this on its Home Assistant tab.</span>
+    </span>
+  </label>
+{/snippet}
 
 <div class="page">
   <div class="wizard card">
@@ -259,7 +268,7 @@
           </p>
         </div>
         <SoundStep source={streamSource.trim()} name={name.trim()} bind:sound />
-        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
+        {@render notInHaChoice()}
       {:else if step === 1}
         <div class="row wrap">
           <div class="col" style="gap:6px">
@@ -332,7 +341,7 @@
           </p>
         </div>
         <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
-        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
+        {@render notInHaChoice()}
       {/if}
 
       <span class="spacer"></span>
@@ -360,6 +369,14 @@
 </div>
 
 <style>
+  .not-in-ha {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  .not-in-ha input {
+    margin-top: 3px;
+  }
   .wizard {
     display: flex;
     min-height: 680px;

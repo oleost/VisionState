@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.12.0b6
+
+### New
+
+- **Object snapshots**: each object on an object sensor can have its own picture entity, such as
+  *Car snapshot*: the object cut from the frame, for notifications and dashboards. It is new when the
+  count changes, sent just before the object goes on, and the last one stays after it has gone.
+  Several of the same object share one picture that covers them all. Off until you tick it.
+- **A Home Assistant tab on every sensor**: choose *Send values*, *Don't send values* (the entities
+  stay, unavailable) or *Not in Home Assistant* (no entities, nothing on MQTT), and tick which
+  entities it has. What is ticked is there and on in Home Assistant, with no second switch there.
+
+### Changed
+
+- **New sensor wizard**: the last step now offers *Not in Home Assistant*, so a sensor can be set up
+  before anything reaches Home Assistant or MQTT. *Send to Home Assistant* moved from Settings to
+  the new tab.
+- **After this update**, the optional entities of reading sensors (raw reading, problem, accepted,
+  rate, reader image) that are on in Home Assistant stay, and those that are off there are removed,
+  once. New reading sensors have them only when ticked on the tab.
+
+## 0.12.0b4
+
+### Better
+
+- **Check pointer dials in Review**: a rejected or spot-checked reading of a meter with pointer
+  dials now shows the wheels and each dial with the needle that was found, in the review queue and
+  on the Quality tab. Before, only the counter's region was shown, so the digits from the dials
+  could not be checked.
+
+## 0.12.0b3
+
+Still an early beta for pointer dials: now tried on two real meters.
+
+### Better
+
+- **Pointer dials on real meters**: a needle is found by being redder than its dial's face, so
+  pale needles and pictures with a colour cast are read too (before, the first real meter shared
+  had none of its needles found). The direction is taken from the needle's own hub to its tip,
+  so drop-shaped needles are read right and a circle placed a little beside its dial still reads
+  the same.
+
+## 0.12.0b2
+
+Still an early beta: straightened regions and pointer dials are tested on drawn meters only.
+
+### Changed
+
+- **Correct rotation and perspective** (was *Straighten the region*) is now with the region it
+  changes: under the picture in the wizard, and in the Region card in Settings.
+- **Read the last wheel's fraction is gone.** Without pointer dials, the last wheel is rounded to
+  the nearest digit again, as before 0.12: reading the digit a wheel has passed made a wheel at
+  rest that the reader saw a hair below its digit read a whole digit too low. On a meter with
+  pointer dials, the ×0.1 dial settles the last wheel instead. A counter made in 0.12.0b1 loses
+  its extra decimal by itself (Home Assistant may show one decimal less) and holds its last value
+  until the meter has gone up one more step.
+
+## 0.12.0b1
+
+**An early beta, lightly tested.** The two features below pass the automated tests on drawn
+meters, but have not yet been tried on a real meter seen askew or on real pointer dials. If you
+have such a meter, please try it and tell us how it went — a screenshot of *What the reader
+sees*, or an export (Quality → *Export readings*), helps most.
+
+### New
+
+- **A meter or display seen turned or at an angle is read upright** (#58): a reading sensor's
+  region can be straightened. Put its four corners on the corners of the digits or wheels, mark
+  the top edge (**Turn** moves the mark), and the region is read as if the camera looked straight
+  at it — any angle, perspective included. On for new reading sensors; sensors made before read as
+  they did until *Straighten the region* is turned on in their settings.
+- **Pointer dials** (#59): the small dials beside the wheels of many water meters (×0.1, ×0.01 …)
+  can be added to a mechanical counter read by the wheel reader — *Edit: Dials* in the wizard, or
+  the *Pointer dials* card in Settings. Each dial adds a digit, and the wheels and dials are read
+  together, so the ×0.1 dial settles the last wheel. The needle is found by its red colour, or as
+  the darkest part of the dial in an infrared picture.
+- **The last wheel's fraction**: a counter read by the wheel reader counts the digit its last
+  wheel has passed (not rounded up half way, which made the last digit come early) and reads how
+  far it has turned as one more decimal. On for new counters; counters made before read as they
+  did until *Read the last wheel's fraction* is turned on.
+- History, Review and the readings export (format 7) keep the straightened region and each dial
+  as it was read.
+
 ## 0.11.0
 
 ### Better

@@ -26,13 +26,21 @@ export function fromPoints(points: Pt[]): Roi {
   const y = Math.min(...ys);
   const w = Math.max(...xs) - x;
   const h = Math.max(...ys) - y;
-  // Four corners that sit on the bounding box are a plain rectangle again (e.g. after removing an
-  // added corner), so it is stored and shown as one.
+  // The bounding box's four corners, clockwise from its top-left, are a plain rectangle again (e.g.
+  // after removing an added corner), so it is stored and shown as one. Starting elsewhere they stay
+  // corners: a straightened region's top is its first edge (turnTop).
   const EPS = 1e-6;
-  const onCorner = (p: Pt) =>
-    (Math.abs(p[0] - x) < EPS || Math.abs(p[0] - x - w) < EPS) && (Math.abs(p[1] - y) < EPS || Math.abs(p[1] - y - h) < EPS);
-  if (points.length === 4 && points.every(onCorner)) return { x, y, w, h };
+  const same = (p: Pt, q: Pt) => Math.abs(p[0] - q[0]) < EPS && Math.abs(p[1] - q[1]) < EPS;
+  const box = rectPoints({ x, y, w, h });
+  if (points.length === 4 && points.every((p, i) => same(p, box[i]))) return { x, y, w, h };
   return { x, y, w, h, points };
+}
+
+/** A straightened region turned a quarter: the next edge clockwise becomes its top (the first edge,
+ * from the first corner to the second). */
+export function turnTop(roi: Roi): Roi {
+  const points = toPoints(roi);
+  return fromPoints([...points.slice(1), points[0]]);
 }
 
 /** The bounding rectangle of a region, without polygon corners. */

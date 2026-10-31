@@ -7,7 +7,9 @@ so a new filter is added there and in ``HistoryFilter`` only.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -17,7 +19,7 @@ from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 
 from .. import imaging
 from ..db import Prediction, Sensor
-from ..settings import HISTORY, HISTORY_EVENTS, KIND_READING, SENSOR_KINDS
+from ..settings import HISTORY, HISTORY_EVENTS, KIND_READING, SENSOR_KINDS, merge_reading
 from ..storage import VIDEO_CLIP_SUFFIX, is_clip
 from .common import API_PREFIX, iso, runtime
 
@@ -241,10 +243,11 @@ def history_image(prediction_id: int, request: Request, size: Literal["full", "t
         sensor = s.get(Sensor, row.sensor_id)
         details = (row.probs or {}) if sensor and sensor.kind == KIND_READING else {}  # a state's probs are not details
         roi = details["roi"] if "roi" in details else sensor.roi if sensor else None
+        straightened = bool(details.get("straighten"))  # as it was read (rows from before: not)
     if not path.exists():
         raise HTTPException(404, "Frame file missing")
     if size == "region":
-        image = imaging.crop_box(imaging.load(path), imaging.region_box(roi))
+        image = imaging.region_image(imaging.load(path), roi, straightened)
         return Response(imaging.encode_jpeg(image), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     if size == "thumb":
         path = rt.storage.thumbnail("history", prediction_id, path)
@@ -266,3 +269,40 @@ def history_clip(prediction_id: int, request: Request) -> Response:
         raise HTTPException(404, "Clip file missing")
     media = "video/mp4" if filename.endswith(VIDEO_CLIP_SUFFIX) else "audio/mp4"
     return FileResponse(path, media_type=media, headers={"Cache-Control": "max-age=86400"})
+
+
+@router.get("/history/{prediction_id}/seen")
+async def history_seen(prediction_id: int, request: Request) -> Response:
+    """What the reader saw in a stored reading of a meter with pointer dials: its wheels and each
+    dial with its needle (*What the reader sees* on the Live tab), made again from the stored frame
+    with the region, dials and reader it was read with. The region alone does not show the dials."""
+    rt = runtime(request)
+
+    def stored() -> tuple[Path, dict | None, dict]:
+        with rt.db.session() as s:
+            row = s.get(Prediction, prediction_id)
+            sensor = s.get(Sensor, row.sensor_id) if row else None
+            details = (row.probs or {}) if row and sensor and sensor.kind == KIND_READING else {}
+            if not row or not sensor or not row.frame or not details.get("dials"):
+                raise HTTPException(404, "No pointer dials in this reading")
+            wheels = details.get("wheels") or {}
+            digits = len(wheels.get("per_wheel") or []) - int(wheels.get("dials") or 0)
+            reading = {
+                **merge_reading(sensor.reading),
+                "display": "counter",
+                "counter_reader": "wheels",
+                "wheel_reader": details.get("reader"),
+                "straighten": bool(details.get("straighten")),
+                "dials": details["dials"],
+            }
+            if digits > 0:
+                reading["digits"] = digits
+            return rt.storage.history_path(row.sensor_id, row.frame), details.get("roi"), reading
+
+    path, roi, reading = await asyncio.to_thread(stored)
+    if not path.exists():
+        raise HTTPException(404, "Frame file missing")
+    image = await asyncio.to_thread(imaging.load, path)
+    _, used = await rt.read_number(image, roi, reading)
+    jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})

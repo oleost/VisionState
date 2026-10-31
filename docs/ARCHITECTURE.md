@@ -59,15 +59,16 @@ API as `request.app.state.runtime`.
 | `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips and recordings), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
-| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
+| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
+| `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or darker, at night), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
 | `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `sounds.py` | The sound model (registry `sounds.json`, never bundled) and its sounds; levels and the line a window must reach; clips (AAC, speech silenced); the head for own sounds (`SoundHead`) and the everyday sounds every head starts from (`ced-tiny-other.npy`) |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
@@ -100,7 +101,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `teaching.py` | Taught boxes of object sensors (index, embeddings) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
-| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`), the review queue entity, commands from it |
+| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`; an object's snapshot: `_send_snapshot`; what the sensor's Home Assistant tab leaves out is not sent), the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
 | `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
@@ -168,7 +169,7 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/objects.ts`, `lib/reading.ts`, `lib/sound.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, sounds, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`, `PublishSwitch`; each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, a counter's pointer dials (`DialsEditor`, on the meter face `POST /preview/read` returns), a reading sensor's *Correct rotation and perspective* switch shown with the region (`StraightenSwitch`), states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`; each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question |
 
 ## Recipes
 
@@ -188,7 +189,8 @@ on real recordings (docs/SOUND_PLAN.md §5).
 
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
 config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,
-`_reading_entities`; every sensor's: `discovery_messages`), the value from the engine through `self._send`, removal in
+`_reading_entities`; every sensor's: `discovery_messages`), when it can be chosen its line in
+`mqtt.entity_options`, the value from the engine through `self._send`, removal in
 `MqttBridge.remove_discovery`. Unique IDs and topics are never changed once released (entity IDs
 in Home Assistant hang on them).
 

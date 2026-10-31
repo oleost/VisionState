@@ -8,12 +8,14 @@ import base64
 import logging
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 
 from .. import imaging, readers
 from ..redact import redact
 from ..settings import (
     DETECTION,
+    READING,
     RUNTIME,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
@@ -154,7 +156,9 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
     except Exception as err:  # noqa: BLE001
         raise HTTPException(503, f"Number reader unavailable: {redact(str(err))}") from err
     used_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+    face = await asyncio.to_thread(meter_face, image, body.roi.normalised() if body.roi else None, settings)
     return {
+        **face,
         "image": "data:image/jpeg;base64," + base64.b64encode(data).decode(),
         "read_image": "data:image/jpeg;base64," + base64.b64encode(used_jpeg).decode(),
         "text": text.text,
@@ -162,4 +166,28 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
         "value": readers.format_value(readers.parse(text.text, settings), settings),
         # A mechanical counter read with another number of digits than it has wheels.
         "wrong_digit_count": readers.wrong_digit_count(text.text, settings),
+        # Its pointer dials as read: where each needle was found (None: none seen) and how sure.
+        "dials": [
+            {"needle": row.get("needle"), "certainty": row.get("certainty", 0.0)}
+            for row in (text.details or {}).get("wheels", {}).get("per_wheel", [])[int(settings["digits"]) :]
+        ],
+    }
+
+
+def meter_face(image: Image.Image, roi: dict | None, settings: dict) -> dict:
+    """For a counter read by a wheel reader: the meter face around its region, straightened as the
+    counter is read (imaging.meter_face), where pointer dials are placed — the picture and the part
+    of the plane it shows (``face_box``, in units of the region's height). Nothing for others."""
+    if not readers.uses_wheels(settings):
+        return {}
+    straightened = bool(settings.get("straighten")) and imaging.region_corners(roi) is not None
+    flat = imaging.reading_plane(image, roi, straightened)
+    if flat is None:
+        return {}
+    picture, box = imaging.meter_face(image, flat, READING["dial_reach"], READING["face_size"])
+    jpeg = imaging.encode_jpeg(picture, 85)
+    return {
+        "face": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
+        "face_box": box,
+        "region_width": round(flat.width / flat.height, 4),  # the region in the same units: 0, 0 to this, 1
     }

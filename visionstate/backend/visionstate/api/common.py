@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
-from ..mqtt import main_entities
+from ..mqtt import entity_options, main_entities
 from ..settings import (
     COUNTER_LIMIT,
     COUNTER_READERS,
@@ -30,12 +30,14 @@ from ..settings import (
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    READING,
     READING_CHANGE_LIMITS,
     READING_DEFAULTS,
     READING_DEVICE_CLASSES,
     READING_DISPLAYS,
     READING_LIMITS,
     READING_MODES,
+    READING_NEW_SENSOR,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
@@ -302,6 +304,16 @@ _dlo = {k: v[0] for k, v in READING_LIMITS.items()}
 _dhi = {k: v[1] for k, v in READING_LIMITS.items()}
 
 
+class DialIn(BaseModel):
+    """A pointer dial of a counter (settings.READING_DEFAULTS["dials"]): its circle in units of the
+    region's height from its top-left corner, and whether it turns anticlockwise."""
+
+    x: float = Field(ge=-READING["dial_reach"], le=READING_LIMITS["digits"][1] * 2 + READING["dial_reach"])
+    y: float = Field(ge=-READING["dial_reach"], le=1 + READING["dial_reach"])
+    r: float = Field(ge=READING["dial_radius"][0], le=READING["dial_radius"][1])
+    ccw: bool = False
+
+
 class ReadingIn(BaseModel):
     """How a reading sensor turns what it reads into a value. Defaults and limits: settings.READING_*."""
 
@@ -313,6 +325,8 @@ class ReadingIn(BaseModel):
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
+    straighten: bool = READING_NEW_SENSOR["straighten"]
+    dials: list[DialIn] = Field(default=[], max_length=READING["max_dials"])
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]
     max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])
@@ -506,6 +520,14 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
+def ha_entities_view(sensor: Sensor) -> list[dict]:
+    """The entities that can be chosen on the sensor's Home Assistant tab, and whether each is on."""
+    descriptor = SensorConfig.from_row(sensor).descriptor
+    return [
+        {**option, "on": descriptor.entity_on(option["id"], option["default"])} for option in entity_options(descriptor)
+    ]
+
+
 def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
     """An object sensor's part of its view: each class and own label (with the people while it
     recognises faces), live, and what was taught."""
@@ -659,6 +681,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
         "publish": sensor.publish,
+        "in_ha": sensor.in_ha is not False,
+        "ha_entities": ha_entities_view(sensor),
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),

@@ -237,6 +237,8 @@ export const api = {
     `${BASE}history/${predictionId}/image?size=${size}`,
   /** A sound sensor's clip in the history (sound, or video with sound). */
   historyClipUrl: (predictionId: number) => `${BASE}history/${predictionId}/clip`,
+  /** What the reader saw in a stored reading of a meter with pointer dials: wheels and needles. */
+  historySeenUrl: (predictionId: number) => `${BASE}history/${predictionId}/seen`,
   exportUrl: (id: number, faces = false) => `${BASE}sensors/${id}/export${faces ? '?faces=true' : ''}`,
 
   teachLimits: () => request<TeachLimitsInfo>('teach-limits'),

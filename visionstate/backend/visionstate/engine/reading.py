@@ -131,11 +131,19 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 *size,
             )
             live.camera_changed = held = {"from": known, "to": size, "since": now}
-            details = {"text": "", "value": None, "reason": CAMERA_CHANGED, "roi": cfg.roi, "app": VERSION, "lamp": lit}
+            details = {
+                "text": "",
+                "value": None,
+                "reason": CAMERA_CHANGED,
+                "roi": cfg.roi,
+                "straighten": cfg.reading["straighten"],
+                "app": VERSION,
+                "lamp": lit,
+            }
             await asyncio.to_thread(self._record_reading, cfg.id, image, None, 0.0, details, False)
             await self.camera_notice(cfg, held)
         live.reading = {"text": "", "score": 0.0, "value": None, "reason": CAMERA_CHANGED, "settling": False, "at": now}
-        crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
+        crop = imaging.region_image(image, cfg.roi, cfg.reading["straighten"])
         live.reading_image = await asyncio.to_thread(imaging.encode_jpeg, crop, 85)
         await asyncio.to_thread(self._count_reading, cfg.id, CAMERA_CHANGED)
         await self._publish_reading(cfg, image, live.reading_image, readers.Text("", 0.0), None, CAMERA_CHANGED, now)
@@ -200,7 +208,7 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             retain=True,
         )
         shows = (live.debouncer.published, text.text, reason)
-        crop = imaging.crop_box(image, imaging.region_box(cfg.roi))
+        crop = imaging.region_image(image, cfg.roi, cfg.reading["straighten"])
         await self._send_on_change(cfg, t["image"], shows, lambda: imaging.encode_jpeg(crop, 80))
         await self._send_on_change(cfg, t["reader_image"], shows, lambda: reader_jpeg)
         await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
@@ -229,12 +237,15 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         spot = reason is None and not changed and random.random() < float(cfg.reading["spot_rate"])
         if changed or reason is not None or spot:
             published = live.debouncer.published if reason is None else None
-            # The region it was read in: the frame is whole, and the region may be moved later.
+            # The region it was read in (whether straightened, and its pointer dials): the frame is
+            # whole, and the region may be moved later.
             details = {
                 "text": text.text,
                 "value": shown,
                 "reason": reason,
                 "roi": cfg.roi,
+                "straighten": cfg.reading["straighten"],
+                **({"dials": cfg.reading["dials"]} if cfg.reading.get("dials") else {}),
                 **(text.details or {}),
                 "app": VERSION,
                 "lamp": lit,

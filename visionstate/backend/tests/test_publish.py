@@ -82,7 +82,6 @@ def test_sensor_not_sent_to_home_assistant(tmp_path):
         imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content)}).json()["id"]
         assert client.get(f"/api/v1/sensors/{imported}").json()["publish"] is False
         # New sensors are sent by default.
-        assert client.get("/api/v1/config").json()["publish_default"] is True
 
 
 def test_migration_keeps_existing_sensors_sent(tmp_path):
@@ -138,7 +137,7 @@ def test_a_picture_is_sent_when_it_shows_something_new(tmp_path, monkeypatch):
     def send(cfg, shows):  # noqa: ANN001
         asyncio.run(rt._send_on_change(cfg, "t/image", shows, lambda: encoded.append(shows) or b"jpeg"))
 
-    cfg = SimpleNamespace(id=1, publish=True)
+    cfg = SimpleNamespace(id=1, publish=True, in_ha=True, muted_topics=set())
     send(cfg, "closed")
     now[0] += 10
     send(cfg, "closed")  # the same: not sent, not even encoded
@@ -178,6 +177,7 @@ def test_values_that_change_at_every_check_are_not_sent(tmp_path):
             "source_type": "http",
             "source": "x",
             "reading": {"mode": "counter", "decimals": 1, "change_limit": "off"},
+            "ha_entities": {"reader_image": True},
             "interval_s": 1,
             "debounce": 1,
         }

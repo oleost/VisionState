@@ -19,6 +19,9 @@ export const DISPLAY_URL = (text: string, style: 'lcd' | 'led' = 'lcd') =>
 export const COUNTER_SENSOR_NAME = 'Water meter';
 export const COUNTER_URL = (value: number, digits = 7, decimals = 3) =>
   `${CAMERA_URL}/counter.jpg?value=${value}&digits=${digits}&decimals=${decimals}`;
+/** The same counter, the camera turned by `turn` degrees (issue #58), and the region of its wheels in it. */
+export const TURNED_COUNTER_URL = (value: number, turn: number) => `${COUNTER_URL(value)}&turn=${turn}`;
+export const TURNED_COUNTER_REGION = (turn: number) => `${CAMERA_URL}/counter-region.json?digits=7&turn=${turn}`;
 /** The window with the seven wheels in that frame (backend/tests/displays.py, counter_box(7)). */
 export const COUNTER_BOX = { x: 99 / 800, y: 118 / 360, w: 602 / 800, h: 130 / 360 };
 /** A sound sensor listening to the fake camera's stream with sound (H.264 video and AAC). */
@@ -29,3 +32,8 @@ export const SOUND_WAV_URL = `${CAMERA_URL}/sound.wav`;
 /** Plays a sound once in the fake camera's streams (CC0 recordings, or "chime": a drawn doorbell). */
 export const PLAY_URL = (sound: 'siren' | 'dog_bark' | 'smoke_alarm' | 'speech' | 'chime', gain = 1) =>
   `${CAMERA_URL}/play?sound=${sound}&gain=${gain}`;
+/** A drawn water meter: a counter of `digits` whole m³ and four pointer dials (×0.1 first), the camera turned by
+ * `turn` degrees and tilted; its region and its dials as a sensor stores them (scripts/fake_camera.py). */
+export const METER_URL = (value: number, turn = 0, tilt = 0) =>
+  `${CAMERA_URL}/meter.jpg?value=${value}&digits=5&dials=4&turn=${turn}&tilt=${tilt}`;
+export const METER_REGION = (turn = 0, tilt = 0) => `${CAMERA_URL}/meter-region.json?digits=5&dials=4&turn=${turn}&tilt=${tilt}`;

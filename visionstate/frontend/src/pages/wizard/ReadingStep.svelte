@@ -3,11 +3,15 @@
   // fresh frame whose region can be fine-tuned right there, and its entity in Home Assistant.
   import { onMount, untrack } from 'svelte';
   import { api } from '../../lib/api';
+  import DialsEditor from '../../lib/components/DialsEditor.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
+  import Icon from '../../lib/components/Icon.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
+  import StraightenSwitch from '../../lib/components/StraightenSwitch.svelte';
   import { pct } from '../../lib/format';
-  import { digitsSeen, readingUnit } from '../../lib/reading';
+  import { digitsSeen, extraDigits, readingUnit } from '../../lib/reading';
+  import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
   import type { ReadPreview, ReadingSettings, Roi } from '../../lib/types';
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
@@ -24,6 +28,10 @@
   let result = $state<ReadPreview | null>(null);
   let error = $state('');
   let busy = $state(false);
+  // A counter read by a wheel reader can also have pointer dials: the picture edits one or the other.
+  let editing = $state<'counter' | 'dials'>('counter');
+  const canDial = $derived(reading.display === 'counter' && reading.counter_reader === 'wheels');
+  const digitsRead = $derived(reading.digits + extraDigits(reading));
 
   /** Read a fresh frame with the current region and settings (also called when the light is on). */
   export async function test() {
@@ -40,6 +48,11 @@
 
   onMount(() => {
     test();
+  });
+
+  // A straightened region has four corners: a polygon of more becomes its bounding box.
+  $effect(() => {
+    if (reading.straighten && roi && toPoints(roi).length > 4) roi = toRectangle(roi);
   });
 
   // Read again when the region or the settings change (the frame is editable), so what is shown
@@ -68,7 +81,7 @@
       <span class="danger-text">{error}</span>
     {:else if result?.wrong_digit_count}
       <span class="danger-text">
-        Read <span class="mono">“{result.text || '—'}”</span> — {digitsSeen(result.text)} digits, not {reading.digits}.
+        Read <span class="mono">“{result.text || '—'}”</span> — {digitsSeen(result.text)} digits, not {digitsRead}.
       </span>
       <span class="muted">Make the box cover exactly the {reading.digits} wheels, or change the number of digits.</span>
     {:else if result?.value}
@@ -80,13 +93,43 @@
     {#if busy && result}<span class="faint"> (reading…)</span>{/if}
   {/snippet}
   {#if result}
+    {#if canDial}
+      <div class="row wrap edit-switch" role="group" aria-label="What the picture edits">
+        <span class="small muted">Edit:</span>
+        <button class="btn sm" class:primary={editing === 'counter'} aria-pressed={editing === 'counter'} onclick={() => (editing = 'counter')}>
+          Counter
+        </button>
+        <button class="btn sm" class:primary={editing === 'dials'} aria-pressed={editing === 'dials'} onclick={() => (editing = 'dials')} data-testid="edit-dials">
+          Dials{reading.dials.length ? ` (${reading.dials.length})` : ''}
+        </button>
+        {#if editing === 'counter' && !reading.dials.length}
+          <span class="xsmall faint">Has the meter pointer dials (×0.1, ×0.01 …)? Add them under <em>Dials</em>.</span>
+        {/if}
+      </div>
+    {/if}
     <div class="read-images">
+      {#if canDial && editing === 'dials'}
+        <DialsEditor preview={result} bind:dials={reading.dials} decimals={reading.decimals} />
+      {:else}
       <div class="col" style="gap:6px">
-        <RoiEditor src={result.image} bind:roi editable>
-          {#if reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
+        <RoiEditor src={result.image} bind:roi editable quad={reading.straighten}>
+          {#if reading.display === 'counter' && !(reading.straighten && isPolygon(roi))}
+            <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />
+          {/if}
         </RoiEditor>
+        <StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />
+        {#if reading.straighten && roi}
+          <div class="row wrap" style="gap:8px">
+            <button class="btn sm" onclick={() => roi && (roi = turnTop(roi))} title="The edge clockwise from it becomes the top" data-testid="roi-turn">
+              <Icon name="refresh" size={14} /> Turn
+            </button>
+          </div>
+        {/if}
         <span class="xsmall faint">
-          {#if reading.display === 'counter'}
+          {#if reading.straighten}
+            Put the corners on the corners of the {reading.display === 'counter' ? 'wheels' : 'digits'}; see on the right
+            how the reader sees it, upright.
+          {:else if reading.display === 'counter'}
             Drag a box from the first wheel to the last, so each field holds one wheel. A little room above and below is
             fine — it is read again right away.
           {:else}
@@ -94,10 +137,11 @@
           {/if}
         </span>
       </div>
+      {/if}
       <div class="col" style="gap:6px">
         <span class="xsmall faint">What the reader sees{reading.display === 'counter'
             ? reading.counter_reader === 'wheels'
-              ? ' — one field per wheel'
+              ? ` — one field per wheel${reading.dials.length ? ', then the dials' : ''}`
               : ' — the wheels without their dividers'
             : ''}</span>
         <img class="seen" src={result.read_image} alt="The region as the number reader saw it" />
@@ -118,6 +162,10 @@
   .danger-text {
     color: var(--c-danger);
   }
+  .edit-switch {
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
   .read-images {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -131,7 +179,11 @@
     border: 1px solid var(--c-border);
   }
   @media (max-width: 600px) {
-    .read-images {
+    .edit-switch {
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
+  .read-images {
       grid-template-columns: minmax(0, 1fr);
     }
   }

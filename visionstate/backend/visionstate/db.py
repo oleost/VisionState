@@ -31,7 +31,7 @@ from sqlalchemy.pool import QueuePool
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -46,6 +46,8 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
     # Existing sensors keep sending to Home Assistant.
     9: [("sensor", "publish", "BOOLEAN NOT NULL DEFAULT 1")],
+    # The sensor's Home Assistant tab; ha_entities stays null until settled (see Sensor.ha_entities).
+    17: [("sensor", "in_ha", "BOOLEAN NOT NULL DEFAULT 1"), ("sensor", "ha_entities", "JSON")],
     10: [
         ("sample", "object_label", "VARCHAR(64)"),
         ("sample", "detected", "VARCHAR(64)"),
@@ -57,7 +59,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     # 14: what a counter's limit learns per day (and a new table: reading_watch).
     14: [("reading_stat", "peak", "FLOAT"), ("reading_stat", "total", "FLOAT")],
     15: [("sensor", "frame_size", "JSON")],
-    17: [("sensor", "sound", "JSON")],
+    18: [("sensor", "sound", "JSON")],
 }
 
 
@@ -176,6 +178,11 @@ class Sensor(Base):
     entity_prefix: Mapped[bool] = mapped_column(Boolean, default=False)
     # Send values to Home Assistant (settings.SENSOR_PUBLISH_DEFAULT). Off: the entities stay unavailable.
     publish: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Off: the sensor has no entities in Home Assistant at all, and nothing is sent for it.
+    in_ha: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # The entities chosen against their default (mqtt.entity_options): entity -> on. Null: made before
+    # this could be chosen, and not settled yet (engine.PublishingMixin.settle_entity_choices).
+    ha_entities: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=dict)
     # Reading sensors: the camera picture's size [width, height] the region was drawn on (taken
     # from the first frame after the region or source changed). A frame of another size holds the
     # readings (engine/reading.py, "camera changed"): the region would show something else.

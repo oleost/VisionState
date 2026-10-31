@@ -12,9 +12,17 @@ export const POLL = {
 
 export const TOAST_MS = 5_000;
 
-/** Shown on a sensor whose values are not sent to Home Assistant (see PublishSwitch). */
+/** Shown on a sensor that is held back: readings, or what is sent to Home Assistant (its Home Assistant tab). */
 export const CAMERA_CHANGED = { label: 'Camera changed', help: 'Readings are held: check the region' };
-export const NOT_SENT = { label: 'Not sent to Home Assistant', help: 'Its entities in Home Assistant are unavailable until you turn on “Send to Home Assistant” in its settings.' };
+export const NOT_SENT = { label: 'Values not sent', help: 'Its entities in Home Assistant are unavailable until you choose “Send values” on its Home Assistant tab.' };
+export const NOT_IN_HA = { label: 'Not in Home Assistant', help: 'It has no entities in Home Assistant. Choose “Send values” on its Home Assistant tab to create them.' };
+/** A sensor's Home Assistant tab: what it has there. */
+export type HaMode = 'send' | 'hold' | 'none';
+export const HA_MODES: Record<HaMode, { label: string; help: string }> = {
+  send: { label: 'Send values', help: 'Its entities exist and follow what the sensor finds.' },
+  hold: { label: 'Don’t send values', help: 'Its entities stay, but are unavailable: no values, no statistics. For tuning a sensor before it is used.' },
+  none: { label: 'Not in Home Assistant', help: 'No entities at all: the sensor is used here in VisionState only.' },
+};
 
 /** Browser storage key of the light switch in views with live frames (a per-viewer convenience). */
 export const LIGHT_HOLD_STORAGE_KEY = 'visionstate.lightWhileViewing';
@@ -176,6 +184,7 @@ export const SENSOR_TABS = [
   { id: 'quality', label: 'Quality' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
+  { id: 'home-assistant', label: 'Home Assistant' },
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 
@@ -184,10 +193,10 @@ export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
  * its Quality tab (what it was taught) only once something was taught (SensorPage).
  */
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
-  single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings'],
-  objects: ['live', 'history', 'quality', 'settings'],
-  reading: ['live', 'history', 'quality', 'settings'],
-  sound: ['live', 'history', 'quality', 'settings'],
+  single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings', 'home-assistant'],
+  objects: ['live', 'history', 'quality', 'settings', 'home-assistant'],
+  reading: ['live', 'history', 'quality', 'settings', 'home-assistant'],
+  sound: ['live', 'history', 'quality', 'settings', 'home-assistant'],
 };
 /** A tab's label where a kind names it otherwise (a sound sensor's Quality tab holds its own sounds). */
 export const TAB_LABELS: Partial<Record<SensorKind, Partial<Record<SensorTab, string>>>> = {
@@ -265,6 +274,10 @@ export const READING_TYPE_MODES: Record<ReadingType, ReadingMode[]> = {
   display: ['counter', 'value', 'time_left'],
   counter: ['counter', 'value'],
 };
+
+/** A new pointer dial (DialsEditor): its radius in units of the counter region's height, and how far
+ * beside the last dial it is put (in its radii). */
+export const DIAL_NEW = { radius: 0.6, gap: 2.4 };
 
 /** Default Home Assistant device class for a unit (the user can change it). */
 export const UNIT_DEVICE_CLASS: Record<string, string> = {

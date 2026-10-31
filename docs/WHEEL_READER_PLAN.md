@@ -374,21 +374,17 @@ most:
   outside it that the image explains clearly better is not published but sent to Review. It would
   have stopped 734.156 (+36 steps in four minutes). Risks for both: a wrong last value that locks
   the prior in, and a meter that was replaced; both need tests that replay sequences.
-- **One more decimal from the last wheel's fraction**: a smoother rate, earlier leak detection;
-  off by default.
 - **Camera drift:** a picture that moved at the same size (phase correlation against a reference
   frame, numpy FFT). A picture of another size is already caught (readings held, "camera
   changed", `SCOPE.md` §5).
-- **Four-point perspective correction** for strongly angled cameras: waits for a real angled meter.
 - **Learning per sensor** from checked readings (nearest neighbours on an embedding output): the
   data so far shows a meter's own frames from another period help little. It waits until shared
   data says otherwise.
 - **Refuse a frame that is too dark or flat** before reading it, instead of stretching noise into
   digits.
-- **Publish the last wheel's fraction** (one decimal more, e.g. 6.5 litres): the readers already
-  give it (`details["wheels"]["value"]`, within 0.1 of a wheel on drawn counters) but the value is
-  rounded. Measure it on real meters first (tenths read by eye on a sample of frames); an app
-  setting, no new model.
+- Pointer dials are built: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md). The last wheel's
+  fraction as one more digit was tried and taken out (its §4); it needs a measure of the fraction
+  in the benchmark before it comes back.
 
 ## 9. Order and status
 

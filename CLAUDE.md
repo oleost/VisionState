@@ -28,6 +28,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | How to work: principles, checks, testing, pitfalls | this file |
 | The wheel reader model: data, licences, results, how to train it | [`tools/wheelreader/README.md`](tools/wheelreader/README.md) |
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
+| Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
 | Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
 | The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
@@ -121,7 +122,12 @@ itself (`__main__.py`).
   `backend/tests/assets`, for object sensors), `/display.jpg?text=12:05&style=lcd|led` (a drawn
   seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
-  `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size).
+  `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
+  `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and
+  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten) and
+  `/meter.jpg?value=187.34565&turn=20&tilt=0.2` (a drawn water meter: five wheels and four pointer
+  dials; `/meter-region.json` with the same `turn` and `tilt` gives its region and its dials as a
+  sensor stores them).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
   plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model is not published yet: make it with

@@ -5,6 +5,9 @@ dark panel. Unlit segments stay faintly visible, like on real displays.
 ``render_counter(89939.5)`` draws a mechanical counter with rolling digit wheels.
 """
 
+import math
+
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 SEGMENTS = {
@@ -50,6 +53,60 @@ def counter_box(digits: int) -> dict[str, float]:
         "w": digits * cell / width,
         "h": bottom / height,
     }
+
+
+def _homography(src: list[tuple[float, float]], dst: list[tuple[float, float]]) -> np.ndarray:
+    """The 3×3 projective transform taking the four points ``src`` to ``dst``."""
+    rows, values = [], []
+    for (x, y), (u, v) in zip(src, dst, strict=True):
+        rows += [[x, y, 1, 0, 0, 0, -x * u, -y * u], [0, 0, 0, x, y, 1, -x * v, -y * v]]
+        values += [u, v]
+    return np.append(np.linalg.solve(np.array(rows, float), np.array(values, float)), 1.0).reshape(3, 3)
+
+
+def turned(
+    image: Image.Image,
+    angle: float,
+    region: dict[str, float],
+    tilt: float = 0.0,
+    also: tuple[tuple[float, float], ...] = (),
+) -> tuple[Image.Image, dict]:
+    """``image`` turned ``angle`` degrees (anticlockwise, the whole picture kept: a camera that hangs
+    askew) and the rectangle ``region`` (shares of the frame) in it: a region of four corners, its
+    top edge first — what a user puts on the turned display (issue #58). ``tilt`` also looks at it
+    at an angle: the top of the picture ``tilt`` × its width narrower than the bottom (perspective).
+    ``also``: more points of ``image`` (pixels), returned where they are in the turned one (pixels)
+    under the region's key "also"."""
+    out = image.convert("RGB").rotate(angle, expand=True, fillcolor=(90, 90, 90), resample=Image.Resampling.BICUBIC)
+    w, h = image.size
+    x, y, rw, rh = region["x"] * w, region["y"] * h, region["w"] * w, region["h"] * h
+    rad = math.radians(angle)
+    cx, cy, nw, nh = w / 2, h / 2, out.width, out.height
+    points = [
+        (
+            (px - cx) * math.cos(rad) + (py - cy) * math.sin(rad) + nw / 2,
+            -(px - cx) * math.sin(rad) + (py - cy) * math.cos(rad) + nh / 2,
+        )
+        for px, py in ((x, y), (x + rw, y), (x + rw, y + rh), (x, y + rh), *also)
+    ]
+    if tilt:
+        frame = [(0.0, 0.0), (float(nw), 0.0), (float(nw), float(nh)), (0.0, float(nh))]
+        seen = [(tilt * nw / 2, 0.0), (nw - tilt * nw / 2, 0.0), (float(nw), float(nh)), (0.0, float(nh))]
+        back = _homography(seen, frame)  # each pixel of the tilted picture comes from here
+        out = out.transform(
+            out.size,
+            Image.Transform.PERSPECTIVE,
+            tuple(back.flatten()[:8]),
+            Image.Resampling.BICUBIC,
+            fillcolor=(90, 90, 90),
+        )
+        forward = _homography(frame, seen)
+        moved = [forward @ np.array([px, py, 1.0]) for px, py in points]
+        points = [(m[0] / m[2], m[1] / m[2]) for m in moved]
+    corners = [[round(float(px) / nw, 4), round(float(py) / nh, 4)] for px, py in points[:4]]
+    xs, ys = [c[0] for c in corners], [c[1] for c in corners]
+    box = {"x": min(xs), "y": min(ys), "w": round(max(xs) - min(xs), 4), "h": round(max(ys) - min(ys), 4)}
+    return out, {**box, "points": corners, **({"also": points[4:]} if also else {})}
 
 
 def render_counter(value: float, digits: int = 7, decimals: int = 3) -> Image.Image:
@@ -125,3 +182,111 @@ def render(text: str, style: str = "lcd", digit_height: int = 120, margin: int =
             draw.polygon(polygon, fill=lit if name in SEGMENTS[char] else unlit)
         x += w + gap
     return image
+
+
+# --- Pointer dials (docs/POINTER_DIAL_PLAN.md) -----------------------------------------------------
+
+DIAL_SPOTS = ((130, 520), (330, 650), (560, 650), (690, 465))  # centres of up to four dials below the counter
+DIAL_RADIUS = 92
+
+
+def render_dial(position: float, radius: int = DIAL_RADIUS, ccw: bool = False) -> Image.Image:
+    """A pointer dial: white face, numbers 0-9 round the edge (clockwise, or anticlockwise with
+    ``ccw``), a short red needle on a red hub with a little tail, pointing at ``position`` (0.0-9.9)."""
+    size = radius * 2 + 8
+    image = Image.new("RGB", (size, size), (196, 200, 204))
+    draw = ImageDraw.Draw(image)
+    c = size / 2
+    draw.ellipse((c - radius, c - radius, c + radius, c + radius), fill=(246, 246, 242), outline=(60, 60, 60), width=3)
+    font = ImageFont.load_default(max(10, radius // 5))
+    sign = -1 if ccw else 1
+    for n in range(10):
+        a = sign * n / 10 * 2 * math.pi
+        x, y = c + math.sin(a) * radius * 0.8, c - math.cos(a) * radius * 0.8
+        draw.text((x, y), str(n), fill=(30, 30, 30), font=font, anchor="mm")
+        tx, ty = c + math.sin(a) * radius * 0.95, c - math.cos(a) * radius * 0.95
+        draw.line(
+            [(c + math.sin(a) * radius * 0.88, c - math.cos(a) * radius * 0.88), (tx, ty)], fill=(30, 30, 30), width=2
+        )
+    a = sign * position / 10 * 2 * math.pi
+    tip = (c + math.sin(a) * radius * 0.62, c - math.cos(a) * radius * 0.62)
+    tail = (c - math.sin(a) * radius * 0.18, c + math.cos(a) * radius * 0.18)
+    side = (math.cos(a) * radius * 0.09, math.sin(a) * radius * 0.09)
+    red = (200, 30, 30)
+    draw.polygon([tip, (c + side[0], c + side[1]), tail, (c - side[0], c - side[1])], fill=red)
+    hub = radius * 0.13
+    draw.ellipse((c - hub, c - hub, c + hub, c + hub), fill=red)
+    return image
+
+
+def render_meter(
+    value: float, digits: int = 5, dials: int = 4, ccw: tuple[bool, ...] = ()
+) -> tuple[Image.Image, dict, list[dict]]:
+    """A water meter with a counter of ``digits`` wheels and ``dials`` pointer dials below it
+    (×0.1 first), showing ``value`` m³: the wheels the whole cubic metres (the last turning on with
+    the first dial), each dial the next decimal, turning on with the one after it (issue #59).
+    Returns the picture, the counter's window as a region (what a user draws) and the dials as a
+    reading sensor stores them (in units of the window's height from its top-left corner)."""
+    counter = render_counter(value, digits, 0)
+    width = COUNTER_SIZE[0]
+    image = Image.new("RGB", (width, 760), (196, 200, 204))
+    image.paste(counter, (0, 0))
+    box = counter_box(digits)
+    left, top = box["x"] * width, box["y"] * COUNTER_SIZE[1]
+    unit = box["h"] * COUNTER_SIZE[1]  # the window's height in pixels
+    placed = []
+    for k in range(dials):
+        turned_ccw = bool(ccw[k]) if k < len(ccw) else False
+        position = (value * 10 ** (k + 1)) % 10
+        face = render_dial(position, DIAL_RADIUS, turned_ccw)
+        cx, cy = DIAL_SPOTS[k]
+        image.paste(face, (round(cx - face.width / 2), round(cy - face.height / 2)))
+        placed.append(
+            {
+                "x": round((cx - left) / unit, 4),
+                "y": round((cy - top) / unit, 4),
+                "r": round(DIAL_RADIUS / unit, 4),
+                "ccw": turned_ccw,
+            }
+        )
+    region = {
+        "x": box["x"],
+        "y": box["y"] * COUNTER_SIZE[1] / image.height,
+        "w": box["w"],
+        "h": box["h"] * COUNTER_SIZE[1] / image.height,
+    }
+    return image, region, placed
+
+
+def turned_meter(
+    value: float, angle: float = 0.0, tilt: float = 0.0, digits: int = 5, dials: int = 4, ccw: tuple[bool, ...] = ()
+) -> tuple[Image.Image, dict, list[dict]]:
+    """``render_meter`` seen turned and at an angle (``turned``), with its dials placed the way a
+    user places them on the straightened meter face: in the plane the region's four corners make
+    (its width the mean of its top and bottom edges, its height of its sides, as imaging.plane)."""
+    image, region, placed = render_meter(value, digits, dials, ccw)
+    if not angle and not tilt:
+        return image, region, placed
+    width, height = image.size
+    left, top, unit = region["x"] * width, region["y"] * height, region["h"] * height
+    rims = []
+    for d in placed:
+        cx, cy, r = left + d["x"] * unit, top + d["y"] * unit, d["r"] * unit
+        rims += [(cx, cy), (cx + r, cy), (cx, cy + r), (cx - r, cy), (cx, cy - r)]
+    seen, corners = turned(image, angle, region, tilt, tuple(rims))
+    p = [(c[0] * seen.width, c[1] * seen.height) for c in corners["points"]]
+    plane_w = (math.dist(p[0], p[1]) + math.dist(p[3], p[2])) / 2
+    plane_h = (math.dist(p[0], p[3]) + math.dist(p[1], p[2])) / 2
+    to_plane = _homography(p, [(0.0, 0.0), (plane_w, 0.0), (plane_w, plane_h), (0.0, plane_h)])
+
+    def flat(point: tuple[float, float]) -> tuple[float, float]:
+        m = to_plane @ np.array([point[0], point[1], 1.0])
+        return m[0] / m[2] / plane_h, m[1] / m[2] / plane_h
+
+    out = []
+    for k, d in enumerate(placed):
+        centre, *rim = [flat(q) for q in corners["also"][k * 5 : k * 5 + 5]]
+        r = sum(math.dist(centre, q) for q in rim) / len(rim)
+        out.append({"x": round(centre[0], 4), "y": round(centre[1], 4), "r": round(r, 4), "ccw": d["ccw"]})
+    del corners["also"]
+    return seen, corners, out
