@@ -116,7 +116,7 @@ export const seededCounterSensorId = (request: APIRequestContext) => seededSenso
 export const seededFaceSensorId = (request: APIRequestContext) => seededSensorId(request, FACE_SENSOR_NAME);
 export const seededSoundSensorId = (request: APIRequestContext) => seededSensorId(request, SOUND_SENSOR_NAME);
 
-/** Whether the sound model is on disk (until it is published, it is made by hand: tools/soundmodel). */
+/** Whether the sound model is on disk (`python -m visionstate.backbones models --all`). */
 export async function soundModelInstalled(request: APIRequestContext): Promise<boolean> {
   const settings = await (await request.get('api/v1/settings')).json();
   return !!settings.sound_models?.[0]?.installed;

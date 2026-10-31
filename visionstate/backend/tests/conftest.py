@@ -58,8 +58,7 @@ requires_faces = pytest.mark.skipif(
 
 
 _sound = sounds.MODELS[sounds.DEFAULT_MODEL]
-# The sound model is never bundled: on disk after `python -m visionstate.backbones models --all` once it
-# is published, until then made with tools/soundmodel/make_model.py (see its README).
+# The sound model is never bundled: on disk after `python -m visionstate.backbones models --all`.
 requires_sound = pytest.mark.skipif(
     not (MODEL_DIR / _sound.filename).exists(),
     reason=f"Sound model not in {MODEL_DIR}; see tools/soundmodel/README.md",

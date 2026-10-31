@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.13.0b1
+
+**An early beta of sound sensors.** The first version of something new: expect rough edges, and
+please report what you find.
+
+### New
+
+- **Sound sensors**: VisionState can now hear. A sound sensor listens to a stream and tells Home
+  Assistant what it hears: a smoke alarm, a siren, a dog barking, someone talking and about 80 other
+  sounds, each its own on/off sensor. Everything runs locally. It knows that someone is talking,
+  never what is said. Choose **Listen** in the new sensor wizard.
+- **Your own sounds**: teach it your doorbell or the washing machine's beep from a few recordings
+  or clips.
+- **Clips** (off by default): keep the seconds around a sound, with the camera's video if it has
+  any, to listen to and teach from. Speech in a clip is silenced before it is stored.
+
+### What has been tested, and what has not
+
+- **RTSP has not been tested with a real camera yet**: the developer has no camera with sound to
+  test it on. It is built and tested against simulated streams. If you try a camera, please tell us
+  the model and how it went.
+- Tested on a real Home Assistant with live HTTP streams, including a real smoke alarm heard through
+  an iPhone's microphone. That is one alarm in one home, not proof that it hears yours.
+- Not tested: Raspberry Pi 4, ESP32 microphones, clips in the Home Assistant app on iOS, and false
+  alarms over days in a real home. Thresholds are a best guess: try a sound on the Live tab and
+  adjust.
+
+**A smoke alarm sensor is an extra notification, never a replacement for a certified detector.**
+
+The sound model (about 7 MB) is downloaded when the first sound sensor is made.
+
 ## 0.12.0b6
 
 ### New

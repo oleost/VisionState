@@ -4,7 +4,7 @@
     "ced-tiny": {
       "name": "CED-Tiny",
       "description": "Recognises several hundred everyday sounds and turns a sound into an embedding for own sounds; about 8 ms per second of audio on a desktop CPU.",
-      "url": "",
+      "url": "https://huggingface.co/oleost/visionstate-sound/resolve/60ee4f58bd91cb36f740a32ee96ee1bbb14c4cb3/ced-tiny-embedding.onnx",
       "sha256": "3917c2fafedac1c9903817ddf025c0f289a4422f3aaa5594790d570ab7067235",
       "size": 6682315,
       "rate": 16000,

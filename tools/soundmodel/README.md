@@ -40,24 +40,11 @@ runs, copy it into the backend's models folder under the registry's file name:
 cp out/ced-tiny-embedding.onnx ../../visionstate/backend/models/ced-tiny.onnx
 ```
 
-## Publishing it (once, by the maintainer)
+## Where it is published
 
-The app downloads the model from Hugging Face, pinned by revision, like the wheel reader
-(`oleost/visionstate-wheel-reader`). Until it is published, `sounds.json` has `"url": ""`: the app
-says so on the sensor ("not published yet"), `python -m visionstate.backbones --all` skips it, and
-the tests that need it are skipped in CI.
-
-1. Make the file (above) and check the SHA-256.
-2. Create the model repository `oleost/visionstate-sound` on Hugging Face (public, licence
-   Apache-2.0) and upload `ced-tiny-embedding.onnx` with a `README.md` made from the model card below.
-3. Take the commit hash of that upload (the repository's *Files* tab, or
-   `huggingface_hub.HfApi().model_info("oleost/visionstate-sound").sha`).
-4. In `visionstate/backend/visionstate/sounds.json`, set `url` to
-   `https://huggingface.co/oleost/visionstate-sound/resolve/<commit>/ced-tiny-embedding.onnx`
-   (`sha256` and `size` stay as they are).
-5. Check it downloads: `python -m visionstate.backbones /tmp/m --all` must print the file, and
-   `sha256sum /tmp/m/ced-tiny.onnx` the SHA-256 above. Then the backend tests, which now run the
-   sound tests in CI too (the models cache key in `.github/workflows/ci.yml` hashes `sounds.json`).
+The app downloads the file from Hugging Face, pinned by revision in `sounds.json`, like the wheel
+reader: [`oleost/visionstate-sound`](https://huggingface.co/oleost/visionstate-sound), with the
+model card below as its `README.md`. The file is never changed: a new conversion is a new id.
 
 ## Model card (README.md of the Hugging Face repository)
 

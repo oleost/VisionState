@@ -495,6 +495,10 @@ objects the region stays a border.
 
 ## Sound sensors
 
+*An early beta.* RTSP has not been tried with a real camera yet, nor a Raspberry Pi 4, an ESP32
+microphone or clips in the Home Assistant app on iOS; it has been tried on live HTTP streams and one
+real smoke alarm. If you try a camera, please report its model and how it went.
+
 A sound sensor listens to a stream's sound all the time and tells Home Assistant what it hears:
 each sound is an on/off sensor (`binary_sensor`), on while the sound is heard and for a few
 seconds after (*A sound stays heard for*). In the wizard, choose **Listen** first.

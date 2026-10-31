@@ -130,8 +130,7 @@ itself (`__main__.py`).
   sensor stores them).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
-  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model is not published yet: make it with
-  `tools/soundmodel/make_model.py` and copy it into `models/` (`tools/soundmodel/README.md`).
+  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model comes with `python -m visionstate.backbones models --all`.
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.
@@ -188,8 +187,7 @@ Many users run Home Assistant on phones and tablets.
 
 ## Test pitfalls found the hard way
 
-- Sound tests need the sound model on disk (`tools/soundmodel/README.md`; until it is published
-  CI skips them): without `backend/models/ced-tiny.onnx` the e2e sound seed and tests are skipped
+- Sound tests need the sound model on disk (`python -m visionstate.backbones models --all`): without `backend/models/ced-tiny.onnx` the e2e sound seed and tests are skipped
   and look green. Check for "skipped" before calling a sound change tested.
 - A test must not hang on a score near a line the code decides by. The full CC0 siren scores
   about 0.92, right at the review question's line (0.925 with threshold 0.85): asked or not by

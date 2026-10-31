@@ -971,7 +971,7 @@ is part of backups and needs no restart.
 | **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
 | **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object (discussion #62) | 0.12.0b6 |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
-| **Sound sensors** | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — built, status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | not released |
+| **Sound sensors** | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0b1 (early beta) |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
