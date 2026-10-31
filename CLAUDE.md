@@ -188,8 +188,7 @@ Many users run Home Assistant on phones and tablets.
 ## Test pitfalls found the hard way
 
 - Sound tests need the sound model on disk (`python -m visionstate.backbones models --all`): without `backend/models/ced-tiny.onnx` the e2e sound seed and tests are skipped
-  and look green. Check for "skipped" before calling a sound change tested. CI's e2e job downloads
-  only the bundled models, so it skips them: run them locally for every sound change.
+  and look green. Check for "skipped" before calling a sound change tested.
 - A test must not hang on a score near a line the code decides by. The full CC0 siren scores
   about 0.92, right at the review question's line (0.925 with threshold 0.85): asked or not by
   where the 2-s windows fall. The e2e plays it quietly (`/play?sound=siren&gain=0.1`: about 0.6,

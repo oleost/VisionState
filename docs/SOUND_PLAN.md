@@ -345,6 +345,9 @@ No question for the maintainer is open. Decided on 2026-10-29:
 - Phase 1 listens to RTSP and HTTP streams, go2rtc restreams and ESP32 microphones among them; no
   push (§10). A Home Assistant camera's own sound is wanted and looked into when testing with real
   microphones and Home Assistant; voice satellites are left out for now.
+- The smoke alarm's threshold is 0.4 (2026-10-31): on a real Home Assistant a CC0 siren reached 0.31,
+  and so turned a *smoke* entity on, while one real alarm through a phone scored 0.64–0.88 and a CC0
+  recording 0.90. Two alarms are little to go on: looked at again with more real ones.
 - The name stays VisionState; the README, the store text and the app's description say it hears
   too.
 

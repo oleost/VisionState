@@ -85,6 +85,9 @@ jobs:
           key: models-${{ hashFiles('visionstate/backend/visionstate/backbones.json', 'visionstate/backend/visionstate/detectors.json', 'visionstate/backend/visionstate/readers.json', 'visionstate/backend/visionstate/faces.json', 'visionstate/backend/visionstate/sounds.json') }}
       - run: python -m visionstate.backbones models
         working-directory: visionstate/backend
+      - name: The sound model, never bundled (the sound e2e tests skip without it)
+        run: python -c "from pathlib import Path; from visionstate import backbones, sounds; print(backbones.download(sounds.MODELS[sounds.DEFAULT_MODEL], Path('models')))"
+        working-directory: visionstate/backend
       - uses: actions/setup-node@v7
         with:
           node-version: 22
