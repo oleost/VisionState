@@ -343,7 +343,7 @@
     {/if}
 
     <div class="row">
-      <button class="btn primary" disabled={saving || (objectSensor && !classes.length) || (soundSensor && !source.trim())} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+      <button class="btn primary" disabled={saving || (objectSensor && !classes.length) || (soundSensor && (!source.trim() || !(sound.sounds.length || sensor.sound?.custom?.length)))} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
       <span class="spacer"></span>
       <ConfirmButton onconfirm={remove} confirmLabel="Click again to delete everything">
         <Icon name="trash" size={14} /> Delete sensor

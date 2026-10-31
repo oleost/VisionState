@@ -594,6 +594,11 @@ class AudioStream:
         import av
 
         got = False
+        try:
+            check_source("rtsp", self.url)  # FFmpeg would open a local file as well
+        except SourceError as err:
+            self.error = str(err)
+            return False
         options = {"timeout": STREAM_OPTIONS["timeout"]}
         if self.url.lower().startswith(("rtsp://", "rtsps://")):
             options["rtsp_transport"] = STREAM_OPTIONS["rtsp_transport"]

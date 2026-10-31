@@ -331,8 +331,15 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
             assert taught["counts"] == {"our_siren": 1, "doorbell_2": 5, "other": 2} and taught["trained"]
             assert client.get(f"/api/v1/sound-clips/{taught['clips'][0]['id']}").headers["content-type"] == "audio/mp4"
 
-            server.play(chime(seed=9))
-            assert wait_for(lambda: next(s for s in view()["sound"]["live"] if s["key"] == "doorbell_2")["on"])
+            def doorbell_on() -> bool:
+                return next(s for s in view()["sound"]["live"] if s["key"] == "doorbell_2")["on"]
+
+            # Sent at twice the speed a chime is only a few windows long: where they fall decides, so it may ring again.
+            for _ in range(4):
+                server.play(chime(seed=9))
+                if wait_for(doorbell_on, timeout=10):
+                    break
+            assert doorbell_on()
 
             # Answering again replaces what the first answer taught.
             again = client.post(f"/api/v1/review/{item['id']}", json={"action": "sound", "state_key": "doorbell_2"})
@@ -545,6 +552,7 @@ def test_it_goes_on_listening_while_a_clip_waits_for_its_video(settings, quick, 
 def test_review_asks_once_the_clip_is_there_and_an_answer_without_one_stands(settings, monkeypatch):  # noqa: F811
     monkeypatch.setitem(SOUND, "clip_before_s", 1.0)
     monkeypatch.setitem(SOUND, "clip_after_s", 8.0)  # the clip comes well after the sound went off
+    monkeypatch.setitem(SOUND, "unsure_share", 1.0)  # always asked: no test on a score near a line
     server = SoundServer(speed=2.0)
     try:
         with TestClient(create_app(settings)) as client:
@@ -562,7 +570,7 @@ def test_review_asks_once_the_clip_is_there_and_an_answer_without_one_stands(set
             def waiting() -> list[dict]:
                 return client.get("/api/v1/review", params={"sensor": sid}).json()["items"]
 
-            server.play(recording("siren") * 0.1)
+            server.play(recording("siren"))
             assert wait_for(waiting, timeout=60)
             item = waiting()[0]
             assert item["has_clip"]
@@ -578,3 +586,27 @@ def test_review_asks_once_the_clip_is_there_and_an_answer_without_one_stands(set
             assert not waiting()
     finally:
         server.close()
+
+
+def test_only_a_stream_address_is_listened_to(settings):  # noqa: F811
+    """FFmpeg opens local files too: refused when saved, and by the stream itself (an older sensor)."""
+    with TestClient(create_app(settings)) as client:
+        body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "sound": {"sounds": ["siren"]}}
+        for bad in ("file:///data/options.json", "concat:/etc/passwd", "/data/options.json"):
+            assert client.post("/api/v1/sensors", json={**body, "source": bad}).status_code == 400
+        sid = client.post("/api/v1/sensors", json={**body, "source": "rtsp://cam/live"}).json()["id"]
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"source": "file:///etc/passwd"}).status_code == 400
+        assert client.get(f"/api/v1/sensors/{sid}").json()["source"] == "rtsp://cam/live"
+    stream = AudioStream("file:///etc/passwd")
+    try:
+        assert wait_for(lambda: "Unsupported address" in stream.error, timeout=5)
+    finally:
+        stream.close()
+
+
+def test_a_sensor_needs_something_to_listen_for(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": "rtsp://cam/live"}
+        assert client.post("/api/v1/sensors", json={**body, "sound": {"sounds": []}}).status_code == 400
+        sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"sound": {"sounds": []}}).status_code == 400

@@ -56,11 +56,23 @@ export class ApiError extends Error {
   }
 }
 
+/** The server's reason as a sentence: a validation error's detail is a list of fields and messages. */
+function detailText(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (!Array.isArray(detail)) return JSON.stringify(detail);
+  return detail
+    .map((d: { msg?: string; loc?: unknown[]; type?: string }) => {
+      const msg = String(d.msg ?? '').replace(/^Value error, /, '');
+      return d.type === 'value_error' ? msg : `${String(d.loc?.at(-1) ?? 'Value')}: ${msg}`;
+    })
+    .join('; ');
+}
+
 async function errorFrom(resp: Response): Promise<ApiError> {
   let message = resp.statusText;
   try {
     const body = await resp.json();
-    message = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+    message = detailText(body.detail);
   } catch {
     /* not JSON */
   }

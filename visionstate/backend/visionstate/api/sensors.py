@@ -39,7 +39,7 @@ from ..settings import (
     merge_objects,
     merge_teach,
 )
-from ..sources import SOURCE_TYPES, SourceError
+from ..sources import SOURCE_TYPES, SourceError, check_source
 from .common import (
     API_PREFIX,
     ObjectsIn,
@@ -112,6 +112,9 @@ class SensorIn(BaseModel):
             defaults = READING_SENSOR_DEFAULTS
         elif self.kind == KIND_SOUND:
             self.sound = self.sound or SoundIn()
+            if not self.sound.sounds:
+                raise HTTPException(400, "Pick at least one sound")
+            _check_address(self.source_type, self.source)
             self.roi = None  # nothing to draw a region on
             defaults = SOUND_SENSOR_DEFAULTS
         else:
@@ -172,6 +175,14 @@ class SensorPatch(BaseModel):
 def _check_source_type(source_type: str | None) -> None:
     if source_type is not None and source_type not in SOURCE_TYPES:
         raise HTTPException(400, f"Unknown source type {source_type!r}")
+
+
+def _check_address(source_type: str, source: str) -> None:
+    """A sound sensor's address when it is saved (the others say so at their first check)."""
+    try:
+        check_source(source_type, source)
+    except SourceError as err:
+        raise HTTPException(400, str(err)) from err
 
 
 def _apply_states(sensor: Sensor, states: list[StateIn]) -> None:
@@ -296,6 +307,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 value = getattr(body, field)
                 if value is not None:
                     setattr(sensor, field, value)
+            if sensor.kind == KIND_SOUND and body.source is not None:
+                _check_address(sensor.source_type, sensor.source)
             if body.in_ha is not None:
                 sensor.in_ha = body.in_ha
             if body.ha_entities is not None:
@@ -328,6 +341,8 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                     raise HTTPException(
                         400, f"An own sound is already called {clash[0]!r}: forget it to use the model's"
                     )
+                if not sound.get("sounds") and not sound.get("custom"):
+                    raise HTTPException(400, "Pick at least one sound")
                 sensor.sound = sound
             if sensor.roi != old_roi or sensor.source != old_source:
                 sensor.frame_size = None  # the next frame's size is the one the region is drawn on

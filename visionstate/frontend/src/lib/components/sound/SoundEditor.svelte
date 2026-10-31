@@ -20,9 +20,11 @@
     ...own.map((c) => ({ key: c.key, name: c.name, model: config.sound.own_threshold })),
   ]);
 
-  function setThreshold(key: string, percent: number, model: number) {
+  /** An empty field goes back to the model's threshold; a value outside the limits to the nearest limit. */
+  function setThreshold(key: string, text: string, model: number) {
     const next = { ...value.thresholds };
-    const v = Math.round(percent) / 100;
+    const [low, high] = limits.threshold;
+    const v = text.trim() ? Math.min(high, Math.max(low, Math.round(Number(text)) / 100)) : model;
     if (Math.abs(v - model) < 0.005) delete next[key];
     else next[key] = v;
     value.thresholds = next;
@@ -54,7 +56,8 @@
               max={Math.round(limits.threshold[1] * 100)}
               step="5"
               value={Math.round(current * 100)}
-              oninput={(e) => setThreshold(s.key, Number(e.currentTarget.value), s.model)}
+              oninput={(e) => setThreshold(s.key, e.currentTarget.value, s.model)}
+              onchange={(e) => (e.currentTarget.value = String(Math.round((value.thresholds[s.key] ?? s.model) * 100)))}
               aria-label="{s.name}: heard from"
             /> %</span
           >

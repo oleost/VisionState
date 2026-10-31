@@ -507,7 +507,7 @@ Video upload: one frame every *N* seconds (default 5), near-duplicates skipped b
 hash, then the current model suggests a label for each frame. Upload and ZIP sizes are capped
 (`UPLOAD_LIMITS`). A single camera can feed multiple sensors, each with its own ROI.
 
-Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
+A sound sensor's address is checked when it is saved and again by its stream, since FFmpeg would open a local file too. Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
 pseudo-protocols), a camera an entity ID. A snapshot (a URL's or a Home Assistant camera's) is read
 up to `RUNTIME["max_frame_mb"]`, and every image is refused above `RUNTIME["max_image_megapixels"]`
