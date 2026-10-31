@@ -379,8 +379,15 @@ async def _answer_sound(rt: Runtime, prediction_id: int, body: ReviewIn) -> dict
         teach = TeachClipIn(history_id=prediction_id, new_name=(body.value or "").strip())
     elif body.action == "no" and own:
         teach = TeachClipIn(history_id=prediction_id, label=sounds.OTHER)
+    result = None
     if teach is not None:
-        result = await teach_history_clip(rt, sensor_id, teach)
+        try:
+            result = await teach_history_clip(rt, sensor_id, teach)
+        except HTTPException as err:
+            if err.status_code != 404:
+                raise
+            # The clip is gone (the history's limits): the answer stands, there is nothing to teach.
+    if result is not None:
         await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
     elif taught is not None:
         await rt.sensor_updated(sensor_id, retrain=False)  # the clip the first answer taught is gone

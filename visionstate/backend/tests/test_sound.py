@@ -539,3 +539,42 @@ def test_it_goes_on_listening_while_a_clip_waits_for_its_video(settings, quick, 
             assert wait_for(lambda: on("dog_bark"), timeout=15)
     finally:
         server.close()
+
+
+@requires_sound
+def test_review_asks_once_the_clip_is_there_and_an_answer_without_one_stands(settings, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(SOUND, "clip_before_s", 1.0)
+    monkeypatch.setitem(SOUND, "clip_after_s", 8.0)  # the clip comes well after the sound went off
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {
+                "name": "Hallway",
+                "kind": "sound",
+                "source_type": "rtsp",
+                "source": server.url,
+                "review": {"cooldown_s": 0},
+                "sound": {"sounds": ["siren"], "clips": True, "clear_after_s": 1, "thresholds": {"siren": 0.5}},
+            }
+            sid = client.post("/api/v1/sensors", json=body).json()["id"]
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+
+            def waiting() -> list[dict]:
+                return client.get("/api/v1/review", params={"sensor": sid}).json()["items"]
+
+            server.play(recording("siren") * 0.1)
+            assert wait_for(waiting, timeout=60)
+            item = waiting()[0]
+            assert item["has_clip"]
+            # The clip goes (the history's limits): "new" cannot teach it, and the answer is kept.
+            from visionstate.db import Prediction
+
+            with client.app.state.runtime.db.session() as s:
+                row = s.get(Prediction, item["id"])
+                assert row is not None
+                row.frame = None
+            answer = client.post(f"/api/v1/review/{item['id']}", json={"action": "new", "value": "Ours"})
+            assert answer.status_code == 200
+            assert not waiting()
+    finally:
+        server.close()

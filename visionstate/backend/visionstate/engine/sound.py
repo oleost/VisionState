@@ -29,6 +29,7 @@ from ..mqtt import sound_topics, topics
 from ..redact import redact
 from ..settings import KIND_SOUND, SOUND
 from ..sources import AudioStream
+from ..storage import is_clip
 from .base import RuntimeBase
 from .logic import hear
 from .models import ModelsMixin
@@ -99,7 +100,9 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 stream.close()
             stream = heard.stream = AudioStream(cfg.source, video)
             heard.consumed = 0
-            heard.clips = []  # cut by the old stream's sample numbers
+            for clip in heard.clips:  # cut by the old stream's sample numbers
+                heard.clip_pending.pop(clip["row"], None)
+            heard.clips = []
         try:
             model = await self.ensure_sound_model()
         except Exception:  # noqa: BLE001 - shown on the sensor; tried again after a while
@@ -195,10 +198,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         score = track.best if not track.on else track.score
         row = await asyncio.to_thread(self._record_sound, cfg.id, key, track.on, score, level)
         if not track.on and track.row is not None:
-            await self._maybe_ask(cfg, key, track)
+            await self._maybe_ask(cfg, key, track, heard)
         track.row = row if track.on else None
         if stream is not None and track.on and cfg.sound["clips"] and key != SOUND["speech_key"]:
             onset = stream.total - int(SOUND["window_s"] * stream.rate)
+            heard.clip_pending[row] = None
             heard.clips.append(
                 {
                     "row": row,
@@ -210,10 +214,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if not track.on:
             track.best = 0.0
 
-    async def _maybe_ask(self, cfg: SensorConfig, key: str, track: SoundTrack) -> None:
+    async def _maybe_ask(self, cfg: SensorConfig, key: str, track: SoundTrack, heard: SoundLive) -> None:
         """A sound that is no longer heard, and never scored well above its threshold: ask in the
         review queue whether it was that sound (only with its clip kept, and as the sensor's review
-        rules allow). The answer teaches the clip (api/review.py)."""
+        rules allow), once the clip is stored: it may still be on its way. The answer teaches the
+        clip (api/review.py)."""
         if not cfg.sound["clips"] or key == SOUND["speech_key"]:
             return
         threshold = self.sound_threshold(cfg, key)
@@ -225,13 +230,20 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if not rules["enabled"] or now - live.last_flag < rules["cooldown_s"]:
             return
         live.last_flag = now
-        await asyncio.to_thread(self._ask_sound, track.row, track.best)
+        if track.row in heard.clip_pending:
+            heard.clip_pending[track.row] = track.best
+            return
+        await self._ask_sound(track.row, track.best)
+
+    async def _ask_sound(self, row_id: int | None, best: float) -> None:
+        await asyncio.to_thread(self._store_question, row_id, best)
         await self.publish_review_count()
 
-    def _ask_sound(self, row_id: int | None, best: float) -> None:
+    def _store_question(self, row_id: int | None, best: float) -> None:
+        """Only with its clip: a question is listened to, and its answer teaches the clip."""
         with self.db.session() as s:
             row = s.get(Prediction, row_id) if row_id is not None else None
-            if row is not None:
+            if row is not None and is_clip(row.frame):
                 row.review_reason, row.reviewed, row.confidence = "unsure", False, round(best, 4)
 
     def _record_sound(self, sensor_id: int, key: str, on: bool, score: float, level: float) -> int:
@@ -259,11 +271,19 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         heard.clips = [clip for clip in heard.clips if clip["end"] > stream.total]
         for clip in due:
             samples = stream.segment(clip["start"], clip["end"])
-            if samples is not None:  # else the stream was opened again meanwhile: the seconds are gone
-                self._spawn(self._finish_clip(cfg, model, stream, clip, samples))
+            if samples is not None:
+                self._spawn(self._finish_clip(cfg, model, stream, heard, clip, samples))
+            else:  # the stream was opened again meanwhile: the seconds are gone
+                heard.clip_pending.pop(clip["row"], None)
 
     async def _finish_clip(
-        self, cfg: SensorConfig, model: sounds.SoundModel, stream: AudioStream, clip: dict, samples: np.ndarray
+        self,
+        cfg: SensorConfig,
+        model: sounds.SoundModel,
+        stream: AudioStream,
+        heard: SoundLive,
+        clip: dict,
+        samples: np.ndarray,
     ) -> None:
         """Speech silenced, the video waited for and the clip stored, beside the listening: a sound
         heard meanwhile must not be missed."""
@@ -277,7 +297,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             except TimeoutError:
                 with_video = None
             await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], quiet, muted, stream.rate, with_video)
+            asked = heard.clip_pending.pop(clip["row"], None)
+            if asked is not None:
+                await self._ask_sound(clip["row"], asked)
         except Exception:  # noqa: BLE001 - the sound was heard all the same; only its clip is lost
+            heard.clip_pending.pop(clip["row"], None)
             log.exception("Sensor %s: could not keep a clip", cfg.slug)
 
     def _store_clip(

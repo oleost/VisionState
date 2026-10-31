@@ -261,6 +261,8 @@ class SoundLive:
     scores: dict[str, float] = field(default_factory=dict)  # the last analysed window's, per sound
     tracks: dict[str, SoundTrack] = field(default_factory=dict)
     clips: list[dict] = field(default_factory=list)  # {"row", "start", "end", "key"}: cut once received
+    # History rows whose clip is not stored yet -> the best score to ask about once it is (None: no question).
+    clip_pending: dict[int, float | None] = field(default_factory=dict)
     room_at: float = 0.0  # when a window of the room was last kept as "other" (own sounds)
     reported: bool = False  # "no sound" is in the log, until sound comes back
 

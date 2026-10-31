@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0b2
+## 0.13.0b3
 
 Still an early beta of sound sensors; what has not been tested is listed under 0.13.0b1.
 
@@ -9,6 +9,8 @@ Still an early beta of sound sensors; what has not been tested is listed under 0
 - **A sound could be missed while a clip was being finished.** With clips on, a sensor stopped
   analysing sound while it waited for a clip's video, for up to ten seconds if the video was late.
   It now goes on listening.
+- **Review could ask about a sound before its clip was stored.** The question now waits for the
+  clip, and an answer about a clip that is gone is kept instead of ending in an error.
 - **A siren could turn the smoke alarm on.** The smoke alarm's threshold is now 0.4 instead of 0.3.
   A threshold you set yourself stays. If your alarm is far from the microphone, check its score on
   the Live tab and lower the threshold if it is not heard.
