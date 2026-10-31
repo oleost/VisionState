@@ -45,9 +45,9 @@ taught from a few clips.
 
 | Term | Meaning |
 |---|---|
-| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector) or `reading` (a number), fixed at creation. |
+| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector), `reading` (a number) or `sound` (sounds in a stream), fixed at creation. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
-| **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
+| **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. A sound sensor's is a stream with sound (RTSP or HTTP). |
 | **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
 | **Sample** | A stored full frame with a state label; the ROI is applied when embedding, so moving the ROI never loses data. |
 | **Backbone** | Pre-trained vision model that turns an image into an embedding vector. |
@@ -639,7 +639,9 @@ Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_t
 `visionstate_<slug>_<sound key>`): `device_class: smoke` for smoke and fire alarms (decided
 2026-10-29; DOCS.md says it is no replacement for a smoke detector), `sound` for the others, and
 the pause switch; no frame and no "check now". A sound no longer listened for (or an own sound
-forgotten) loses its entity. Only changes are published: on/off, no scores.
+forgotten) loses its entity; each sound can be chosen away on the Home Assistant tab. Only changes
+are published: on/off, no scores. Paused, its sounds go off. It becomes unavailable only after
+`SOUND["offline_after_s"]` without audio: a reconnect is not news, and "no sound" is logged once.
 
 **Nothing changes at every check unless the result does** (decided 2026-10-26): the recorder of
 Home Assistant writes a state row for every `state_changed` event, which an MQTT entity fires when
@@ -748,7 +750,7 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     (`newer_than` = the newest row when loaded) and shown on request, so the list never moves
     under a finger. Index `(sensor_id, created_at, id)`; indexes added later are created at start-up.
 
-Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
+Every sensor has a **Home Assistant** tab (§8). Besides it, reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
 image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
 the rejected and checked readings with *read correctly* / *misread*), **History** (new values
 and rejected readings) and **Settings** (mode,
@@ -756,7 +758,7 @@ decimals, unit, device class, display, limits). The reading settings start with 
 *digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
 the region in the wizard and on the Settings tab).
 
-Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
+Object sensors have three instead: **Live** (the exact analysed frame with its boxes and
 per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
 boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
 was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
@@ -765,14 +767,20 @@ something was taught, so a sensor that was never taught looks exactly as before.
 change together with the frame they belong to, so the page does not move while the next frame
 loads.
 
+Sound sensors have **Live** (the level against its line, each sound's score against its threshold,
+the stream), **Own sounds** (the Quality tab's place: teaching and forgetting own sounds),
+**History** (heard / no longer heard, clips played after a tap) and **Settings** (sounds, levels,
+clips).
+
 ## 10. Data model & extensibility
 
 - SQLite; schema version in `PRAGMA user_version` (`db.SCHEMA_VERSION`) with additive migrations
   (`db.MIGRATIONS`). An older version started on a newer database ignores the columns it does not
   know (rollback works; checked by the upgrade test).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds the fields of
-  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`) or `reading`
-  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
+  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`), `reading`
+  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`) or `sound` (`sensor.sound`, the
+  fields of `settings.SOUND_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
   (one while the same reading waits for review, see §7)
@@ -967,8 +975,8 @@ is part of backups and needs no restart.
 | **Backup of everything** ✅ | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress; much less memory (no ONNX Runtime arena, classifier without scikit-learn) | 0.10.0 (betas 0.10.0b1–b7) |
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
-| **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at release | not released |
-| **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | not released |
+| **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at the stable release | 0.12.0b1 (early beta) |
+| **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | 0.12.0b1 (early beta) |
 | **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object (discussion #62) | 0.12.0b6 |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Sound sensors** | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0b1 (early beta) |

@@ -42,8 +42,9 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
       This can not be changed later.
    4. Optionally choose when it should check the camera — for example when your motion
-      sensor or garage opener changes (see *When it checks* below) — and whether it sends to
-      Home Assistant right away (see *Tuning a sensor* below). You can skip this step.
+      sensor or garage opener changes (see *When it checks* below) — and whether it should stay
+      out of Home Assistant for now (see *What a sensor has in Home Assistant* below). You can skip
+      this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
@@ -84,12 +85,13 @@ the result at once and are otherwise sent again every few minutes.
   history, Quality tab and review queue fill up — but its entities stay *unavailable*: no values, so
   no statistics either. Useful for tuning a sensor, for example one that takes over the entity ID of
   an older one, so wrong readings do not end up in its statistics. The pause switch and the
-  check-now button keep working.
+  check-now button (a sound sensor has none) keep working.
 - **Not in Home Assistant** (also in the last step of the wizard, to set a sensor up first): no
   entities at all and nothing on MQTT; the sensor is used in VisionState only.
 
 Below that you tick which entities it has: on an object sensor *Detected*, *Count* and *Snapshot* for
-each object, and on every sensor the optional ones such as *Last frame*. What is ticked is there and
+each object, on a sound sensor each sound, and on the other sensors the optional ones such as *Last
+frame*. What is ticked is there and
 switched on in Home Assistant (one that was off there comes on within about a minute). What you
 untick is removed from Home Assistant, and automations using it stop working; tick it again and it
 comes back with the entity ID and name it had. Removing needs MQTT to be connected: otherwise
@@ -574,9 +576,11 @@ street or the neighbours.
 
 **Good to know.** Many cameras send their sound in telephone quality (8 kHz): nothing above 4 kHz
 is heard — alarms, sirens and barks are fine, crying and breaking glass suffer (the Live tab says
-so). Each sound sensor keeps its stream open all day; on a Raspberry Pi 4 a sound sensor that
-analyses all the time takes a few per cent of one core, a quiet one much less. The sound model is
-downloaded when the first sound sensor is made.
+so). Each sound sensor keeps its stream open all day; only what is loud enough costs CPU, and how
+many a Raspberry Pi 4 carries has not been measured yet. Paused, a sensor hears nothing, so its
+sounds go off. A stream that stops makes the sounds *unavailable* after about 20 seconds without
+sound, and the sensor connects again by itself. The sound model is downloaded when the first sound
+sensor is made.
 
 ## Training tips (state sensors)
 

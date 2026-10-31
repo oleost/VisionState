@@ -13,7 +13,7 @@
 - Water meter (reading): the wheels of a real water meter, one of them half way between digits.
 - Hallway (sound), only with ``--sound <stream URL>``: listens for a smoke alarm, a siren, a dog,
   crying and someone talking, keeps clips, and knows the own sound "Doorbell" from five drawn
-  ding-dongs (tests/sound_stream.chime). It needs the sound model (tools/soundmodel/README.md). With
+  ding-dongs (tests/sound_stream.chime). It downloads the sound model when it is made. With
   the fake camera: ``--sound http://127.0.0.1:<port>/camera.ts``, and ``/play?sound=smoke_alarm``
   plays a smoke alarm into it.
 
