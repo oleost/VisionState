@@ -259,8 +259,15 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         heard.clips = [clip for clip in heard.clips if clip["end"] > stream.total]
         for clip in due:
             samples = stream.segment(clip["start"], clip["end"])
-            if samples is None:
-                continue  # the stream was opened again meanwhile: the seconds are gone
+            if samples is not None:  # else the stream was opened again meanwhile: the seconds are gone
+                self._spawn(self._finish_clip(cfg, model, stream, clip, samples))
+
+    async def _finish_clip(
+        self, cfg: SensorConfig, model: sounds.SoundModel, stream: AudioStream, clip: dict, samples: np.ndarray
+    ) -> None:
+        """Speech silenced, the video waited for and the clip stored, beside the listening: a sound
+        heard meanwhile must not be missed."""
+        try:
             async with self._sem:
                 quiet, muted = await asyncio.to_thread(model.silence_speech, samples, SOUND["speech_mute"])
             # With the camera's video when the stream has one (made by the stream's thread), else sound only.
@@ -270,6 +277,8 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             except TimeoutError:
                 with_video = None
             await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], quiet, muted, stream.rate, with_video)
+        except Exception:  # noqa: BLE001 - the sound was heard all the same; only its clip is lost
+            log.exception("Sensor %s: could not keep a clip", cfg.slug)
 
     def _store_clip(
         self, sensor_id: int, row_id: int, quiet: np.ndarray, muted: int, rate: int, with_video: bytes | None

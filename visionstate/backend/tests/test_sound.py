@@ -507,3 +507,35 @@ def test_a_paused_sensor_hears_nothing(settings, quick):  # noqa: F811
             assert not on()
     finally:
         server.close()
+
+
+@requires_sound
+def test_it_goes_on_listening_while_a_clip_waits_for_its_video(settings, quick, monkeypatch):  # noqa: F811
+    from concurrent.futures import Future
+
+    monkeypatch.setitem(SOUND, "video_wait_s", 30.0)
+    monkeypatch.setattr(AudioStream, "video_clip", lambda self, samples, start: Future())  # never comes
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {
+                "name": "Hallway",
+                "kind": "sound",
+                "source_type": "rtsp",
+                "source": server.url,
+                "sound": {"sounds": ["siren", "dog_bark"], "clips": True, "clear_after_s": 2},
+            }
+            sid = client.post("/api/v1/sensors", json=body).json()["id"]
+
+            def on(key: str) -> bool:
+                view = client.get(f"/api/v1/sensors/{sid}").json()
+                return next(s for s in view["sound"]["live"] if s["key"] == key)["on"]
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            server.play(recording("siren"))
+            assert wait_for(lambda: on("siren"))
+            time.sleep((SOUND["clip_after_s"] + 1) / 2)  # its clip is due now, and waits
+            server.play(recording("dog_bark"))
+            assert wait_for(lambda: on("dog_bark"), timeout=15)
+    finally:
+        server.close()
