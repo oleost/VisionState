@@ -391,8 +391,8 @@ not fail again in five runs and its error was not kept — if it comes back, kee
 
 **What the cloud session could not do** — for Claude working locally (or the maintainer):
 
-0. **Bring it into `beta`**: the branch is `beta` plus its own commits (nothing to resolve while
-   `beta` has not moved): `git merge --ff-only origin/claude/lucid-cori-j40ck3` on `beta`, or a
+0. **Bring it into `beta`**: the branch has `beta` merged in (nothing to resolve while `beta` has
+   not moved since): `git merge --ff-only origin/claude/lucid-cori-j40ck3` on `beta`, or a
    pull request. Publish the model (1) before a beta is released: without it a beta user's sound
    sensor says "not published yet".
 1. **Publish the sound model** (it is not on Hugging Face yet): follow
@@ -403,8 +403,10 @@ not fail again in five runs and its error was not kept — if it comes back, kee
    `requires_sound`, the e2e sound seed and tests), and the app says "not published yet" on a sound
    sensor. Locally: `python tools/soundmodel/make_model.py out` and copy the file to
    `visionstate/backend/models/ced-tiny.onnx`.
-2. **Run every check locally on Windows** (the cloud ran them on Linux): the backend suite, ruff,
-   pyright, `npm run check`, `npm run build` and the e2e suite (desktop, mobile, iphone).
+2. **Run every check locally on Windows: done**, after `beta` was merged in (the sound model on
+   disk): the backend suite, ruff, pyright, `npm run check`, `npm run build` and the e2e suite. A
+   sensor on a real Home Assistant turned its entity on and off from a live HTTP WAV stream, with the
+   model downloaded on first use; RTSP from a real camera is still open (4).
 3. **Look at the UI by hand** (CLAUDE.md *UI testing routine*): the wizard's *Listen*, the Live tab
    (level chart, scores), Own sounds (record on a phone: the file input offers the microphone),
    History (a clip with video and a sound clip, played after a tap) and Review, at desktop width
