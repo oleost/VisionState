@@ -433,6 +433,8 @@ def test_only_heads_come_back(tmp_path):
             dst.writestr(item, src.read(item))
         dst.writestr("files/heads_dir/7.joblib", b"a pickle")
         dst.writestr("files/heads_dir/8.joblib", LEGACY_MARKER)
+        dst.writestr("files/heads_dir/9.room.npy", b"x")
+        dst.writestr("files/heads_dir/a.room.npy", b"x")
         dst.writestr("files/heads_dir/lib.so", b"x")
         dst.writestr("files/heads_dir/1.npz.py", b"x")
         dst.writestr("files/heads_dir/sub/2.npz", b"x")
@@ -440,8 +442,10 @@ def test_only_heads_come_back(tmp_path):
     heads = staged.root / "heads_dir"
     assert sorted(p.relative_to(heads).as_posix() for p in heads.rglob("*") if p.is_file()) == [
         "1.npz",
+        "4.room.npy",  # the backup's own sound sensor
         "7.joblib",
         "8.joblib",
+        "9.room.npy",
     ]
     assert (heads / "7.joblib").read_bytes() == (heads / "8.joblib").read_bytes() == LEGACY_MARKER
 

@@ -372,7 +372,7 @@ No question for the maintainer is open. Decided on 2026-10-29:
 
 ## 13. Status, and what is left
 
-**Built and released as an early beta**, as described in [`SCOPE.md`](SCOPE.md) §5 and in DOCS.md
+**Built and released**, as described in [`SCOPE.md`](SCOPE.md) §5 and in DOCS.md
 *Sound sensors*: phases 1–3 and the clips with video.
 
 **Checked on a real Home Assistant** (a test VM, live HTTP streams: WAV, and H.264 with AAC):

@@ -43,7 +43,7 @@ EMBEDDING_KEY = "sound"  # Embedding.roi_key of a taught clip's embedding
 
 def room_path(heads_dir: Path, sensor_id: int) -> Path:
     """The windows of the room a sensor kept as "other" (embeddings; never exported)."""
-    return heads_dir / f"{sensor_id}.room.npy"
+    return heads_dir / f"{sensor_id}{sounds.ROOM_SUFFIX}"
 
 
 class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
@@ -342,9 +342,10 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     def _load_room(self, sensor_id: int) -> np.ndarray:
         path = room_path(self.settings.heads_dir, sensor_id)
         try:
-            return np.load(path) if path.exists() else np.zeros((0, 0), dtype=np.float32)
+            room = np.load(path) if path.exists() else None
         except OSError, ValueError:
-            return np.zeros((0, 0), dtype=np.float32)
+            room = None
+        return room if isinstance(room, np.ndarray) and room.ndim == 2 else np.zeros((0, 0), dtype=np.float32)
 
     def _save_room(self, sensor_id: int, room: np.ndarray) -> None:
         path = room_path(self.settings.heads_dir, sensor_id)

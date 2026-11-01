@@ -516,7 +516,7 @@ objects the region stays a border.
 
 ## Sound sensors
 
-*An early beta.* RTSP has not been tried with a real camera yet, nor a Raspberry Pi 4, an ESP32
+*What it has been tried on.* RTSP has not been tried with a real camera yet, nor a Raspberry Pi 4, an ESP32
 microphone or clips in the Home Assistant app on iOS; it has been tried on live HTTP streams and one
 real smoke alarm. If you try a camera, please report its model and how it went.
 

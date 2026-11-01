@@ -1100,20 +1100,36 @@ test('when to check: no regular check, one state of an entity, and a light', asy
 test('the live page says when the regular check is off', async ({ page, request }) => {
   const errors = watchErrors(page);
   const before = (await (await request.get('api/v1/config')).json()).trigger_defaults;
-  for (const [id, every, only] of [
-    [await seededObjectSensorId(request), /Checks every \d/, 'Only checks when triggered.'],
-    [await seededReadingSensorId(request), /Reads every \d/, 'Only reads when triggered.'],
-  ] as const) {
-    const off = { triggers: { ...before, regular: false } };
-    expect((await request.patch(`api/v1/sensors/${id}`, { data: off })).ok()).toBe(true);
-    await page.goto(`#/sensors/${id}/live`);
-    await page.reload();
-    await expect(page.getByText(only)).toBeVisible();
-    await expect(page.getByText(every)).toHaveCount(0);
-    expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
-    await page.reload();
-    await expect(page.getByText(every)).toBeVisible();
-    await expect(page.getByText(only)).toHaveCount(0);
+  // An own object sensor: the seeded one may have been triggered by another test, and then the page
+  // shows that trigger instead of this line.
+  const seeded = await (await request.get(`api/v1/sensors/${await seededObjectSensorId(request)}`)).json();
+  const made = await request.post('api/v1/sensors', {
+    data: { name: 'Regular off', kind: 'objects', source_type: seeded.source_type, source: seeded.source, objects: { classes: ['person'] } },
+  });
+  expect(made.ok()).toBe(true);
+  const own = (await made.json()).id;
+  try {
+    for (const [id, every, only] of [
+      [own, /Checks every \d/, 'Only checks when triggered.'],
+      [await seededReadingSensorId(request), /Reads every \d/, 'Only reads when triggered.'],
+    ] as const) {
+      const off = { triggers: { ...before, regular: false } };
+      expect((await request.patch(`api/v1/sensors/${id}`, { data: off })).ok()).toBe(true);
+      try {
+        await page.goto(`#/sensors/${id}/live`);
+        await page.reload();
+        await expect(page.getByText(only)).toBeVisible();
+        await expect(page.getByText(every)).toHaveCount(0);
+      } finally {
+        // Also after a failure: the next tests need this sensor checking.
+        expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+      }
+      await page.reload();
+      await expect(page.getByText(every)).toBeVisible();
+      await expect(page.getByText(only)).toHaveCount(0);
+    }
+  } finally {
+    await request.delete(`api/v1/sensors/${own}`);
   }
   errors.expectNone();
 });

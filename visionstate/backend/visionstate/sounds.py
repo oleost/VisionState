@@ -26,6 +26,7 @@ from .settings import SOUND
 
 REGISTRY_FILE = Path(__file__).with_name("sounds.json")
 SILENCE_DB = -100.0  # the level of digital silence
+ROOM_SUFFIX = ".room.npy"  # after the sensor's id: the windows of the room it kept as "other"
 
 
 @dataclass(frozen=True)

@@ -3,8 +3,8 @@
 Reading the small **pointer dials** many water meters have beside their counter (×0.1, ×0.01,
 ×0.001, ×0.0001 m³), so a reading sensor gives litres instead of whole cubic metres. It applies to the `reading` sensor kind only,
 mechanical counters. Asked for in issue #59 (a meter of five wheels and four dials). Researched and
-decided with the maintainer on 2026-10-29; phase 2 is built and in the betas, tried on two real
-meters so far (§8, and what is left in §10); phase 1 was built and taken out again (§4).
+decided with the maintainer on 2026-10-29; phase 2 is built and in the betas, tried on real
+meters by day so far (§8, and what is left in §10); phase 1 was built and taken out again (§4).
 
 ## 1. The idea in one paragraph
 
@@ -207,7 +207,7 @@ like the wheel readers (`readers.json`). The decode and the interface stay the s
 | 1 | The last wheel's fraction, `floor` instead of rounding (§4) | taken out |
 | 2 | Drawn dials in the tests, the needle reader, the decode with *smooth* links (§5) | **built** (in the betas) |
 | 3 | Dials in the settings, the editor (*Edit: Counter \| Dials*, *Add dial*), Live, History, export (§5) | **built** (in the betas) |
-| 4 | Tried on more real meters, by day and at night, and on a phone (§10) | started: two real meters by day |
+| 4 | Tried on more real meters, by day and at night, and on a phone (§10) | started: real meters by day |
 | 5 | A dial model, only if step 4 shows the needle reader is not good enough (§6) | if needed |
 
 ## 9. References
@@ -234,7 +234,7 @@ preview and a sensor end to end with History and export), the e2e test *a water 
 dials* (every gesture, on desktop, Pixel and iPhone), and `scripts/fake_camera.py` `/meter.jpg`
 and `/meter-region.json` (a drawn meter with four dials, `&turn`, `&tilt`, `&ccw`).
 
-Left before the stable release (for whoever takes it on):
+Left (for whoever takes it on):
 - **More real meters.** Three real meters are in the tests: `tests/assets/meter_dials.jpg` (pale
   drops, daylight; read as by eye, also with the circles placed beside the dials) and
   `tests/assets/meter_readings/` (frames from two exports with dials recorded, values checked by eye:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0b10
+
+### Fixed
+
+- **A backup now holds what a sound sensor has learned of its room.** Restoring one dropped those
+  sounds, and the sensor had to learn them again; a sensor's own sounds were not lost.
+
 ## 0.13.0b9
 
 ### Changed
