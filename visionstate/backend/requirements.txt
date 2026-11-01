@@ -1,11 +1,11 @@
-fastapi==0.142.0
+fastapi==0.162.0
 uvicorn[standard]==0.54.0
 python-multipart==0.0.32
-sqlalchemy==2.1.1
+sqlalchemy==2.1.6
 httpx==0.28.1
 aiomqtt==2.5.1
-onnxruntime==1.30.0
+onnxruntime==1.31.1
 numpy==2.3.5
 pillow==13.0.0
-av==19.0.0
-websockets==17.1
+av==19.0.2
+websockets==17.3
