@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0b9
+
+### Changed
+
+- **Updated dependencies**, with no change in what the app does: FastAPI, ONNX Runtime, SQLAlchemy,
+  PyAV and websockets in the app, and Svelte and Vite in its interface. Tested on the Home Assistant
+  2026.11 beta.
+
 ## 0.13.0b8
 
 ### Fixed
