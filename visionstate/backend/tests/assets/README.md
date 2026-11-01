@@ -34,6 +34,12 @@ image from the readings a user exported from VisionState and shared in
 [issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the export's LICENSE.txt),
 as exported (the meter's face straightened).
 
+`meter_readings/` holds frames of two more meters with their dials' pictures, from the readings two
+users exported from VisionState and shared in
+[issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the exports' LICENSE.txt),
+as exported. `readings.json` lists each frame's region and its value as read by eye, not the
+reader's or the user's answer (two answers in the export contradict the needles).
+
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.
 

@@ -14,7 +14,7 @@ from visionstate.main import create_app
 from visionstate.settings import READING, extra_digits, merge_reading, value_decimals
 
 from .conftest import ASSETS, MODEL_DIR, requires_reader
-from .displays import counter_box, render_counter, render_dial, render_meter, turned_meter
+from .displays import counter_box, render_counter, render_dial, render_meter, render_wide_dial, turned_meter
 from .test_integration import wait_for
 
 BINS = dials.BINS
@@ -107,6 +107,67 @@ def test_a_needle_without_colour_is_read_as_the_darkest_part():
     assert empty.position is None and empty.certainty == 0.0 and np.allclose(empty.probs, 1 / BINS)
 
 
+@pytest.mark.parametrize("position", [0.4, 2.5, 3.8, 7.1, 9.2])
+@pytest.mark.parametrize("ccw", [False, True])
+def test_a_wide_pointer_has_two_possible_ends(position, ccw):
+    needle = dials.read_needle(cut(render_wide_dial(position, 92, ccw)), ccw)
+    assert needle.ends == 2 and needle.position is not None
+    off = (needle.position - position + 2.5) % 5 - 2.5  # either end
+    assert abs(off) < 0.2, needle.position
+    # Both ends are equally likely, nothing between them.
+    first, second = round(position * 10) % BINS, round(position * 10 + BINS / 2) % BINS
+    assert needle.probs[first] == pytest.approx(needle.probs[second], rel=0.5)
+    assert needle.probs[(first + 25) % BINS] < 0.01 * needle.probs[first]
+
+
+@pytest.mark.parametrize("position", [0.0, 3.46, 7.2])
+def test_a_needle_is_not_taken_for_a_wide_pointer(position):
+    assert dials.read_needle(cut(render_dial(position, 92))).ends == 1
+
+
+class StubWheels(readers.WheelReader):
+    """A wheel reader whose model sees the given positions, and that is not loaded from a file."""
+
+    def __init__(self, positions: list[float]):
+        self.spec = readers.WHEEL_READERS["wheels-v2"]
+        self.positions_seen = positions
+
+    def probabilities(self, image, digits, box=None):
+        return np.stack([np.exp(peak(p, 0.8)) for p in self.positions_seen])
+
+    def cells_image(self, image, digits, box=None, dials=()):
+        return image
+
+
+def needle_at(position: float) -> dials.Needle:
+    return dials.read_needle(cut(render_dial(position, 92)))
+
+
+def test_a_wheel_that_lags_does_not_pull_a_needle_off_its_number():
+    # 647.0394 on a meter whose wheels lag the needle: the last wheels show 3.2 and 9.2 though the
+    # needle on the ×0.0001 dial stands at 4.9 (seen on a real meter, one step low before).
+    picture = Image.new("RGB", (64, 32))
+    text, _ = StubWheels([0, 6, 4, 7, 0, 3.2, 9.2]).read_counter(picture, 7, None, [needle_at(4.9)])
+    assert text.text == "06470394" and text.score >= 0.7
+    # Past the turn: the needle just past 0, the last wheel still lags behind its digit: 647.0400.
+    text, _ = StubWheels([0, 6, 4, 7, 0, 3.8, 9.8]).read_counter(picture, 7, None, [needle_at(0.3)])
+    assert text.text == "06470400"
+
+
+def test_the_dials_around_a_wide_pointer_settle_which_end_counts():
+    # 187.2879 and, with the pointer on the same line, 187.2829: the same picture of the wide
+    # pointer, the ×0.01 dial before it says which end.
+    picture = Image.new("RGB", (64, 32))
+    wide = dials.read_needle(cut(render_wide_dial(2.74, 92)))
+    wheels = StubWheels([0, 0, 1, 8, 7])
+    text, _ = wheels.read_counter(picture, 5, None, [needle_at(2.84), needle_at(8.75), wide, needle_at(9.2)])
+    assert text.text == "001872879" and text.score >= 0.7
+    assert text.details is not None
+    assert abs(text.details["wheels"]["per_wheel"][7]["needle"] - 7.74) < 0.2  # the end that counts
+    text, _ = wheels.read_counter(picture, 5, None, [needle_at(2.82), needle_at(8.25), wide, needle_at(9.2)])
+    assert text.text == "001872829" and text.score >= 0.7
+
+
 def test_dials_are_cut_from_the_plane_the_counter_is_read_in():
     image, region, placed = render_meter(187.3456)
     for straightened in (False, True):
@@ -172,6 +233,21 @@ def test_a_real_meter_with_pale_needles(settings, off):
         needles = [d["needle"] for d in read["dials"]]
         for found, seen in zip(needles, [1.4, 5.4, 4.1, 0.0], strict=True):
             assert abs((found - seen + 5) % 10 - 5) < 0.3, needles
+
+
+@requires_reader
+def test_real_meters_read_as_by_eye():
+    """Frames of two real meters (tests/assets/meter_readings, values read by eye): wheels that lag
+    the one needle, and four dials of which one has a wide pointer."""
+    folder = ASSETS / "meter_readings"
+    spec = readers.WHEEL_READERS["wheels-v2"]
+    reader = readers.WheelReader(spec, MODEL_DIR / "wheels-v2.onnx")
+    for frame in json.loads((folder / "readings.json").read_text(encoding="utf-8")):
+        needles = [dials.read_needle(Image.open(folder / name).convert("RGB")) for name in frame["dials"]]
+        image = Image.open(folder / frame["image"]).convert("RGB")
+        text, _ = reader.read_counter(image, frame["digits"], tuple(frame["box"]), needles)
+        places = frame["decimals"] + len(needles)
+        assert f"{int(text.text) / 10**places:.{places}f}" == frame["value"], frame["image"]
 
 
 @requires_reader

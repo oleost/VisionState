@@ -515,9 +515,9 @@ class WheelReader:
         return probs / probs.sum(axis=1, keepdims=True)
 
     @staticmethod
-    def with_slack(probs: np.ndarray) -> np.ndarray:
+    def with_slack(probs: np.ndarray, slack: int | None = None) -> np.ndarray:
         """Log probabilities for decoding: a wheel at rest may sit a little off its digit."""
-        slack = READING["wheel_slack_bins"]
+        slack = READING["wheel_slack_bins"] if slack is None else slack
         near = sum(np.roll(probs, s, axis=1) for s in range(-slack, slack + 1))
         return np.log(np.maximum(near, 1e-12))
 
@@ -541,16 +541,21 @@ class WheelReader:
         alike, so a few common shifts are tried (each costs a little) and the most likely reading
         wins. The confidence is the spec's (``WheelReaderSpec.confidence``). ``details`` keeps how
         the value was found (``wheel_details``), so it can be checked without the model.
+
+        A wheel says which digit it is on, but its tenth less exactly than a needle does (on real
+        meters it lags the needle by a steady part of a digit), so with dials the wheels get
+        ``READING["dial_wheel_slack_bins"]`` of slack and a needle is not pulled off its number.
         """
         probs = self.probabilities(image, digits, box)
         logp = self.with_slack(probs)
         extra = len(needles)
+        decode_logp = self.with_slack(probs, READING["dial_wheel_slack_bins"]) if extra else logp
         dial_probs = np.array([n.probs for n in needles]).reshape(extra, probs.shape[1])
         dial_logp = self.with_slack(dial_probs)
         links = ["step"] * (digits - 1) + ["smooth"] * extra
         best: tuple[float, float, list[int], int] | None = None
         for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
-            rows = np.concatenate([np.roll(logp, -shift, axis=1), dial_logp])  # the dials are not shifted
+            rows = np.concatenate([np.roll(decode_logp, -shift, axis=1), dial_logp])  # the dials are not shifted
             value, score, at = wheel_decode(rows, links)
             score -= READING["wheel_shift_penalty"] * abs(shift)
             if best is None or score > best[1]:
@@ -563,17 +568,26 @@ class WheelReader:
             shown, number = digits, math.floor(value + 0.5) % 10**digits
         p = self.wheel_p(probs, logp, at[:digits], shift)
         # A dial's share: its needle's probability near where the value puts it (a needle is never
-        # as sharp as a wheel the model knows, so not its probability at one position). The wheels'
-        # confidence leaves the dials out of the score, the weakest dial is taken with it.
+        # as sharp as a wheel the model knows, so not its probability at one position; of a wide
+        # pointer's two ends, the share of the end the value puts it at). The wheels' confidence
+        # leaves the dials out of the score, the weakest dial is taken with it.
+        bins = probs.shape[1]
         near = np.arange(-READING["wheel_weakest_bins"], READING["wheel_weakest_bins"] + 1)
-        dial_p = [float(dial_probs[k, (b + near) % probs.shape[1]].sum()) for k, b in enumerate(at[digits:])]
-        wheel_score = score - sum(float(dial_logp[k, b]) for k, b in enumerate(at[digits:]))
+        dial_p = [
+            min(1.0, float(dial_probs[k, (b + near) % bins].sum()) * needles[k].ends) for k, b in enumerate(at[digits:])
+        ]
+        wheel_score = sum(float(logp[k, (b + shift) % bins]) for k, b in enumerate(at[:digits]))
+        wheel_score -= READING["wheel_shift_penalty"] * abs(shift)
         confidence = self.confidence(wheel_score, p) * min(dial_p, default=1.0)
         p += dial_p
         all_probs = np.concatenate([probs, dial_probs])
         details = wheel_details(all_probs, p, self.spec.confidence, value, score, at, shift, digits)
-        for row, needle in zip(details["per_wheel"][digits:], needles, strict=True):
+        for row, needle, b in zip(details["per_wheel"][digits:], needles, at[digits:], strict=True):
             row["needle"] = needle.position  # where the needle was found (None: no needle seen)
+            if needle.ends == 2 and needle.position is not None:
+                # A wide pointer: the end the value puts it at.
+                other = (needle.position + 5) % 10
+                row["needle"] = min(needle.position, other, key=lambda x: abs((x - b / 10 + 5) % 10 - 5))
             row["certainty"] = needle.certainty
         text = Text(f"{number:0{shown}d}", confidence, {"wheels": details})
         return text, self.cells_image(image, digits, box, [n.image for n in needles])

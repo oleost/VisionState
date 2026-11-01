@@ -1,0 +1,137 @@
+[
+ {
+  "image": "tolbag-0001.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0001-dial1.jpg",
+   "tolbag-0001-dial2.jpg",
+   "tolbag-0001-dial3.jpg",
+   "tolbag-0001-dial4.jpg"
+  ],
+  "value": "187.2879"
+ },
+ {
+  "image": "tolbag-0002.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0002-dial1.jpg",
+   "tolbag-0002-dial2.jpg",
+   "tolbag-0002-dial3.jpg",
+   "tolbag-0002-dial4.jpg"
+  ],
+  "value": "187.2787"
+ },
+ {
+  "image": "tolbag-0003.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0003-dial1.jpg",
+   "tolbag-0003-dial2.jpg",
+   "tolbag-0003-dial3.jpg",
+   "tolbag-0003-dial4.jpg"
+  ],
+  "value": "187.2788"
+ },
+ {
+  "image": "tolbag-0031.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0031-dial1.jpg",
+   "tolbag-0031-dial2.jpg",
+   "tolbag-0031-dial3.jpg",
+   "tolbag-0031-dial4.jpg"
+  ],
+  "value": "187.5924"
+ },
+ {
+  "image": "tolbag-0166.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0166-dial1.jpg",
+   "tolbag-0166-dial2.jpg",
+   "tolbag-0166-dial3.jpg",
+   "tolbag-0166-dial4.jpg"
+  ],
+  "value": "187.3709"
+ },
+ {
+  "image": "pedro-0008.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0008-dial1.jpg"
+  ],
+  "value": "647.0394"
+ },
+ {
+  "image": "pedro-0003.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0003-dial1.jpg"
+  ],
+  "value": "647.4093"
+ },
+ {
+  "image": "pedro-0433.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0433-dial1.jpg"
+  ],
+  "value": "646.8733"
+ }
+]

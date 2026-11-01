@@ -27,12 +27,34 @@ NEEDLE_COLOUR = (126, 226, 184)  # the needle drawn on what the reader saw (the 
 @dataclass(frozen=True)
 class Needle:
     """A dial as read: its position (0.0-9.9; None when no needle was found), how sure (0-1), the
-    probability of every position (BINS) and the dial with the needle that was found drawn on it."""
+    probability of every position (BINS) and the dial with the needle that was found drawn on it.
+    ``ends``: 2 for a wide pointer across the whole dial, whose two ends are equally likely until
+    the dials around it settle which one counts; ``position`` is then one of them."""
 
     position: float | None
     certainty: float
     probs: np.ndarray
     image: Image.Image
+    ends: int = 1
+
+
+def _peak(position: float, sigma: float) -> np.ndarray:
+    """A peak ``sigma`` bins wide at ``position``, around the dial both ways."""
+    offset = (np.arange(BINS) - position * BINS / 10 + BINS / 2) % BINS - BINS / 2
+    return np.exp(-0.5 * (offset / sigma) ** 2)
+
+
+def _wide_pointer(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tuple[float, float] | None:
+    """The direction of a wide pointer: a long shape reaching far to both sides of the dial's
+    centre (``READING["dial_wide_pointer"]``), where a needle has a hub and at most a short tail.
+    Its outline is what is red; its middle may be any colour. None for anything else."""
+    reach, long = READING["dial_wide_pointer"]
+    points = np.stack([dx[mask], dy[mask]], axis=1)
+    _, spread, axes = np.linalg.svd(points - points.mean(axis=0), full_matrices=False)
+    along = points @ axes[0]
+    if min(along.max(), -along.min()) < reach * radius or spread[0] < long * spread[1]:
+        return None
+    return float(axes[0][0]), float(axes[0][1])
 
 
 def _needle_mask(rgb: np.ndarray, dist: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray]:
@@ -86,6 +108,16 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     picture = dial.convert("RGB").copy()
     if share < READING["dial_min_needle"]:
         return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
+    low, high = READING["dial_sigma_bins"]
+    pointer = _wide_pointer(mask, dx, dy, radius)
+    if pointer:
+        vx, vy = pointer
+        position = (math.atan2(-vx if ccw else vx, -vy) % (2 * math.pi)) / (2 * math.pi) * 10
+        probs = _peak(position, low) + _peak((position + 5) % 10, low) + 1e-4
+        reach = 0.75 * radius
+        centre = (size / 2 - vx * reach, size / 2 - vy * reach), (size / 2 + vx * reach, size / 2 + vy * reach)
+        ImageDraw.Draw(picture).line(centre, fill=NEEDLE_COLOUR, width=max(2, size // 40))
+        return Needle(round(position, 2), 1.0, probs / probs.sum(), picture, ends=2)
     # The tip gives the direction: the needle's pixels farthest from its hub (dial_tip_share of
     # them, none close to the hub), so neither the hub, a drop-shaped needle's round body nor the
     # short tail behind it turns it.
@@ -107,11 +139,8 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     # under 1; dial_spread_floor and less: no direction at all).
     floor = READING["dial_spread_floor"]
     certainty = max(0.0, min(1.0, (spread - floor) / (1 - floor)))
-    low, high = READING["dial_sigma_bins"]
     sigma = low + (1 - certainty) * (high - low)
-    centre = position * BINS / 10
-    offset = (np.arange(BINS) - centre + BINS / 2) % BINS - BINS / 2  # around the dial, both ways
-    probs = np.exp(-0.5 * (offset / sigma) ** 2) + 1e-4
+    probs = _peak(position, sigma) + 1e-4
     probs /= probs.sum()
     draw = ImageDraw.Draw(picture)
     hub = (size / 2 + hx, size / 2 + hy)

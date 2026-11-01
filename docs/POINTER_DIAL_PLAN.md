@@ -123,6 +123,11 @@ and a direction (`ccw`, clockwise by default); the order gives the factor (×0.1
    none, to 1); the position becomes a wrapped Gaussian over the decode's 100 bins, `dial_sigma_bins`
    wide (narrow for a clear needle). Less needle than `dial_min_needle` of the dial: not read (an
    even distribution, *No needle found*).
+6. A wide pointer (`dials._wide_pointer`, `dial_wide_pointer`): one real meter (issue #59) has a
+   bar across the whole ×0.001 dial, a red outline round a dark middle. There is no hub and no tip
+   to take a direction from, and which end counts is hard to see, so its long axis is used and both
+   ends get a peak (`Needle.ends`); the dials around it settle which end counts in the decode, and
+   the confidence counts its share of that end.
 
 **Putting it together.** `readers.wheel_decode` finds the most likely value of all wheels at
 once, right to left, with one rule between neighbours: a wheel stands on its digit and only turns
@@ -137,6 +142,12 @@ right — the way a person reads a meter, done for all dials together. A meter w
 early (from 7 instead of 9, as #4112 describes) still decodes right while the wheel is less than
 half a digit off what the dial says; how early a meter's wheel turns could later be learned from
 its own readings, as a counter's change limit is.
+
+A wheel says which digit it is on, but not its tenth as exactly as a needle does: on one real meter
+the wheels lagged the needle by a steady 0.2 of a digit, and while the last wheel passed 9 the
+wheels held the needle's digit one too low (the wheels' model is much sharper than a needle's
+peak). So with dials every wheel gets `dial_wheel_slack_bins` of slack in the decode: within that,
+the needle decides. The confidence still counts the wheels as they are read.
 
 **What it gives.** The value with as many more decimals as there are dials (the counter's
 decimals plus the dials); the confidence the wheels' (as before) times the weakest dial's share
@@ -221,10 +232,11 @@ dials* (every gesture, on desktop, Pixel and iPhone), and `scripts/fake_camera.p
 and `/meter-region.json` (a drawn meter with four dials, `&turn`, `&tilt`, `&ccw`).
 
 Left before the stable release (for whoever takes it on):
-- **More real meters.** One real meter is in the tests (`tests/assets/meter_dials.jpg`, pale drops,
-  daylight; read as by eye, also with the circles placed beside the dials), and the photo in issue
-  #59 (thin red needles on red hubs, not CC0: tried locally only) reads right too. More exports,
-  by day and by night, from other meters: are the needles found under glass with glare, is the
+- **More real meters.** Three real meters are in the tests: `tests/assets/meter_dials.jpg` (pale
+  drops, daylight; read as by eye, also with the circles placed beside the dials) and
+  `tests/assets/meter_readings/` (frames from two exports with dials recorded, values checked by eye:
+  one dial, and four dials with a wide pointer). The photo in issue #59 (thin red needles on red
+  hubs, not CC0: tried locally only) reads right too. More exports, by day and by night, from other meters: are the needles found under glass with glare, is the
   confidence sensible, does the last wheel agree with the ×0.1 dial?
 - **Night pictures.** The dark-needle path is tested on a drawn dial made grey; a real infrared
   picture has glare and a dark rim. If it fails, that is the case for phase 3 (§6).

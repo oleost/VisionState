@@ -231,7 +231,12 @@ READING = {
     # the larger of green and blue) than the dial's face: a pale needle in a picture with a colour
     # cast counts too. Its hub is what is left of it with dial_hub_erode of the dial picture's size
     # peeled off its edges (the thick part round the axis: a hub, or a drop-shaped needle's body);
-    # its direction is that of the dial_tip_share of its pixels farthest from the hub.
+    # its direction is that of the dial_tip_share of its pixels farthest from the hub. A wide pointer
+    # across the dial instead reaches dial_wide_pointer[0] of the radius to both sides of the centre
+    # and is at least dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
+    # may be dial_wheel_slack_bins off where the value puts it (it says the digit, the needle the rest).
+    "dial_wide_pointer": (0.6, 1.3),
+    "dial_wheel_slack_bins": 4,
     "max_dials": 6,
     "dial_radius": (0.1, 4.0),
     "dial_reach": 6.0,

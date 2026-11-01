@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.13.0b5
+## 0.13.0b6
+
+### Fixed
+
+- **Pointer dials: the last digit no longer reads one too low** (#59) while the last wheel passes 9.
+  A wheel says which digit it is on; within a few tenths of that, the needle now decides.
+- **Pointer dials: a wide pointer across a whole dial is read** (#59): a bar with a red outline and
+  a dark middle, which held nearly every reading back as unsure. The dial before it settles which
+  of its ends counts.
 
 ### New
 

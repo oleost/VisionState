@@ -376,7 +376,8 @@ dial whose numbers go the other way (on some gas and electricity meters every se
 Each dial is one more digit after the counter's own decimals, and the wheels and dials are read
 together: the last wheel's digit is settled by the ×0.1 dial, a needle standing on a number by the
 dial after it — the way a person reads a meter — so a last wheel that already shows the next digit
-coming is read right. The needle is found by being redder than the dial's face — pale needles and
+coming is read right. A wide pointer across a whole dial is read too: the dial before it settles
+which of its ends counts. The needle is found by being redder than the dial's face — pale needles and
 pictures with a colour cast too — or by being the darkest part of the dial when the picture has no
 colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
 a little beside the dial still reads right. *What the reader sees* shows

@@ -219,6 +219,27 @@ def render_dial(position: float, radius: int = DIAL_RADIUS, ccw: bool = False) -
     return image
 
 
+def render_wide_dial(position: float, radius: int = DIAL_RADIUS, ccw: bool = False) -> Image.Image:
+    """A pointer dial with a wide pointer instead of a needle: a bar across the whole dial, a red
+    outline round a dark middle, along ``position`` (0.0-9.9; the other end is 5 away)."""
+    image = render_dial(0, radius, ccw)
+    c = image.width / 2
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((c - radius * 0.3, c - radius * 0.3, c + radius * 0.3, c + radius * 0.3), fill=(246, 246, 242))
+    a = (-1 if ccw else 1) * position / 10 * 2 * math.pi
+    along, across = (math.sin(a), -math.cos(a)), (math.cos(a), math.sin(a))
+
+    def bar(length: float, width: float) -> list[tuple[float, float]]:
+        return [
+            (c + s * along[0] * length + t * across[0] * width, c + s * along[1] * length + t * across[1] * width)
+            for s, t in ((1, 1), (1, -1), (-1, -1), (-1, 1))
+        ]
+
+    draw.polygon(bar(radius * 0.85, radius * 0.34), fill=(170, 40, 35))
+    draw.polygon(bar(radius * 0.7, radius * 0.2), fill=(35, 40, 38))
+    return image
+
+
 def render_meter(
     value: float, digits: int = 5, dials: int = 4, ccw: tuple[bool, ...] = ()
 ) -> tuple[Image.Image, dict, list[dict]]:
