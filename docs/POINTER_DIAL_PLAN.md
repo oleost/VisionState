@@ -143,11 +143,15 @@ early (from 7 instead of 9, as #4112 describes) still decodes right while the wh
 half a digit off what the dial says; how early a meter's wheel turns could later be learned from
 its own readings, as a counter's change limit is.
 
-A wheel says which digit it is on, but not its tenth as exactly as a needle does: on one real meter
-the wheels lagged the needle by a steady 0.2 of a digit, and while the last wheel passed 9 the
-wheels held the needle's digit one too low (the wheels' model is much sharper than a needle's
-peak). So with dials every wheel gets `dial_wheel_slack_bins` of slack in the decode: within that,
-the needle decides. The confidence still counts the wheels as they are read.
+A wheel says which digit it is on, but not its tenth as exactly as a needle does, and real meters
+differ: on two the wheels follow the needle, one lagging it by a steady 0.2 of a digit; on a third
+the last wheel stands on its digit until the ×0.1 dial is at about 9.8. A place in the value
+therefore accepts a wheel within `dial_wheel_slack_bins` behind it and `dial_wheel_ahead_bins` ahead,
+or standing on its digit at `dial_wheel_stand_weight` (`readers.dial_wheel_weights`), so that a
+wheel that could be either follows. From `dial_wheel_exact_from` of a digit on it may not be ahead:
+there a wheel standing on the next digit would pass for one nearly there. How far the region is off
+is found from the wheels before the last, not by fitting the last one to the needle. The confidence
+counts the share of each wheel that fits.
 
 **What it gives.** The value with as many more decimals as there are dials (the counter's
 decimals plus the dials); the confidence the wheels' (as before) times the weakest dial's share
@@ -189,9 +193,8 @@ like the wheel readers (`readers.json`). The decode and the interface stay the s
 - **Small dials.** About 60 pixels across in the issue's picture: enough for a needle, not for much
   less. DOCS.md says how close the camera should be.
 - **Night.** A red needle under infrared is grey; the dark-needle path has to carry it, or phase 3.
-- **How a meter's last wheel moves.** Smooth with the ×0.1 dial on the meter of issue #59; on
-  others it may snap. The link from the last wheel to the first dial may need to be *step* for
-  them — a setting, or learned from the readings.
+- **How a meter's last wheel moves.** Both kinds are read (§5). In the last tenth of a digit they
+  look alike, and a standing wheel may be read one too low there.
 - **More to set up.** Every dial is a circle to place; the defaults (size, direction) must make the
   usual meter a matter of four taps.
 - **Exports from users** would settle most of these: a readings export (Quality tab) and a picture

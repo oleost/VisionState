@@ -34,7 +34,7 @@ image from the readings a user exported from VisionState and shared in
 [issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the export's LICENSE.txt),
 as exported (the meter's face straightened).
 
-`meter_readings/` holds frames of two more meters with their dials' pictures, from the readings two
+`meter_readings/` holds frames of three more meters with their dials' pictures, from the readings three
 users exported from VisionState and shared in
 [issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the exports' LICENSE.txt),
 as exported. `readings.json` lists each frame's region and its value as read by eye, not the

@@ -154,6 +154,32 @@ def test_a_wheel_that_lags_does_not_pull_a_needle_off_its_number():
     assert text.text == "06470400"
 
 
+def test_a_last_wheel_that_stands_on_its_digit_until_the_dial_is_round():
+    # 979.7746 on a meter whose last wheel only turns when the ×0.1 dial is nearly round: not 978.7746.
+    picture = Image.new("RGB", (64, 32))
+    wheels = StubWheels([0, 0, 9, 7, 9])
+    text, _ = wheels.read_counter(picture, 5, None, [needle_at(7.7), needle_at(7.4), needle_at(4.6), needle_at(6.0)])
+    assert text.text == "009797746" and text.score >= 0.7
+    # Turning by the end of the round, and on the next digit after it.
+    text, _ = StubWheels([0, 0, 9, 7.5, 9.5]).read_counter(picture, 5, None, [needle_at(9.8)])
+    assert text.text[:6] == "009799"
+    text, _ = StubWheels([0, 0, 9, 8, 0]).read_counter(picture, 5, None, [needle_at(0.2)])
+    assert text.text[:6] == "009800"
+    # A wheel that follows its dial and is nearly on the next digit is still on this one.
+    text, _ = StubWheels([0, 0, 1, 8, 6.9]).read_counter(picture, 5, None, [needle_at(9.5)])
+    assert text.text[:6] == "001869"
+
+
+@pytest.mark.parametrize(
+    ("name", "seen"), [("0146-dial1", 8.9), ("0045-dial1", 0.1), ("0446-dial2", 8.8), ("0086-dial1", 9.8)]
+)
+def test_holes_in_a_needle_do_not_turn_it_round(name, seen):
+    # Real dark pictures: holes in the mask of a drop-shaped needle's body moved its hub towards the tip.
+    needle = dials.read_needle(Image.open(ASSETS / "meter_readings" / f"zapadee-{name}.jpg").convert("RGB"))
+    assert needle.position is not None and abs((needle.position - seen + 5) % 10 - 5) < 0.3, needle.position
+    assert needle.certainty > 0.5
+
+
 def test_the_dials_around_a_wide_pointer_settle_which_end_counts():
     # 187.2879 and, with the pointer on the same line, 187.2829: the same picture of the wide
     # pointer, the ×0.01 dial before it says which end.
@@ -237,8 +263,9 @@ def test_a_real_meter_with_pale_needles(settings, off):
 
 @requires_reader
 def test_real_meters_read_as_by_eye():
-    """Frames of two real meters (tests/assets/meter_readings, values read by eye): wheels that lag
-    the one needle, and four dials of which one has a wide pointer."""
+    """Frames of three real meters (tests/assets/meter_readings, values read by eye): wheels that lag
+    the one needle, four dials of which one has a wide pointer, and a last wheel that stands on its
+    digit until the ×0.1 dial is nearly round, with dark needles full of holes."""
     folder = ASSETS / "meter_readings"
     spec = readers.WHEEL_READERS["wheels-v2"]
     reader = readers.WheelReader(spec, MODEL_DIR / "wheels-v2.onnx")

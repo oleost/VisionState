@@ -84,10 +84,13 @@ def _needle_mask(rgb: np.ndarray, dist: np.ndarray, radius: float) -> tuple[np.n
 def _hub(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tuple[float, float]:
     """Where the needle turns, from the dial's centre: the middle of its thick part (a hub, or a
     drop-shaped needle's body), what is left with its edges peeled off. A circle placed a little
-    beside the dial then still reads the needle's direction right. A thin needle without a hub
-    seen (or one found far from the centre) turns round the circle's centre."""
+    beside the dial then still reads the needle's direction right. Holes in the mask are closed
+    first: what is left of a body full of holes would lie towards the tip and turn the needle round.
+    A thin needle without a hub seen (or one found far from the centre) turns round the circle's centre."""
     peel = 2 * round(READING["dial_hub_erode"] * mask.shape[0] / 2) + 1
-    core = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MinFilter(peel))) > 0
+    picture = Image.fromarray(mask.astype(np.uint8) * 255)
+    closed = picture.filter(ImageFilter.MaxFilter(peel)).filter(ImageFilter.MinFilter(peel))
+    core = np.asarray(closed.filter(ImageFilter.MinFilter(peel))) > 0
     if not core.any():
         return 0.0, 0.0
     hx, hy = float(dx[core].mean()), float(dy[core].mean())

@@ -234,9 +234,14 @@ READING = {
     # its direction is that of the dial_tip_share of its pixels farthest from the hub. A wide pointer
     # across the dial instead reaches dial_wide_pointer[0] of the radius to both sides of the centre
     # and is at least dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
-    # may be dial_wheel_slack_bins off where the value puts it (it says the digit, the needle the rest).
+    # may be dial_wheel_slack_bins behind where the value puts it and dial_wheel_ahead_bins ahead (from
+    # dial_wheel_exact_from tenths of a digit on, not ahead; it says the digit, the needle the rest), or
+    # stand on its digit, which counts dial_wheel_stand_weight.
     "dial_wide_pointer": (0.6, 1.3),
     "dial_wheel_slack_bins": 4,
+    "dial_wheel_ahead_bins": 1,
+    "dial_wheel_exact_from": 8,
+    "dial_wheel_stand_weight": 0.3,
     "max_dials": 6,
     "dial_radius": (0.1, 4.0),
     "dial_reach": 6.0,

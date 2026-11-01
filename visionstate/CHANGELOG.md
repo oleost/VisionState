@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0b7
+
+### Fixed
+
+- **Pointer dials: a last wheel that stands still is read right** (#59). On some meters the last wheel
+  stays on its digit until the ×0.1 dial is nearly round; such a meter read one too low for much of
+  every round. Wheels that follow the dial are read as before.
+- **Pointer dials: a needle in a dark picture is no longer turned half a round** (#59).
+
 ## 0.13.0b6
 
 ### Fixed

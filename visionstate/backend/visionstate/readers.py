@@ -14,6 +14,7 @@ position, so a wheel half way between two digits is read as such.
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import re
@@ -476,6 +477,25 @@ def wheel_details(
     }
 
 
+@functools.cache
+def dial_wheel_weights(bins: int) -> np.ndarray:
+    """How much a wheel seen at a position (columns) counts for a place in the value (rows) on a
+    counter with pointer dials, whose needles say the fraction better than the wheel does. A wheel
+    follows its fraction, up to ``READING["dial_wheel_slack_bins"]`` behind it and
+    ``dial_wheel_ahead_bins`` ahead; or it stands on its digit until the dial is nearly round,
+    which counts ``dial_wheel_stand_weight``, so a wheel that could be either follows."""
+    tenth = bins // 10
+    behind = READING["dial_wheel_slack_bins"]
+    weights = np.zeros((bins, bins))
+    for place in range(bins):
+        digit = place - place % tenth
+        ahead = 0 if place % tenth >= READING["dial_wheel_exact_from"] else READING["dial_wheel_ahead_bins"]
+        low = digit - READING["wheel_slack_bins"]
+        weights[place, np.arange(low, place + ahead + 1) % bins] = READING["dial_wheel_stand_weight"]
+        weights[place, np.arange(place - behind, place + ahead + 1) % bins] = 1.0
+    return weights
+
+
 class WheelReader:
     """Reads a mechanical counter wheel by wheel: one small ONNX model gives each wheel's position.
 
@@ -543,19 +563,31 @@ class WheelReader:
         the value was found (``wheel_details``), so it can be checked without the model.
 
         A wheel says which digit it is on, but its tenth less exactly than a needle does (on real
-        meters it lags the needle by a steady part of a digit), so with dials the wheels get
-        ``READING["dial_wheel_slack_bins"]`` of slack and a needle is not pulled off its number.
+        meters it lags the needle by a steady part of a digit, or stands on its digit until the
+        dial is nearly round), so with dials the wheels count as ``dial_wheel_weights`` says and a
+        needle is not pulled off its number.
         """
         probs = self.probabilities(image, digits, box)
         logp = self.with_slack(probs)
         extra = len(needles)
-        decode_logp = self.with_slack(probs, READING["dial_wheel_slack_bins"]) if extra else logp
+        bins = probs.shape[1]
         dial_probs = np.array([n.probs for n in needles]).reshape(extra, probs.shape[1])
         dial_logp = self.with_slack(dial_probs)
         links = ["step"] * (digits - 1) + ["smooth"] * extra
         best: tuple[float, float, list[int], int] | None = None
-        for shift in range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1):
-            rows = np.concatenate([np.roll(decode_logp, -shift, axis=1), dial_logp])  # the dials are not shifted
+        shifts = range(-READING["wheel_max_shift_bins"], READING["wheel_max_shift_bins"] + 1)
+        if extra:
+            # The wheels at rest say how far the region is off, not the last one, which may be
+            # turning: shifted to fit the needle, a wheel standing on 9 would pass for one on 8.8.
+            tenth = bins // 10
+            fit = {s: logp[: digits - 1, s % tenth :: tenth].max(axis=1).sum() - abs(s) for s in shifts}
+            shifts = [max(shifts, key=lambda s: fit[s])]
+        for shift in shifts:
+            if extra:  # shifted before the weights: which place a position fits depends on its digit
+                seen = np.log(np.maximum(np.roll(probs, -shift, axis=1) @ dial_wheel_weights(bins).T, 1e-12))
+            else:
+                seen = np.roll(logp, -shift, axis=1)
+            rows = np.concatenate([seen, dial_logp])  # the dials are not shifted
             value, score, at = wheel_decode(rows, links)
             score -= READING["wheel_shift_penalty"] * abs(shift)
             if best is None or score > best[1]:
@@ -566,12 +598,16 @@ class WheelReader:
             shown, number = digits + extra, math.floor(value) % 10 ** (digits + extra)
         else:
             shown, number = digits, math.floor(value + 0.5) % 10**digits
-        p = self.wheel_p(probs, logp, at[:digits], shift)
+        if extra:  # a wheel's share: all of it that fits where the value puts it, however it moves
+            fits = dial_wheel_weights(bins) > 0
+            fits = fits | np.roll(fits, READING["dial_wheel_ahead_bins"], axis=1)
+            p = [float(probs[k, np.roll(fits[b], shift)].sum()) for k, b in enumerate(at[:digits])]
+        else:
+            p = self.wheel_p(probs, logp, at[:digits], shift)
         # A dial's share: its needle's probability near where the value puts it (a needle is never
         # as sharp as a wheel the model knows, so not its probability at one position; of a wide
         # pointer's two ends, the share of the end the value puts it at). The wheels' confidence
         # leaves the dials out of the score, the weakest dial is taken with it.
-        bins = probs.shape[1]
         near = np.arange(-READING["wheel_weakest_bins"], READING["wheel_weakest_bins"] + 1)
         dial_p = [
             min(1.0, float(dial_probs[k, (b + near) % bins].sum()) * needles[k].ends) for k, b in enumerate(at[digits:])
