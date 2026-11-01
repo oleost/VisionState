@@ -1,199 +1,73 @@
 # Changelog
 
-## 0.13.0b10
+## 0.13.0
 
-### Fixed
-
-- **A backup now holds what a sound sensor has learned of its room.** Restoring one dropped those
-  sounds, and the sensor had to learn them again; a sensor's own sounds were not lost.
-
-## 0.13.0b9
-
-### Changed
-
-- **Updated dependencies**, with no change in what the app does: FastAPI, ONNX Runtime, SQLAlchemy,
-  PyAV and websockets in the app, and Svelte and Vite in its interface. Tested on the Home Assistant
-  2026.11 beta.
-
-## 0.13.0b8
-
-### Fixed
-
-- **The live page no longer says "Checks every 10 s" with the regular check off** (#62). Object and
-  reading sensors now say they only check or read when triggered. Only the text was wrong: the
-  regular check did stop.
-
-## 0.13.0b7
-
-### Fixed
-
-- **Pointer dials: a last wheel that stands still is read right** (#59). On some meters the last wheel
-  stays on its digit until the ×0.1 dial is nearly round; such a meter read one too low for much of
-  every round. Wheels that follow the dial are read as before.
-- **Pointer dials: a needle in a dark picture is no longer turned half a round** (#59).
-
-## 0.13.0b6
-
-### Fixed
-
-- **Pointer dials: the last digit no longer reads one too low** (#59) while the last wheel passes 9.
-  A wheel says which digit it is on; within a few tenths of that, the needle now decides.
-- **Pointer dials: a wide pointer across a whole dial is read** (#59): a bar with a red outline and
-  a dark middle, which held nearly every reading back as unsure. The dial before it settles which
-  of its ends counts.
+**VisionState can now hear.** This release adds sound sensors, reads meters seen at an angle and
+meters with pointer dials, and gives you more control over what reaches Home Assistant.
 
 ### New
 
-- **Snapshots with a shape** (#62): on the Home Assistant tab, *Snapshot shape* is `free` or
-  width:height such as `1:1`, `4:3` or `16:9`. The picture gets as close as the region allows and
-  never cuts the object.
-- **A new snapshot when the object moves** (#62): looked at each check, once the box has changed by
-  the share you set (25 % by default), so something parked sends nothing new. Every picture is a new
-  row in Home Assistant's history; 0 sends one only when the count changes, as before.
-
-### Changed
-
-- **A simpler wizard: Camera, Detect, Checks.** The camera's picture and the warning about a
-  low-resolution stream now show where you pick the camera, and the region is drawn in the Detect
-  step, for every kind.
-- **A camera's light comes on in the first step**, as soon as both the camera and the light are chosen.
-- **Pointer dials in Settings** use the same *Edit: Counter | Dials* switch as the wizard, on the
-  Region card.
-- **A straightened region shows its wheel fields**, in perspective and inside the region.
-
-### Fixed
-
-- **The list of lights and entities in the wizard** was cut off and could not be scrolled to its end,
-  and dragging its scrollbar closed it.
-
-## 0.13.0b3
-
-Still an early beta of sound sensors; what has not been tested is listed under 0.13.0b1.
-
-### Fixed
-
-- **A sound could be missed while a clip was being finished.** With clips on, a sensor stopped
-  analysing sound while it waited for a clip's video, for up to ten seconds if the video was late.
-  It now goes on listening.
-- **Review could ask about a sound before its clip was stored.** The question now waits for the
-  clip, and an answer about a clip that is gone is kept instead of ending in an error.
-- **A siren could turn the smoke alarm on.** The smoke alarm's threshold is now 0.4 instead of 0.3.
-  A threshold you set yourself stays. If your alarm is far from the microphone, check its score on
-  the Live tab and lower the threshold if it is not heard.
-
-## 0.13.0b1
-
-**An early beta of sound sensors.** The first version of something new: expect rough edges, and
-please report what you find.
-
-### New
-
-- **Sound sensors**: VisionState can now hear. A sound sensor listens to a stream and tells Home
-  Assistant what it hears: a smoke alarm, a siren, a dog barking, someone talking and about 80 other
-  sounds, each its own on/off sensor. Everything runs locally. It knows that someone is talking,
-  never what is said. Choose **Listen** in the new sensor wizard.
+- **Sound sensors**: a sound sensor listens to a stream and tells Home Assistant what it hears: a
+  smoke alarm, a siren, a dog barking, someone talking and about 80 other sounds, each its own
+  on/off sensor. Everything runs locally. It knows that someone is talking, never what is said.
+  Choose **Listen** in the new sensor wizard. The sound model (about 7 MB) is downloaded when you
+  make the first sound sensor.
 - **Your own sounds**: teach it your doorbell or the washing machine's beep from a few recordings
   or clips.
 - **Clips** (off by default): keep the seconds around a sound, with the camera's video if it has
   any, to listen to and teach from. Speech in a clip is silenced before it is stored.
-
-### What has been tested, and what has not
-
-- **RTSP has not been tested with a real camera yet**: the developer has no camera with sound to
-  test it on. It is built and tested against simulated streams. If you try a camera, please tell us
-  the model and how it went.
-- Tested on a real Home Assistant with live HTTP streams, including a real smoke alarm heard through
-  an iPhone's microphone. That is one alarm in one home, not proof that it hears yours.
-- Not tested: Raspberry Pi 4, ESP32 microphones, clips in the Home Assistant app on iOS, and false
-  alarms over days in a real home. Thresholds are a best guess: try a sound on the Live tab and
-  adjust.
-
-**A smoke alarm sensor is an extra notification, never a replacement for a certified detector.**
-
-The sound model (about 7 MB) is downloaded when the first sound sensor is made.
-
-## 0.12.0b6
-
-### New
-
+- **Meters and displays seen turned or at an angle are read upright** (#58): put the region's four
+  corners on the corners of the digits or wheels and mark the top edge. The region is then read as
+  if the camera looked straight at it. This is on for new reading sensors. Existing sensors read as
+  before until you turn on *Correct rotation and perspective* on their Region card.
+- **Pointer dials** (#59): the small dials beside the wheels of many water meters (×0.1, ×0.01 …)
+  can be added to a mechanical counter read by the wheel reader, with *Edit: Dials* in the wizard or
+  in Settings. Each dial adds a digit, and wheels and dials are read together. Pale, drop-shaped and
+  wide two-ended needles are read too, and so are wheels that stand still until the dial is nearly
+  round. Review and the Quality tab show the wheels and each dial with the needle that was found.
 - **Object snapshots**: each object on an object sensor can have its own picture entity, such as
-  *Car snapshot*: the object cut from the frame, for notifications and dashboards. It is new when the
-  count changes, sent just before the object goes on, and the last one stays after it has gone.
-  Several of the same object share one picture that covers them all. Off until you tick it.
+  *Car snapshot*, for notifications and dashboards. Off until you tick it.
+  - **Shape** (#62): *Snapshot shape* is `free` or a width:height such as `1:1` or `16:9`. The
+    object is never cut.
+  - **Movement** (#62): a new picture can also be sent when the object has moved by a share you
+    set, so something parked sends nothing new. Every picture is a new row in Home Assistant's
+    history. Set it to 0 to send one only when the count changes.
 - **A Home Assistant tab on every sensor**: choose *Send values*, *Don't send values* (the entities
   stay, unavailable) or *Not in Home Assistant* (no entities, nothing on MQTT), and tick which
-  entities it has. What is ticked is there and on in Home Assistant, with no second switch there.
+  entities the sensor has. *Send to Home Assistant* moved here from Settings.
 
 ### Changed
 
-- **New sensor wizard**: the last step now offers *Not in Home Assistant*, so a sensor can be set up
-  before anything reaches Home Assistant or MQTT. *Send to Home Assistant* moved from Settings to
-  the new tab.
-- **After this update**, the optional entities of reading sensors (raw reading, problem, accepted,
-  rate, reader image) that are on in Home Assistant stay, and those that are off there are removed,
-  once. New reading sensors have them only when ticked on the tab.
+- **A simpler wizard: Camera, Detect, Checks.** The camera's picture and the low-resolution warning
+  now show where you pick the camera, and the region is drawn in the Detect step, for every kind. A
+  camera's light comes on in the first step. The last step offers *Not in Home Assistant*, so a
+  sensor can be set up before anything reaches Home Assistant or MQTT.
+- **Clearer errors**: a form's validation error now reads as a sentence.
+- **Updated dependencies**: FastAPI, ONNX Runtime, SQLAlchemy, PyAV, websockets, Svelte and Vite.
 
-## 0.12.0b4
+### Fixed
 
-### Better
+- **The live page no longer says "Checks every 10 s" with the regular check off** (#62). Only the
+  text was wrong: the regular check did stop.
+- **The list of lights and entities in the wizard** was cut off and could not be scrolled to its
+  end, and dragging its scrollbar closed it.
 
-- **Check pointer dials in Review**: a rejected or spot-checked reading of a meter with pointer
-  dials now shows the wheels and each dial with the needle that was found, in the review queue and
-  on the Quality tab. Before, only the counter's region was shown, so the digits from the dials
-  could not be checked.
+### After this update
 
-## 0.12.0b3
+Optional entities of reading sensors (raw reading, problem, accepted, rate, reader image) that are
+on in Home Assistant stay. Those that are off there are removed, once. New reading sensors have them
+only when ticked on the new tab.
 
-Still an early beta for pointer dials: now tried on two real meters.
+### What sound sensors have been tested on
 
-### Better
+- **Tested:** a real Home Assistant with live HTTP streams, including one real smoke alarm heard
+  through an iPhone's microphone. That is one alarm in one home, not proof that it hears yours.
+- **Not tested:** RTSP from a real camera, Raspberry Pi 4, ESP32 microphones, clips in the Home
+  Assistant app on iOS, and false alarms over days in a real home. Thresholds are a best guess, so
+  try a sound on the Live tab and adjust. If you try a camera, please tell us the model and how it
+  went.
 
-- **Pointer dials on real meters**: a needle is found by being redder than its dial's face, so
-  pale needles and pictures with a colour cast are read too (before, the first real meter shared
-  had none of its needles found). The direction is taken from the needle's own hub to its tip,
-  so drop-shaped needles are read right and a circle placed a little beside its dial still reads
-  the same.
-
-## 0.12.0b2
-
-Still an early beta: straightened regions and pointer dials are tested on drawn meters only.
-
-### Changed
-
-- **Correct rotation and perspective** (was *Straighten the region*) is now with the region it
-  changes: under the picture in the wizard, and in the Region card in Settings.
-- **Read the last wheel's fraction is gone.** Without pointer dials, the last wheel is rounded to
-  the nearest digit again, as before 0.12: reading the digit a wheel has passed made a wheel at
-  rest that the reader saw a hair below its digit read a whole digit too low. On a meter with
-  pointer dials, the ×0.1 dial settles the last wheel instead. A counter made in 0.12.0b1 loses
-  its extra decimal by itself (Home Assistant may show one decimal less) and holds its last value
-  until the meter has gone up one more step.
-
-## 0.12.0b1
-
-**An early beta, lightly tested.** The two features below pass the automated tests on drawn
-meters, but have not yet been tried on a real meter seen askew or on real pointer dials. If you
-have such a meter, please try it and tell us how it went — a screenshot of *What the reader
-sees*, or an export (Quality → *Export readings*), helps most.
-
-### New
-
-- **A meter or display seen turned or at an angle is read upright** (#58): a reading sensor's
-  region can be straightened. Put its four corners on the corners of the digits or wheels, mark
-  the top edge (**Turn** moves the mark), and the region is read as if the camera looked straight
-  at it — any angle, perspective included. On for new reading sensors; sensors made before read as
-  they did until *Straighten the region* is turned on in their settings.
-- **Pointer dials** (#59): the small dials beside the wheels of many water meters (×0.1, ×0.01 …)
-  can be added to a mechanical counter read by the wheel reader — *Edit: Dials* in the wizard, or
-  the *Pointer dials* card in Settings. Each dial adds a digit, and the wheels and dials are read
-  together, so the ×0.1 dial settles the last wheel. The needle is found by its red colour, or as
-  the darkest part of the dial in an infrared picture.
-- **The last wheel's fraction**: a counter read by the wheel reader counts the digit its last
-  wheel has passed (not rounded up half way, which made the last digit come early) and reads how
-  far it has turned as one more decimal. On for new counters; counters made before read as they
-  did until *Read the last wheel's fraction* is turned on.
-- History, Review and the readings export (format 7) keep the straightened region and each dial
-  as it was read.
+**A smoke alarm sensor is an extra notification, never a replacement for a certified detector.**
 
 ## 0.11.0
 
