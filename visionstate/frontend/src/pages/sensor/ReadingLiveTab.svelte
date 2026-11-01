@@ -123,7 +123,8 @@
           </span>
         {:else}
           <span class="xsmall faint">
-            Reads every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it reads</a>.
+            {sensor.triggers.regular ? `Reads every ${sensor.interval_s} s.` : 'Only reads when triggered.'}
+            <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it reads</a>.
           </span>
         {/if}
       </div>

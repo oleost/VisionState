@@ -116,8 +116,12 @@
           </span>
         {:else}
           <span class="xsmall faint">
-            Checks every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Add a motion or change trigger</a>
-            to react faster.
+            {#if sensor.triggers.regular}
+              Checks every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Add a motion or change trigger</a>
+              to react faster.
+            {:else}
+              Only checks when triggered. <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it checks</a>.
+            {/if}
           </span>
         {/if}
       </div>

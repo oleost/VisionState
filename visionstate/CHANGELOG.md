@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0b8
+
+### Fixed
+
+- **The live page no longer says "Checks every 10 s" with the regular check off** (#62). Object and
+  reading sensors now say they only check or read when triggered. Only the text was wrong: the
+  regular check did stop.
+
 ## 0.13.0b7
 
 ### Fixed
