@@ -685,13 +685,23 @@ the broker holds no pictures nobody asked for.
   `snapshot_*` in `settings.PUBLISH`, `engine.publishing.PublishingMixin._send_snapshot`): the union of
   the object's boxes with a margin, at least a minimum size, kept inside the bounding box of the
   region, so it shows nothing the sensor's *Last frame* does not. No boxes drawn. Sent when the count
-  changes, not at a refresh (retained on the broker, so it survives restarts with no table or folder;
-  a parked car would otherwise add a row every few minutes), and before the state, so an automation
-  the state starts finds this picture. Nothing is sent when the object is gone: the last one is
-  what "last seen" should show. Not one entity per object (a changing number of entities does not
-  fit automations), and no "better picture" while the object stays (a notification has gone by then;
-  add it if real use shows half-seen objects). Frigate's per-event picture URLs need its own
-  integration; here it is MQTT only, so an automation gets the newest picture.
+  changes or the boxes moved, not at a refresh (retained on the broker, so it survives restarts with
+  no table or folder; a parked car would otherwise add a row every few minutes), and before the
+  state, so an automation the state starts finds this picture. Nothing is sent when the object is
+  gone: the last one is what "last seen" should show. Not one entity per object (a changing number
+  of entities does not fit automations). Frigate's per-event picture URLs need its own integration;
+  here it is MQTT only, so an automation gets the newest picture.
+  *Shape* (`snapshot_aspect` in `settings.OBJECT_DEFAULTS`, discussion #62): free text on the Home
+  Assistant tab, as near as the region allows; the object is never cut and nothing is padded or
+  stretched, so a picture may miss the shape. *Movement* (`snapshot_move`): at a check the union of
+  the boxes is compared with that of the last picture sent (`imaging.box_change`), not of the last
+  check, so jitter does not add up and slow movement does. The default stands above what the
+  detector does to objects that stand still (the CC0 photos shifted a few pixels, 2026-11-01: up to
+  5 % with the same boxes, 15 % when a weak box's edge jumps); a weak box that comes and goes changes
+  the count, which sends a picture whatever this limit says. A picture is at most one per check and
+  each is a Home Assistant row, which is why it is a limit and the snapshot stays opt-in. Saving
+  pictures to files is left to an automation (Home Assistant's `image.snapshot`): keeping them is
+  an NVR's job, not decided here.
 
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Don't send values** (`sensor.publish`, default
@@ -718,9 +728,10 @@ outside Home Assistant it shows the expected IDs.
 Principle: **easy by default, details on demand.** Dark theme, responsive.
 
 1. **Dashboard** — cards per sensor: live thumbnail, state, confidence, 24 h timeline, health.
-2. **New sensor wizard** — camera → region → *detect*: states (names), objects (popular
-   first, all 80 behind "Show all") or a reading (display or counter), each tested on a fresh
-   frame → optional triggers.
+2. **New sensor wizard** — camera (a small picture from it, with a warning about a low-resolution
+   stream) → *detect*: states (names), objects (popular first, all 80 behind "Show all") or a
+   reading (display or counter), with the region drawn right there, because what a good region is
+   depends on the kind; objects and readings are tested on a fresh frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
@@ -756,7 +767,7 @@ the rejected and checked readings with *read correctly* / *misread*), **History*
 and rejected readings) and **Settings** (mode,
 decimals, unit, device class, display, limits). The reading settings start with the type —
 *digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
-the region in the wizard and on the Settings tab).
+the region in the wizard and on the Settings tab, a straightened region's in its perspective, inside it).
 
 Object sensors have three instead: **Live** (the exact analysed frame with its boxes and
 per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
@@ -977,7 +988,7 @@ is part of backups and needs no restart.
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
 | **Straightened reading regions** | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). Left: try it by hand on a phone and on a real meter seen askew; answer the issue at the stable release | 0.12.0b1 (early beta) |
 | **Pointer dials** | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, by day and at night, and on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | 0.12.0b1 (early beta) |
-| **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object (discussion #62) | 0.12.0b6 |
+| **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object, with its shape and a new picture when it moves (discussion #62) | 0.12.0b6 |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Sound sensors** | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0b1 (early beta) |
 

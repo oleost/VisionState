@@ -20,7 +20,7 @@ from visionstate.mqtt import (
     main_entities,
     muted_topics,
 )
-from visionstate.settings import KIND_OBJECTS, KIND_READING, PUBLISH, Settings, merge_reading
+from visionstate.settings import KIND_OBJECTS, KIND_READING, OBJECT_DEFAULTS, PUBLISH, Settings, merge_reading
 
 from .conftest import MODEL_DIR
 from .test_integration import wait_for
@@ -115,6 +115,32 @@ def test_snapshot_covers_every_box_within_the_region():
     assert imaging.snapshot(image, [[0.25, 0.25, 0.26, 0.26]], region, 0.0, 300).size == (200, 200)
 
 
+def test_snapshot_takes_the_shape_asked_for_as_far_as_the_region_allows():
+    image = Image.new("RGB", (1000, 500))
+    whole = (0.0, 0.0, 1.0, 1.0)
+    box = [[0.4, 0.4, 0.5, 0.8]]  # 100 × 200 pixels
+    assert imaging.snapshot(image, box, whole, 0.0, 0, 1.0).size == (200, 200)
+    assert imaging.snapshot(image, box, whole, 0.0, 0, 16 / 9).size == (356, 200)
+    assert imaging.snapshot(image, [[0.1, 0.4, 0.5, 0.5]], whole, 0.0, 0, 1.0).size == (400, 400)
+    # Too little room: the object stays whole, in the closest shape there is.
+    assert imaging.snapshot(image, [[0.0, 0.0, 1.0, 0.2]], whole, 0.0, 0, 1.0).size == (1000, 500)
+    # A narrow region: min_px gives way, so the shape holds.
+    narrow = (0.4, 0.0, 0.6, 1.0)
+    assert imaging.snapshot(image, [[0.45, 0.5, 0.5, 0.6]], narrow, 0.0, 300, 1.0).size == (200, 200)
+    assert imaging.snapshot(image, box, whole, 0.0, 0, None).size == (100, 200)
+
+
+def test_snapshot_shape_is_read_and_box_change_measured():
+    assert imaging.aspect_ratio("16:9") == 16 / 9 and imaging.aspect_ratio("1.5:1") == 1.5
+    for not_a_shape in ("free", "", "16", "0:1", "1:0", "a:b", "-1:1"):
+        assert imaging.aspect_ratio(not_a_shape) is None
+    box = (0.2, 0.2, 0.4, 0.4)
+    assert imaging.box_change(box, box) == 0
+    assert imaging.box_change(box, (0.6, 0.6, 0.8, 0.8)) == 1
+    assert imaging.box_change(box, (0.202, 0.2, 0.402, 0.4)) < OBJECT_DEFAULTS["snapshot_move"]  # jitter
+    assert imaging.box_change(box, (0.25, 0.2, 0.45, 0.4)) > OBJECT_DEFAULTS["snapshot_move"]  # walking
+
+
 def jpeg() -> bytes:
     out = io.BytesIO()
     Image.new("RGB", (800, 600), "white").save(out, "JPEG")
@@ -193,6 +219,31 @@ def test_a_snapshot_follows_the_count_and_comes_before_the_state(tmp_path):
         assert topic not in check(0)  # gone: the last one stays
         assert mqtt.sent[topic] == one_kept
         assert topic in check(1)  # back
+
+        # The same count: jitter sends nothing, and what moved does, measured from the last picture.
+        url = f"/api/v1/sensors/{sensor['id']}"
+
+        def look(box: list[float]) -> bool:
+            before = len(mqtt.order)
+            boxes[:] = [box]
+            done = rt.live_state(sensor["id"]).last_run
+            assert client.post(f"{url}/classify").status_code in (200, 202, 204)
+            assert wait_for(lambda: rt.live_state(sensor["id"]).last_run != done, timeout=10)
+            return topic in mqtt.order[before:]
+
+        start = [0.1, 0.1, 0.5, 0.5]
+        look(start)
+        assert not look([0.105, 0.1, 0.505, 0.5])
+        assert not look([0.11, 0.1, 0.51, 0.5])  # small steps count from the last picture
+        assert look([0.3, 0.1, 0.7, 0.5])
+        assert client.patch(url, json={"objects": {"snapshot_move": 0, "snapshot_aspect": "1:1"}}).status_code == 200
+        look([0.3, 0.1, 0.7, 0.5])  # a changed sensor sends again at its next check
+        assert not look([0.6, 0.5, 0.9, 0.9])  # 0: only the count
+        width, height = Image.open(io.BytesIO(mqtt.sent[topic])).size
+        assert width == height
+        assert client.patch(url, json={"objects": {"snapshot_aspect": "wide"}}).status_code == 422
+        kept = client.get(url).json()["objects"]
+        assert kept["snapshot_aspect"] == "1:1" and kept["classes"] == ["car"]
 
 
 class ConfirmingClient:

@@ -3,7 +3,7 @@
   // which entities exist. An entity chosen away is removed there.
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
-  import { toast, toastError } from '../../lib/app.svelte';
+  import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import type { HaEntity, Sensor } from '../../lib/types';
   import { HA_MODES, type HaMode } from '../../lib/ui';
@@ -15,6 +15,9 @@
   let mode = $state<HaMode>(modeOf(initial));
   let chosen = $state<Record<string, boolean>>(Object.fromEntries(initial.ha_entities.map((e) => [e.id, e.on])));
   let saving = $state(false);
+  let snapshotAspect = $state(initial.objects?.snapshot_aspect ?? '');
+  let snapshotMove = $state(Math.round((initial.objects?.snapshot_move ?? 0) * 100));
+  const moveLimits = $derived(app.config!.object_limits.snapshot_move);
 
   const isOn = (e: HaEntity) => chosen[e.id] ?? e.on;
   // An object sensor's entities as a table: one row per object, one column per entity of it.
@@ -27,6 +30,7 @@
     return [...rows];
   });
   const others = $derived(sensor.ha_entities.filter((e) => !e.object));
+  const snapshotChosen = $derived(sensor.ha_entities.some((e) => e.column === 'snapshot' && isOn(e)));
   // What saving takes out of Home Assistant, from what it has now.
   const removing = $derived.by(() => {
     if (!sensor.in_ha) return [];
@@ -41,6 +45,7 @@
         in_ha: mode !== 'none',
         publish: mode !== 'hold',
         ha_entities: Object.fromEntries(sensor.ha_entities.map((e) => [e.id, isOn(e)])),
+        ...(sensor.objects ? { objects: { snapshot_aspect: snapshotAspect, snapshot_move: (snapshotMove ?? 0) / 100 } } : {}),
       });
       toast('Saved');
       onchange();
@@ -71,7 +76,7 @@
       <h3>Entities</h3>
       <p class="small muted">
         What this sensor has in Home Assistant.
-        {#if objects.length}A snapshot is the object cut from the frame: new when its count changes, and the last one stays after it has gone.{/if}
+        {#if objects.length}A snapshot is the object cut from the frame: new when its count changes or it moves, and the last one stays after it has gone.{/if}
       </p>
       {#if objects.length}
         <table class="entities">
@@ -97,6 +102,28 @@
             {/each}
           </tbody>
         </table>
+      {/if}
+      {#if snapshotChosen}
+        <label class="col" style="gap:2px">
+          <span class="small">Snapshot shape</span>
+          <input class="input" type="text" maxlength="16" placeholder="free" bind:value={snapshotAspect} aria-label="Snapshot shape" />
+          <span class="xsmall faint">free, or width:height such as 1:1, 4:3 or 16:9. It gets as close as the sensor’s region allows, and never cuts the object.</span>
+        </label>
+        <label class="col" style="gap:2px">
+          <span class="small">New snapshot when the box has changed by</span>
+          <span class="row"
+            ><input
+              class="input sm num"
+              type="number"
+              min={moveLimits[0] * 100}
+              max={moveLimits[1] * 100}
+              step="5"
+              bind:value={snapshotMove}
+              aria-label="New snapshot when the box has changed by"
+            /> %</span
+          >
+          <span class="xsmall faint">Looked at each check, so something parked sends nothing new while something moving does. Every picture is a new row in Home Assistant’s history. 0: only when the count changes.</span>
+        </label>
       {/if}
       {#each others as entity (entity.id)}
         <label class="choice">

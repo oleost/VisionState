@@ -43,6 +43,26 @@ export function turnTop(roi: Roi): Roi {
   return fromPoints([...points.slice(1), points[0]]);
 }
 
+/** What takes a point (u, v) of the upright rectangle (0–1, top-left first) to the image, for four
+ * corners with the top edge first: the perspective the backend straightens (imaging.Plane). Null when
+ * the corners make no area to straighten. */
+export function quadMap(points: Pt[]): ((u: number, v: number) => Pt) | null {
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = points;
+  const [dx1, dx2, sx] = [x1 - x2, x3 - x2, x0 - x1 + x2 - x3];
+  const [dy1, dy2, sy] = [y1 - y2, y3 - y2, y0 - y1 + y2 - y3];
+  const det = dx1 * dy2 - dx2 * dy1;
+  if (Math.abs(det) < 1e-9) return null;
+  const g = (sx * dy2 - dx2 * sy) / det;
+  const h = (dx1 * sy - sx * dy1) / det;
+  return (u, v) => {
+    const w = g * u + h * v + 1;
+    return [
+      ((x1 - x0 + g * x1) * u + (x3 - x0 + h * x3) * v + x0) / w,
+      ((y1 - y0 + g * y1) * u + (y3 - y0 + h * y3) * v + y0) / w,
+    ];
+  };
+}
+
 /** The bounding rectangle of a region, without polygon corners. */
 export const toRectangle = (roi: Roi): Roi => ({ x: roi.x, y: roi.y, w: roi.w, h: roi.h });
 

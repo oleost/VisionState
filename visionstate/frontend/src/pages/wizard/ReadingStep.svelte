@@ -3,15 +3,16 @@
   // fresh frame whose region can be fine-tuned right there, and its entity in Home Assistant.
   import { onMount, untrack } from 'svelte';
   import { api } from '../../lib/api';
+  import CounterDialsSwitch from '../../lib/components/CounterDialsSwitch.svelte';
   import DialsEditor from '../../lib/components/DialsEditor.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
-  import Icon from '../../lib/components/Icon.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
+  import RegionButtons from '../../lib/components/RegionButtons.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import StraightenSwitch from '../../lib/components/StraightenSwitch.svelte';
   import { pct } from '../../lib/format';
   import { digitsSeen, extraDigits, readingUnit } from '../../lib/reading';
-  import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
+  import { toPoints, toRectangle } from '../../lib/roi';
   import type { ReadPreview, ReadingSettings, Roi } from '../../lib/types';
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
@@ -22,7 +23,8 @@
     entity,
     roi = $bindable(),
     reading = $bindable(),
-  }: { sourceType: string; source: string; entity: string; roi: Roi | null; reading: ReadingSettings } = $props();
+    frame,
+  }: { sourceType: string; source: string; entity: string; roi: Roi | null; reading: ReadingSettings; frame: string | null } = $props();
 
   // The frame, what the reader saw, and what it read.
   let result = $state<ReadPreview | null>(null);
@@ -92,39 +94,22 @@
     {/if}
     {#if busy && result}<span class="faint"> (reading…)</span>{/if}
   {/snippet}
-  {#if result}
-    {#if canDial}
-      <div class="row wrap edit-switch" role="group" aria-label="What the picture edits">
-        <span class="small muted">Edit:</span>
-        <button class="btn sm" class:primary={editing === 'counter'} aria-pressed={editing === 'counter'} onclick={() => (editing = 'counter')}>
-          Counter
-        </button>
-        <button class="btn sm" class:primary={editing === 'dials'} aria-pressed={editing === 'dials'} onclick={() => (editing = 'dials')} data-testid="edit-dials">
-          Dials{reading.dials.length ? ` (${reading.dials.length})` : ''}
-        </button>
-        {#if editing === 'counter' && !reading.dials.length}
-          <span class="xsmall faint">Has the meter pointer dials (×0.1, ×0.01 …)? Add them under <em>Dials</em>.</span>
-        {/if}
-      </div>
-    {/if}
-    <div class="read-images">
-      {#if canDial && editing === 'dials'}
+  {#if canDial && result}
+    <div class="edit-switch"><CounterDialsSwitch bind:editing dials={reading.dials.length} /></div>
+  {/if}
+  <div class="read-images">
+      {#if canDial && editing === 'dials' && result}
         <DialsEditor preview={result} bind:dials={reading.dials} decimals={reading.decimals} />
       {:else}
       <div class="col" style="gap:6px">
-        <RoiEditor src={result.image} bind:roi editable quad={reading.straighten}>
-          {#if reading.display === 'counter' && !(reading.straighten && isPolygon(roi))}
-            <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />
+        <!-- The first step's frame until the test has one: the first test loads the reader, and may fail. -->
+        <RoiEditor src={result?.image ?? frame} bind:roi editable quad={reading.straighten}>
+          {#if reading.display === 'counter'}
+            <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} straightened={reading.straighten} />
           {/if}
         </RoiEditor>
         <StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />
-        {#if reading.straighten && roi}
-          <div class="row wrap" style="gap:8px">
-            <button class="btn sm" onclick={() => roi && (roi = turnTop(roi))} title="The edge clockwise from it becomes the top" data-testid="roi-turn">
-              <Icon name="refresh" size={14} /> Turn
-            </button>
-          </div>
-        {/if}
+        <div class="row wrap" style="gap:8px"><RegionButtons bind:roi quad={reading.straighten} /></div>
         <span class="xsmall faint">
           {#if reading.straighten}
             Put the corners on the corners of the {reading.display === 'counter' ? 'wheels' : 'digits'}; see on the right
@@ -138,6 +123,7 @@
         </span>
       </div>
       {/if}
+      {#if result}
       <div class="col" style="gap:6px">
         <span class="xsmall faint">What the reader sees{reading.display === 'counter'
             ? reading.counter_reader === 'wheels'
@@ -146,8 +132,8 @@
             : ''}</span>
         <img class="seen" src={result.read_image} alt="The region as the number reader saw it" />
       </div>
-    </div>
-  {/if}
+      {/if}
+  </div>
 </TestCard>
 <HaPreview>
   <span class="mono">sensor.{entity}</span>
@@ -163,7 +149,6 @@
     color: var(--c-danger);
   }
   .edit-switch {
-    gap: 8px;
     padding: 0 16px 12px;
   }
   .read-images {
@@ -179,11 +164,7 @@
     border: 1px solid var(--c-border);
   }
   @media (max-width: 600px) {
-    .edit-switch {
-    gap: 8px;
-    padding: 0 16px 12px;
-  }
-  .read-images {
+    .read-images {
       grid-template-columns: minmax(0, 1fr);
     }
   }

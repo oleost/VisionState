@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.0b4
+
+### New
+
+- **Snapshots with a shape** (#62): on the Home Assistant tab, *Snapshot shape* is `free` or
+  width:height such as `1:1`, `4:3` or `16:9`. The picture gets as close as the region allows and
+  never cuts the object.
+- **A new snapshot when the object moves** (#62): looked at each check, once the box has changed by
+  the share you set (25 % by default), so something parked sends nothing new. Every picture is a new
+  row in Home Assistant's history; 0 sends one only when the count changes, as before.
+
+### Changed
+
+- **A simpler wizard: Camera, Detect, Checks.** The camera's picture and the warning about a
+  low-resolution stream now show where you pick the camera, and the region is drawn in the Detect
+  step, for every kind.
+- **A camera's light comes on in the first step**, as soon as both the camera and the light are chosen.
+- **Pointer dials in Settings** use the same *Edit: Counter | Dials* switch as the wizard, on the
+  Region card.
+- **A straightened region shows its wheel fields**, in perspective and inside the region.
+
+### Fixed
+
+- **The list of lights and entities in the wizard** was cut off and could not be scrolled to its end,
+  and dragging its scrollbar closed it.
+
 ## 0.13.0b3
 
 Still an early beta of sound sensors; what has not been tested is listed under 0.13.0b1.

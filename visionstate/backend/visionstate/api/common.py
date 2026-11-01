@@ -276,6 +276,10 @@ class ObjectsIn(BaseModel):
         default=OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"]
     )
     use_taught: bool = OBJECT_DEFAULTS["use_taught"]
+    snapshot_aspect: str = Field(default=OBJECT_DEFAULTS["snapshot_aspect"], max_length=16)
+    snapshot_move: float = Field(
+        default=OBJECT_DEFAULTS["snapshot_move"], ge=_olo["snapshot_move"], le=_ohi["snapshot_move"]
+    )
     teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
     faces: FacesIn | None = None  # recognising people by their face; unset keeps what the sensor has
     # Own labels ("custom") are made by teaching a box (api/teach.py) or a face (api/faces.py), never set here.
@@ -297,6 +301,14 @@ class ObjectsIn(BaseModel):
         unknown = [key for key in cleaned if key not in detectors.LABELS.by_key]
         if unknown:
             raise ValueError(f"Unknown object {unknown[0]!r}")
+        return cleaned
+
+    @field_validator("snapshot_aspect")
+    @classmethod
+    def _known_shape(cls, value: str) -> str:
+        cleaned = value.replace(" ", "").lower() or OBJECT_DEFAULTS["snapshot_aspect"]
+        if cleaned != OBJECT_DEFAULTS["snapshot_aspect"] and imaging.aspect_ratio(cleaned) is None:
+            raise ValueError("Snapshot shape: free, or width:height such as 16:9")
         return cleaned
 
 

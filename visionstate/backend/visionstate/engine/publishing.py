@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
 
 from PIL import Image
 from sqlalchemy import func, select
@@ -66,24 +67,39 @@ class PublishingMixin(RuntimeBase):
         live.sent_on_change[topic] = (shows, now)
 
     async def _send_snapshot(self, cfg: SensorConfig, key: str, image: Image.Image, boxes: list, count: int) -> None:
-        """An object's picture: sent when its count changed, before its state goes on (so an
-        automation that starts finds this one), and kept when it has gone (the broker retains it)."""
+        """An object's picture: sent when its count changed or its boxes moved far enough from those
+        of the last picture (so jitter never adds up, and slow movement does), before its state goes
+        on (so an automation that starts finds this one), and kept when it has gone (the broker
+        retains it)."""
         topic = object_topics(cfg.slug, key)["snapshot"]
         live = self.live_state(cfg.id)
         if not count:
             live.sent_on_change.pop(topic, None)
             return
-        sent = live.sent_on_change.get(topic)
-        if not boxes or (sent is not None and sent[0] == count) or not self._sends(cfg, topic):
+        if not boxes or not self._sends(cfg, topic):
             return
+        union = imaging.union_box(boxes)
+        sent = live.sent_on_change.get(topic)
+        if sent is not None:
+            sent_count, sent_union = cast(tuple[int, imaging.Box], sent[0])
+            move = cfg.objects["snapshot_move"]
+            if sent_count == count and (not move or imaging.box_change(sent_union, union) < move):
+                return
 
         def make() -> bytes:
             region = imaging.region_box(cfg.roi)
-            picture = imaging.snapshot(image, boxes, region, PUBLISH["snapshot_margin"], PUBLISH["snapshot_min_px"])
+            picture = imaging.snapshot(
+                image,
+                boxes,
+                region,
+                PUBLISH["snapshot_margin"],
+                PUBLISH["snapshot_min_px"],
+                imaging.aspect_ratio(cfg.objects["snapshot_aspect"]),
+            )
             return imaging.encode_jpeg(picture, PUBLISH["snapshot_quality"])
 
         await self.mqtt.publish(topic, await asyncio.to_thread(make), retain=True)
-        live.sent_on_change[topic] = (count, time.time())
+        live.sent_on_change[topic] = ((count, union), time.time())
 
     def _unsettled(self) -> list[tuple[int, SensorDescriptor]]:
         """The sensors from before their entities could be chosen."""

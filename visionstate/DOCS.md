@@ -30,18 +30,17 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
 2. Click **New sensor** and choose **Watch the picture** (the steps below) or **Listen** (a sound
    sensor: see *Sound sensors* below):
    1. Give it a name and pick a camera — and, for a camera in a dark place, a light to switch on
-      (see *A light for the camera* below).
-   2. Draw a box around the thing to watch (for example the garage door). The AI only looks
-      inside the box, which makes it far more accurate. For an object that sits at an angle,
-      shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
-      double-click / double-tap (or press and hold) a corner to remove it. Everything outside
-      the shape is ignored. **Reset to rectangle** goes back to a plain box. A small picture
-      gets a warning: it may be the camera's low-resolution stream, and its main stream is often
-      hidden in Home Assistant.
-   3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
+      (see *A light for the camera* below). A small picture from the camera shows what you picked.
+      A small one gets a warning: it may be the camera's low-resolution stream, and its main stream
+      is often hidden in Home Assistant.
+   2. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
-      This can not be changed later.
-   4. Optionally choose when it should check the camera — for example when your motion
+      This can not be changed later. In the same step, draw a box around the thing to watch (for
+      example the garage door). The AI only looks inside the box, which makes it far more accurate.
+      For an object that sits at an angle, shape the box: drag a corner to move it, drag a **+** on
+      an edge to add a corner, and double-click / double-tap (or press and hold) a corner to remove
+      it. Everything outside the shape is ignored. **Reset to rectangle** goes back to a plain box.
+   3. Optionally choose when it should check the camera — for example when your motion
       sensor or garage opener changes (see *When it checks* below) — and whether it should stay
       out of Home Assistant for now (see *What a sensor has in Home Assistant* below). You can skip
       this step.
@@ -121,9 +120,13 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   | `sensor.<name>_<object>_count` | How many there are |
   | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked on the **Home Assistant** tab |
 
-  A **snapshot** is new when the count changes, sent just before the object goes on; several of the
+  A **snapshot** is new when the count changes, sent just before the object goes on, and when the
+  object has moved (at a check, by the share you set on the **Home Assistant** tab, so something
+  parked sends nothing new; 0 turns it off); several of the
   same object share one picture that covers them all, and the last one stays after they have gone.
-  It shows nothing outside the bounding box of the sensor's region. In a phone notification, trigger
+  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* on the same tab
+  is `free` or width:height such as `1:1`, `4:3` or `16:9`: the picture gets as close as the region
+  allows and never cuts the object. In a phone notification, trigger
   on the binary sensor and pass the picture as its image:
 
   ```yaml
@@ -137,6 +140,22 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
         message: A car in the driveway
         data:
           image: /api/image_proxy/image.driveway_car_snapshot
+  ```
+
+  To keep the pictures as files, let an automation save each new one with Home Assistant's own
+  action, triggered by the snapshot entity (Home Assistant may write to `/config/www/` and its media
+  folders):
+
+  ```yaml
+  triggers:
+    - trigger: state
+      entity_id: image.driveway_car_snapshot
+  actions:
+    - action: image.snapshot
+      target:
+        entity_id: image.driveway_car_snapshot
+      data:
+        filename: "/media/driveway/car_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
   ```
 
   Plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
@@ -349,8 +368,7 @@ First choose **what it looks like**:
 
 **Pointer dials** — the small dials many water meters have beside the wheels (×0.1, ×0.01, ×0.001,
 ×0.0001 m³), each a needle turning over the numbers 0–9. A mechanical counter read by the wheel
-reader can add them: in the wizard switch the picture to **Edit: Dials**, in Settings use the
-**Pointer dials** card. The meter face is shown straightened the way the counter is read (the
+reader can add them: in the wizard and in Settings, switch the picture to **Edit: Dials**. The meter face is shown straightened the way the counter is read (the
 dashed box is the counter): **Add dial** puts a circle on it, labelled with what one turn of that
 dial is worth — the first is ×0.1 of the last wheel, the next ×0.01 and so on, so add them in that
 order. Drag a circle onto its dial and its handle to the dial's edge; set **Anticlockwise** for a
@@ -362,7 +380,7 @@ coming is read right. The needle is found by being redder than the dial's face �
 pictures with a colour cast too — or by being the darkest part of the dial when the picture has no
 colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
 a little beside the dial still reads right. *What the reader sees* shows
-each dial after the wheels with the needle it found drawn on it; the Pointer dials card says where
+each dial after the wheels with the needle it found drawn on it; the list of dials says where
 each needle was found, or *No needle found*. The review queue and the Quality tab show the same
 picture for each stored reading, so the dials' digits can be checked too. A dial needs a few dozen pixels across in the picture
 to be read: move the camera closer, or use its zoom, if the dials are tiny.
@@ -650,7 +668,7 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
   they took earlier, and only adjust their exposure between pictures: this way the frame that is
   read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
-- **while you look at live frames**: in the wizard (region and test), when you draw the region
+- **while you look at live frames**: in the wizard (from when both a camera and a light are chosen), when you draw the region
   under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
   label are taken in the same light as the checks. A note above the frame says so; its **Light**
   switch keeps the light off for that view (the browser remembers it). The light goes off when you

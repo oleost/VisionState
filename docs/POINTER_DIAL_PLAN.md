@@ -56,7 +56,7 @@ pictures, so neither is used here (CLAUDE.md: test images and model data need a 
 - **One view, not a second picture.** The dials are on the same meter face as the wheels: the
   region editor shows both, with a switch *Edit: Counter | Dials* above the picture, so a drag never
   moves the wrong thing on a phone. The wizard asks *Has the meter pointer dials?* after the reading
-  test and opens the same view; Settings has a *Pointer dials* card with *+ Add dial*.
+  test and opens the same view; Settings has the same switch on its Region card.
 - **Needles are read without a model first** (§5): a red or dark needle on a light dial is found by
   its colour and contrast, its angle from the centre gives the position. A model only if that is
   not good enough (phase 3).
@@ -150,11 +150,11 @@ carry the dials (a format version more).
 
 **Interface** (`DialsEditor.svelte`, on the meter face `POST /preview/read` returns: `face`,
 `face_box`, `region_width`, and each dial's needle).
-- Wizard: a mechanical counter read by the wheel reader gets *Edit: Counter | Dials* above the test
-  picture; *Counter* is the region editor, *Dials* the dial editor, with the hint *Has the meter
-  pointer dials?* while there are none.
-- Settings, *Pointer dials* card (reads a fresh frame with the settings being edited, *Read now*):
-  *Add dial* puts a circle beside the last one (the first below the counter), labelled with its
+- Wizard and Settings: a mechanical counter read by the wheel reader gets *Edit: Counter | Dials*
+  (`CounterDialsSwitch.svelte`) above the picture; *Counter* is the region editor, *Dials* the dial
+  editor, with the hint *Has the meter pointer dials?* while there are none.
+- *Dials* in Settings reads a fresh frame with the settings being edited each time it opens, and at
+  *Read now*. *Add dial* puts a circle beside the last one (the first below the counter), labelled with its
   factor (×0.1, ×0.01 …); drag it to move it, its handle to size it; per dial where its needle was
   found, *Clockwise / Anticlockwise* and remove. Touch-first, like the region editor.
 - Live: the dials in *What the reader sees*, after the wheels, each with the needle it found drawn

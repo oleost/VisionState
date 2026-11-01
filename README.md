@@ -129,8 +129,8 @@ with the **MQTT** integration, and a camera (for sound: a camera with a micropho
 1. Click **Add repository** above — or add `https://github.com/oleost/VisionState` under
    **Settings → Apps → App store → ⋮ → Repositories**.
 2. Install **VisionState**, start it and open it from the sidebar.
-3. **New sensor** → pick a camera, draw a region, choose what to watch. The wizard tests it on a
-   fresh frame right away.
+3. **New sensor** → pick a camera, choose what to watch and draw a region around it. The wizard
+   tests it on a fresh frame right away.
 
 New features come to a separate **beta** app first: add `https://github.com/oleost/VisionState#beta`
 instead. Run only one of the two at a time (they publish the same sensors); move everything with

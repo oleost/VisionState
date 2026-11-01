@@ -3,7 +3,9 @@
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
+  import CounterDialsSwitch from '../../lib/components/CounterDialsSwitch.svelte';
   import DialsEditor from '../../lib/components/DialsEditor.svelte';
+  import RegionButtons from '../../lib/components/RegionButtons.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LightEditor from '../../lib/components/LightEditor.svelte';
   import LiveFrame from '../../lib/components/LiveFrame.svelte';
@@ -24,7 +26,7 @@
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor, objectPicker } from '../../lib/objects';
   import { isReadingSensor } from '../../lib/reading';
-  import { isPolygon, toPoints, toRectangle, turnTop } from '../../lib/roi';
+  import { toPoints, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
   import { isSoundSensor } from '../../lib/sound';
   import type { ReadPreview, ReviewRules, Roi, Sensor, SoundSettings, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
@@ -79,6 +81,8 @@
   // A counter read by a wheel reader: its pointer dials, placed on a fresh frame's meter face (read with
   // the settings being edited, so it shows what they would read).
   const canDial = $derived(readingSensor && reading.display === 'counter' && reading.counter_reader === 'wheels');
+  let editing = $state<'counter' | 'dials'>('counter');
+  const editingDials = $derived(canDial && editing === 'dials');
   let dialPreview = $state<ReadPreview | null>(null);
   let dialBusy = $state(false);
   let dialError = $state('');
@@ -93,8 +97,9 @@
       dialBusy = false;
     }
   }
+  // Each time the picture turns to the dials: the region may have changed since.
   $effect(() => {
-    if (canDial && !untrack(() => dialPreview || dialBusy)) untrack(readDials);
+    if (editingDials) untrack(readDials);
   });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
@@ -176,17 +181,31 @@
         <div class="card-title">
           <h3>Region</h3>
           <span class="row wrap region-actions" style="gap:8px">
-            {#if straightened && roi}
-              <button class="btn sm" onclick={() => roi && (roi = turnTop(roi))} title="The edge clockwise from it becomes the top" data-testid="roi-turn">
-                <Icon name="refresh" size={14} /> Turn
+            {#if editingDials}
+              <button class="btn sm" onclick={readDials} disabled={dialBusy}>
+                <Icon name="refresh" size={14} /> {dialBusy ? 'Reading…' : 'Read now'}
               </button>
+            {:else}
+              <RegionButtons bind:roi quad={straightened} />
             {/if}
-            {#if isPolygon(roi)}
-              <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
-            {/if}
-            <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
           </span>
         </div>
+        {#if canDial}<CounterDialsSwitch bind:editing dials={reading.dials.length} />{/if}
+        {#if editingDials}
+          <div class="col" data-testid="dials-card">
+            <p class="small muted">
+              The small dials beside the wheels (×0.1, ×0.01 …): each one more digit, read with the wheels. The face is
+              straightened the way the counter is read.
+            </p>
+            {#if dialError}<p class="notice danger small">{dialError}</p>{/if}
+            <DialsEditor preview={dialPreview} bind:dials={reading.dials} decimals={reading.decimals} />
+            {#if dialPreview?.value}
+              <span class="small">
+                Read <strong class="mono">{dialPreview.value}</strong>{dialPreview.dials.length !== reading.dials.length ? ' before your last change' : ''}
+              </span>
+            {/if}
+          </div>
+        {:else}
         {#if readingSensor}<StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />{/if}
         <p class="small muted">
           {straightened
@@ -210,9 +229,10 @@
             interval={10_000}
             light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
           >
-            {#if readingSensor && reading.display === 'counter' && !(straightened && isPolygon(roi))}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} />{/if}
+            {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} {straightened} />{/if}
           </LiveFrame>
         </div>
+        {/if}
       </section>
     {/if}
   </div>
@@ -223,27 +243,6 @@
         <h3>Reading</h3>
         <ReadingEditor bind:value={reading} seen={sensor.reading?.last?.text} />
       </section>
-      {#if canDial}
-        <section class="card pad col" data-testid="dials-card">
-          <div class="card-title">
-            <h3>Pointer dials</h3>
-            <button class="btn sm" onclick={readDials} disabled={dialBusy}>
-              <Icon name="refresh" size={14} /> {dialBusy ? 'Reading…' : 'Read now'}
-            </button>
-          </div>
-          <p class="small muted">
-            The small dials beside the wheels (×0.1, ×0.01 …): each one more digit, read with the wheels. The face is
-            straightened the way the counter is read.
-          </p>
-          {#if dialError}<p class="notice danger small">{dialError}</p>{/if}
-          <DialsEditor preview={dialPreview} bind:dials={reading.dials} decimals={reading.decimals} />
-          {#if dialPreview?.value}
-            <span class="small">
-              Read <strong class="mono">{dialPreview.value}</strong>{dialPreview.dials.length !== reading.dials.length ? ' before your last change' : ''}
-            </span>
-          {/if}
-        </section>
-      {/if}
     {:else if objectSensor}
       <section class="card pad col">
         <h3>Objects</h3>

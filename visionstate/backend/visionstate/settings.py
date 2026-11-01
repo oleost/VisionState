@@ -58,10 +58,15 @@ OBJECT_DEFAULTS = {
     "custom": [],
     "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
     "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
+    "snapshot_aspect": "free",  # the shape of an object's snapshot: "free", or width:height such as "16:9"
+    # A new snapshot while the count stays, once the boxes differ this much from those of the last one
+    # (imaging.box_change; 0 = only when the count changes). Above a parked car's jitter between checks.
+    "snapshot_move": 0.25,
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
     "clear_after_s": (0.0, 3600.0),
+    "snapshot_move": (0.0, 1.0),
 }
 OBJECT_MAX_CLASSES = 20  # two Home Assistant entities per class
 

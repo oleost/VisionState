@@ -179,7 +179,7 @@ test('a hidden page asks nothing, and hiding and showing it does not start extra
   const light = page.getByLabel('Light to switch on');
   await light.fill('light.meter_flash');
   await light.press('Enter');
-  await press(page.getByRole('button', { name: 'Next' }), info);
+  await toDetect(page, info);
   await expect(page.getByTestId('light-hold')).toContainText('light.meter_flash');
   for (let i = 0; i < 5; i++) {
     await setVisibility(page, 'hidden');
@@ -235,6 +235,16 @@ test('the buttons of the sensor cards line up along the bottom', async ({ page }
       if (Math.abs(cards[i] - cards[j]) < 1) expect(Math.abs(buttons[i] - buttons[j])).toBeLessThan(1);
 });
 
+/** From the wizard's first step to its second; a small picture asks for a second Next (its warning). */
+async function toDetect(page: Page, info: TestInfo) {
+  const detect = page.getByText('What should this sensor detect?');
+  await expect(async () => {
+    if (await detect.isVisible()) return;
+    await press(page.getByRole('button', { name: 'Next' }), info);
+    await expect(detect).toBeVisible({ timeout: 2000 });
+  }).toPass();
+}
+
 test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');
@@ -247,13 +257,16 @@ test('a light for the camera: picked with the camera, held on while framing', as
   await light.press('Enter');
   await expect(page.getByText('Wait before taking the frame')).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await press(page.getByRole('button', { name: 'Next' }), info);
 
-  // While the region shows live frames the light is held on; without Home Assistant (as here) it says why not.
+  // Held on from the moment both are chosen; without Home Assistant (as here) it says why not.
   const hold = page.getByTestId('light-hold');
   await expect(hold).toContainText('light.meter_flash');
   await expect(hold).toContainText('Home Assistant API is not configured');
-  await expect(page.locator('.roi img')).toBeVisible(); // the frame still comes
+  // The same hold on the next step, so the light does not blink in between; and the frame still comes.
+  await page.getByRole('button', { name: 'Next' }).scrollIntoViewIfNeeded();
+  await toDetect(page, info);
+  await expect(hold).toBeVisible();
+  await expect(page.locator('.roi img')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .chip, [data-testid="light-hold"]');
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-light.png'), fullPage: true });
@@ -263,10 +276,33 @@ test('a light for the camera: picked with the camera, held on while framing', as
   await expect(hold).toContainText('stays off while you look');
   await press(toggle, info);
   await expect(hold).toContainText('Home Assistant API is not configured');
-  // Still held on the next step (one hold for region and test: the light does not blink in between).
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.getByText('What should this sensor detect?')).toBeVisible();
-  await expect(hold).toBeVisible();
+  errors.expectNone();
+});
+
+test('the wizard shows the whole list of entities for a light', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  const lights = Array.from({ length: 12 }, (_, i) => ({ entity_id: `light.lamp_${i}`, name: `Lamp ${i}`, domain: 'light', state: 'off' }));
+  await page.route('**/api/v1/entities*', (route) => route.fulfill({ json: lights }));
+  await page.goto('#/sensors/new');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Light to switch on').focus();
+  const list = page.getByRole('listbox');
+  await expect(list).toBeVisible();
+  if (info.project.name === 'desktop') {
+    // Holding the scrollbar leaves the list open (the field keeps the focus).
+    const box = (await list.boundingBox())!;
+    await page.mouse.move(box.x + box.width - 4, box.y + 20);
+    await page.mouse.down();
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    await expect(list).toBeVisible();
+  }
+  // The last one is reached by scrolling, not cut off by the wizard.
+  const last = list.getByRole('button', { name: /Lamp 11/ });
+  await last.scrollIntoViewIfNeeded();
+  await press(last, info);
+  await expect(page.getByText('light.lamp_11')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
   errors.expectNone();
 });
 
@@ -276,17 +312,24 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   await page.getByPlaceholder('Garage door').fill('Wizard test');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(`${CAMERA_URL}/snapshot.jpg`);
+  // Leaving the field brings the camera's picture on this step; a URL half typed is not tried.
+  await expect(page.getByTestId('camera-preview').locator('img')).toHaveCount(0);
+  await page.getByLabel('Source URL').blur();
+  await expect(page.getByTestId('camera-preview').locator('img')).toBeVisible();
+  await expect(page.getByTestId('low-stream')).toHaveCount(0); // 1280 × 720: no warning
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-camera.png') }); // a full page would drop touch
   await press(page.getByRole('button', { name: 'Next' }), info);
 
+  // The region is drawn with the states, the only step without a test.
+  await expect(page.getByText('Which states can it be in?')).toBeVisible();
   const image = page.locator('.roi img');
   await expect(image).toBeVisible();
-  await expect(page.getByTestId('low-stream')).toHaveCount(0); // 1280 × 720: no warning
+  await image.scrollIntoViewIfNeeded();
   const box = (await image.boundingBox())!;
   await drag(page, info, { x: box.x + box.width * 0.2, y: box.y + box.height * 0.2 }, { x: box.x + box.width * 0.8, y: box.y + box.height * 0.9 });
   await expect(page.locator('.handle.corner')).toHaveCount(4);
-  await press(page.getByRole('button', { name: 'Next' }), info);
 
-  await expect(page.getByText('Which states can it be in?')).toBeVisible();
   // "Add state" puts the cursor in the new field; an empty name is not shown as an option.
   await press(page.getByRole('button', { name: 'Add state' }), info);
   await expect(page.getByText('options: open, closed, unknown')).toBeVisible();
@@ -320,11 +363,12 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(PHOTO_URL('driveway'));
   await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  // A small picture: maybe the camera's low-resolution stream.
+  // A small picture: maybe the camera's low-resolution stream. Next stays to say so; the next one goes on.
   await expect(page.getByTestId('low-stream')).toContainText('640×421');
+  await expect(page.getByText('What should this sensor detect?')).toHaveCount(0);
   await expectNoClipping(page, '.notice');
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+  await toDetect(page, info);
+  await expect(page.locator('.roi img')).toBeVisible();
 
   await press(page.getByRole('radio', { name: /Objects/ }), info);
   // The test on a fresh frame finds the cars (not selected yet) and the person.
@@ -370,9 +414,7 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   await page.getByPlaceholder('Garage door').fill('Washer');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(DISPLAY_URL('1:05', 'led'));
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+  await toDetect(page, info);
 
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   await expect(page.getByText(/Read “1:05”/)).toBeVisible({ timeout: 60_000 });
@@ -408,9 +450,7 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.getByPlaceholder('Garage door').fill('Gas meter');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(COUNTER_URL(45730.4)); // the last wheel four tenths on: rounded
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame for now
+  await toDetect(page, info);
 
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   await press(page.getByRole('radio', { name: /Mechanical counter/ }), info);
@@ -496,7 +536,29 @@ test('a counter the camera sees turned is read with its region straightened', as
   const frame = page.locator('.frame .roi');
   await expect(frame.locator('.handle.corner')).toHaveCount(4);
   await expect(frame.locator('.handle.add')).toHaveCount(0);
-  await expect(frame.getByTestId('digit-cells')).toHaveCount(0); // the fields are shown upright, on the Live tab
+  // The fields follow the corners in perspective, and stay inside them.
+  const fields = frame.getByTestId('digit-cells');
+  await expect(fields.locator('.cell')).toHaveCount(7);
+  await expect(fields.locator('.divider')).toHaveCount(6);
+  const insideRegion = await fields.evaluate((svg) => {
+    const corners = (svg.parentElement!.querySelector('polygon.outline') as SVGPolygonElement).points;
+    const inside = (x: number, y: number) => {
+      let sign = 0;
+      for (let i = 0; i < 4; i++) {
+        const [a, b] = [corners[i], corners[(i + 1) % 4]];
+        const side = Math.sign((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x));
+        if (side && sign && side !== sign) return false;
+        sign = side || sign;
+      }
+      return true;
+    };
+    return [...svg.querySelectorAll('line')].every((l) => {
+      const near = (t: number) => [l.x1.baseVal.value * (1 - t) + l.x2.baseVal.value * t, l.y1.baseVal.value * (1 - t) + l.y2.baseVal.value * t];
+      return inside(...(near(0.02) as [number, number])) && inside(...(near(0.98) as [number, number]));
+    });
+  });
+  expect(insideRegion).toBe(true);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-straightened.png'), fullPage: true });
   const top = frame.getByTestId('roi-top');
   await expect(top).toBeVisible();
   const before = (await top.boundingBox())!;
@@ -527,6 +589,10 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
   const sensor = await made.json();
   try {
     await page.goto(`#/sensors/${sensor.id}/settings`);
+    // The same switch as in the wizard: the picture edits the counter, or the dials.
+    await expect(page.locator('.frame .roi')).toBeVisible();
+    await press(page.getByTestId('edit-dials'), info);
+    await expect(page.locator('.frame .roi')).toHaveCount(0);
     const card = page.getByTestId('dials-card');
     const editor = card.getByTestId('dials-editor');
     await expect(editor.locator('img')).toBeVisible({ timeout: 60_000 });
@@ -552,7 +618,7 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     await expect(second.getByRole('button', { name: 'Anticlockwise' })).toBeVisible();
     await press(second.getByRole('button', { name: 'Remove the ×0.01 dial' }), info);
     await expect(card.getByTestId('dial-row')).toHaveCount(1);
-    await press(card.getByRole('button', { name: 'Read now' }), info);
+    await press(page.getByRole('button', { name: 'Read now' }), info);
     await expect(card.getByTestId('dial-row').first()).toContainText(/Needle at|No needle found/, { timeout: 30_000 });
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
@@ -565,6 +631,7 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     await page.goto(`#/sensors/${sensor.id}/live`);
     await expect(page.locator('.value-card .value')).toHaveText('187.3456 m³', { timeout: 60_000 });
     await page.goto(`#/sensors/${sensor.id}/settings`);
+    await press(page.getByTestId('edit-dials'), info);
     await expect(card.getByTestId('dial-label')).toHaveText(['×0.1', '×0.01', '×0.001', '×0.0001']);
     await expect(card.getByTestId('dial-row').first()).toContainText('Needle at 3.', { timeout: 60_000 });
 
@@ -591,9 +658,7 @@ test('reading wizard suggests the decimals the display shows', async ({ page }, 
   await page.getByPlaceholder('Garage door').fill('Meter');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(DISPLAY_URL('1234.5'));
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info);
+  await toDetect(page, info);
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   // 0 decimals would make it 12345; the editor offers the one digit after the point.
   await expect(page.getByText(/1 digit after the point\?/)).toBeVisible({ timeout: 60_000 });
@@ -1061,6 +1126,28 @@ test('the Home Assistant tab chooses what a sensor has there', async ({ page, re
     await expect.poll(async () => (await entity(`${first} snapshot`)).on).toBe(true);
     await expect(page.getByText('Saved', { exact: true })).toHaveCount(0); // it covers the button on a phone
 
+    // A chosen snapshot has a shape and a share of movement; a shape that is none says so.
+    const shape = page.getByRole('textbox', { name: 'Snapshot shape' });
+    await shape.fill('wide');
+    const refused = page.getByText(/Snapshot shape: free, or width:height such as 16:9/);
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect(refused).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    errors.errors.length = 0; // the refusal (422) is what was asked for here
+    await press(page.getByRole('button', { name: 'Dismiss' }), info); // it covers the button on a phone
+    await shape.fill('16:9');
+    await page.getByRole('spinbutton', { name: 'New snapshot when the box has changed by' }).fill('40');
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect
+        .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.snapshot_aspect, { timeout: 1500 })
+        .toBe('16:9');
+    }).toPass();
+    expect((await (await request.get(`api/v1/sensors/${id}`)).json()).objects.snapshot_move).toBe(0.4);
+    await expectNoHorizontalOverflow(page);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0);
+
     // Taking one away says what happens, and asks twice.
     await press(page.getByRole('checkbox', { name: `${first} count` }), info);
     await expect(page.getByTestId('ha-removing')).toContainText(`${first} count`);
@@ -1081,7 +1168,8 @@ test('the Home Assistant tab chooses what a sensor has there', async ({ page, re
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'home-assistant-removing.png'), fullPage: true });
     errors.expectNone();
   } finally {
-    await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {} } });
+    const objects = { snapshot_aspect: 'free', snapshot_move: 0.25 };
+    await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {}, objects } });
   }
 });
 

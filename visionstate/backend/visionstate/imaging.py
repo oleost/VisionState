@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+import re
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,16 +253,44 @@ def pixel_box(image: Image.Image, box: Box) -> tuple[int, int, int, int]:
     return int(x1 * width), int(y1 * height), int(x2 * width), int(y2 * height)
 
 
-def snapshot(image: Image.Image, boxes: list[list[float]], region: Box, margin: float, min_px: int) -> Image.Image:
+def aspect_ratio(text: str) -> float | None:
+    """Width / height of a shape written as ``16:9``; None for anything else (``free``: any shape)."""
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*", text)
+    if not match or not float(match[1]) or not float(match[2]):
+        return None
+    return float(match[1]) / float(match[2])
+
+
+def union_box(boxes: list[list[float]]) -> Box:
+    """The smallest box that covers all ``boxes``."""
+    return min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)
+
+
+def box_change(a: Box, b: Box) -> float:
+    """How much two boxes differ: 0 when they are the same, 1 when they do not overlap (1 − IoU)."""
+    wide, tall = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    shared = max(0.0, wide) * max(0.0, tall)
+    whole = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - shared
+    return 1 - shared / whole if whole > 0 else 0.0
+
+
+def snapshot(
+    image: Image.Image, boxes: list[list[float]], region: Box, margin: float, min_px: int, aspect: float | None = None
+) -> Image.Image:
     """What covers all ``boxes``: their union plus ``margin`` × its size on each side, at least
     ``min_px`` pixels each way when there is room, and never outside ``region`` (the picture of an
-    object shows nothing the sensor's region leaves out)."""
+    object shows nothing the sensor's region leaves out). With ``aspect`` (width / height) the
+    picture grows to that shape as far as the region has room; the objects are never cut for it."""
     width, height = image.size
+    left, top, right, bottom = union_box(boxes)
 
-    def span(low: float, high: float, floor: float, ceiling: float) -> tuple[int, int]:
+    def tight(low: float, high: float, floor: float, ceiling: float) -> tuple[float, float, float, float]:
         pad = (high - low) * margin
-        low, high = low - pad, high + pad
-        grow = max(0.0, min_px - (high - low)) / 2
+        return low - pad, high + pad, floor, ceiling
+
+    def fit(span: tuple[float, float, float, float], size: float) -> tuple[int, int]:
+        low, high, floor, ceiling = span
+        grow = max(0.0, size - (high - low)) / 2
         low, high = low - grow, high + grow
         # Room missing on one side goes to the other, so a small object at the edge keeps its size.
         if low < floor:
@@ -271,12 +300,18 @@ def snapshot(image: Image.Image, boxes: list[list[float]], region: Box, margin: 
         start = round(max(low, floor))
         return start, max(start + 1, round(min(high, ceiling)))
 
-    x1, x2 = span(
-        min(b[0] for b in boxes) * width, max(b[2] for b in boxes) * width, region[0] * width, region[2] * width
-    )
-    y1, y2 = span(
-        min(b[1] for b in boxes) * height, max(b[3] for b in boxes) * height, region[1] * height, region[3] * height
-    )
+    across = tight(left * width, right * width, region[0] * width, region[2] * width)
+    down = tight(top * height, bottom * height, region[1] * height, region[3] * height)
+    x1, x2 = fit(across, min_px)
+    y1, y2 = fit(down, min_px)
+    if aspect:
+        # The short way grows; when the region stops it, the long way gives back what min_px added.
+        if (x2 - x1) / (y2 - y1) < aspect:
+            x1, x2 = fit(across, (y2 - y1) * aspect)
+            y1, y2 = fit(down, min(y2 - y1, (x2 - x1) / aspect))
+        else:
+            y1, y2 = fit(down, (x2 - x1) / aspect)
+            x1, x2 = fit(across, min(x2 - x1, (y2 - y1) * aspect))
     return image.crop((x1, y1, x2, y2))
 
 

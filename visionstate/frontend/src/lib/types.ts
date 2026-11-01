@@ -445,6 +445,10 @@ export interface ObjectSettings {
   clear_after_s: number;
   /** Compare boxes with what was taught; off = the detector alone. */
   use_taught: boolean;
+  /** The shape of an object's snapshot: free, or width:height. */
+  snapshot_aspect: string;
+  /** A new snapshot once its boxes differ this much (0 to 1) from the last one's; 0: only when the count changes. */
+  snapshot_move: number;
   /** This sensor's own teaching limits; a missing one follows the global value. */
   teach?: TeachOverrides;
   faces?: FaceSettings;
@@ -656,7 +660,7 @@ export interface AppConfig {
   backup: { parts: { key: BackupPart; optional: boolean }[]; credentials: boolean; max_restore_gb: number };
   object_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   object_defaults: ObjectSettings;
-  object_limits: Record<'min_size' | 'clear_after_s', [number, number]>;
+  object_limits: Record<'min_size' | 'clear_after_s' | 'snapshot_move', [number, number]>;
   object_max_classes: number;
   object_labels: ObjectLabel[];
   object_popular: string[];

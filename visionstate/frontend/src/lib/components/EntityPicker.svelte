@@ -121,10 +121,12 @@
         aria-label={label}
       />
       {#if open && matches.length}
-        <ul class="list" role="listbox">
+        <!-- Keeps the focus in the field, or dragging the scrollbar would close the list. -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <ul class="list" role="listbox" onmousedown={(ev) => ev.preventDefault()}>
           {#each matches as e (e.entity_id)}
             <li>
-              <button type="button" onmousedown={(ev) => ev.preventDefault()} onclick={() => add(e.entity_id)}>
+              <button type="button" onclick={() => add(e.entity_id)}>
                 <span class="small">{e.name}</span>
                 <span class="mono xsmall faint">{e.entity_id} · {e.state}</span>
               </button>
