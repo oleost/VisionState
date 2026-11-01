@@ -1135,7 +1135,12 @@ test('the Home Assistant tab chooses what a sensor has there', async ({ page, re
       await expect(refused).toBeVisible({ timeout: 1000 });
     }).toPass();
     errors.errors.length = 0; // the refusal (422) is what was asked for here
-    await press(page.getByRole('button', { name: 'Dismiss' }), info); // it covers the button on a phone
+    // It covers the button on a phone; a retried tap above may have left two.
+    await expect(async () => {
+      const dismiss = page.getByRole('button', { name: 'Dismiss' });
+      if (await dismiss.count()) await press(dismiss.first(), info);
+      await expect(dismiss).toHaveCount(0, { timeout: 500 });
+    }).toPass();
     await shape.fill('16:9');
     await page.getByRole('spinbutton', { name: 'New snapshot when the box has changed by' }).fill('40');
     await expect(async () => {

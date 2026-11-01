@@ -4,12 +4,15 @@ objects' snapshots, and how a sensor from before the tab decides once."""
 import asyncio
 import io
 import sqlite3
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from visionstate import imaging
 from visionstate.db import Database, Sensor
+from visionstate.engine import LiveState
+from visionstate.engine.publishing import PublishingMixin
 from visionstate.ha_events import our_enabled
 from visionstate.main import create_app
 from visionstate.mqtt import (
@@ -220,30 +223,52 @@ def test_a_snapshot_follows_the_count_and_comes_before_the_state(tmp_path):
         assert mqtt.sent[topic] == one_kept
         assert topic in check(1)  # back
 
-        # The same count: jitter sends nothing, and what moved does, measured from the last picture.
         url = f"/api/v1/sensors/{sensor['id']}"
-
-        def look(box: list[float]) -> bool:
-            before = len(mqtt.order)
-            boxes[:] = [box]
-            done = rt.live_state(sensor["id"]).last_run
-            assert client.post(f"{url}/classify").status_code in (200, 202, 204)
-            assert wait_for(lambda: rt.live_state(sensor["id"]).last_run != done, timeout=10)
-            return topic in mqtt.order[before:]
-
-        start = [0.1, 0.1, 0.5, 0.5]
-        look(start)
-        assert not look([0.105, 0.1, 0.505, 0.5])
-        assert not look([0.11, 0.1, 0.51, 0.5])  # small steps count from the last picture
-        assert look([0.3, 0.1, 0.7, 0.5])
-        assert client.patch(url, json={"objects": {"snapshot_move": 0, "snapshot_aspect": "1:1"}}).status_code == 200
-        look([0.3, 0.1, 0.7, 0.5])  # a changed sensor sends again at its next check
-        assert not look([0.6, 0.5, 0.9, 0.9])  # 0: only the count
-        width, height = Image.open(io.BytesIO(mqtt.sent[topic])).size
-        assert width == height
+        assert client.patch(url, json={"objects": {"snapshot_aspect": "1:1"}}).status_code == 200
         assert client.patch(url, json={"objects": {"snapshot_aspect": "wide"}}).status_code == 422
         kept = client.get(url).json()["objects"]
         assert kept["snapshot_aspect"] == "1:1" and kept["classes"] == ["car"]
+
+
+class SnapshotSender(PublishingMixin):
+    """Only what _send_snapshot needs, so each call is one check and nothing else runs between them."""
+
+    def __init__(self):
+        self.live = LiveState()
+        self.published: list[bytes] = []
+        self.mqtt = self
+
+    def live_state(self, sensor_id):
+        return self.live
+
+    async def publish(self, topic, payload, retain=False):
+        self.published.append(payload)
+
+
+def test_a_snapshot_follows_a_box_that_moved_from_the_last_picture():
+    def cfg(move, aspect="free"):
+        objects = {"snapshot_move": move, "snapshot_aspect": aspect}
+        return SimpleNamespace(id=1, slug="drive", roi=None, objects=objects, publish=True, in_ha=True, muted_topics=())
+
+    sender = SnapshotSender()
+    image = Image.new("RGB", (800, 600))
+
+    def sends(config, box, count=1) -> bool:
+        before = len(sender.published)
+        asyncio.run(sender._send_snapshot(config, "car", image, [box], count))
+        return len(sender.published) > before
+
+    moving = cfg(OBJECT_DEFAULTS["snapshot_move"])
+    assert sends(moving, [0.1, 0.1, 0.5, 0.5])
+    assert not sends(moving, [0.105, 0.1, 0.505, 0.5])
+    assert not sends(moving, [0.11, 0.1, 0.51, 0.5])  # small steps count from the last picture
+    assert sends(moving, [0.3, 0.1, 0.7, 0.5])
+    assert not sends(cfg(0), [0.6, 0.5, 0.9, 0.9])  # 0: only the count
+    assert sends(cfg(0), [0.6, 0.5, 0.9, 0.9], count=2)
+    sender.live.sent_on_change.clear()  # a changed sensor sends again at its next check
+    assert sends(cfg(0, "1:1"), [0.6, 0.5, 0.9, 0.9], count=2)
+    width, height = Image.open(io.BytesIO(sender.published[-1])).size
+    assert width == height
 
 
 class ConfirmingClient:
