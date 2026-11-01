@@ -66,6 +66,7 @@ def _frames_from_zip(path: Path) -> Iterator[tuple[Image.Image, str]]:
 def frames_from_video(path: Path, interval_s: float) -> Iterator[Image.Image]:
     """One frame every ``interval_s`` seconds, skipping near-duplicates."""
     import av
+    from av.error import FFmpegError
 
     interval_s = max(0.2, interval_s or VIDEO["frame_interval_s"])
     last_hash: int | None = None
@@ -88,7 +89,7 @@ def frames_from_video(path: Path, interval_s: float) -> Iterator[Image.Image]:
                 emitted += 1
                 if emitted >= VIDEO["max_frames"]:
                     break
-    except av.FFmpegError as err:
+    except FFmpegError as err:
         raise UploadError(f"Could not read video: {err}") from err
 
 

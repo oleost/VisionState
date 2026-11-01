@@ -293,13 +293,14 @@ def _jpeg(frame) -> bytes:  # noqa: ANN001 - an av.VideoFrame
 def grab_rtsp(url: str) -> bytes:
     """One frame of a stream: connect, decode the first frame, disconnect."""
     import av
+    from av.error import FFmpegError
 
     try:
         # "timeout" was "stimeout" before FFmpeg 5 (an unknown option is ignored without a word).
         with av.open(url, options=STREAM_OPTIONS, timeout=10) as container:
             for frame in container.decode(video=0):
                 return _jpeg(frame)
-    except av.FFmpegError as err:
+    except FFmpegError as err:
         raise SourceError(redact(str(err))) from err
     raise SourceError("No video frame received")
 
@@ -347,6 +348,7 @@ class RtspStream:
 
     def _run(self) -> None:
         import av
+        from av.error import FFmpegError
 
         try:
             with av.open(self.url, options=STREAM_OPTIONS, timeout=10) as container:
@@ -356,7 +358,7 @@ class RtspStream:
                         self._changed.notify_all()
                         if self._closed or time.monotonic() - self._asked_at > self.keep_open:
                             return
-        except av.FFmpegError as err:
+        except FFmpegError as err:
             with self._changed:
                 self._error = SourceError(redact(str(err)))
         except Exception as err:  # noqa: BLE001 - the thread must end with a reason for the waiting grab
@@ -592,6 +594,7 @@ class AudioStream:
         """Open the stream and read its audio (and video packets) until it fails, stalls or the
         stream is closed. Returns whether any audio arrived."""
         import av
+        from av.error import FFmpegError
 
         got = False
         try:
@@ -642,7 +645,7 @@ class AudioStream:
                         self.error = f"No sound for {SOUND['stall_s']:g} s"
                         return got
                 self.error = "The stream ended"
-        except av.FFmpegError as err:
+        except FFmpegError as err:
             self.error = redact(str(err)) or type(err).__name__
         except Exception as err:  # noqa: BLE001 - the thread must go on (and reconnect) whatever happens
             self.error = redact(str(err)) or type(err).__name__
