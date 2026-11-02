@@ -95,6 +95,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             handle.cancel()
         for task in [*self._tasks.values(), *self._background]:
             task.cancel()
+        await self.shared_frames.close()
         await self.mqtt.stop()
         await self.ha_events.stop()
         await self.grabber.close()

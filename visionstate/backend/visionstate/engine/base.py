@@ -15,12 +15,13 @@ from typing import Any
 import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, readers, sounds, teach
+from .. import backbones, classifier, detectors, faces, imaging, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
 from ..mqtt import MqttBridge
 from ..settings import RUNTIME, Settings, merge_review, merge_teach
+from ..shared_frames import SharedFrames
 from ..sources import FrameGrabber, HomeAssistant
 from ..storage import Storage
 from .state import LiveState, SensorConfig
@@ -40,6 +41,9 @@ class RuntimeBase:
         self.ha = HomeAssistant(settings)
         self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
         self.grabber = FrameGrabber(self.ha)
+        self.shared_frames = SharedFrames(
+            lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
+        )
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
         self.ha_entity_ids: dict[str, str] = {}

@@ -14,7 +14,7 @@ from .. import backbones, imaging
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import RUNTIME, UNKNOWN_STATE
+from ..settings import KIND_STATES, RUNTIME, UNKNOWN_STATE
 from ..sources import SourceError
 from .base import RuntimeBase
 from .logic import next_check_at, percent, review_reason
@@ -67,7 +67,10 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             forced, live.force, live.force_paused = live.force, False, False
             try:
                 if forced or kind == "full":
-                    await self.run_once(cfg)
+                    if self._share_regular_frame(cfg, forced):
+                        await self.run_once(cfg, shared=True)
+                    else:
+                        await self.run_once(cfg)
                     await asyncio.to_thread(backbones.trim_memory)
                 else:
                     await self.probe(cfg)
@@ -84,6 +87,22 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             due_at, _ = next_check_at(cfg, live, time.time())
         timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
         return None if math.isinf(timeout) else timeout  # no regular check: sleep until woken
+
+    def _share_regular_frame(self, cfg: SensorConfig, forced: bool) -> bool:
+        live = self.live_state(cfg.id)
+        now = time.time()
+        return bool(
+            not forced
+            and cfg.enabled
+            and cfg.kind == KIND_STATES
+            and cfg.source_type in {"ha_camera", "http"}
+            and cfg.triggers["regular"]
+            and not cfg.triggers["light_entity"]
+            and not cfg.triggers["change_detection"]
+            and live.burst_until <= now
+            and live.face_burst.until <= now
+            and not live.recheck_at
+        )
 
     async def _light_before(self, cfg: SensorConfig) -> float | None:
         """Hold the sensor's light on for a check (see lights.py).
@@ -215,6 +234,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         data: bytes | None = None,
         image: Image.Image | None = None,
         frame_id: str | None = None,
+        *,
+        shared: bool = False,
     ) -> None:
         """One check: take a frame (or use the one given), then hand it to the sensor's kind.
 
@@ -226,6 +247,9 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         live.last_run = time.time()
         lit = False  # the frame was taken with the sensor's light on
         try:
+            if shared and data is None and image is None:
+                data, image = await self.shared_frames.get(cfg.source_type, cfg.source)
+                frame_id = live.remember(data)
             if data is None:
                 wait = await self._light_before(cfg)
                 try:
