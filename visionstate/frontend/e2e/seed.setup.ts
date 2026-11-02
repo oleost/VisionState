@@ -9,13 +9,12 @@ import {
   FACE_SENSOR_NAME,
   OBJECT_SENSOR_NAME,
   PHOTO_URL,
-  PLAY_URL,
   READING_SENSOR_NAME,
   SENSOR_NAME,
   SOUND_CAMERA_URL,
   SOUND_SENSOR_NAME,
 } from './env';
-import { soundModelInstalled } from './helpers';
+import { playSirenUntilAsked, soundModelInstalled } from './helpers';
 
 setup('seed a trained sensor', async ({ request }) => {
   const created = await request.post('api/v1/sensors', {
@@ -173,10 +172,7 @@ setup('seed a sound sensor on a camera with sound', async ({ request }) => {
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).sound.line, { timeout: 30_000 })
     .not.toBeNull();
   // Heard, with a clip (with the camera's video), and asked about in Review once it stopped.
-  await request.get(PLAY_URL('siren', 0.1));
-  await expect
-    .poll(async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).total, { timeout: 60_000 })
-    .toBeGreaterThan(0);
+  await playSirenUntilAsked(request, sensor.id);
   await expect
     .poll(async () => {
       const rows = (await (await request.get(`api/v1/history?sensor=${sensor.id}&event=heard`)).json()).items;
