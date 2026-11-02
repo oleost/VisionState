@@ -355,15 +355,16 @@ class BenchmarkMixin(ChecksMixin):
         run.results.append(result)
         run.round, run.rounds, run.downloaded_mb = 0, 0, 0.0
         try:
-            result["download_s"] = await self._benchmark_download(run, role, spec)
-            room = available_memory_mb()
+            room = available_memory_mb()  # before the download: no use fetching what can not be loaded
             need = spec.footprint.ram_mb * BENCHMARK["memory_room"]
             if room is not None and need > room:
                 result["status"] = "skipped"
                 result["error"] = (
-                    f"Not enough free memory: it takes about {spec.footprint.ram_mb} MB, {round(room)} MB is free"
+                    f"not enough free memory: it takes about {spec.footprint.ram_mb} MB, {round(room)} MB is free"
                 )
                 return
+            result["download_s"] = await self._benchmark_download(run, role, spec)
+            run.downloaded_mb = 0.0
             await self._benchmark_measure(run, cfg, role, spec, result)
         except asyncio.CancelledError:
             result["status"], result["error"] = "cancelled", ""

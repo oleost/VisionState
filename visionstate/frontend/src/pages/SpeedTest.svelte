@@ -237,9 +237,9 @@
                 {:else}
                   <span><span class="muted">{run.sensor.kind === 'sound' ? 'Each analysis' : 'Whole check'}</span> <b>{ms(r.total.median)}</b> <span class="muted">/ {ms(r.total.p95)}</span></span>
                 {/if}
-                {#if r.camera}<span><span class="muted">Camera</span> {ms(r.camera.median)}</span>{/if}
+                {#if r.camera && !perPerson(r)}<span><span class="muted">Camera</span> {ms(r.camera.median)}</span>{/if}
                 {#if r.sound_ready_ms !== undefined}<span><span class="muted">Stream open with sound after</span> {ms(r.sound_ready_ms)}</span>{/if}
-                {#if r.decode}<span><span class="muted">Decode</span> {ms(r.decode.median)}</span>{/if}
+                {#if r.decode && !perPerson(r)}<span><span class="muted">Decode</span> {ms(r.decode.median)}</span>{/if}
                 {#if !perPerson(r) && run.sensor.kind !== 'sound'}<span><span class="muted">AI</span> {ms(r.ai?.median)}</span>{/if}
                 {#if r.memory_peak_mb !== undefined}
                   <span><span class="muted">Memory</span> {r.memory_peak_mb} MB <span class="muted">peak, {r.memory_loaded_mb} MB loaded</span></span>
