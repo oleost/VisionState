@@ -14,14 +14,15 @@ from .. import backbones, imaging
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import KIND_STATES, RUNTIME, UNKNOWN_STATE
+from ..settings import RUNTIME, UNKNOWN_STATE
+from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
 from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
 from .sound import SoundMixin
-from .state import SensorConfig
+from .state import LiveState, SensorConfig
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if cfg.is_sound:
             return await self._listen(cfg)  # listens all the time instead of checking frames
         live = self.live_state(sensor_id)
+        self._note_camera(cfg, live)
         due_at, kind = next_check_at(cfg, live, time.time())
         if not cfg.enabled and not live.force_paused:
             live.force = False  # paused: no check after a retrain or a model change, only when asked
@@ -67,10 +69,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             forced, live.force, live.force_paused = live.force, False, False
             try:
                 if forced or kind == "full":
-                    if self._share_regular_frame(cfg, forced):
-                        await self.run_once(cfg, shared=True)
-                    else:
-                        await self.run_once(cfg)
+                    await self.run_once(cfg)
                     await asyncio.to_thread(backbones.trim_memory)
                 else:
                     await self.probe(cfg)
@@ -88,21 +87,17 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
         return None if math.isinf(timeout) else timeout  # no regular check: sleep until woken
 
-    def _share_regular_frame(self, cfg: SensorConfig, forced: bool) -> bool:
-        live = self.live_state(cfg.id)
-        now = time.time()
-        return bool(
-            not forced
-            and cfg.enabled
-            and cfg.kind == KIND_STATES
-            and cfg.source_type in {"ha_camera", "http"}
-            and cfg.triggers["regular"]
-            and not cfg.triggers["light_entity"]
-            and not cfg.triggers["change_detection"]
-            and live.burst_until <= now
-            and live.face_burst.until <= now
-            and not live.recheck_at
-        )
+    def _note_camera(self, cfg: SensorConfig, live: LiveState) -> None:
+        """Whether this sensor shares its camera with another, at every pass. A sensor with a light
+        does not: its frames are taken in the light, a frame without it would be no baseline. One
+        alone on its camera takes its frames and keeps its moments as if nothing was shared."""
+        key = (cfg.source_type, cfg.source)
+        if cfg.enabled and not cfg.triggers["light_entity"]:
+            self._camera_of[cfg.id] = key
+        else:
+            self._camera_of.pop(cfg.id, None)
+        users = sum(camera == key for camera in self._camera_of.values())
+        live.shares_camera = cfg.id in self._camera_of and users > 1
 
     async def _light_before(self, cfg: SensorConfig) -> float | None:
         """Hold the sensor's light on for a check (see lights.py).
@@ -194,7 +189,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # baseline is not, so every comparison would look like a change. Compare later.
             return
         try:
-            frame_id, data = await self.grab(cfg)
+            frame_id, data, _ = await self._grab_for_check(cfg)
             # Only for the signature: decoded small (a check that follows decodes it whole).
             small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
@@ -228,14 +223,20 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         data = await self.grabber.grab(cfg.source_type, cfg.source)
         return self.live_state(cfg.id).remember(data), data
 
+    async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
+        """A frame for a check without a light: together with the other sensors on the camera asking now."""
+        live = self.live_state(cfg.id)
+        if not live.shares_camera:
+            return *(await self.grab(cfg)), None
+        frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+        return live.remember(frame.data), frame.data, frame
+
     async def run_once(
         self,
         cfg: SensorConfig,
         data: bytes | None = None,
         image: Image.Image | None = None,
         frame_id: str | None = None,
-        *,
-        shared: bool = False,
     ) -> None:
         """One check: take a frame (or use the one given), then hand it to the sensor's kind.
 
@@ -246,22 +247,20 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         t = topics(cfg.slug)
         live.last_run = time.time()
         lit = False  # the frame was taken with the sensor's light on
+        shared = None
         try:
-            if shared and data is None and image is None:
-                data, image = await self.shared_frames.get(cfg.source_type, cfg.source)
-                frame_id = live.remember(data)
             if data is None:
                 wait = await self._light_before(cfg)
                 try:
                     if wait is None:
-                        frame_id, data = await self.grab(cfg)
+                        frame_id, data, shared = await self._grab_for_check(cfg)
                     else:
                         frame_id, data = await self._grab_in_light(cfg, wait)
                         lit = True
                 finally:
                     self._light_after(cfg)
             if image is None:
-                image = await asyncio.to_thread(imaging.decode, data)
+                image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)

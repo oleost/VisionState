@@ -270,6 +270,7 @@ class SoundLive:
 @dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
+    shares_camera: bool = False  # another sensor uses this camera now (ChecksMixin._note_camera)
     debouncer: Debouncer = field(default_factory=Debouncer)
     probs: dict[str, float] = field(default_factory=dict)
     top: str | None = None

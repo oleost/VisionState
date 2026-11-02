@@ -4,23 +4,37 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PIL import Image
 
 
 @dataclass
+class SharedFrame:
+    """A picture taken after everyone sharing it asked; decoded once, by the first who needs it (a
+    change-detection probe decodes it small itself). Whoever gets the image only reads it."""
+
+    data: bytes
+    decode: Callable[[bytes], Image.Image]
+    _image: asyncio.Future[Image.Image] | None = field(default=None, repr=False)
+
+    async def image(self) -> Image.Image:
+        if self._image is None:
+            self._image = asyncio.ensure_future(asyncio.to_thread(self.decode, self.data))
+        return await asyncio.shield(self._image)
+
+
+@dataclass
 class _Batch:
-    task: asyncio.Task[tuple[bytes, Image.Image]]
+    task: asyncio.Task[SharedFrame]
     waiters: int = 0
 
 
 class SharedFrames:
-    """Share capture and decode only among requests received before capture starts.
-
-    Callers use the decoded image read-only. Keys are exact (source type, source)
-    pairs; this object belongs to one runtime/HA connection. Manual, light and
-    burst checks bypass it. Nothing is retained after the batch has completed.
+    """Share capture and decode only among requests received before capture starts, so a picture
+    is always taken after the request for it: a trigger never gets a frame from before what
+    triggered it. Keys are exact (source type, source) pairs; this object belongs to one runtime/HA
+    connection. Nothing is retained after the batch has completed.
     """
 
     def __init__(
@@ -36,7 +50,7 @@ class SharedFrames:
         self._tasks: set[asyncio.Task] = set()
         self._closed = False
 
-    async def get(self, source_type: str, source: str) -> tuple[bytes, Image.Image]:
+    async def get(self, source_type: str, source: str) -> SharedFrame:
         if self._closed:
             raise RuntimeError("Shared frame capture is closed")
         key = (source_type, source)
@@ -59,14 +73,12 @@ class SharedFrames:
                 if not batch.task.done():
                     batch.task.cancel()
 
-    async def _capture(self, key: tuple[str, str]) -> tuple[bytes, Image.Image]:
+    async def _capture(self, key: tuple[str, str]) -> SharedFrame:
         await asyncio.sleep(self._window_s)
         # Close membership before I/O: a later request needs its own fresh frame,
         # even when an earlier camera request or JPEG decoder is slow.
         self._pending.pop(key, None)
-        data = await self._grab(*key)
-        image = await asyncio.to_thread(self._decode, data)
-        return data, image
+        return SharedFrame(await self._grab(*key), self._decode)
 
     def _finished(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

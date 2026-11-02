@@ -2,7 +2,6 @@
 
 import asyncio
 import io
-import time
 from dataclasses import replace
 from unittest.mock import AsyncMock
 
@@ -14,10 +13,13 @@ from visionstate.db import Database
 from visionstate.engine import checks
 from visionstate.engine.base import RuntimeBase
 from visionstate.engine.checks import ChecksMixin
-from visionstate.engine.state import SensorConfig
-from visionstate.settings import Settings
+from visionstate.engine.logic import aligned, next_check_at
+from visionstate.engine.state import LiveState, SensorConfig
+from visionstate.settings import RUNTIME, Settings
 from visionstate.shared_frames import SharedFrames
 from visionstate.sources import SourceError
+
+from .test_triggers import config as trigger_config
 
 
 def jpeg():
@@ -54,6 +56,7 @@ def config(sensor_id=1, **changes):
 def engine(camera):
     obj = object.__new__(ChecksMixin)
     obj.live = {}
+    obj._camera_of = {}
     obj.grabber = camera
     obj.shared_frames = SharedFrames(camera.grab, camera.decode, 0.001)
     obj._send = AsyncMock()
@@ -84,19 +87,21 @@ def test_runtime_uses_the_current_camera_provider(tmp_path):
     asyncio.run(run())
 
 
-def test_sensor_steps_share_regular_checks_but_not_a_forced_check(monkeypatch):
+def test_sensor_steps_share_regular_and_forced_checks_alike(monkeypatch):
     async def run():
         camera = Camera()
         obj = engine(camera)
         obj.load_sensor = lambda sensor_id: config(sensor_id)
         monkeypatch.setattr(checks.backbones, "trim_memory", lambda: None)
+        for i in range(4):
+            obj._note_camera(config(i), obj.live_state(i))  # all four known, as after their first pass
         await asyncio.gather(*(obj._sensor_step(i) for i in range(4)))
         assert len(camera.calls) == 1
         assert obj._run_states.await_count == 4
-        obj.live_state(1).force = True
-        await obj._sensor_step(1)
-        assert len(camera.calls) == 2
-        assert camera.decodes == 1  # forced check used the original direct decode path
+        for i in range(4):
+            obj.live_state(i).force = True
+        await asyncio.gather(*(obj._sensor_step(i) for i in range(4)))
+        assert len(camera.calls) == camera.decodes == 2
         obj.load_sensor = lambda sensor_id: config(sensor_id, enabled=False)
         await obj._sensor_step(5)
         assert len(camera.calls) == 2
@@ -110,10 +115,11 @@ def test_four_checks_share_one_capture_and_decode_but_next_batch_is_fresh():
         camera = Camera()
         pool = SharedFrames(camera.grab, camera.decode, 0.001)
         frames = await asyncio.gather(*(pool.get("ha_camera", "camera.garage") for _ in range(4)))
+        images = await asyncio.gather(*(frame.image() for frame in frames))
         assert len(camera.calls) == camera.decodes == 1
-        assert all(frame[1] is frames[0][1] for frame in frames)
+        assert all(image is images[0] for image in images)
         assert not pool._pending
-        await pool.get("ha_camera", "camera.garage")
+        await (await pool.get("ha_camera", "camera.garage")).image()
         assert len(camera.calls) == camera.decodes == 2
         await pool.close()
         assert not pool._tasks
@@ -158,7 +164,7 @@ def test_exact_source_and_type_are_isolated():
         camera = Camera()
         pool = SharedFrames(camera.grab, camera.decode, 0.001)
         await asyncio.gather(pool.get("http", "a"), pool.get("http", "b"), pool.get("ha_camera", "a"))
-        assert len(camera.calls) == camera.decodes == 3
+        assert len(camera.calls) == 3
         await pool.close()
 
     asyncio.run(run())
@@ -182,16 +188,17 @@ def test_shared_failure_is_not_cached_and_recovers(failure):
     asyncio.run(run())
 
 
-def test_decode_failure_releases_batch():
+def test_decode_failure_reaches_everyone_and_the_next_picture_is_new():
     async def run():
         camera = Camera()
         camera.data = b"not an image"
         pool = SharedFrames(camera.grab, camera.decode, 0.001)
-        errors = await asyncio.gather(pool.get("http", "a"), pool.get("http", "a"), return_exceptions=True)
+        frames = await asyncio.gather(pool.get("http", "a"), pool.get("http", "a"))
+        errors = await asyncio.gather(*(frame.image() for frame in frames), return_exceptions=True)
         assert all(isinstance(err, OSError) for err in errors)
         assert camera.decodes == 1
         camera.data = jpeg()
-        await pool.get("http", "a")
+        await (await pool.get("http", "a")).image()
         assert camera.decodes == 2
         await pool.close()
 
@@ -247,7 +254,7 @@ def test_late_waiter_never_receives_a_frame_from_inflight_capture():
         second = asyncio.create_task(pool.get("http", "a"))
         release.set()
         await asyncio.gather(first, second)
-        assert len(camera.calls) == camera.decodes == 2
+        assert len(camera.calls) == 2
         await pool.close()
 
     asyncio.run(run())
@@ -292,12 +299,20 @@ def test_close_cancels_an_inflight_capture():
     asyncio.run(run())
 
 
+def share(obj, *configs):
+    for cfg in configs:
+        obj._note_camera(cfg, obj.live_state(cfg.id))
+    for cfg in configs:
+        obj._note_camera(cfg, obj.live_state(cfg.id))
+
+
 def test_shared_run_keeps_independent_sensor_frames_rois_and_state_checks():
     async def run():
         camera = Camera()
         obj = engine(camera)
         configs = [config(i, roi={"x": i / 4, "y": 0, "w": 0.25, "h": 1}) for i in range(4)]
-        await asyncio.gather(*(obj.run_once(cfg, shared=True) for cfg in configs))
+        share(obj, *configs)
+        await asyncio.gather(*(obj.run_once(cfg) for cfg in configs))
         assert len(camera.calls) == camera.decodes == 1
         assert obj._run_states.await_count == 4
         assert {call.args[0].id for call in obj._run_states.await_args_list} == set(range(4))
@@ -317,7 +332,8 @@ def test_capture_error_marks_each_sensor_offline_without_inference():
         camera = Camera()
         camera.error = SourceError("offline")
         obj = engine(camera)
-        await asyncio.gather(obj.run_once(config(1), shared=True), obj.run_once(config(2), shared=True))
+        share(obj, config(1), config(2))
+        await asyncio.gather(obj.run_once(config(1)), obj.run_once(config(2)))
         assert len(camera.calls) == 1
         assert obj.live_state(1).available is obj.live_state(2).available is False
         assert obj._run_states.await_count == 0
@@ -327,43 +343,61 @@ def test_capture_error_marks_each_sensor_offline_without_inference():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize(
-    "case",
-    [
-        "forced",
-        "paused",
-        "light",
-        "probe",
-        "trigger_only",
-        "burst",
-        "face_burst",
-        "recheck",
-        "rtsp",
-        "objects",
-        "reading",
-        "sound",
-    ],
-)
-def test_only_compatible_regular_state_checks_can_share(case):
+def test_who_shares_a_camera():
     obj = engine(Camera())
-    cfg = config()
-    assert obj._share_regular_frame(cfg, False)
-    if case == "paused":
-        cfg.enabled = False
-    elif case == "light":
-        cfg.triggers["light_entity"] = "light.a"
-    elif case == "probe":
-        cfg.triggers["change_detection"] = True
-    elif case == "trigger_only":
-        cfg.triggers["regular"] = False
-    elif case == "burst":
-        obj.live_state(cfg.id).burst_until = time.time() + 60
-    elif case == "face_burst":
-        obj.live_state(cfg.id).face_burst.until = time.time() + 60
-    elif case == "recheck":
-        obj.live_state(cfg.id).recheck_at = time.time() + 1
-    elif case == "rtsp":
-        cfg.source_type = "rtsp"
-    elif case in {"objects", "reading", "sound"}:
-        cfg.kind = case
-    assert not obj._share_regular_frame(cfg, case == "forced")
+    alone = config(1, source="camera.other")
+    share(obj, alone)
+    assert not obj.live_state(1).shares_camera  # takes its frames and keeps its moments as ever
+    a, b = config(2), config(3)
+    share(obj, a, b, alone)
+    assert obj.live_state(2).shares_camera and obj.live_state(3).shares_camera
+    assert not obj.live_state(1).shares_camera
+    lit = config(4)
+    lit.triggers["light_entity"] = "light.a"
+    share(obj, lit)
+    assert not obj.live_state(4).shares_camera
+    b.enabled = False  # paused: the other is alone again
+    share(obj, b, a)
+    assert not obj.live_state(2).shares_camera
+
+
+def test_a_change_detection_probe_uses_the_shared_picture_and_decodes_it_itself():
+    async def run():
+        camera = Camera()
+        obj = engine(camera)
+        a, b = config(1), config(2)
+        share(obj, a, b)
+        await asyncio.gather(obj.probe(a), obj.probe(b))
+        assert len(camera.calls) == 1 and camera.decodes == 0
+        await obj.shared_frames.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("late", [0.0, 0.005, -0.005, 0.3])
+def test_aligned_keeps_the_pace_whatever_the_wake_up(late):
+    moment = aligned(1_000_000.0, 30, "http://cam")  # onto the moments of the camera
+    assert aligned(moment + late, 30, "http://cam") == moment + 30  # not a skipped round, not an extra check
+
+
+def test_aligned_brings_sensors_together_and_is_never_late():
+    every, source = 30, "http://cam"
+    for shift in (1.0, 7.3, 29.0, 29.9):
+        at = 1_000_000.0 + shift
+        assert at < aligned(at, every, source) <= at + every + RUNTIME["shared_frame_slack_s"]
+    # Two sensors end up on the same moment; 30 s and 60 s meet at every 60 s.
+    assert aligned(aligned(1_000_001.0, 30, source), 30, source) == aligned(
+        aligned(1_000_013.0, 30, source), 30, source
+    )
+    moment = aligned(1_000_000.0, 60, source)
+    assert aligned(moment - 30, 30, source) == moment
+    # Another camera has other moments (they do not all fall together).
+    assert aligned(1_000_000.0, 30, source) != aligned(1_000_000.0, 30, "http://other")
+
+
+def test_schedule_only_changes_for_a_sensor_sharing_its_camera():
+    cfg = trigger_config()
+    live = LiveState(last_run=500)
+    assert next_check_at(cfg, live, 501) == (560, "full")
+    live.shares_camera = True
+    assert next_check_at(cfg, live, 501)[0] == aligned(500, 60, cfg.source)

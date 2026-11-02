@@ -513,6 +513,18 @@ Video upload: one frame every *N* seconds (default 5), near-duplicates skipped b
 hash, then the current model suggests a label for each frame. Upload and ZIP sizes are capped
 (`UPLOAD_LIMITS`). A single camera can feed multiple sensors, each with its own ROI.
 
+Sensors on one camera share their pictures (`shared_frames.py`, issue #63, by @Docter77): requests
+within `RUNTIME["shared_frame_window_s"]` get one picture, taken after all of them asked (a batch
+closes before the camera is asked), so even a trigger never gets a frame from before it. No cache:
+it could not do this without pictures older than the sensors expect. That alone saves little:
+measured on a test Home Assistant (four sensors on one HTTP camera at 3, 3, 6 and 6 s), 60 requests
+a minute became 29 right after a restart, 50 ten minutes later, and 60 again once one check moved a
+sensor, since each counted from its own last check. So their regular checks and probes fall on
+moments the camera's sensors have in common (`engine.logic.aligned`): 20 a minute, whatever happened
+(about 10 % CPU of the app either way: inference runs per sensor, the gain is fewer requests to the
+camera and Home Assistant). A sensor with a light does not share: warm-up frames must be real, and a
+lit frame is no baseline. One alone on its camera changes in nothing.
+
 A sound sensor's address is checked when it is saved and again by its stream, since FFmpeg would open a local file too. Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
 pseudo-protocols), a camera an entity ID. A snapshot (a URL's or a Home Assistant camera's) is read
@@ -532,7 +544,7 @@ nothing decodes in between.
 
 - **Triggers** (per sensor, `sensor.triggers`, defaults in `settings.TRIGGER_DEFAULTS`):
   - Regular interval (default 10 s) — the safety net, counted from the last check whatever
-    caused it. `regular: false` switches it off: the sensor then checks only when triggered and
+    caused it (on a camera with other sensors: to the moment they have in common before that). `regular: false` switches it off: the sensor then checks only when triggered and
     once after start-up.
   - State changes of chosen HA entities (WebSocket `subscribe_trigger`, attribute-only changes
     and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state

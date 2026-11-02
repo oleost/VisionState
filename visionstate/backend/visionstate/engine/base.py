@@ -44,6 +44,7 @@ class RuntimeBase:
         self.shared_frames = SharedFrames(
             lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
         )
+        self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
         self.ha_entity_ids: dict[str, str] = {}
