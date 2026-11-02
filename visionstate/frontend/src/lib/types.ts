@@ -676,6 +676,8 @@ export interface AppConfig {
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
   /** A counter's standard limit: this many steps of its last digit a minute. */
   counter_standard_steps_per_min: number;
+  /** The same for a counter with pointer dials. */
+  counter_standard_steps_per_min_dials: number;
   reading_modes: ReadingMode[];
   reading_displays: ReadingDisplay[];
   counter_readers: CounterReader[];

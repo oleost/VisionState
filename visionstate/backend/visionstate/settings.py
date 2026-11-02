@@ -154,6 +154,9 @@ COUNTER_LIMIT = {
     # "auto" until it learned, and what the UI fills in for "fixed" and "step": this many steps of
     # the counter's last digit a minute (0.04 m³ a minute for a water meter with three decimals).
     "standard_steps_per_min": 40,
+    # The same with pointer dials: a last dial's steps are small (0.04 m³ a minute with four dials
+    # on whole m³). 40 of them stopped ordinary water use on the meters of issue #59.
+    "standard_steps_per_min_dials": 400,
     "margin_steps": 2,  # always allowed: this many steps of the last digit (a wheel half way)
     # A gap between two readings longer than gap_checks intervals (at least gap_min_s) is time the
     # counter was not seen (the app was down, the camera away).
@@ -236,7 +239,10 @@ READING = {
     # and is at least dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
     # may be dial_wheel_slack_bins behind where the value puts it and dial_wheel_ahead_bins ahead (from
     # dial_wheel_exact_from tenths of a digit on, not ahead; it says the digit, the needle the rest), or
-    # stand on its digit, which counts dial_wheel_stand_weight.
+    # stand on its digit, which counts dial_wheel_stand_weight. A last wheel on a whole digit with the
+    # ×0.1 dial from dial_wheel_exact_from on can be either side of that digit: the last value decides
+    # (readers.settle_turning_wheel); without one the reading's confidence is at most this.
+    "dial_wheel_undecided_score": 0.5,
     "dial_wide_pointer": (0.6, 1.3),
     "dial_wheel_slack_bins": 4,
     "dial_wheel_ahead_bins": 1,

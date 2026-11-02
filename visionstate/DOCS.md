@@ -444,7 +444,8 @@ objects the region stays a border.
   counters) learns it from the counter's own readings: the fastest it went up over ten minutes
   and in a whole day, on a busy day of the last two weeks, with room to spare. It needs a week of
   readings first; until then a rate per hour applies, which you may change — it starts at a
-  standard one (for a water meter with three decimals 0.04 m³ a minute) — and once learned, the
+  standard one (for a water meter with three decimals, or with pointer dials down to the fourth,
+  0.04 m³ a minute) — and once learned, the
   Settings tab shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
   *Fixed per reading* the largest rise from one reading to the next, the same however long the
   app was away (after a restart a real rise waits for your answer in Review); *No limit* rejects only a counter that reads lower. Choosing *Fixed rate* or

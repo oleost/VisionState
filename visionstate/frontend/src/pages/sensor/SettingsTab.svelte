@@ -25,7 +25,7 @@
   import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor, objectPicker } from '../../lib/objects';
-  import { isReadingSensor } from '../../lib/reading';
+  import { extraDigits, isReadingSensor, valueDecimals } from '../../lib/reading';
   import { toPoints, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
   import { isSoundSensor } from '../../lib/sound';
@@ -316,7 +316,8 @@
           bind:rateWindow={reading.rate_window_min}
           mode={reading.mode}
           unit={reading.unit}
-          decimals={reading.decimals}
+          decimals={valueDecimals(reading)}
+          hasDials={extraDigits(reading) > 0}
           intervalS={interval_s}
         />
       {:else}

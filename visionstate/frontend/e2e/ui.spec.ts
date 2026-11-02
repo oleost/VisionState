@@ -9,7 +9,6 @@ import {
   METER_REGION,
   METER_URL,
   PHOTO_URL,
-  PLAY_URL,
   READING_SENSOR_NAME,
   SOUND_WAV_URL,
   TURNED_COUNTER_REGION,
@@ -25,6 +24,7 @@ import {
   hold,
   hasTouchScreen,
   isTouch,
+  playSirenUntilAsked,
   press,
   seededCounterSensorId,
   seededFaceSensorId,
@@ -2006,10 +2006,7 @@ test('a sound heard on a camera: its video clip in the history, the question in 
 
   // Every project answers one question: a new siren asks again (the sensor's review has no cooldown).
   const waiting = async () => (await (await request.get(`api/v1/review?sensor=${id}`)).json()).total;
-  if (!(await waiting())) {
-    await request.get(PLAY_URL('siren', 0.1));
-    await expect.poll(waiting, { timeout: 60_000 }).toBeGreaterThan(0);
-  }
+  if (!(await waiting())) await playSirenUntilAsked(request, id);
   await page.goto(`#/review?sensor=${id}`);
   await expect(page.getByText('Was this')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();

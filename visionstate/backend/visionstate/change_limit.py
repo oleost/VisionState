@@ -18,7 +18,7 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 
-from .settings import COUNTER_LIMIT
+from .settings import COUNTER_LIMIT, extra_digits, value_decimals
 
 # Readings that were read with confidence but do not fit the last value.
 IMPLAUSIBLE = ("went down", "changed too much")
@@ -57,12 +57,14 @@ def gap(interval_s: float) -> float:
 
 
 def margin(settings: dict) -> float:
-    return COUNTER_LIMIT["margin_steps"] * 10 ** -int(settings["decimals"])
+    return COUNTER_LIMIT["margin_steps"] * 10 ** -value_decimals(settings)
 
 
 def standard_rate(settings: dict) -> float:
-    """The standard limit per hour: COUNTER_LIMIT["standard_steps_per_min"] steps of the last digit a minute."""
-    return COUNTER_LIMIT["standard_steps_per_min"] * 10 ** -int(settings["decimals"]) * 60
+    """The standard limit per hour: steps of the whole value's last digit a minute (with pointer
+    dials the last dial's, which turns far faster than a wheel: its own number of steps)."""
+    steps = COUNTER_LIMIT["standard_steps_per_min_dials" if extra_digits(settings) else "standard_steps_per_min"]
+    return steps * 10 ** -value_decimals(settings) * 60
 
 
 def learned_rate(learned: Learned | None) -> float | None:

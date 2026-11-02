@@ -58,14 +58,18 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             live.error = f"Number reader unavailable: {redact(str(err))}"
             return
         now = time.time()
-        value = readers.parse(text.text, settings)
         last = float(live.debouncer.published) if live.debouncer.published is not None else None
+        text = readers.settle_turning_wheel(text, last, settings)
+        value = readers.parse(text.text, settings)
         watch = live.watch
         limit = None
         if counter:
             change_limit.advance(watch, now, cfg.interval_s)
             await asyncio.to_thread(self._learn_limit, cfg.id, watch, now)
             limit = change_limit.limit(settings, watch.learned, watch.budget_s)
+            # Dials or decimals changed: a value of whole m³ says too little to judge a finer one by.
+            if not readers.same_precision(live.debouncer.published, settings):
+                last = None
         reason, settling = reading_verdict(text, value, last, cfg.threshold, settings, limit)
         # Over the limit stays rejected, however many readings agree: only an answer in Review moves it on.
         if counter and reason in change_limit.IMPLAUSIBLE and value is not None and last is not None:

@@ -192,7 +192,8 @@ Many users run Home Assistant on phones and tablets.
 - A test must not hang on a score near a line the code decides by. The full CC0 siren scores
   about 0.92, right at the review question's line (0.925 with threshold 0.85): asked or not by
   where the 2-s windows fall. The e2e plays it quietly (`/play?sound=siren&gain=0.1`: about 0.6,
-  heard from 0.5, asked below 0.75). One sound can also be asked about as two (a siren as a smoke
+  heard from 0.5, asked below 0.75), and about one play in 70 is not heard at all: play again until
+  asked (`playSirenUntilAsked`). One sound can also be asked about as two (a siren as a smoke
   alarm too): answer whichever question shows and count the queue before and after.
 - Playwright's `hasText` matches a case-insensitive substring: "Our siren heard" contains "siren
   heard". Find a row by its exact heading: `filter({ has: page.getByText('Siren heard', { exact: true }) })`.

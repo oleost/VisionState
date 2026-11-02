@@ -1,6 +1,6 @@
 // Shared helpers for the UI tests: error collection, layout checks and real touch/mouse gestures.
 import { expect, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { COUNTER_SENSOR_NAME, FACE_SENSOR_NAME, OBJECT_SENSOR_NAME, READING_SENSOR_NAME, SENSOR_NAME, SOUND_SENSOR_NAME } from './env';
+import { COUNTER_SENSOR_NAME, FACE_SENSOR_NAME, OBJECT_SENSOR_NAME, PLAY_URL, READING_SENSOR_NAME, SENSOR_NAME, SOUND_SENSOR_NAME } from './env';
 
 export type Point = { x: number; y: number };
 
@@ -120,6 +120,24 @@ export const seededSoundSensorId = (request: APIRequestContext) => seededSensorI
 export async function soundModelInstalled(request: APIRequestContext): Promise<boolean> {
   const settings = await (await request.get('api/v1/settings')).json();
   return !!settings.sound_models?.[0]?.installed;
+}
+
+/** Plays a quiet siren until the sensor asks about it in Review. It scores about 0.6, heard from 0.5: about one
+ * play in 70 stays below that in too many windows, is not heard, and leaves nothing to ask about. */
+export async function playSirenUntilAsked(request: APIRequestContext, sensorId: number): Promise<void> {
+  let nextPlay = 0;
+  await expect
+    .poll(
+      async () => {
+        if (Date.now() >= nextPlay) {
+          nextPlay = Date.now() + 25_000; // long enough to be heard, go quiet and have its clip stored
+          await request.get(PLAY_URL('siren', 0.1));
+        }
+        return (await (await request.get(`api/v1/review?sensor=${sensorId}`)).json()).total;
+      },
+      { timeout: 80_000, intervals: [1_000] },
+    )
+    .toBeGreaterThan(0);
 }
 
 /** API requests per path (without the query) made while `ms` pass on the page. */
