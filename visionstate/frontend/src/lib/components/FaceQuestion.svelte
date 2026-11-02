@@ -7,7 +7,7 @@
   import { app, toastError } from '../app.svelte';
   import type { ObjectQuestion, ReviewItem } from '../types';
   import DetectionBoxes from './DetectionBoxes.svelte';
-  import Icon from './Icon.svelte';
+  import ReviewAnswers, { type Answer } from './ReviewAnswers.svelte';
   import RoiEditor from './RoiEditor.svelte';
 
   let {
@@ -28,8 +28,6 @@
   const name = $derived(people.find((p) => p.key === question.label)?.name ?? question.label);
   const others = $derived(people.filter((p) => p.key !== question.label));
   let busy = $state(false);
-  let naming = $state(false);
-  let newName = $state('');
 
   // The close-up: the face with some room around it, as a background crop of the frame.
   const src = $derived(api.historyImageUrl(item.id));
@@ -54,28 +52,29 @@
     };
   });
 
-  async function send(action: 'yes' | 'no' | 'skip' | 'person' | 'new', person?: string, text?: string) {
+  async function send(action: Answer, person?: string, newName?: string) {
     if (busy) return;
     busy = true;
     try {
-      await api.answerFace(item.id, action, person, action === 'new' ? newName.trim() : undefined);
-      const label = person ?? (action === 'new' ? 'new' : action === 'skip' ? null : action);
-      onanswer(text ?? 'Skipped', label);
+      await api.answerFace(item.id, action === 'pick' ? 'person' : action, person, newName);
+      const text =
+        action === 'yes'
+          ? `✓ ${name}`
+          : action === 'pick'
+            ? `✓ ${people.find((p) => p.key === person)?.name ?? person}`
+            : action === 'new'
+              ? `✓ ${newName} (new)`
+              : action === 'no'
+                ? `✓ Not ${name}`
+                : 'Skipped';
+      onanswer(text, person ?? (action === 'new' ? 'new' : action === 'skip' ? null : action));
     } catch (err) {
       toastError(err);
     } finally {
       busy = false;
     }
   }
-
-  function keydown(e: KeyboardEvent) {
-    if (naming || (e.target as HTMLElement).closest('input, select, textarea')) return;
-    if (e.key === 'Enter' && !who) send('yes', undefined, `✓ ${name}`);
-    else if (e.key.toLowerCase() === 's') send('skip');
-  }
 </script>
-
-<svelte:window onkeydown={keydown} />
 
 <div class="pair">
   <div class="frame">
@@ -109,60 +108,27 @@
   </div>
 </div>
 
-<div class="col center">
-  <p class="question">
+<ReviewAnswers
+  asked={who ? null : name}
+  choices={who ? people : others}
+  noun="person"
+  noLabel={who ? null : 'No, someone I do not know'}
+  skipLabel={who ? 'Don’t know' : 'Skip'}
+  footnote="A name you give is taught: this face is added to that person."
+  {given}
+  {busy}
+  onanswer={send}
+>
+  {#snippet question()}
     {#if who}
       Who is this?
       <span class="small muted">A face this sensor does not know.</span>
     {:else}
-      Is this <strong>{name}</strong>?
+      <span>Is this <strong>{name}</strong>?</span>
       <span class="small muted">Probably, but not sure enough to say so by itself.</span>
     {/if}
-  </p>
-  {#if naming}
-    <form
-      class="row wrap center-row"
-      onsubmit={(e) => {
-        e.preventDefault();
-        if (newName.trim()) send('new', undefined, `✓ ${newName.trim()} (new)`);
-      }}
-    >
-      <!-- svelte-ignore a11y_autofocus -->
-      <input class="input" bind:value={newName} maxlength="64" placeholder="Name" aria-label="Name of the new person" autofocus />
-      <button class="btn primary" type="submit" disabled={busy || !newName.trim()}>Add person</button>
-      <button class="btn" type="button" onclick={() => (naming = false)}>Back</button>
-    </form>
-  {:else}
-    <div class="row wrap center-row">
-      {#if !who}
-        <button class="btn primary lg" class:chosen={given === 'yes'} disabled={busy} onclick={() => send('yes', undefined, `✓ ${name}`)}>
-          <Icon name="check" /> Yes, {name}
-        </button>
-        <span class="small faint">No, it is</span>
-      {/if}
-      {#each who ? people : others as p (p.key)}
-        <button class="btn lg" class:chosen={given === p.key} disabled={busy} onclick={() => send('person', p.key, `✓ ${p.name}`)}>
-          {p.name}
-        </button>
-      {/each}
-      <button class="btn lg accent-outline" disabled={busy} onclick={() => (naming = true)}>
-        <Icon name="plus" size={14} /> New person…
-      </button>
-    </div>
-    <div class="row wrap center-row">
-      {#if !who}
-        <button class="btn ghost" class:chosen={given === 'no'} disabled={busy} onclick={() => send('no', undefined, `✓ Not ${name}`)}>
-          No, someone I do not know
-        </button>
-      {/if}
-      <button class="btn ghost" class:chosen={given === null} disabled={busy} onclick={() => send('skip')}>
-        {who ? 'Don’t know' : 'Skip'}
-      </button>
-    </div>
-  {/if}
-  <span class="xsmall faint">A name you give is taught: this face is added to that person.</span>
-  <span class="xsmall faint kbd-only">{who ? 'S = don’t know' : 'Enter = yes · S = skip'}</span>
-</div>
+  {/snippet}
+</ReviewAnswers>
 
 <style>
   .pair {
@@ -196,26 +162,6 @@
   .frame {
     border-radius: var(--radius-md);
     overflow: hidden;
-  }
-  .center {
-    align-items: center;
-    text-align: center;
-    gap: var(--space-3);
-    margin-top: var(--space-4);
-  }
-  .center-row {
-    justify-content: center;
-    gap: var(--space-2);
-  }
-  .question {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 0;
-    font-size: var(--fs-lg);
-  }
-  .chosen {
-    outline: 2px solid var(--c-accent);
   }
   @media (max-width: 600px) {
     .pair {

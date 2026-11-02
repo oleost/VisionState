@@ -2,6 +2,7 @@
   // Object sensors: the last analysed frame with its boxes, and what each class reports now.
   import { api } from '../../lib/api';
   import { toastError } from '../../lib/app.svelte';
+  import EntitiesCard from '../../lib/components/EntitiesCard.svelte';
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct, plural } from '../../lib/format';
@@ -115,19 +116,18 @@
           </span>
         {:else}
           <span class="xsmall faint">
-            Checks every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Add a motion or change trigger</a>
-            to react faster.
+            {#if sensor.triggers.regular}
+              Checks every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Add a motion or change trigger</a>
+              to react faster.
+            {:else}
+              Only checks when triggered. <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it checks</a>.
+            {/if}
           </span>
         {/if}
       </div>
     </section>
 
-    <section class="card pad">
-      <div class="card-title"><h3>In Home Assistant</h3></div>
-      <ul class="entities">
-        {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
-      </ul>
-    </section>
+    <EntitiesCard {sensor} />
   </aside>
 </div>
 
@@ -148,18 +148,13 @@
   aside {
     gap: var(--space-4);
   }
-  .classes,
-  .entities {
+  .classes {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-  }
-  .entities {
-    gap: 6px;
-    overflow-wrap: anywhere;
   }
   .count {
     min-width: 32px;

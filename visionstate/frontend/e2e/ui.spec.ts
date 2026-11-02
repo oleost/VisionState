@@ -1,7 +1,20 @@
 // UI tests, run once on desktop (mouse) and once on a phone (touch). See playwright.config.ts.
 import { expect, test, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 import path from 'node:path';
-import { CAMERA_URL, COUNTER_BOX, COUNTER_URL, DISPLAY_URL, PHOTO_URL, READING_SENSOR_NAME } from './env';
+import {
+  CAMERA_URL,
+  COUNTER_BOX,
+  COUNTER_URL,
+  DISPLAY_URL,
+  METER_REGION,
+  METER_URL,
+  PHOTO_URL,
+  PLAY_URL,
+  READING_SENSOR_NAME,
+  SOUND_WAV_URL,
+  TURNED_COUNTER_REGION,
+  TURNED_COUNTER_URL,
+} from './env';
 import {
   apiRequestsDuring,
   center,
@@ -18,7 +31,9 @@ import {
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
+  seededSoundSensorId,
   setVisibility,
+  soundModelInstalled,
   watchErrors,
 } from './helpers';
 
@@ -35,7 +50,18 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
   const readingId = await seededReadingSensorId(request);
   const counterId = await seededCounterSensorId(request);
   const faceId = await seededFaceSensorId(request);
+  const soundId = (await soundModelInstalled(request)) ? await seededSoundSensorId(request) : null;
+  const sound: [string, string, RegExp | string][] = soundId
+    ? [
+        ['sound-live', `sensors/${soundId}/live`, 'Listening'],
+        ['sound-history', `sensors/${soundId}/history`, 'When each sound was heard'],
+        ['sound-own', `sensors/${soundId}/quality`, 'Teach the sensor sounds of your own'],
+        ['sound-settings', `sensors/${soundId}/settings`, 'Sounds to listen for'],
+        ['sound-home-assistant', `sensors/${soundId}/home-assistant`, 'Send values'],
+      ]
+    : [];
   return [
+    ...sound,
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
@@ -47,6 +73,9 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ['objects-live', `sensors/${objectId}/live`, 'Right now'],
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
     ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
+    ['objects-home-assistant', `sensors/${objectId}/home-assistant`, 'Send values'],
+    ['sensor-home-assistant', `sensors/${id}/home-assistant`, 'Last frame'],
+    ['reading-home-assistant', `sensors/${readingId}/home-assistant`, 'Raw reading'],
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
     ['reading-history', `sensors/${readingId}/history`, 'Every new value and every rejected reading'],
     ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
@@ -150,7 +179,7 @@ test('a hidden page asks nothing, and hiding and showing it does not start extra
   const light = page.getByLabel('Light to switch on');
   await light.fill('light.meter_flash');
   await light.press('Enter');
-  await press(page.getByRole('button', { name: 'Next' }), info);
+  await toDetect(page, info);
   await expect(page.getByTestId('light-hold')).toContainText('light.meter_flash');
   for (let i = 0; i < 5; i++) {
     await setVisibility(page, 'hidden');
@@ -206,6 +235,16 @@ test('the buttons of the sensor cards line up along the bottom', async ({ page }
       if (Math.abs(cards[i] - cards[j]) < 1) expect(Math.abs(buttons[i] - buttons[j])).toBeLessThan(1);
 });
 
+/** From the wizard's first step to its second; a small picture asks for a second Next (its warning). */
+async function toDetect(page: Page, info: TestInfo) {
+  const detect = page.getByText('What should this sensor detect?');
+  await expect(async () => {
+    if (await detect.isVisible()) return;
+    await press(page.getByRole('button', { name: 'Next' }), info);
+    await expect(detect).toBeVisible({ timeout: 2000 });
+  }).toPass();
+}
+
 test('a light for the camera: picked with the camera, held on while framing', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');
@@ -218,13 +257,16 @@ test('a light for the camera: picked with the camera, held on while framing', as
   await light.press('Enter');
   await expect(page.getByText('Wait before taking the frame')).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await press(page.getByRole('button', { name: 'Next' }), info);
 
-  // While the region shows live frames the light is held on; without Home Assistant (as here) it says why not.
+  // Held on from the moment both are chosen; without Home Assistant (as here) it says why not.
   const hold = page.getByTestId('light-hold');
   await expect(hold).toContainText('light.meter_flash');
   await expect(hold).toContainText('Home Assistant API is not configured');
-  await expect(page.locator('.roi img')).toBeVisible(); // the frame still comes
+  // The same hold on the next step, so the light does not blink in between; and the frame still comes.
+  await page.getByRole('button', { name: 'Next' }).scrollIntoViewIfNeeded();
+  await toDetect(page, info);
+  await expect(hold).toBeVisible();
+  await expect(page.locator('.roi img')).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .chip, [data-testid="light-hold"]');
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-light.png'), fullPage: true });
@@ -234,10 +276,33 @@ test('a light for the camera: picked with the camera, held on while framing', as
   await expect(hold).toContainText('stays off while you look');
   await press(toggle, info);
   await expect(hold).toContainText('Home Assistant API is not configured');
-  // Still held on the next step (one hold for region and test: the light does not blink in between).
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.getByText('What should this sensor detect?')).toBeVisible();
-  await expect(hold).toBeVisible();
+  errors.expectNone();
+});
+
+test('the wizard shows the whole list of entities for a light', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  const lights = Array.from({ length: 12 }, (_, i) => ({ entity_id: `light.lamp_${i}`, name: `Lamp ${i}`, domain: 'light', state: 'off' }));
+  await page.route('**/api/v1/entities*', (route) => route.fulfill({ json: lights }));
+  await page.goto('#/sensors/new');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  await page.getByLabel('Light to switch on').focus();
+  const list = page.getByRole('listbox');
+  await expect(list).toBeVisible();
+  if (info.project.name === 'desktop') {
+    // Holding the scrollbar leaves the list open (the field keeps the focus).
+    const box = (await list.boundingBox())!;
+    await page.mouse.move(box.x + box.width - 4, box.y + 20);
+    await page.mouse.down();
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    await expect(list).toBeVisible();
+  }
+  // The last one is reached by scrolling, not cut off by the wizard.
+  const last = list.getByRole('button', { name: /Lamp 11/ });
+  await last.scrollIntoViewIfNeeded();
+  await press(last, info);
+  await expect(page.getByText('light.lamp_11')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
   errors.expectNone();
 });
 
@@ -247,17 +312,24 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   await page.getByPlaceholder('Garage door').fill('Wizard test');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(`${CAMERA_URL}/snapshot.jpg`);
+  // Leaving the field brings the camera's picture on this step; a URL half typed is not tried.
+  await expect(page.getByTestId('camera-preview').locator('img')).toHaveCount(0);
+  await page.getByLabel('Source URL').blur();
+  await expect(page.getByTestId('camera-preview').locator('img')).toBeVisible();
+  await expect(page.getByTestId('low-stream')).toHaveCount(0); // 1280 × 720: no warning
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-camera.png') }); // a full page would drop touch
   await press(page.getByRole('button', { name: 'Next' }), info);
 
+  // The region is drawn with the states, the only step without a test.
+  await expect(page.getByText('Which states can it be in?')).toBeVisible();
   const image = page.locator('.roi img');
   await expect(image).toBeVisible();
-  await expect(page.getByTestId('low-stream')).toHaveCount(0); // 1280 × 720: no warning
+  await image.scrollIntoViewIfNeeded();
   const box = (await image.boundingBox())!;
   await drag(page, info, { x: box.x + box.width * 0.2, y: box.y + box.height * 0.2 }, { x: box.x + box.width * 0.8, y: box.y + box.height * 0.9 });
   await expect(page.locator('.handle.corner')).toHaveCount(4);
-  await press(page.getByRole('button', { name: 'Next' }), info);
 
-  await expect(page.getByText('Which states can it be in?')).toBeVisible();
   // "Add state" puts the cursor in the new field; an empty name is not shown as an option.
   await press(page.getByRole('button', { name: 'Add state' }), info);
   await expect(page.getByText('options: open, closed, unknown')).toBeVisible();
@@ -267,8 +339,12 @@ test('new sensor wizard creates a sensor', async ({ page, request }, info) => {
   if (hasTouchScreen(info)) await expect(page.getByText('Keys 1–9 label them later.')).toBeHidden();
   await press(page.getByRole('button', { name: 'Next' }), info);
   await expect(page.getByText('When should it check the camera?')).toBeVisible();
-  // A new sensor is sent to Home Assistant unless switched off here.
-  await expect(page.getByRole('checkbox', { name: 'Send to Home Assistant' })).toBeChecked();
+  // A new sensor is in Home Assistant unless kept out of it here.
+  const notInHa = page.getByRole('checkbox', { name: 'Not in Home Assistant' });
+  await expect(notInHa).not.toBeChecked();
+  await press(notInHa, info);
+  await expect(notInHa).toBeChecked();
+  await press(notInHa, info);
   await expectNoHorizontalOverflow(page);
   await press(page.getByRole('button', { name: 'Create sensor and start labelling' }), info);
 
@@ -287,11 +363,12 @@ test('new object sensor through the wizard', async ({ page, request }, info) => 
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(PHOTO_URL('driveway'));
   await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  // A small picture: maybe the camera's low-resolution stream.
+  // A small picture: maybe the camera's low-resolution stream. Next stays to say so; the next one goes on.
   await expect(page.getByTestId('low-stream')).toContainText('640×421');
+  await expect(page.getByText('What should this sensor detect?')).toHaveCount(0);
   await expectNoClipping(page, '.notice');
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+  await toDetect(page, info);
+  await expect(page.locator('.roi img')).toBeVisible();
 
   await press(page.getByRole('radio', { name: /Objects/ }), info);
   // The test on a fresh frame finds the cars (not selected yet) and the person.
@@ -337,9 +414,7 @@ test('new reading sensor through the wizard', async ({ page, request }, info) =>
   await page.getByPlaceholder('Garage door').fill('Washer');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(DISPLAY_URL('1:05', 'led'));
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame
+  await toDetect(page, info);
 
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   await expect(page.getByText(/Read “1:05”/)).toBeVisible({ timeout: 60_000 });
@@ -374,10 +449,8 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.goto('#/sensors/new');
   await page.getByPlaceholder('Garage door').fill('Gas meter');
   await press(page.getByText('HTTP snapshot URL'), info);
-  await page.getByLabel('Source URL').fill(COUNTER_URL(45730));
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info); // whole frame for now
+  await page.getByLabel('Source URL').fill(COUNTER_URL(45730.4)); // the last wheel four tenths on: rounded
+  await toDetect(page, info);
 
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   await press(page.getByRole('radio', { name: /Mechanical counter/ }), info);
@@ -398,6 +471,8 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   );
   await expect(preview.locator('.handle.corner')).toHaveCount(4);
   await expect(page.getByText(/Read “0045730”/)).toBeVisible({ timeout: 30_000 });
+  // A new reading sensor corrects rotation and perspective; the switch is with the region it changes.
+  await expect(page.locator('.read-images').getByLabel('Correct rotation and perspective')).toBeChecked();
   // The cells follow the region.
   const cells = (await preview.getByTestId('digit-cells').boundingBox())!;
   expect(Math.abs(cells.width - box.width * COUNTER_BOX.w)).toBeLessThan(box.width * 0.03);
@@ -434,15 +509,156 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await request.delete(`api/v1/sensors/${sensorId}`);
 });
 
+test('a counter the camera sees turned is read with its region straightened', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // The camera hangs askew: the counter is turned by 125° (issue #58). The region's four corners sit on the
+  // window with the wheels, its top edge at the wheels' top.
+  const roi = await (await request.get(TURNED_COUNTER_REGION(125))).json();
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Turned meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: TURNED_COUNTER_URL(89932, 125),
+      roi,
+      reading: { mode: 'counter', display: 'counter', digits: 7, decimals: 3, unit: 'm³' },
+    },
+  });
+  expect(made.ok(), await made.text()).toBeTruthy();
+  const sensor = await made.json();
+  expect(sensor.reading.straighten).toBe(true); // a new reading sensor straightens its region
+  await page.goto(`#/sensors/${sensor.id}/live`);
+  await expect(page.locator('.value-card .value')).toHaveText('89.932 m³', { timeout: 60_000 });
+
+  // Settings: the region has four corners and no "+" to add one, its top marked; Turn moves the top.
+  await page.goto(`#/sensors/${sensor.id}/settings`);
+  await expect(page.getByLabel('Correct rotation and perspective')).toBeChecked();
+  const frame = page.locator('.frame .roi');
+  await expect(frame.locator('.handle.corner')).toHaveCount(4);
+  await expect(frame.locator('.handle.add')).toHaveCount(0);
+  // The fields follow the corners in perspective, and stay inside them.
+  const fields = frame.getByTestId('digit-cells');
+  await expect(fields.locator('.cell')).toHaveCount(7);
+  await expect(fields.locator('.divider')).toHaveCount(6);
+  const insideRegion = await fields.evaluate((svg) => {
+    const corners = (svg.parentElement!.querySelector('polygon.outline') as SVGPolygonElement).points;
+    const inside = (x: number, y: number) => {
+      let sign = 0;
+      for (let i = 0; i < 4; i++) {
+        const [a, b] = [corners[i], corners[(i + 1) % 4]];
+        const side = Math.sign((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x));
+        if (side && sign && side !== sign) return false;
+        sign = side || sign;
+      }
+      return true;
+    };
+    return [...svg.querySelectorAll('line')].every((l) => {
+      const near = (t: number) => [l.x1.baseVal.value * (1 - t) + l.x2.baseVal.value * t, l.y1.baseVal.value * (1 - t) + l.y2.baseVal.value * t];
+      return inside(...(near(0.02) as [number, number])) && inside(...(near(0.98) as [number, number]));
+    });
+  });
+  expect(insideRegion).toBe(true);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-straightened.png'), fullPage: true });
+  const top = frame.getByTestId('roi-top');
+  await expect(top).toBeVisible();
+  const before = (await top.boundingBox())!;
+  await press(page.getByTestId('roi-turn'), info);
+  await expect.poll(async () => Math.round((await top.boundingBox())!.x)).not.toBe(Math.round(before.x));
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensor.id}`);
+});
+
+test('a water meter with pointer dials: placed on its face in Settings, read as one more digit each', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // The meter of issue #59: five wheels for whole m³ and four dials, seen turned and at an angle.
+  const { region, dials } = await (await request.get(METER_REGION(20, 0.2))).json();
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: 'Dial meter',
+      kind: 'reading',
+      source_type: 'http',
+      source: METER_URL(187.34565, 20, 0.2),
+      roi: region,
+      reading: { mode: 'counter', display: 'counter', digits: 5, decimals: 0, unit: 'm³' },
+      interval_s: 3600,
+    },
+  });
+  expect(made.ok(), await made.text()).toBeTruthy();
+  const sensor = await made.json();
+  try {
+    await page.goto(`#/sensors/${sensor.id}/settings`);
+    // The same switch as in the wizard: the picture edits the counter, or the dials.
+    await expect(page.locator('.frame .roi')).toBeVisible();
+    await press(page.getByTestId('edit-dials'), info);
+    await expect(page.locator('.frame .roi')).toHaveCount(0);
+    const card = page.getByTestId('dials-card');
+    const editor = card.getByTestId('dials-editor');
+    await expect(editor.locator('img')).toBeVisible({ timeout: 60_000 });
+    // Add a dial: a circle labelled ×0.1 below the counter; dragged it moves, its handle sizes it.
+    await card.scrollIntoViewIfNeeded();
+    await press(card.getByTestId('dial-add'), info);
+    await expect(card.getByTestId('dial-label')).toHaveText(['×0.1']);
+    const circle = editor.locator('circle').first();
+    const before = (await circle.boundingBox())!;
+    const centre = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+    await drag(page, info, centre, { x: centre.x - before.width * 0.6, y: centre.y + before.height * 0.3 });
+    await expect.poll(async () => Math.round((await circle.boundingBox())!.x)).toBeLessThan(Math.round(before.x));
+    const handle = card.getByTestId('dial-size');
+    const h = (await handle.boundingBox())!;
+    const width = (await circle.boundingBox())!.width;
+    await drag(page, info, { x: h.x + h.width / 2, y: h.y + h.height / 2 }, { x: h.x + h.width / 2 + width * 0.3, y: h.y + h.height / 2 });
+    await expect.poll(async () => (await circle.boundingBox())!.width).toBeGreaterThan(width * 1.1);
+    // A second one is ×0.01; its direction can be turned, and it can be removed.
+    await press(card.getByTestId('dial-add'), info);
+    await expect(card.getByTestId('dial-label')).toHaveText(['×0.1', '×0.01']);
+    const second = card.getByTestId('dial-row').nth(1);
+    await press(second.getByRole('button', { name: 'Clockwise' }), info);
+    await expect(second.getByRole('button', { name: 'Anticlockwise' })).toBeVisible();
+    await press(second.getByRole('button', { name: 'Remove the ×0.01 dial' }), info);
+    await expect(card.getByTestId('dial-row')).toHaveCount(1);
+    await press(page.getByRole('button', { name: 'Read now' }), info);
+    await expect(card.getByTestId('dial-row').first()).toContainText(/Needle at|No needle found/, { timeout: 30_000 });
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'settings-dials.png'), fullPage: true });
+
+    // The dials where they are on this meter: one more digit each, read with the wheels.
+    const saved = await request.patch(`api/v1/sensors/${sensor.id}`, { data: { reading: { ...sensor.reading, dials } } });
+    expect(saved.ok(), await saved.text()).toBeTruthy();
+    await request.post(`api/v1/sensors/${sensor.id}/classify`);
+    await page.goto(`#/sensors/${sensor.id}/live`);
+    await expect(page.locator('.value-card .value')).toHaveText('187.3456 m³', { timeout: 60_000 });
+    await page.goto(`#/sensors/${sensor.id}/settings`);
+    await press(page.getByTestId('edit-dials'), info);
+    await expect(card.getByTestId('dial-label')).toHaveText(['×0.1', '×0.01', '×0.001', '×0.0001']);
+    await expect(card.getByTestId('dial-row').first()).toContainText('Needle at 3.', { timeout: 60_000 });
+
+    // A reading rejected as too low waits in Review, with the dials to check it against.
+    await request.patch(`api/v1/sensors/${sensor.id}`, { data: { source: METER_URL(150.12345, 20, 0.2) } });
+    await request.post(`api/v1/sensors/${sensor.id}/classify`);
+    await expect.poll(async () => (await (await request.get(`api/v1/review?sensor=${sensor.id}`)).json()).items.length, { timeout: 60_000 }).toBeGreaterThan(0);
+    await page.goto(`#/review?sensor=${sensor.id}`);
+    const seen = page.getByTestId('reading-seen').locator('img');
+    await expect(seen).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => seen.evaluate((img: HTMLImageElement) => img.naturalWidth), { timeout: 30_000 }).toBeGreaterThan(0);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'review-dials.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`api/v1/sensors/${sensor.id}`);
+  }
+});
+
 test('reading wizard suggests the decimals the display shows', async ({ page }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/sensors/new');
   await page.getByPlaceholder('Garage door').fill('Meter');
   await press(page.getByText('HTTP snapshot URL'), info);
   await page.getByLabel('Source URL').fill(DISPLAY_URL('1234.5'));
-  await press(page.getByRole('button', { name: 'Next' }), info);
-  await expect(page.locator('.roi img')).toBeVisible();
-  await press(page.getByRole('button', { name: 'Next' }), info);
+  await toDetect(page, info);
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   // 0 decimals would make it 12345; the editor offers the one digit after the point.
   await expect(page.getByText(/1 digit after the point\?/)).toBeVisible({ timeout: 60_000 });
@@ -881,23 +1097,139 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
 });
 
+test('the live page says when the regular check is off', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const before = (await (await request.get('api/v1/config')).json()).trigger_defaults;
+  // An own object sensor: the seeded one may have been triggered by another test, and then the page
+  // shows that trigger instead of this line.
+  const seeded = await (await request.get(`api/v1/sensors/${await seededObjectSensorId(request)}`)).json();
+  const made = await request.post('api/v1/sensors', {
+    data: { name: 'Regular off', kind: 'objects', source_type: seeded.source_type, source: seeded.source, objects: { classes: ['person'] } },
+  });
+  expect(made.ok()).toBe(true);
+  const own = (await made.json()).id;
+  try {
+    for (const [id, every, only] of [
+      [own, /Checks every \d/, 'Only checks when triggered.'],
+      [await seededReadingSensorId(request), /Reads every \d/, 'Only reads when triggered.'],
+    ] as const) {
+      const off = { triggers: { ...before, regular: false } };
+      expect((await request.patch(`api/v1/sensors/${id}`, { data: off })).ok()).toBe(true);
+      try {
+        await page.goto(`#/sensors/${id}/live`);
+        await page.reload();
+        await expect(page.getByText(only)).toBeVisible();
+        await expect(page.getByText(every)).toHaveCount(0);
+      } finally {
+        // Also after a failure: the next tests need this sensor checking.
+        expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
+      }
+      await page.reload();
+      await expect(page.getByText(every)).toBeVisible();
+      await expect(page.getByText(only)).toHaveCount(0);
+    }
+  } finally {
+    await request.delete(`api/v1/sensors/${own}`);
+  }
+  errors.expectNone();
+});
+
+test('the Home Assistant tab chooses what a sensor has there', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededObjectSensorId(request);
+  const entity = async (name: string) =>
+    (await (await request.get(`api/v1/sensors/${id}`)).json()).ha_entities.find((e: { name: string }) => e.name === name);
+  // The first tap only asks, and nothing is removed until the second. A tap right after the page
+  // scrolled can be spent on stopping the scroll (see the pitfalls in CLAUDE.md).
+  const saveTwice = async () => {
+    const again = page.getByRole('button', { name: 'Tap again to remove' });
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect(again).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    await press(again, info);
+  };
+  await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {} } });
+  try {
+    await page.goto(`#/sensors/${id}/home-assistant`);
+    const options: { object?: string }[] = (await (await request.get(`api/v1/sensors/${id}`)).json()).ha_entities;
+    const first = options.find((e) => e.object)!.object!;
+    // A snapshot is off until chosen; choosing one removes nothing, so one tap saves it.
+    const snapshot = page.getByRole('checkbox', { name: `${first} snapshot` });
+    await expect(snapshot).not.toBeChecked();
+    await press(snapshot, info);
+    await expect(page.getByTestId('ha-removing')).toHaveCount(0);
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect.poll(async () => (await entity(`${first} snapshot`)).on).toBe(true);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0); // it covers the button on a phone
+
+    // A chosen snapshot has a shape and a share of movement; a shape that is none says so.
+    const shape = page.getByRole('textbox', { name: 'Snapshot shape' });
+    await shape.fill('wide');
+    const refused = page.getByText(/Snapshot shape: free, or width:height such as 16:9/);
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect(refused).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    errors.errors.length = 0; // the refusal (422) is what was asked for here
+    // It covers the button on a phone; a retried tap above may have left two.
+    await expect(async () => {
+      const dismiss = page.getByRole('button', { name: 'Dismiss' });
+      if (await dismiss.count()) await press(dismiss.first(), info);
+      await expect(dismiss).toHaveCount(0, { timeout: 500 });
+    }).toPass();
+    await shape.fill('16:9');
+    await page.getByRole('spinbutton', { name: 'New snapshot when the box has changed by' }).fill('40');
+    await expect(async () => {
+      await press(page.getByRole('button', { name: 'Save changes' }), info);
+      await expect
+        .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.snapshot_aspect, { timeout: 1500 })
+        .toBe('16:9');
+    }).toPass();
+    expect((await (await request.get(`api/v1/sensors/${id}`)).json()).objects.snapshot_move).toBe(0.4);
+    await expectNoHorizontalOverflow(page);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0);
+
+    // Taking one away says what happens, and asks twice.
+    await press(page.getByRole('checkbox', { name: `${first} count` }), info);
+    await expect(page.getByTestId('ha-removing')).toContainText(`${first} count`);
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    await saveTwice();
+    await expect.poll(async () => (await entity(`${first} count`)).on).toBe(false);
+    await expect(page.getByText('Saved', { exact: true })).toHaveCount(0); // it covers the button on a phone
+
+    // Not in Home Assistant: the table goes, and it is marked like a sensor not sent.
+    await press(page.getByRole('radio', { name: 'Not in Home Assistant' }), info);
+    await expect(page.getByTestId('ha-entities')).toHaveCount(0);
+    await expect(page.getByTestId('ha-removing')).toContainText('all of this sensor');
+    await saveTwice();
+    await expect(page.locator('header .chip', { hasText: 'Not in Home Assistant' })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    // Last: a full-page screenshot drops touch emulation.
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'home-assistant-removing.png'), fullPage: true });
+    errors.expectNone();
+  } finally {
+    const objects = { snapshot_aspect: 'free', snapshot_move: 0.25 };
+    await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {}, objects } });
+  }
+});
+
 test('a sensor can be kept from Home Assistant while it is tuned', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
   try {
-    await page.goto(`#/sensors/${id}/settings`);
-    const send = page.getByRole('checkbox', { name: 'Send to Home Assistant' });
-    await expect(send).toBeChecked();
-    await press(send, info);
-    await expect(page.getByText('stay unavailable')).toBeVisible();
+    await page.goto(`#/sensors/${id}/home-assistant`);
+    await expect(page.getByRole('radio', { name: 'Send values', exact: true })).toBeChecked();
+    await press(page.getByRole('radio', { name: 'Don’t send values' }), info);
     await press(page.getByRole('button', { name: 'Save changes' }), info);
-    await expect(page.getByText('Settings saved')).toBeVisible();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     expect((await (await request.get(`api/v1/sensors/${id}`)).json()).publish).toBe(false);
     // Marked on the sensor page and on the dashboard, so it is not forgotten.
-    await expect(page.locator('header .chip', { hasText: 'Not sent to Home Assistant' })).toBeVisible();
+    await expect(page.locator('header .chip', { hasText: 'Values not sent' })).toBeVisible();
     await page.goto('#/');
     const card = page.locator('.card', { hasText: READING_SENSOR_NAME }).first();
-    await expect(card.getByText('Not sent to Home Assistant')).toBeVisible();
+    await expect(card.getByText('Values not sent')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'dashboard-not-sent.png'), fullPage: true });
@@ -1615,4 +1947,99 @@ test('a camera that changed its picture size holds the readings until the region
     await request.get(`${CAMERA_URL}/set?wider=0&camera=${camera}`);
     await request.delete(`api/v1/sensors/${id}`);
   }
+});
+
+
+// --- sound sensors (skipped until the sound model is on disk: tools/soundmodel/README.md) --------
+
+test('new sound sensor through the wizard: a microphone stream is tried, sounds picked', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await press(page.getByRole('radio', { name: /Listen/ }), info);
+  await expect(page.getByText('Name it and pick a stream with sound')).toBeVisible();
+  await page.getByPlaceholder('Hallway').fill('Wizard sound');
+  await page.getByLabel('Stream with sound').fill(SOUND_WAV_URL);
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  // The stream is listened to: sound only (an ESP32 microphone sends WAV).
+  await expect(page.getByTestId('sound-test')).toContainText('16 kHz', { timeout: 20_000 });
+  await expect(page.getByTestId('sound-test')).not.toContainText('video');
+  // The same picker as for objects: popular sounds first, every other one behind "Show all".
+  await press(page.getByRole('button', { name: 'Siren', exact: true }), info);
+  await expect(page.getByRole('button', { name: 'Siren', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await press(page.getByRole('button', { name: /Show all \d+ sounds/ }), info);
+  await page.getByPlaceholder(/Search \d+ sounds/).fill('kettle');
+  await press(page.getByRole('button', { name: 'Whistle or kettle' }), info);
+  await press(page.getByRole('button', { name: 'Show fewer' }), info);
+  await expect(page.getByRole('button', { name: 'Whistle or kettle' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('spinbutton', { name: 'Siren: heard from' })).toBeVisible();
+  await expect(page.getByText('binary_sensor.wizard_sound_whistle_or_kettle')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expect(page.getByRole('checkbox', { name: 'Not in Home Assistant' })).not.toBeChecked();
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('bar-siren')).toBeVisible();
+  await expect(page.getByText('Analysed above')).toBeVisible({ timeout: 20_000 });
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('a sound heard on a camera: its video clip in the history, the question in Review', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(150_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/history`);
+  // The heading exactly: "Our siren heard" (the own sound, once heard) is not this row.
+  const row = page.locator('.card.item').filter({ has: page.getByText('Siren heard', { exact: true }) }).first();
+  await expect(row).toContainText('video clip');
+  await press(row.getByRole('button').first(), info);
+  const play = row.getByRole('button', { name: 'Play the clip' });
+  await expect(play).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(play, info);
+  await expect(row.locator('video')).toBeVisible();
+  await expect(row.getByText('Teach this clip as')).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Our siren', exact: true })).toBeVisible();
+
+  // Every project answers one question: a new siren asks again (the sensor's review has no cooldown).
+  const waiting = async () => (await (await request.get(`api/v1/review?sensor=${id}`)).json()).total;
+  if (!(await waiting())) {
+    await request.get(PLAY_URL('siren', 0.1));
+    await expect.poll(waiting, { timeout: 60_000 }).toBeGreaterThan(0);
+  }
+  await page.goto(`#/review?sensor=${id}`);
+  await expect(page.getByText('Was this')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play the clip' })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
+  // answer yes to it, and it leaves the queue.
+  const before = await waiting();
+  await press(page.getByRole('button', { name: /^Yes, / }), info);
+  await expect.poll(waiting).toBe(before - 1);
+  errors.expectNone();
+});
+
+test('own sounds: a recording taught as a new sound, played back, and forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  await expect(page.getByTestId('own-sound-our_siren')).toBeVisible();
+  const name = `Bark ${info.project.name}`;
+  await page.getByLabel('Name of the new own sound').fill(name);
+  const recording = path.resolve(import.meta.dirname, '..', '..', 'backend', 'tests', 'assets', 'sounds', 'dog_bark.m4a');
+  await page.locator('#sound-files').setInputFiles(recording);
+  const card = page.getByTestId(`own-sound-bark_${info.project.name}`);
+  await expect(card).toContainText('1 clip');
+  await press(card.getByRole('button', { name: 'Play the clip' }), info);
+  await expect(card.locator('audio')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  const forget = card.getByRole('button', { name: /Forget/ }).first();
+  await press(forget, info);
+  await press(card.getByRole('button', { name: /Tap again/ }), info);
+  await expect(card).toHaveCount(0);
+  errors.expectNone();
 });

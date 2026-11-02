@@ -4,8 +4,9 @@
 
 Teach a local AI to recognise **states** in camera images — a garage door that is `open`,
 `closed` or `partial`, a gate, a parking spot, a light — and use the result as a normal
-Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — or **read a
-number** from a display, without any training. Everything runs on this machine; no cloud.
+Home Assistant sensor. Or let it find **objects** — people, cars, animals and more — **read a
+number** from a display, or **listen** for sounds — sirens, a smoke alarm, a dog, a doorbell
+— without any training, and learn your own sounds from a few clips. Everything runs on this machine; no cloud.
 
 ## Requirements
 
@@ -18,28 +19,31 @@ number** from a display, without any training. Everything runs on this machine; 
   (`rtsp://`, `rtsps://`, also an `http://` video stream). A stream is kept open while frames
   are asked for often (a burst of checks, the live view), so those come at once instead of after
   a new connection each time.
+  A sound sensor needs a stream with sound: a camera's stream with its microphone on, or an HTTP
+  audio stream (an ESP32 microphone).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
   also in a virtual machine with a generic CPU type (for example Proxmox's `kvm64`).
 
 ## Getting started
 
 1. Open **VisionState** from the sidebar.
-2. Click **New sensor**:
+2. Click **New sensor** and choose **Watch the picture** (the steps below) or **Listen** (a sound
+   sensor: see *Sound sensors* below):
    1. Give it a name and pick a camera — and, for a camera in a dark place, a light to switch on
-      (see *A light for the camera* below).
-   2. Draw a box around the thing to watch (for example the garage door). The AI only looks
-      inside the box, which makes it far more accurate. For an object that sits at an angle,
-      shape the box: drag a corner to move it, drag a **+** on an edge to add a corner, and
-      double-click / double-tap (or press and hold) a corner to remove it. Everything outside
-      the shape is ignored. **Reset to rectangle** goes back to a plain box. A small picture
-      gets a warning: it may be the camera's low-resolution stream, and its main stream is often
-      hidden in Home Assistant.
-   3. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
+      (see *A light for the camera* below). A small picture from the camera shows what you picked.
+      A small one gets a warning: it may be the camera's low-resolution stream, and its main stream
+      is often hidden in Home Assistant.
+   2. Choose what it detects: **States** (name them, for example *Open*, *Closed*, *Partial*),
       **Objects** (see *Object sensors* below) or **Reading** (see *Reading sensors* below).
-      This can not be changed later.
-   4. Optionally choose when it should check the camera — for example when your motion
-      sensor or garage opener changes (see *When it checks* below) — and whether it sends to
-      Home Assistant right away (see *Tuning a sensor* below). You can skip this step.
+      This can not be changed later. In the same step, draw a box around the thing to watch (for
+      example the garage door). The AI only looks inside the box, which makes it far more accurate.
+      For an object that sits at an angle, shape the box: drag a corner to move it, drag a **+** on
+      an edge to add a corner, and double-click / double-tap (or press and hold) a corner to remove
+      it. Everything outside the shape is ignored. **Reset to rectangle** goes back to a plain box.
+   3. Optionally choose when it should check the camera — for example when your motion
+      sensor or garage opener changes (see *When it checks* below) — and whether it should stay
+      out of Home Assistant for now (see *What a sensor has in Home Assistant* below). You can skip
+      this step.
 3. On the **Label** tab, click or tap the matching state button (or press `1`–`9`) while the live
    image shows each state. The model retrains in about a second after every label.
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
@@ -73,13 +77,30 @@ each new state in its database, so values that only move a little (a timestamp, 
 the decimal, the same picture again) would fill it. The pictures, and an object's boxes, follow
 the result at once and are otherwise sent again every few minutes.
 
-**Tuning a sensor before Home Assistant uses it:** switch off **Send to Home Assistant** (in the
-last step of the wizard, or under **Settings → General**). The sensor then runs as usual — its
-history, Quality tab and review queue fill up — but its entities in Home Assistant stay
-*unavailable*: no values, so no statistics either. Useful when the sensor takes over the entity ID
-of an older one and wrong readings must not end up in its statistics. The pause switch and the
-check-now button keep working. Turn it on once the sensor reads reliably; the value is sent right
-away. Sensors not sent are marked on the dashboard.
+**What a sensor has in Home Assistant** is set on its **Home Assistant** tab:
+
+- **Send values:** its entities exist and follow what the sensor finds.
+- **Don't send values:** the sensor runs as usual — its
+  history, Quality tab and review queue fill up — but its entities stay *unavailable*: no values, so
+  no statistics either. Useful for tuning a sensor, for example one that takes over the entity ID of
+  an older one, so wrong readings do not end up in its statistics. The pause switch and the
+  check-now button (a sound sensor has none) keep working.
+- **Not in Home Assistant** (also in the last step of the wizard, to set a sensor up first): no
+  entities at all and nothing on MQTT; the sensor is used in VisionState only.
+
+Below that you tick which entities it has: on an object sensor *Detected*, *Count* and *Snapshot* for
+each object, on a sound sensor each sound, and on the other sensors the optional ones such as *Last
+frame*. What is ticked is there and
+switched on in Home Assistant (one that was off there comes on within about a minute). What you
+untick is removed from Home Assistant, and automations using it stop working; tick it again and it
+comes back with the entity ID and name it had. Removing needs MQTT to be connected: otherwise
+nothing is saved and you are told why.
+Sensors not sent, or not in Home Assistant, are marked on the dashboard.
+
+A sensor made before this tab existed keeps what it has in use: after the update, the optional
+entities of a reading sensor (raw reading, problem, accepted, rate, reader image) that are on in Home
+Assistant stay, and those that are off there are removed. Those removed can take a while to leave
+Home Assistant's lists. From then on the tab decides.
 
 ## Object sensors
 
@@ -97,12 +118,52 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   |---|---|
   | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
   | `sensor.<name>_<object>_count` | How many there are |
+  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked on the **Home Assistant** tab |
 
-  plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
+  A **snapshot** is new when the count changes, sent just before the object goes on, and when the
+  object has moved (at a check, by the share you set on the **Home Assistant** tab, so something
+  parked sends nothing new; 0 turns it off); several of the
+  same object share one picture that covers them all, and the last one stays after they have gone.
+  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* on the same tab
+  is `free` or width:height such as `1:1`, `4:3` or `16:9`: the picture gets as close as the region
+  allows and never cuts the object. In a phone notification, trigger
+  on the binary sensor and pass the picture as its image:
+
+  ```yaml
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.driveway_car
+      to: "on"
+  actions:
+    - action: notify.mobile_app_my_phone
+      data:
+        message: A car in the driveway
+        data:
+          image: /api/image_proxy/image.driveway_car_snapshot
+  ```
+
+  To keep the pictures as files, let an automation save each new one with Home Assistant's own
+  action, triggered by the snapshot entity (Home Assistant may write to `/config/www/` and its media
+  folders):
+
+  ```yaml
+  triggers:
+    - trigger: state
+      entity_id: image.driveway_car_snapshot
+  actions:
+    - action: image.snapshot
+      target:
+        entity_id: image.driveway_car_snapshot
+      data:
+        filename: "/media/driveway/car_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
+  ```
+
+  Plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence,
   the boxes and when it was last seen; they follow at once when the object comes or goes or its
-  count changes, and every few minutes while it stays. Removing an object from the list removes
-  its entities.
+  count changes, and every few minutes while it stays, so they are not for following a moving
+  object live. `boxes` holds one `[left, top, right, bottom]` per object, from 0 to 1 of the full
+  camera frame. Removing an object from the list removes its entities.
 - **Settings tab → Sensor output**:
 
   | Setting | Default | Meaning |
@@ -305,6 +366,39 @@ First choose **what it looks like**:
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
 
+**Pointer dials** — the small dials many water meters have beside the wheels (×0.1, ×0.01, ×0.001,
+×0.0001 m³), each a needle turning over the numbers 0–9. A mechanical counter read by the wheel
+reader can add them: in the wizard and in Settings, switch the picture to **Edit: Dials**. The meter face is shown straightened the way the counter is read (the
+dashed box is the counter): **Add dial** puts a circle on it, labelled with what one turn of that
+dial is worth — the first is ×0.1 of the last wheel, the next ×0.01 and so on, so add them in that
+order. Drag a circle onto its dial and its handle to the dial's edge; set **Anticlockwise** for a
+dial whose numbers go the other way (on some gas and electricity meters every second dial does).
+Each dial is one more digit after the counter's own decimals, and the wheels and dials are read
+together: the last wheel's digit is settled by the ×0.1 dial, a needle standing on a number by the
+dial after it — the way a person reads a meter — so a last wheel that already shows the next digit
+coming is read right. A wide pointer across a whole dial is read too: the dial before it settles
+which of its ends counts. The needle is found by being redder than the dial's face — pale needles and
+pictures with a colour cast too — or by being the darkest part of the dial when the picture has no
+colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
+a little beside the dial still reads right. *What the reader sees* shows
+each dial after the wheels with the needle it found drawn on it; the list of dials says where
+each needle was found, or *No needle found*. The review queue and the Quality tab show the same
+picture for each stored reading, so the dials' digits can be checked too. A dial needs a few dozen pixels across in the picture
+to be read: move the camera closer, or use its zoom, if the dials are tiny.
+
+**A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:
+with **Correct rotation and perspective** (with the region: under the picture in the wizard, in
+the Region card in Settings; on for a new reading sensor, sensors made before keep reading as they
+did until you turn it on) the region is read upright. Put its four corners on the corners of
+the digits or the wheels: the edge marked **Top** goes on their top edge, and **Turn** moves the
+mark to the next edge (for a meter turned a quarter or upside down). Drag the corners where they
+belong and the region follows the meter at any angle, its perspective undone as well, as if the
+camera looked straight at it. *What the reader sees* shows it upright, with a mechanical
+counter's fields on it. A plain box straightens to the same picture as before. The bend of a
+wide-angle (fisheye) lens is not undone: keep the meter away from the edge of such a picture,
+where straight edges curve most. Straightening is for reading sensors only: for states and
+objects the region stays a border.
+
 | Mode | For | In Home Assistant |
 |---|---|---|
 | **Counter** | Power, water and gas meters — only goes up | `state_class: total_increasing`, works in the Energy dashboard |
@@ -323,8 +417,9 @@ First choose **what it looks like**:
   dark) or *LCD* (dark digits on light) if faint, unlit segments are read as digits — a 3 read
   as 8.
 - **Mechanical counters**: the coloured wheels are usually the decimals — a water meter with
-  five black and three red wheels has 8 digits and 3 digits after the decimal point. The last
-  wheel is rounded to the nearest digit. A counter that reads lower than before is rejected, and
+  five black and three red wheels has 8 digits and 3 digits after the decimal point (pointer
+  dials, above, add digits after those). Without dials, the last wheel is rounded to the nearest
+  digit. A counter that reads lower than before is rejected, and
   a limit on how fast it may go up (see *Counter limit* below) catches a misread that is too
   high. A reading exactly one step of the last digit below the value is the
   last wheel turning: the value stays, but it is not counted as rejected and does not go to the
@@ -385,7 +480,8 @@ First choose **what it looks like**:
 - **Help improve reading:** **Export readings** (Quality tab) makes a ZIP of the readings you
   checked and the ones nobody checked, accepted or rejected (marked as unchecked) — only the region of each,
   not the whole picture — with what was read and what was right, which reader read it and (for
-  the wheel reader) where it saw each wheel. Each image is cut with the region the reading was
+  the wheel reader) where it saw each wheel — and, for a meter with pointer dials, a picture of
+  each dial as it was read and where its needle was found. Each image is cut with the region the reading was
   made in, so moving the region later does not spoil the readings from before. Write what the
   meter is in *What meter is this?* (make, type, camera, light) first. The ZIP stays under 24 MB
   so GitHub takes it (about 1,000 readings, newest first). Look through the ZIP, then share it in
@@ -397,8 +493,7 @@ First choose **what it looks like**:
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
   `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- More entities, **off by default** — turn them on in Home Assistant (the device page, or the
-  entity's settings → *Enabled*):
+- More entities, for those who tick them on the sensor's **Home Assistant** tab:
 
   | Entity | What it is |
   |---|---|
@@ -409,13 +504,102 @@ First choose **what it looks like**:
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;
-  other meters may need a tighter region. Small pointer dials (the red hands on some water
-  meters) are not read.
+  other meters may need a tighter region. Pointer dials are read without a model (by the needle's
+  colour or darkness): drawn dials and the first real meters are read to about a tenth of a
+  number; glare, dirt on the glass or a needle as dark as the numbers can still fool it — an
+  export of such readings helps.
 - Feedback on reading helps a lot, above all from meters and displays it has not seen yet: what
   the display or meter is, whether it read correctly, and a screenshot of *What the reader sees* —
   or an export (above) — in [GitHub Discussions](https://github.com/oleost/VisionState/discussions).
 - The default check interval is 30 s; a trigger (for example a motion sensor or image change
   detection) makes it read right away.
+
+## Sound sensors
+
+*What it has been tried on.* RTSP has not been tried with a real camera yet, nor a Raspberry Pi 4, an ESP32
+microphone or clips in the Home Assistant app on iOS; it has been tried on live HTTP streams and one
+real smoke alarm. If you try a camera, please report its model and how it went.
+
+A sound sensor listens to a stream's sound all the time and tells Home Assistant what it hears:
+each sound is an on/off sensor (`binary_sensor`), on while the sound is heard and for a few
+seconds after (*A sound stays heard for*). In the wizard, choose **Listen** first.
+
+**Where the sound comes from** (*Stream with sound*):
+
+- a camera's RTSP stream — switch its microphone (its audio) on in the camera first. A camera's
+  sub stream is enough: the sound is the same;
+- a go2rtc restream (`rtsp://homeassistant.local:8554/<name>` with the go2rtc app): one connection
+  to the camera for everyone, for cameras that allow only a few;
+- a microphone of its own: an ESP32 with an I2S microphone (such as an INMP441) sending its sound
+  as an HTTP stream of WAV, for a room without a camera.
+
+The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
+whether it has video), how loud it is and what it heard. The Live tab shows the same while it
+runs.
+
+**What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
+of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised
+well; someone talking, shouting or screaming and knocking fairly — these are shown first. *Show
+all* lists many more, grouped and searchable: other alarms and signals (a car alarm, an alarm
+clock, a phone ringing, beeping), people (laughter, coughing, snoring, footsteps), animals (a cat,
+birds, a rooster), the home (a tap, a toilet flushing, a vacuum cleaner, the TV), outside (a car,
+a lawn mower, a chainsaw, fireworks, breaking glass, a doorbell) and the weather (rain, thunder,
+wind). How well a sound is heard depends on the microphone, the room and the sound itself; each
+starts from a best-guess threshold: try it on the Live tab, and set its threshold (below) to what
+you see. Nothing here is a promise — breaking glass in particular is heard poorly. The smoke alarm is a *smoke* sensor in Home Assistant — a
+notification on top of your smoke detectors, **never instead of them**. Most smoke alarms beep at
+about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms sound different:
+teach yours as an own sound. A sound on TV is a real sound to the sensor.
+
+**Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
+door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
+(with clips on: *Teach this clip as*), or from recordings made with a phone (*Add an own sound*,
+or *Add recordings* on a sound: any sound or video file; its loudest four seconds are kept). A
+doorbell, a door or a microwave is out of the box too, but heard much better as an own sound: it
+learns *your* doorbell from its own clips. About five clips is a good start. Each own sound is an
+on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts
+from 200 everyday sounds as *other sounds*, learns what its room sounds like as it listens
+(*Learn the room's sounds*, on by default), and takes clips you add as *Other sounds*.
+
+**When it analyses.** Only sound loud enough is analysed — that is where it saves the CPU on a
+quiet day. By default the sensor learns how quiet its room is and analyses what is louder by a
+set number of dB; or set a fixed level. The Live tab shows the level of the last minute and the
+line it must cross. A sound that matters but stays below it — a beep two rooms away — is missed:
+lower the line. The levels are relative to the loudest the stream can be (dBFS), not sound
+pressure: the same room shows other numbers on another microphone.
+
+**When a sound counts.** Each sound has a threshold (*Heard when the AI is at least this sure*,
+under Settings): it is heard
+when its score passes the threshold in two of the last three windows, and stays heard while it
+scores above half of it. The Live tab shows each sound's score against its threshold: lower it
+when a sound is missed, raise it when something else is taken for it.
+
+**Clips** (off by default): with *Keep a clip of each sound heard*, the seconds before and after
+a sound are kept in its History row, to listen to and to teach own sounds from. On a camera with
+video the clip shows the video too (*With the camera's video*; off: sound only, much smaller); the
+video is copied as the camera sends it, so H.265 video does not play in every browser — use the
+camera's H.264 sub stream. Clips are kept in the app's own storage (not the media folder, which
+every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
+part of the history in a backup.
+
+**Review.** With clips on, a sound that was only just heard is asked about in Review: listen (or
+watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer is
+kept; an own sound learns from it, the built-in sounds do not change.
+
+**Privacy.** A sensor that listens hears what kind of sound it is, **never what is said**: there
+is no speech recognition. *Someone talking* only says that someone is. Before a clip is kept,
+every second in which someone talks is silenced, and *Someone talking* never keeps a clip at all.
+Everyone in the house should know that the sensor listens; recording other people's
+conversations in secret is against the law in many countries. Point it at your own home, not the
+street or the neighbours.
+
+**Good to know.** Many cameras send their sound in telephone quality (8 kHz): nothing above 4 kHz
+is heard — alarms, sirens and barks are fine, crying and breaking glass suffer (the Live tab says
+so). Each sound sensor keeps its stream open all day; only what is loud enough costs CPU, and how
+many a Raspberry Pi 4 carries has not been measured yet. Paused, a sensor hears nothing, so its
+sounds go off. A stream that stops makes the sounds *unavailable* after about 20 seconds without
+sound, and the sensor connects again by itself. The sound model is downloaded when the first sound
+sensor is made.
 
 ## Training tips (state sensors)
 
@@ -485,7 +669,7 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
   they took earlier, and only adjust their exposure between pictures: this way the frame that is
   read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
-- **while you look at live frames**: in the wizard (region and test), when you draw the region
+- **while you look at live frames**: in the wizard (from when both a camera and a light are chosen), when you draw the region
   under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
   label are taken in the same light as the checks. A note above the frame says so; its **Light**
   switch keeps the light off for that view (the browser remembers it). The light goes off when you
@@ -509,8 +693,8 @@ automations.
 ## History
 
 **History** at the top lists what every sensor recorded: state changes, objects that appeared,
-cleared or were filtered away, faces nobody is named for, new values and rejected readings, and
-frames sent to review. Each
+cleared or were filtered away, faces nobody is named for, new values and rejected readings,
+sounds heard (with their clips), and frames sent to review. Each
 sensor's **History** tab is the same list for that sensor alone; **Open in all history** there
 takes its filter to the History page.
 
@@ -518,8 +702,9 @@ Narrow it down with the filters above the list — each takes any number of choi
 number next to a choice is how many entries choosing it would find:
 
 - **Sensors** (History page only).
-- **What**: a state, an object or one of your own labels — *Car* and *Our car* are told apart.
-- **Event**: e.g. *State changed*, *Detected*, *Cleared*, *Rejected reading*, *Sent to review*.
+- **What**: a state, an object, a sound or one of your own labels and sounds — *Car* and *Our car*
+  are told apart.
+- **Event**: e.g. *State changed*, *Detected*, *Cleared*, *Rejected reading*, *Heard*, *Sent to review*.
 - **Time**: the last hour, 24 hours, 7 or 30 days, or *From … to …*.
 - **Waiting for review**, and newest or oldest first.
 
@@ -533,8 +718,9 @@ How long history is kept is set under **Settings → Storage** (below).
 another Home Assistant, from the stable app to the beta app (or back), or to start again from
 a known point:
 
-- **Download backup**: sensors and the app's settings (always), training images, people and
-  their faces, history and the downloaded AI models — all ticked; untick what you do not want
+- **Download backup**: sensors and the app's settings (always), training images (and the clips
+  taught to sound sensors), people and their faces, history (with sound clips) and the downloaded
+  AI models — all ticked; untick what you do not want
   (each shows its size). Camera passwords are left out unless you tick **Camera passwords**
   (anyone with the file can then read them). Large histories make large files.
 - **Restore** replaces *everything* in the app with the backup: sensors, people, training images
@@ -559,6 +745,8 @@ a known point:
 - Settings, the database, trained models and **training images** (also the boxes taught to object
   sensors and the taught faces) live in the app's own storage and are part of Home Assistant
   backups of the app, so a restore brings back what you taught together with its images.
+- **Sound clips** of the history live in the app's own storage too, like the clips taught to sound
+  sensors.
 - **History frames** are stored in `/media/visionstate` (the beta app uses
   `/media/visionstate_beta`); they are only in a Home Assistant backup that includes the media
   folder (a VisionState backup from Settings → Backup has them).
@@ -630,6 +818,11 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   reading when any one wheel is unclear. **v1** (2 MB) stays for the counters set up with it;
   their Live tab suggests v2, and *Read with* on the Settings tab switches.
   Only loaded while at least one reading sensor exists.
+- **Sound sensors:** **CED-Tiny** (Apache-2.0, 7 MB, about 8 milliseconds per second of sound on a
+  desktop CPU) — never included: downloaded when the first sound sensor is made, loaded while one
+  exists. It was trained by its makers on AudioSet: Google's labels of YouTube videos, whose
+  sound is not licensed for reuse. VisionState adds one output to it (what own sounds are taught
+  on); the file is published by VisionState.
 
 **Compare and manage the models** (under the choices) lists every model, from the smallest to
 the largest, with its rough memory use, time per check, how accurate it is compared with the

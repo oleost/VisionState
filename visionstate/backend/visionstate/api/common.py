@@ -11,10 +11,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import change_limit, detectors, imaging, readers, teach
+from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
-from ..mqtt import main_entities
+from ..mqtt import entity_options, main_entities
 from ..settings import (
     COUNTER_LIMIT,
     COUNTER_READERS,
@@ -24,20 +24,27 @@ from ..settings import (
     FACES,
     KIND_OBJECTS,
     KIND_READING,
+    KIND_SOUND,
     LIGHT_DOMAINS,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    READING,
     READING_CHANGE_LIMITS,
     READING_DEFAULTS,
     READING_DEVICE_CLASSES,
     READING_DISPLAYS,
     READING_LIMITS,
     READING_MODES,
+    READING_NEW_SENSOR,
     REVIEW_DEFAULTS,
     REVIEW_LIMITS,
     ROI_MAX_POINTS,
+    SOUND,
+    SOUND_DEFAULTS,
+    SOUND_LEVELS,
+    SOUND_LIMITS,
     TEACH_TUNABLE_LIMITS,
     TRIGGER_DEFAULTS,
     TRIGGER_LIMITS,
@@ -49,6 +56,7 @@ from ..settings import (
     merge_objects,
     merge_reading,
     merge_review,
+    merge_sound,
     merge_triggers,
 )
 
@@ -94,7 +102,9 @@ def get_sensor(session: Session, sensor_id: int, kind: str | None = None) -> Sen
     if sensor is None:
         raise HTTPException(404, "Sensor not found")
     if kind is not None and sensor.kind != kind:
-        what = {KIND_OBJECTS: "Object sensors", KIND_READING: "Reading sensors"}.get(sensor.kind, "State sensors")
+        what = {KIND_OBJECTS: "Object sensors", KIND_READING: "Reading sensors", KIND_SOUND: "Sound sensors"}.get(
+            sensor.kind, "State sensors"
+        )
         raise HTTPException(400, f"{what} do not support this")
     return sensor
 
@@ -266,6 +276,10 @@ class ObjectsIn(BaseModel):
         default=OBJECT_DEFAULTS["clear_after_s"], ge=_olo["clear_after_s"], le=_ohi["clear_after_s"]
     )
     use_taught: bool = OBJECT_DEFAULTS["use_taught"]
+    snapshot_aspect: str = Field(default=OBJECT_DEFAULTS["snapshot_aspect"], max_length=16)
+    snapshot_move: float = Field(
+        default=OBJECT_DEFAULTS["snapshot_move"], ge=_olo["snapshot_move"], le=_ohi["snapshot_move"]
+    )
     teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
     faces: FacesIn | None = None  # recognising people by their face; unset keeps what the sensor has
     # Own labels ("custom") are made by teaching a box (api/teach.py) or a face (api/faces.py), never set here.
@@ -289,9 +303,27 @@ class ObjectsIn(BaseModel):
             raise ValueError(f"Unknown object {unknown[0]!r}")
         return cleaned
 
+    @field_validator("snapshot_aspect")
+    @classmethod
+    def _known_shape(cls, value: str) -> str:
+        cleaned = value.replace(" ", "").lower() or OBJECT_DEFAULTS["snapshot_aspect"]
+        if cleaned != OBJECT_DEFAULTS["snapshot_aspect"] and imaging.aspect_ratio(cleaned) is None:
+            raise ValueError("Snapshot shape: free, or width:height such as 16:9")
+        return cleaned
+
 
 _dlo = {k: v[0] for k, v in READING_LIMITS.items()}
 _dhi = {k: v[1] for k, v in READING_LIMITS.items()}
+
+
+class DialIn(BaseModel):
+    """A pointer dial of a counter (settings.READING_DEFAULTS["dials"]): its circle in units of the
+    region's height from its top-left corner, and whether it turns anticlockwise."""
+
+    x: float = Field(ge=-READING["dial_reach"], le=READING_LIMITS["digits"][1] * 2 + READING["dial_reach"])
+    y: float = Field(ge=-READING["dial_reach"], le=1 + READING["dial_reach"])
+    r: float = Field(ge=READING["dial_radius"][0], le=READING["dial_radius"][1])
+    ccw: bool = False
 
 
 class ReadingIn(BaseModel):
@@ -305,6 +337,8 @@ class ReadingIn(BaseModel):
     digits: int = Field(default=READING_DEFAULTS["digits"], ge=_dlo["digits"], le=_dhi["digits"])
     counter_reader: str = READING_DEFAULTS["counter_reader"]
     wheel_reader: str = Field(default=READING_DEFAULTS["wheel_reader"], validate_default=True)
+    straighten: bool = READING_NEW_SENSOR["straighten"]
+    dials: list[DialIn] = Field(default=[], max_length=READING["max_dials"])
     max_step: float = Field(default=READING_DEFAULTS["max_step"], ge=_dlo["max_step"], le=_dhi["max_step"])
     change_limit: str = READING_DEFAULTS["change_limit"]
     max_rate: float = Field(default=READING_DEFAULTS["max_rate"], ge=_dlo["max_rate"], le=_dhi["max_rate"])
@@ -361,6 +395,61 @@ class ReadingIn(BaseModel):
     @classmethod
     def _unit(cls, value: str) -> str:
         return value.strip()
+
+
+_slo = {k: v[0] for k, v in SOUND_LIMITS.items()}
+_shi = {k: v[1] for k, v in SOUND_LIMITS.items()}
+
+
+class SoundIn(BaseModel):
+    """What a sound sensor listens for and when. Defaults and limits: settings.SOUND_*."""
+
+    sounds: list[str] = Field(default_factory=lambda: list(SOUND_DEFAULTS["sounds"]))
+    level: str = SOUND_DEFAULTS["level"]
+    above_db: float = Field(default=SOUND_DEFAULTS["above_db"], ge=_slo["above_db"], le=_shi["above_db"])
+    fixed_db: float = Field(default=SOUND_DEFAULTS["fixed_db"], ge=_slo["fixed_db"], le=_shi["fixed_db"])
+    clear_after_s: float = Field(
+        default=SOUND_DEFAULTS["clear_after_s"], ge=_slo["clear_after_s"], le=_shi["clear_after_s"]
+    )
+    clips: bool = SOUND_DEFAULTS["clips"]
+    video: bool = SOUND_DEFAULTS["video"]
+    learn_room: bool = SOUND_DEFAULTS["learn_room"]
+    # A sound's own threshold (None or missing: the model's, or SOUND["own_threshold"] for own sounds).
+    thresholds: dict[str, float | None] = Field(default_factory=dict)
+    # Own sounds ("custom") are made by teaching a clip (api/sounds.py), never set here.
+
+    @field_validator("sounds")
+    @classmethod
+    def _known_sounds(cls, value: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value))
+        unknown = [key for key in cleaned if key not in sounds.SOUNDS]
+        if unknown:
+            raise ValueError(f"Unknown sound {unknown[0]!r}")
+        if len(cleaned) > SOUND["max_sounds"]:
+            raise ValueError(f"At most {SOUND['max_sounds']} sounds per sensor")
+        return cleaned
+
+    @field_validator("level")
+    @classmethod
+    def _level(cls, value: str) -> str:
+        if value not in SOUND_LEVELS:
+            raise ValueError(f"Unknown level {value!r}")
+        return value
+
+    @field_validator("thresholds")
+    @classmethod
+    def _thresholds(cls, value: dict[str, float | None]) -> dict[str, float | None]:
+        lo, hi = SOUND_LIMITS["threshold"]
+        for key, threshold in value.items():
+            if threshold is not None and not lo <= threshold <= hi:
+                raise ValueError(f"The threshold of {key!r} must be between {lo:g} and {hi:g}")
+        return value
+
+    def stored(self, exclude_unset: bool = False) -> dict:
+        data = self.model_dump(exclude_unset=exclude_unset)
+        if "thresholds" in data:
+            data["thresholds"] = {k: v for k, v in self.thresholds.items() if v is not None}
+        return data
 
 
 _rlo = {k: v[0] for k, v in REVIEW_LIMITS.items()}
@@ -443,6 +532,14 @@ def entity_ids(rt: Runtime, sensor: Sensor) -> list[str]:
     return [known.get(uid, expected) for uid, expected in main_entities(SensorConfig.from_row(sensor).descriptor)]
 
 
+def ha_entities_view(sensor: Sensor) -> list[dict]:
+    """The entities that can be chosen on the sensor's Home Assistant tab, and whether each is on."""
+    descriptor = SensorConfig.from_row(sensor).descriptor
+    return [
+        {**option, "on": descriptor.entity_on(option["id"], option["default"])} for option in entity_options(descriptor)
+    ]
+
+
 def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> dict | None:
     """An object sensor's part of its view: each class and own label (with the people while it
     recognises faces), live, and what was taught."""
@@ -491,6 +588,43 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
     }
 
 
+def sound_view(sensor: Sensor, live: LiveState | None) -> dict | None:
+    """A sound sensor's part of its view: its settings, and live what it hears — the level of each
+    hop and the line a window must reach, each sound's score against its threshold, and the
+    stream's audio (codec, sample rate)."""
+    if sensor.kind != KIND_SOUND:
+        return None
+    settings = merge_sound(sensor.sound)
+    heard = live.sound if live else None
+    stream = heard.stream if heard else None
+    own = {c["key"]: c["name"] for c in settings["custom"]}
+    keys = [*(k for k in settings["sounds"] if k in sounds.SOUNDS), *own]
+    per_sound = []
+    for key in keys:
+        spec = sounds.SOUNDS.get(key)
+        track = heard.tracks.get(key) if heard else None
+        threshold = settings["thresholds"].get(key, spec.threshold if spec else SOUND["own_threshold"])
+        per_sound.append(
+            {
+                "key": key,
+                "name": spec.name if spec else own[key],
+                "own": spec is None,
+                "threshold": threshold,
+                "model_threshold": spec.threshold if spec else SOUND["own_threshold"],
+                "on": bool(track and track.on),
+                "score": track.score if track else 0.0,
+            }
+        )
+    return {
+        **settings,
+        "live": per_sound,
+        "levels": list(heard.levels) if heard else [],
+        "line": heard.line if heard else None,
+        "analysed": bool(heard and heard.analysed),
+        "stream": getattr(stream, "info", None) or None,
+    }
+
+
 def reading_view(sensor: Sensor, live: LiveState | None) -> dict | None:
     """A reading sensor's part of its view: its settings, the published value and the last read."""
     if sensor.kind != KIND_READING:
@@ -528,7 +662,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     info = session.get(ModelInfo, sensor.id)
     head = rt.heads.get(sensor.id)
     counts = sample_counts(session, sensor)
-    if sensor.kind in (KIND_OBJECTS, KIND_READING):
+    if sensor.kind in (KIND_OBJECTS, KIND_READING, KIND_SOUND):
         trained = True  # pretrained models, no training
     else:
         trained = head is not None and rt.embedder is not None and head.backbone == rt.embedder.spec.id
@@ -559,6 +693,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "debounce": sensor.debounce,
         "enabled": sensor.enabled,
         "publish": sensor.publish,
+        "in_ha": sensor.in_ha is not False,
+        "ha_entities": ha_entities_view(sensor),
         "triggers": merge_triggers(sensor.triggers),
         "review": {key: (sensor.review or {}).get(key) for key in REVIEW_DEFAULTS},
         "review_effective": merge_review(rt.global_review, sensor.review),
@@ -566,6 +702,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         "entity_ids": ids,
         "objects": objects_view(session, sensor, live),
         "reading": reading_view(sensor, live),
+        "sound": sound_view(sensor, live),
         "states": [{"id": s.id, "key": s.key, "name": s.name, "color": s.color} for s in sensor.states],
         "status": status,
         "trained": trained,

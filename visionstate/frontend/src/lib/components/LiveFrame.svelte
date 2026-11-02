@@ -15,6 +15,7 @@
     sensorId,
     roi = $bindable(null),
     editable = false,
+    quad = false,
     cached = false,
     interval = POLL.liveFrame,
     frozen = false,
@@ -26,6 +27,8 @@
     sensorId: number;
     roi?: Roi | null;
     editable?: boolean;
+    /** A straightened region (RoiEditor `quad`). */
+    quad?: boolean;
     cached?: boolean;
     interval?: number;
     frozen?: boolean;
@@ -96,7 +99,7 @@
   <div class="light-slot"><LightHold entity={light.entity} delay={light.delay} bind:ready={lightReady} /></div>
 {/if}
 <div class="live">
-  <RoiEditor src={url} bind:roi {editable}>
+  <RoiEditor src={url} bind:roi {editable} {quad}>
     {#if showLive && updated}
       <span class="badge" class:frozen>
         <span class="dot" style:background={frozen ? 'var(--c-info)' : 'var(--c-danger)'}></span>

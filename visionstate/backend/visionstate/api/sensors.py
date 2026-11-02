@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,10 +17,14 @@ from sqlalchemy.orm import Session
 
 from .. import bundle, faces, readers
 from ..db import ModelInfo, Prediction, ReadingStat, Sample, Sensor, State
+from ..engine import Runtime, SensorConfig
+from ..mqtt import MqttNotConfirmed, SensorDescriptor, entity_options
 from ..redact import redact
 from ..settings import (
+    APP_SLUG,
     KIND_OBJECTS,
     KIND_READING,
+    KIND_SOUND,
     KIND_STATES,
     OBJECT_SENSOR_DEFAULTS,
     QUALITY,
@@ -29,17 +34,19 @@ from ..settings import (
     SENSOR_KINDS,
     SENSOR_LIMITS,
     SENSOR_PUBLISH_DEFAULT,
+    SOUND_SENSOR_DEFAULTS,
     STATE_PALETTE,
     merge_objects,
     merge_teach,
 )
-from ..sources import SOURCE_TYPES, SourceError
+from ..sources import SOURCE_TYPES, SourceError, check_source
 from .common import (
     API_PREFIX,
     ObjectsIn,
     ReadingIn,
     ReviewOverrides,
     Roi,
+    SoundIn,
     StateIn,
     Triggers,
     check_faces,
@@ -70,12 +77,15 @@ class SensorIn(BaseModel):
     states: list[StateIn] = Field(default_factory=list)  # state sensors
     objects: ObjectsIn | None = None  # object sensors
     reading: ReadingIn | None = None  # reading sensors
+    sound: SoundIn | None = None  # sound sensors
     # Unset: the defaults of the sensor's kind (SENSOR_DEFAULTS / OBJECT_SENSOR_DEFAULTS).
     interval_s: float | None = Field(None, ge=lo["interval_s"], le=hi["interval_s"])
     threshold: float | None = Field(None, ge=lo["threshold"], le=hi["threshold"])
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool = True
     publish: bool = SENSOR_PUBLISH_DEFAULT  # send values to Home Assistant
+    in_ha: bool = True  # see db.Sensor.in_ha
+    ha_entities: dict[str, bool] = Field(default_factory=dict)  # see db.Sensor.ha_entities
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
 
@@ -90,12 +100,23 @@ class SensorIn(BaseModel):
             raise HTTPException(400, "Only object sensors have objects")
         if self.kind != KIND_READING and self.reading is not None:
             raise HTTPException(400, "Only reading sensors have reading settings")
+        if self.kind != KIND_SOUND and self.sound is not None:
+            raise HTTPException(400, "Only sound sensors have sound settings")
+        if self.kind == KIND_SOUND and self.source_type != "rtsp":
+            raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
         if self.kind == KIND_OBJECTS:
             self.objects = self.objects or ObjectsIn()
             defaults = OBJECT_SENSOR_DEFAULTS
         elif self.kind == KIND_READING:
             self.reading = self.reading or ReadingIn()
             defaults = READING_SENSOR_DEFAULTS
+        elif self.kind == KIND_SOUND:
+            self.sound = self.sound or SoundIn()
+            if not self.sound.sounds:
+                raise HTTPException(400, "Pick at least one sound")
+            _check_address(self.source_type, self.source)
+            self.roi = None  # nothing to draw a region on
+            defaults = SOUND_SENSOR_DEFAULTS
         else:
             validate_states(self.states)
             defaults = SENSOR_DEFAULTS
@@ -118,10 +139,13 @@ class SensorIn(BaseModel):
             debounce=self.debounce,
             enabled=self.enabled,
             publish=self.publish,
+            in_ha=self.in_ha,
+            ha_entities=self.ha_entities,
             triggers=self.triggers.model_dump() if self.triggers else None,
             review=self.review.stored() if self.review else None,
             objects=self.objects.stored() if self.objects else None,
             reading=self.reading.model_dump() if self.reading else None,
+            sound=self.sound.stored() if self.sound else None,
         )
         _apply_states(sensor, self.states)
         return sensor
@@ -139,15 +163,26 @@ class SensorPatch(BaseModel):
     debounce: int | None = Field(None, ge=lo["debounce"], le=hi["debounce"])
     enabled: bool | None = None
     publish: bool | None = None
+    in_ha: bool | None = None
+    ha_entities: dict[str, bool] | None = None  # entity -> on (see mqtt.entity_options)
     triggers: Triggers | None = None
     review: ReviewOverrides | None = None
     objects: ObjectsIn | None = None
     reading: ReadingIn | None = None
+    sound: SoundIn | None = None
 
 
 def _check_source_type(source_type: str | None) -> None:
     if source_type is not None and source_type not in SOURCE_TYPES:
         raise HTTPException(400, f"Unknown source type {source_type!r}")
+
+
+def _check_address(source_type: str, source: str) -> None:
+    """A sound sensor's address when it is saved (the others say so at their first check)."""
+    try:
+        check_source(source_type, source)
+    except SourceError as err:
+        raise HTTPException(400, str(err)) from err
 
 
 def _apply_states(sensor: Sensor, states: list[StateIn]) -> None:
@@ -167,6 +202,52 @@ def _apply_states(sensor: Sensor, states: list[StateIn]) -> None:
         state.position = position
         new_states.append(state)
     sensor.states = new_states
+
+
+def _chosen_entities(sensor: Sensor, wanted: dict[str, bool]) -> dict[str, bool]:
+    """What is kept of a choice: the entities this sensor offers, where they differ from the default."""
+    return {
+        option["id"]: wanted[option["id"]]
+        for option in entity_options(SensorConfig.from_row(sensor).descriptor)
+        if option["id"] in wanted and wanted[option["id"]] != option["default"]
+    }
+
+
+def _enable_what_was_chosen(rt: Runtime, before: SensorDescriptor, after: SensorDescriptor) -> None:
+    """Remember which entities were just ticked (see engine.Runtime._enable_chosen)."""
+    uid = f"{APP_SLUG}_{before.slug}"
+    for option in entity_options(after):
+        on = after.in_ha and after.entity_on(option["id"], option["default"])
+        was = before.in_ha and before.entity_on(option["id"], option["default"])
+        if on and not was:
+            rt.enable_in_ha.add(f"{uid}_{option['id']}")
+        elif not on:
+            rt.enable_in_ha.discard(f"{uid}_{option['id']}")
+
+
+async def _remove_from_home_assistant(rt: Runtime, sensor_id: int, body: SensorPatch) -> None:
+    """Entities chosen away go first, confirmed by the broker: when that fails nothing is stored and
+    the user is told, as nothing would send it again. Without a broker there is nothing to remove."""
+    if body.in_ha is None and body.ha_entities is None:
+        return
+
+    def descriptors() -> tuple[SensorDescriptor, SensorDescriptor]:
+        with rt.db.session() as s:
+            sensor = get_sensor(s, sensor_id)
+            before = SensorConfig.from_row(sensor).descriptor
+            chosen = before.chosen if body.ha_entities is None else _chosen_entities(sensor, body.ha_entities)
+            return before, replace(before, in_ha=before.in_ha if body.in_ha is None else body.in_ha, chosen=chosen)
+
+    before, after = await asyncio.to_thread(descriptors)
+    _enable_what_was_chosen(rt, before, after)
+    if rt.mqtt.config is None:
+        return
+    try:
+        await rt.mqtt.remove_confirmed(rt.mqtt.removals(before, after))
+    except MqttNotConfirmed as err:
+        raise HTTPException(
+            503, f"Nothing was saved: MQTT must be connected to remove entities from Home Assistant ({err})"
+        ) from err
 
 
 @router.get("")
@@ -217,11 +298,21 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 raise HTTPException(400, "Only object sensors have objects")
             if sensor.kind != KIND_READING and body.reading is not None:
                 raise HTTPException(400, "Only reading sensors have reading settings")
+            if sensor.kind != KIND_SOUND and body.sound is not None:
+                raise HTTPException(400, "Only sound sensors have sound settings")
+            if sensor.kind == KIND_SOUND and body.source_type not in (None, "rtsp"):
+                raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
             old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
             for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
                 value = getattr(body, field)
                 if value is not None:
                     setattr(sensor, field, value)
+            if sensor.kind == KIND_SOUND and body.source is not None:
+                _check_address(sensor.source_type, sensor.source)
+            if body.in_ha is not None:
+                sensor.in_ha = body.in_ha
+            if body.ha_entities is not None:
+                sensor.ha_entities = _chosen_entities(sensor, body.ha_entities)
             if body.review is not None:
                 sensor.review = body.review.stored()
             if body.triggers is not None:
@@ -240,12 +331,26 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 check_faces(faces.merge_limits(rt.face_choice, rt.global_faces, merged["faces"]))
             if body.reading is not None:
                 sensor.reading = body.reading.model_dump()
+            if body.sound is not None:
+                # Merged, so own sounds (made by teaching) and fields an older UI does not send stay.
+                sound = {**(sensor.sound or {}), **body.sound.stored(exclude_unset=True)}
+                # Own sounds never take a model sound's key, but one made before the model offered that
+                # sound may have it (an own "doorbell"): the two would share their entity.
+                own = {c["key"] for c in sound.get("custom", [])}
+                if clash := [k for k in sound.get("sounds", []) if k in own]:
+                    raise HTTPException(
+                        400, f"An own sound is already called {clash[0]!r}: forget it to use the model's"
+                    )
+                if not sound.get("sounds") and not sound.get("custom"):
+                    raise HTTPException(400, "Pick at least one sound")
+                sensor.sound = sound
             if sensor.roi != old_roi or sensor.source != old_source:
                 sensor.frame_size = None  # the next frame's size is the one the region is drawn on
             s.flush()
             changed = sensor.roi != old_roi or [st.key for st in sensor.states] != old_keys
             return changed and sensor.kind == KIND_STATES
 
+    await _remove_from_home_assistant(rt, sensor_id, body)
     retrain = await asyncio.to_thread(change)
     await rt.sensor_updated(sensor_id, retrain=retrain)
     return await asyncio.to_thread(get_one, sensor_id, request)

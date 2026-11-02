@@ -3,6 +3,8 @@
   // drag on empty space to draw a rectangle, drag the shape to move it, drag a corner to move
   // just that corner, drag a "+" on an edge to add a corner, and double-click or long-press a
   // corner to remove it. Works with mouse and touch (pointer events).
+  // `quad`: a region that is straightened (a reading sensor's): always four corners, its top edge
+  // (the first) drawn thick and marked "Top" — dragging the corners turns it and undoes perspective.
   import type { Snippet } from 'svelte';
   import { app } from '../app.svelte';
   import { clamp01, fromPoints, midpoints, toPoints, type Pt } from '../roi';
@@ -18,8 +20,16 @@
     roi = $bindable(null),
     editable = false,
     dim = true,
+    quad = false,
     children,
-  }: { src: string | null; roi?: Roi | null; editable?: boolean; dim?: boolean; children?: Snippet } = $props();
+  }: {
+    src: string | null;
+    roi?: Roi | null;
+    editable?: boolean;
+    dim?: boolean;
+    quad?: boolean;
+    children?: Snippet;
+  } = $props();
 
   const MIN_SIZE = 0.02; // smallest region, as a share of the image
   const LONG_PRESS_MS = 600; // hold a corner this long (without moving) to remove it
@@ -28,7 +38,17 @@
 
   const maxPoints = $derived(app.config?.roi_max_points ?? 32);
   const points = $derived<Pt[]>(roi ? toPoints(roi) : []);
-  const edges = $derived(points.length && points.length < maxPoints ? midpoints(points) : []);
+  const edges = $derived(points.length && points.length < maxPoints && !quad ? midpoints(points) : []);
+  // The top edge of a straightened region, and where its label sits: just outside the edge's middle.
+  const top = $derived.by(() => {
+    if (!quad || points.length !== 4) return null;
+    const [a, b] = points;
+    const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const centre: Pt = [points.reduce((s, p) => s + p[0], 0) / 4, points.reduce((s, p) => s + p[1], 0) / 4];
+    const out = Math.hypot(mid[0] - centre[0], mid[1] - centre[1]) || 1;
+    const shift = 0.045;
+    return { a, b, label: [mid[0] + ((mid[0] - centre[0]) / out) * shift, mid[1] + ((mid[1] - centre[1]) / out) * shift] as Pt };
+  });
   const polygonAttr = $derived(points.map((p) => `${p[0]},${p[1]}`).join(' '));
   const dimPath = $derived(
     points.length ? `M0 0H1V1H0Z M${points.map((p) => `${p[0]} ${p[1]}`).join(' L')}Z` : '',
@@ -96,7 +116,7 @@
   }
 
   function removeVertex(index: number) {
-    if (points.length <= 3) return;
+    if (points.length <= 3 || quad) return;
     roi = fromPoints(points.filter((_, i) => i !== index));
   }
 
@@ -149,7 +169,11 @@
       <svg class="shape" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
         {#if dim}<path d={dimPath} fill-rule="evenodd" class="dim" />{/if}
         <polygon points={polygonAttr} class="outline" class:solid={editable} onpointerdown={startMove} role="presentation" />
+        {#if top}<line x1={top.a[0]} y1={top.a[1]} x2={top.b[0]} y2={top.b[1]} class="top" />{/if}
       </svg>
+      {#if top}
+        <span class="top-label" style:left="{top.label[0] * 100}%" style:top="{top.label[1] * 100}%" data-testid="roi-top">Top</span>
+      {/if}
       {#if editable}
         {#each edges as m, i (i)}
           <span
@@ -167,7 +191,7 @@
             style:left="{p[0] * 100}%"
             style:top="{p[1] * 100}%"
             onpointerdown={(e) => startVertex(e, i)}
-            title="Drag to move · double-click, double-tap or hold to remove"
+            title={quad ? 'Drag to move' : 'Drag to move · double-click, double-tap or hold to remove'}
             role="presentation"
           ></span>
         {/each}
@@ -175,7 +199,11 @@
     {/if}
     {@render children?.()}
   </div>
-  {#if editable}
+  {#if editable && quad}
+    <p class="help">
+      Drag the corners onto the corners of the display or counter · the thick edge marked <strong>Top</strong> is its top.
+    </p>
+  {:else if editable}
     <p class="help">
       Drag a corner to move it · drag a <strong>+</strong> to add a corner · double-click / double-tap or hold a corner to remove it.
     </p>
@@ -233,6 +261,24 @@
   }
   .outline.solid {
     stroke-dasharray: none;
+  }
+  .top {
+    stroke: var(--c-accent);
+    stroke-width: 6px;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .top-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--c-accent);
+    color: var(--c-accent-ink);
+    font: 700 var(--fs-xs) / 1.4 var(--font-body);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    pointer-events: none;
   }
   .handle {
     position: absolute;

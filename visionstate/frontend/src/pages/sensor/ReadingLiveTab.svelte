@@ -2,6 +2,7 @@
   // Reading sensors: the published value, the last read and exactly what the reader saw.
   import { api } from '../../lib/api';
   import { app, toastError } from '../../lib/app.svelte';
+  import EntitiesCard from '../../lib/components/EntitiesCard.svelte';
   import AnalysedFrame from '../../lib/components/AnalysedFrame.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct } from '../../lib/format';
@@ -83,7 +84,10 @@
         <img class="seen" src={api.readingImageUrl(sensor.id, last.at)} alt="The region as the number reader saw it" />
         <p class="xsmall muted">
           {#if reading.display === 'counter'}
-            One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}. If a
+            One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}{reading
+              .dials?.length
+              ? ', then each pointer dial with the needle that was found drawn on it'
+              : ''}. If a
             digit is cut off or sits in two fields, adjust the region or the number of digits on the Settings tab.
           {:else}
             If digits are cut off or faint segments show up here, draw the region tighter around the number or pick the
@@ -119,18 +123,14 @@
           </span>
         {:else}
           <span class="xsmall faint">
-            Reads every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it reads</a>.
+            {sensor.triggers.regular ? `Reads every ${sensor.interval_s} s.` : 'Only reads when triggered.'}
+            <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it reads</a>.
           </span>
         {/if}
       </div>
     </section>
 
-    <section class="card pad">
-      <div class="card-title"><h3>In Home Assistant</h3></div>
-      <ul class="entities">
-        {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
-      </ul>
-    </section>
+    <EntitiesCard {sensor} />
   </aside>
 </div>
 
@@ -174,15 +174,6 @@
     font-size: 34px;
     font-weight: 600;
     line-height: 1.1;
-    overflow-wrap: anywhere;
-  }
-  .entities {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     overflow-wrap: anywhere;
   }
   .trigger {

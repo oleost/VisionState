@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The new sensor wizard: camera, region, what to detect (one component per kind in wizard/),
+  // The new sensor wizard: camera, what to detect and where (one component per kind in wizard/),
   // and when to check. Nothing is stored until "Create sensor".
   import { untrack } from 'svelte';
   import { api } from '../lib/api';
@@ -7,25 +7,34 @@
   import Icon from '../lib/components/Icon.svelte';
   import LightEditor from '../lib/components/LightEditor.svelte';
   import LightHold from '../lib/components/LightHold.svelte';
-  import PublishSwitch from '../lib/components/PublishSwitch.svelte';
-  import RoiEditor from '../lib/components/RoiEditor.svelte';
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { haSlug, slugify } from '../lib/format';
-  import { isPolygon, toRectangle } from '../lib/roi';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { ReadingSettings, Roi, SensorKind, Triggers } from '../lib/types';
-  import { LOW_STREAM_NAME, SENSOR_KIND_INFO, SMALL_FRAME_PX } from '../lib/ui';
+  import StreamField from '../lib/components/sound/StreamField.svelte';
+  import type { ReadingSettings, Roi, SensorKind, SoundSettings, Triggers } from '../lib/types';
+  import { HA_MODES, LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
+  import CameraPreview from './wizard/CameraPreview.svelte';
   import ObjectsStep from './wizard/ObjectsStep.svelte';
   import ReadingStep from './wizard/ReadingStep.svelte';
+  import SoundStep from './wizard/SoundStep.svelte';
   import StatesStep from './wizard/StatesStep.svelte';
 
-  const STEPS = [
+  const PICTURE_STEPS = [
     { title: 'Camera', sub: 'Name and image source' },
-    { title: 'Region', sub: 'What to look at' },
-    { title: 'Detect', sub: 'States, objects or a number' },
+    { title: 'Detect', sub: 'States, objects or a number, and where' },
     { title: 'Checks', sub: 'When to look (optional)' },
   ];
+  const SOUND_STEPS = [
+    { title: 'Stream', sub: 'Name and sound source' },
+    { title: 'Listen', sub: 'What to hear' },
+  ];
+
+  // Look at the picture (states, objects, a number) or listen (a sound sensor).
+  let mode = $state<'picture' | 'sound'>('picture');
+  const STEPS = $derived(mode === 'sound' ? SOUND_STEPS : PICTURE_STEPS);
+  let sound = $state<SoundSettings>(structuredClone($state.snapshot(app.config!.sound_defaults)));
+  let streamSource = $state('');
 
   let step = $state(0);
   let name = $state('');
@@ -42,21 +51,37 @@
   // A small picture, or a source named like a sub-stream: maybe the camera's low-resolution stream.
   const lowStream = $derived(previewSize !== null && (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)));
   let previewError = $state('');
+  let previewBusy = $state(false);
+  let previewLoad = 0; // the load that counts: a slow answer from the camera picked before is dropped
+  let previewPending: Promise<boolean> | null = null;
   let saving = $state(false);
   // Start from the backend defaults (GET /config), the same values a sensor gets when this step is skipped.
   let interval_s = $state(app.config?.sensor_defaults.interval_s ?? 10);
   let triggers = $state<Triggers>(structuredClone($state.snapshot(app.config!.trigger_defaults)));
-  let publish = $state(app.config?.publish_default ?? true);
+  let notInHa = $state(false);
   // The test in the "Detect" step of an object or reading sensor (it tests a fresh frame when shown).
   let detectStep = $state<{ test: () => void }>();
-  // The camera's light (picked in step 1) is on while the region and the test show live frames.
+  // The camera's light (picked with the camera) is on while its picture, the region and the test are shown.
   let lightReady = $state(false);
   $effect(() => {
     if (!lightReady) return;
     // Bright now: take the frame again, in the light.
     untrack(() => {
-      if (step === 1) loadPreview();
-      else if (step === 2) detectStep?.test();
+      if (previewUrl || previewPending) loadPreview();
+      if (step === 1) detectStep?.test();
+    });
+  });
+  // Another camera: its picture at once. A URL is tried when it has been typed (SourcePicker's ondone).
+  $effect(() => {
+    const [picture, type, chosen] = [mode === 'picture', sourceType, source];
+    untrack(() => {
+      previewLoad++;
+      previewPending = null;
+      previewBusy = false;
+      previewUrl = null;
+      previewSize = null;
+      previewError = '';
+      if (picture && type === 'ha_camera' && chosen) loadPreview();
     });
   });
 
@@ -75,40 +100,89 @@
     reading: () => app.config!.reading_sensor_defaults,
   } as const;
 
-  function chooseKind(value: SensorKind) {
+  function chooseKind(value: Exclude<SensorKind, 'sound'>) {
     kind = value;
     interval_s = KIND_DEFAULTS[value]().interval_s; // e.g. meters change slowly: 30 s
   }
 
   const canNext = $derived(
-    step === 0
-      ? name.trim().length > 0 && source.trim().length > 0
+    mode === 'sound'
+      ? step === 0
+        ? name.trim().length > 0 && streamSource.trim().length > 0
+        : true
+      : step === 0
+      ? name.trim().length > 0 && source.trim().length > 0 && !previewError
       : step === 1
-        ? previewUrl !== null
-        : step === 2
-          ? detectValid
-          : true,
+        ? detectValid
+        : true,
   );
-  function loadPreview() {
+  /** A fresh frame; the one shown stays until it has come, so the page does not jump. */
+  function loadPreview(): Promise<boolean> {
+    const mine = ++previewLoad;
     previewError = '';
-    previewUrl = null;
-    previewSize = null;
+    previewBusy = true;
     const url = api.previewUrl(sourceType, source);
-    const img = new Image();
-    img.onload = () => {
-      previewUrl = url;
-      previewSize = [img.naturalWidth, img.naturalHeight];
-    };
-    img.onerror = () => (previewError = 'Could not get a frame from this source. Check the camera or URL.');
-    img.src = url;
+    const pending = new Promise<boolean>((resolve) => {
+      const done = (ok: boolean) => {
+        if (mine !== previewLoad) return resolve(false); // another camera was picked meanwhile
+        previewBusy = false;
+        previewPending = null;
+        resolve(ok);
+      };
+      const img = new Image();
+      img.onload = () => {
+        if (mine === previewLoad) {
+          previewUrl = url;
+          previewSize = [img.naturalWidth, img.naturalHeight];
+        }
+        done(true);
+      };
+      img.onerror = () => {
+        if (mine === previewLoad) previewError = 'Could not get a frame from this source. Check the camera or URL.';
+        done(false);
+      };
+      img.src = url;
+    });
+    previewPending = pending;
+    return pending;
   }
 
-  function goto(target: number) {
-    if (target === 1 && step === 0) loadPreview();
+  function urlTyped() {
+    if (source.trim() && !previewUrl && !previewPending) loadPreview();
+  }
+
+  async function goto(target: number) {
+    if (target === 1 && step === 0 && mode === 'picture' && !previewUrl) {
+      // A URL just typed: its picture comes first. Stay when it needs a word about its resolution.
+      if (!(await (previewPending ?? loadPreview())) || lowStream) return;
+    }
     step = target;
   }
 
+  async function createSound() {
+    saving = true;
+    try {
+      const sensor = await api.createSensor({
+        name: name.trim(),
+        kind: 'sound',
+        source_type: 'rtsp',
+        source: streamSource.trim(),
+        roi: null,
+        states: [],
+        sound,
+        in_ha: !notInHa,
+      });
+      toast(`${sensor.name} created`);
+      go(paths.sensor(sensor.id, 'live'));
+    } catch (err) {
+      toastError(err);
+    } finally {
+      saving = false;
+    }
+  }
+
   async function create() {
+    if (mode === 'sound') return createSound();
     saving = true;
     try {
       const learned = kind === 'single_state';
@@ -131,7 +205,7 @@
         ...(kind === 'reading' ? { reading } : {}),
         interval_s,
         triggers,
-        publish,
+        in_ha: !notInHa,
       });
       toast(learned ? `${sensor.name} created — now label some frames` : `${sensor.name} created`);
       go(paths.sensor(sensor.id, learned ? 'label' : 'live'));
@@ -142,6 +216,16 @@
     }
   }
 </script>
+
+{#snippet notInHaChoice()}
+  <label class="card pad not-in-ha" style="max-width:640px">
+    <input type="checkbox" bind:checked={notInHa} aria-label={HA_MODES.none.label} />
+    <span class="col" style="gap:2px">
+      <strong class="small">{HA_MODES.none.label}</strong>
+      <span class="xsmall faint">{HA_MODES.none.help} You can change this on its Home Assistant tab.</span>
+    </span>
+  </label>
+{/snippet}
 
 <div class="page">
   <div class="wizard card">
@@ -163,58 +247,79 @@
       <span class="spacer"></span>
       <p class="xsmall faint hint">
         You can change everything later.
-        {kind === 'single_state' ? 'Labelling starts right after you create the sensor.' : 'This sensor works right away.'}
+        {mode === 'picture' && kind === 'single_state' ? 'Labelling starts right after you create the sensor.' : 'This sensor works right away.'}
       </p>
     </aside>
 
     <section class="col content">
-      {#if (step === 1 || step === 2) && triggers.light_entity}
-        <LightHold entity={triggers.light_entity} delay={triggers.light_delay_s} bind:ready={lightReady} />
+      <!-- One hold for the camera's picture and the test, so the light does not blink between the
+           steps. It sits above the picture on the first step and on top of the next (CSS order). -->
+      {#if mode === 'picture' && step <= 1 && triggers.light_entity && source.trim()}
+        <div class="hold" class:first={step === 1}>
+          <LightHold entity={triggers.light_entity} delay={triggers.light_delay_s} bind:ready={lightReady} />
+        </div>
       {/if}
       {#if step === 0}
-        <div class="col" style="gap:6px">
-          <h2>Name it and pick a camera</h2>
-          <p class="muted">Any camera in Home Assistant works — Frigate, ESP32-CAM, Reolink, generic streams.</p>
-        </div>
-        <label class="field" style="max-width:420px">
-          Sensor name
-          <input class="input" bind:value={name} placeholder="Garage door" />
-        </label>
-        <SourcePicker bind:sourceType bind:source />
-        <div style="max-width:640px"><LightEditor bind:triggers /></div>
-      {:else if step === 1}
-        <div class="row wrap">
-          <div class="col" style="gap:6px">
-            <h2>Draw the region to watch</h2>
-            <p class="muted">Drag a box around what to watch, then shape it if needed. The AI only looks inside it — that makes it much more accurate.</p>
-          </div>
-          <span class="spacer"></span>
-          <button class="btn sm" onclick={loadPreview}><Icon name="refresh" size={14} /> New frame</button>
-          {#if isPolygon(roi)}
-            <button class="btn sm" onclick={() => roi && (roi = toRectangle(roi))}>Reset to rectangle</button>
-          {/if}
-          <button class="btn sm" onclick={() => (roi = null)}><Icon name="frame" size={14} /> Use full frame</button>
-        </div>
-        {#if previewError}
-          <div class="notice danger"><Icon name="alert" />{previewError}</div>
-        {:else}
-          {#if lowStream && previewSize}
-            <div class="notice warn small" data-testid="low-stream">
-              <Icon name="alert" />
-              <span>
-                This picture is {previewSize[0]}×{previewSize[1]}. If the camera has a higher resolution, this may be its
-                low-resolution stream: pick its main stream instead, which Home Assistant often hides (a disabled camera
-                entity of the same device).
+        <div class="modes" role="radiogroup" aria-label="What the sensor does">
+          {#each Object.entries(SENSOR_MODE_INFO) as [value, info] (value)}
+            <button
+              class="kind mode"
+              class:selected={mode === value}
+              role="radio"
+              aria-checked={mode === value}
+              onclick={() => (mode = value as 'picture' | 'sound')}
+            >
+              <span class="radio" aria-hidden="true"></span>
+              <span class="col" style="gap:4px">
+                <strong class="row" style="gap:6px"><Icon name={info.icon} size={16} />{info.title}</strong>
+                <span class="small muted">{info.text}</span>
               </span>
-            </div>
-          {/if}
-          <div class="frame">
-            <RoiEditor src={previewUrl} bind:roi editable />
+            </button>
+          {/each}
+        </div>
+        {#if mode === 'sound'}
+          <div class="col" style="gap:6px">
+            <h2>Name it and pick a stream with sound</h2>
+            <p class="muted">A camera with a microphone, or a microphone of its own (an ESP32 with a microphone, sending its sound).</p>
           </div>
-          <p class="small muted">Tip: for a door or gate, leave a small margin and include the parts that change; for objects, cover the area where they
-            appear; for a number, draw tightly around the digits (objects and numbers can be fine-tuned in the next step).</p>
+          <label class="field" style="max-width:420px">
+            Sensor name
+            <input class="input" bind:value={name} placeholder="Hallway" />
+          </label>
+          <div class="col" style="max-width:640px;gap:6px"><StreamField bind:source={streamSource} /></div>
+        {:else}
+          <div class="col" style="gap:6px">
+            <h2>Name it and pick a camera</h2>
+            <p class="muted">Any camera in Home Assistant works — Frigate, ESP32-CAM, Reolink, generic streams.</p>
+          </div>
+          <label class="field" style="max-width:420px">
+            Sensor name
+            <input class="input" bind:value={name} placeholder="Garage door" />
+          </label>
+          <SourcePicker bind:sourceType bind:source ondone={urlTyped} />
+          <div style="max-width:640px"><LightEditor bind:triggers /></div>
+          <div class="after-hold">
+            <CameraPreview
+              url={previewUrl}
+              size={previewSize}
+              busy={previewBusy}
+              error={previewError}
+              low={lowStream}
+              onretry={loadPreview}
+            />
+          </div>
         {/if}
-      {:else if step === 2}
+      {:else if mode === 'sound'}
+        <div class="col" style="gap:6px">
+          <h2>What should it listen for?</h2>
+          <p class="muted">
+            Each sound becomes an on/off sensor. Sounds of your own — your doorbell, the washing machine — are taught once
+            the sensor runs.
+          </p>
+        </div>
+        <SoundStep source={streamSource.trim()} name={name.trim()} bind:sound />
+        {@render notInHaChoice()}
+      {:else if step === 1}
         <div class="col" style="gap:6px">
           <h2>What should this sensor detect?</h2>
           <p class="muted">This can not be changed later — create another sensor for the other kind.</p>
@@ -226,7 +331,7 @@
               class:selected={kind === value}
               role="radio"
               aria-checked={kind === value}
-              onclick={() => chooseKind(value as SensorKind)}
+              onclick={() => chooseKind(value as Exclude<SensorKind, 'sound'>)}
             >
               <span class="radio" aria-hidden="true"></span>
               <span class="col" style="gap:4px">
@@ -239,11 +344,11 @@
         </div>
 
         {#if kind === 'reading'}
-          <ReadingStep bind:this={detectStep} {sourceType} {source} {entity} bind:roi bind:reading />
+          <ReadingStep bind:this={detectStep} {sourceType} {source} {entity} bind:roi bind:reading frame={previewUrl} />
         {:else if kind === 'objects'}
-          <ObjectsStep bind:this={detectStep} {sourceType} {source} {name} bind:roi bind:classes bind:faces />
+          <ObjectsStep bind:this={detectStep} {sourceType} {source} {name} bind:roi bind:classes bind:faces frame={previewUrl} />
         {:else}
-          <StatesStep {entity} {stateKeys} bind:states />
+          <StatesStep {entity} {stateKeys} bind:states bind:roi frame={previewUrl} onnewframe={loadPreview} />
         {/if}
       {:else}
         <div class="col" style="gap:6px">
@@ -254,10 +359,10 @@
           </p>
         </div>
         <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
-        <div class="card pad" style="max-width:640px"><PublishSwitch bind:publish /></div>
+        {@render notInHaChoice()}
       {/if}
 
-      <span class="spacer"></span>
+      <span class="spacer after-hold"></span>
       <footer class="row">
         {#if step > 0}
           <button class="btn" onclick={() => (step -= 1)}>Back</button>
@@ -268,8 +373,12 @@
         {#if step < STEPS.length - 1}
           <button class="btn primary" disabled={!canNext} onclick={() => goto(step + 1)}>Next</button>
         {:else}
-          <button class="btn primary" disabled={!detectValid || saving} onclick={create}>
-            {saving ? 'Creating…' : kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
+          <button
+            class="btn primary"
+            disabled={(mode === 'picture' ? !detectValid : !sound.sounds.length) || saving}
+            onclick={create}
+          >
+            {saving ? 'Creating…' : mode === 'picture' && kind === 'single_state' ? 'Create sensor and start labelling' : 'Create sensor'}
           </button>
         {/if}
       </footer>
@@ -278,15 +387,23 @@
 </div>
 
 <style>
+  .not-in-ha {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  .not-in-ha input {
+    margin-top: 3px;
+  }
   .wizard {
     display: flex;
-    min-height: 680px;
-    overflow: hidden;
+    min-height: 680px; /* no overflow: hidden, it would cut off the lists of the pickers */
   }
   aside {
     width: 280px;
     flex-shrink: 0;
     background: var(--c-sunken);
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
     border-right: 1px solid var(--c-border);
     padding: 28px 24px;
     display: flex;
@@ -354,12 +471,19 @@
     gap: var(--space-5);
     min-width: 0;
   }
-  .frame {
-    max-width: 900px;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
+  .hold {
+    order: 1;
+    max-width: 640px;
+  }
+  .hold.first {
+    order: -1;
+    max-width: none;
+  }
+  .after-hold {
+    order: 2;
   }
   footer {
+    order: 3;
     padding-top: var(--space-3);
     border-top: 1px solid var(--c-border);
   }
@@ -382,6 +506,12 @@
     text-align: left;
     cursor: pointer;
   }
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    max-width: 760px;
+  }
   .kind.selected {
     border-color: var(--c-accent);
     box-shadow: 0 0 0 1px var(--c-accent);
@@ -398,7 +528,8 @@
     border: 5px solid var(--c-accent);
   }
   @media (max-width: 600px) {
-    .kinds {
+    .kinds,
+    .modes {
       grid-template-columns: minmax(0, 1fr);
     }
   }
@@ -411,6 +542,7 @@
     }
     aside {
       width: auto;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
       border-right: none;
       border-bottom: 1px solid var(--c-border);
       padding: var(--space-4);

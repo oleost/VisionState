@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from .. import backbones, detectors, faces, readers
+from .. import backbones, detectors, faces, readers, sounds
 from ..db import Person, Prediction, Sensor
 from ..redact import redact
 from ..settings import (
@@ -42,6 +42,7 @@ from ..settings import (
     READING_DISPLAYS,
     READING_LIMITS,
     READING_MODES,
+    READING_NEW_SENSOR,
     READING_SENSOR_DEFAULTS,
     REMINDER_DEFAULTS,
     REMINDER_LIMITS,
@@ -52,7 +53,11 @@ from ..settings import (
     SENSOR_DEFAULTS,
     SENSOR_KINDS,
     SENSOR_LIMITS,
-    SENSOR_PUBLISH_DEFAULT,
+    SOUND,
+    SOUND_DEFAULTS,
+    SOUND_LEVELS,
+    SOUND_LIMITS,
+    SOUND_SENSOR_DEFAULTS,
     STATE_PALETTE,
     STORAGE_DEFAULTS,
     STORAGE_LIMITS,
@@ -102,7 +107,6 @@ def ui_config() -> dict:
         "trigger_limits": TRIGGER_LIMITS,
         "trigger_max_entities": TRIGGER_MAX_ENTITIES,
         "light_domains": LIGHT_DOMAINS,
-        "publish_default": SENSOR_PUBLISH_DEFAULT,
         "light_view": {"renew_s": RUNTIME["light_view_renew_s"], "lease_s": RUNTIME["light_view_lease_s"]},
         "roi_max_points": ROI_MAX_POINTS,
         "review_defaults": REVIEW_DEFAULTS,
@@ -132,7 +136,7 @@ def ui_config() -> dict:
         "face_unknown_key": FACE_UNKNOWN_KEY,
         "faces": {k: FACES[k] for k in ("max_people", "max_faces_per_person", "suggest_faces", "stats_window")},
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
-        "reading_defaults": {**READING_DEFAULTS, "wheel_reader": readers.DEFAULT_WHEEL_READER},
+        "reading_defaults": {**READING_DEFAULTS, "wheel_reader": readers.DEFAULT_WHEEL_READER, **READING_NEW_SENSOR},
         "reading_limits": READING_LIMITS,
         "counter_standard_steps_per_min": COUNTER_LIMIT["standard_steps_per_min"],
         "reading_modes": READING_MODES,
@@ -143,7 +147,37 @@ def ui_config() -> dict:
         ],
         "reading_device_classes": READING_DEVICE_CLASSES,
         "reading_counter_cell_share": READING["counter_cell_share"],
+        "reading_dials": {k: READING[k] for k in ("max_dials", "dial_radius", "dial_reach")},
         "reading_export_meter_max_chars": READING["export_meter_max_chars"],
+        "sound_sensor_defaults": SOUND_SENSOR_DEFAULTS,
+        "sound_defaults": SOUND_DEFAULTS,
+        "sound_limits": SOUND_LIMITS,
+        "sound_levels": SOUND_LEVELS,
+        "sound": {
+            k: SOUND[k]
+            for k in (
+                "hop_s",
+                "window_s",
+                "live_levels",
+                "max_sounds",
+                "max_custom",
+                "max_taught",
+                "own_threshold",
+                "floor_db",
+            )
+        },
+        "sounds": [
+            {
+                "key": s.key,
+                "name": s.name,
+                "group": s.group,
+                "threshold": s.threshold,
+                "device_class": s.device_class,
+                "icon": s.icon,
+            }
+            for s in sounds.SOUNDS.values()
+        ],
+        "sound_popular": list(sounds.MODELS[sounds.DEFAULT_MODEL].popular),
         "storage_defaults": STORAGE_DEFAULTS,
         "storage_limits": STORAGE_LIMITS,
         "history": HISTORY,
@@ -190,6 +224,9 @@ async def status(request: Request) -> dict:
         "wheel_readers": list(rt.wheel_readers),  # loaded
         "wheel_reader_name": ", ".join(w.spec.name for w in rt.wheel_readers.values()) or None,
         "wheel_reader_error": rt.wheel_reader_error,
+        "sound_model": rt.sound_model.spec.id if rt.sound_model else None,
+        "sound_model_name": rt.sound_model.spec.name if rt.sound_model else None,
+        "sound_model_error": rt.sound_model_error,
         # The face model, the people and how many sensors recognise them (the People page).
         "faces": {**rt.face_status(), "people": people, "sensors": len(face_sensors)},
         "mqtt": {
@@ -286,6 +323,10 @@ def get_settings(request: Request) -> dict:
                 },
             }
             for spec in faces.RECOGNISERS.values()
+        ],
+        # Sound sensors: one model, downloaded when the first sound sensor is made.
+        "sound_models": [
+            {**model(spec), "data": spec.data, "published": bool(spec.url)} for spec in sounds.MODELS.values()
         ],
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,

@@ -32,12 +32,14 @@ UNKNOWN_STATE = "unknown"
 #
 # "single_state": learns the user's own states from labelled examples (one state at a time).
 # "objects": finds common objects (people, cars, animals …) with a pretrained detector, no training.
+# "sound": hears sounds in a stream (sirens, alarms, a dog; own sounds taught from clips).
 # The kind is chosen when the sensor is created and never changes.
 
 KIND_STATES = "single_state"
 KIND_OBJECTS = "objects"
 KIND_READING = "reading"  # a number read from a display or counter (OCR), no training
-SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS, KIND_READING)
+KIND_SOUND = "sound"  # sounds heard in a stream's audio (docs/SOUND_PLAN.md)
+SENSOR_KINDS = (KIND_STATES, KIND_OBJECTS, KIND_READING, KIND_SOUND)
 
 # Object sensors reuse threshold ("minimum confidence") and debounce ("detections in a row
 # before on"), with their own defaults. Limits are the same as in SENSOR_LIMITS.
@@ -56,10 +58,15 @@ OBJECT_DEFAULTS = {
     "custom": [],
     "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
     "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
+    "snapshot_aspect": "free",  # the shape of an object's snapshot: "free", or width:height such as "16:9"
+    # A new snapshot while the count stays, once the boxes differ this much from those of the last one
+    # (imaging.box_change; 0 = only when the count changes). Above a parked car's jitter between checks.
+    "snapshot_move": 0.25,
 }
 OBJECT_LIMITS = {
     "min_size": (0.0, 0.5),
     "clear_after_s": (0.0, 3600.0),
+    "snapshot_move": (0.0, 1.0),
 }
 OBJECT_MAX_CLASSES = 20  # two Home Assistant entities per class
 
@@ -97,6 +104,17 @@ READING_DEFAULTS = {
     # The wheel reader (an id in readers.json) a counter read by "wheels" uses. A new sensor
     # stores the registry's default, so a later default never changes it; "" = that default.
     "wheel_reader": "",
+    # Read the region straightened (imaging.region_image): a four-cornered region, its top edge
+    # marked, is turned upright and its perspective undone — a meter the camera sees at an angle or
+    # turned. Off for sensors saved before it was offered (they read as they did); a new sensor
+    # starts with READING_NEW_SENSOR.
+    "straighten": False,
+    # Mechanical counters read by a wheel reader (settings.extra_digits): the meter's pointer dials,
+    # each one more decimal (the first ×0.1 of the last wheel, then ×0.01 …;
+    # docs/POINTER_DIAL_PLAN.md): circles in the plane the counter is read in
+    # (imaging.reading_plane), in units of the region's height from its top-left corner — {"x", "y",
+    # "r", "ccw"} (ccw: the dial turns anticlockwise).
+    "dials": [],
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -198,6 +216,44 @@ READING = {
     # registry): a wheel's share is the model's probability within this many bins of where the
     # value puts it.
     "wheel_weakest_bins": 4,
+    # A counter with extra digits (extra_digits: pointer dials): its last digit jitters by a step or
+    # two between readings. A reading this many steps below the value keeps it ("settling"), as one
+    # step does without them, instead of being rejected as going down.
+    "settle_steps_fine": 2,
+    # Pointer dials (dials.py): at most this many per counter, their radius within dial_radius and
+    # their centre at most dial_reach beyond the region (both in units of the region's height); the
+    # dial editor shows the meter face that far around the region, face_size pixels on its longest
+    # side. Each dial is cut from the plane this much larger than its circle and scaled to dial_size
+    # pixels. A needle found clearly becomes a peak this many bins wide (of 100: 0.1 of a digit
+    # each) for the decode, an unclear one (its pixels agree less on one direction, down to
+    # dial_spread_floor: none) up to dial_sigma_bins[1]; with less than dial_min_needle of the
+    # dial's area as needle, the dial is not read. A needle's pixels are this much redder (red less
+    # the larger of green and blue) than the dial's face: a pale needle in a picture with a colour
+    # cast counts too. Its hub is what is left of it with dial_hub_erode of the dial picture's size
+    # peeled off its edges (the thick part round the axis: a hub, or a drop-shaped needle's body);
+    # its direction is that of the dial_tip_share of its pixels farthest from the hub. A wide pointer
+    # across the dial instead reaches dial_wide_pointer[0] of the radius to both sides of the centre
+    # and is at least dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
+    # may be dial_wheel_slack_bins behind where the value puts it and dial_wheel_ahead_bins ahead (from
+    # dial_wheel_exact_from tenths of a digit on, not ahead; it says the digit, the needle the rest), or
+    # stand on its digit, which counts dial_wheel_stand_weight.
+    "dial_wide_pointer": (0.6, 1.3),
+    "dial_wheel_slack_bins": 4,
+    "dial_wheel_ahead_bins": 1,
+    "dial_wheel_exact_from": 8,
+    "dial_wheel_stand_weight": 0.3,
+    "max_dials": 6,
+    "dial_radius": (0.1, 4.0),
+    "dial_reach": 6.0,
+    "face_size": 720,
+    "dial_margin": 1.15,
+    "dial_size": 96,
+    "dial_sigma_bins": (2.5, 15.0),
+    "dial_min_needle": 0.01,
+    "dial_spread_floor": 0.5,
+    "dial_red_contrast": 20,
+    "dial_hub_erode": 0.07,
+    "dial_tip_share": 0.05,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones
@@ -210,6 +266,82 @@ READING = {
     "export_wheel_top": 3,  # wheel reader: the most likely positions kept per wheel
     # The notification in Home Assistant when a camera's picture changed size (+ the sensor's slug)
     "camera_notification_id": f"{APP_SLUG}_camera_changed_",
+}
+
+# Sound sensors listen all the time (engine/sound.py): they have no interval, threshold or debounce
+# of their own; the row's columns hold these. What a sound needs to be heard is in SOUND and the
+# model's registry (sounds.json: a score threshold per sound).
+SOUND_SENSOR_DEFAULTS = {
+    "interval_s": 10.0,
+    "threshold": 0.5,
+    "debounce": 1,
+}
+SOUND_DEFAULTS = {
+    "sounds": ["smoke_alarm"],  # the model's sounds it listens for (keys of the model's sounds in sounds.json)
+    # Which windows are analysed at all. "auto": a window this many dB above the background the
+    # sensor learns (a running low percentile of its level); "fixed": a window above fixed_db (dBFS).
+    "level": "auto",
+    "above_db": 10.0,
+    "fixed_db": -45.0,
+    "clear_after_s": 10.0,  # a sound stays "heard" this long after it was last heard
+    "clips": False,  # keep the seconds around a sound that was heard (speech silenced first)
+    "video": True,  # clips of a stream with video show it too (off: sound only, much smaller)
+    # Own sounds learn what this room sounds like: loud windows that matched none of them are kept as
+    # "other" (SOUND["room_kept"]). Off: only what a person answered "not this" for is "other".
+    "learn_room": True,
+    "thresholds": {},  # sound key -> this sensor's own threshold (missing = the model's)
+    "custom": [],  # own sounds, taught from clips: [{"key", "name"}]
+}
+SOUND_LEVELS = ("auto", "fixed")
+SOUND_LIMITS = {
+    "above_db": (0.0, 40.0),
+    "fixed_db": (-90.0, 0.0),
+    "clear_after_s": (1.0, 600.0),
+    "threshold": (0.01, 0.99),
+}
+SOUND = {
+    "rate": 16_000,  # samples per second the model takes (mono)
+    "window_s": 2.0,  # what one analysis hears
+    "hop_s": 0.5,  # how often the newest window is analysed (when it is loud enough)
+    # A sound is "heard" when its score passed its threshold in on_windows of the last of_windows
+    # windows; it stays heard while it scores above off_share of its threshold (hysteresis), and
+    # for clear_after_s after that.
+    "on_windows": 2,
+    "of_windows": 3,
+    "off_share": 0.5,
+    # The background level ("auto"): this percentile of the level of the last background_s
+    # seconds (in hops). Nothing quieter than floor_db (dBFS) is analysed, whatever the line says.
+    "background_s": 120.0,
+    "background_percentile": 20,
+    "floor_db": -70.0,
+    "buffer_s": 30.0,  # audio kept in memory (the window, a clip's seconds before, the Live view)
+    # A camera's video kept for clips with video (undecoded packets: about 4 MB at 2 Mbit/s): a clip's
+    # seconds before and after, the window, and a key frame interval to spare.
+    "video_buffer_s": 15.0,
+    "video_wait_s": 10.0,  # how long a clip waits for its video (else it is sound only)
+    "video_jump_s": 2.0,  # video times going back this far: the camera started its clock again
+    "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
+    "clip_after_s": 5.0,
+    "clip_bitrate": 48_000,  # AAC, bits per second
+    # Before a clip is stored, each second of it with a speech score of at least this is silenced:
+    # lower than the "speech" sound's threshold, so speech is rather silenced once too often.
+    "speech_mute": 0.2,
+    "speech_key": "speech",  # the model's sound for "someone is talking": never keeps a clip
+    "reconnect_min_s": 2.0,  # a stream that failed is opened again after this, doubling up to the max
+    "reconnect_max_s": 60.0,
+    "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
+    "offline_after_s": 20.0,  # unavailable only after this long without audio: a reconnect is not news
+    "live_levels": 120,  # levels (one per hop) the Live tab shows
+    "max_sounds": 20,  # the model's sounds per sensor (one entity each)
+    "max_custom": 10,  # own sounds per sensor (one entity each)
+    "max_taught": 50,  # clips taught per own sound
+    "own_threshold": 0.8,  # an own sound is heard at this probability of the sensor's head
+    # A sound that was heard, but never scored above its threshold plus this share of the way from
+    # there to 1, is asked about in the review queue ("Was this a siren?"), when its clip is kept and
+    # the sensor's review rules allow (a siren at 0.3: below 0.65; an own sound at 0.8: below 0.9).
+    "unsure_share": 0.5,
+    "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
+    "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
 }
 
 DETECTION = {
@@ -580,6 +712,7 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
     KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
+    KIND_SOUND: ("heard", "quiet"),  # a sound began to be heard; it was no longer heard
 }
 
 # --- Runtime ------------------------------------------------------------------
@@ -590,7 +723,17 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
 # change of attributes, as a new state.
 PUBLISH = {
     "refresh_s": 300.0,
+    # An object's snapshot (imaging.snapshot): the boxes plus this share of their size on each side,
+    # and at least this many pixels each way when the region has that much room.
+    "snapshot_margin": 0.1,
+    "snapshot_min_px": 300,
+    "snapshot_quality": 85,
 }
+
+# Entities that exist in Home Assistant only when chosen on the sensor's Home Assistant tab
+# (mqtt.entity_options); an object's snapshot is one too. A sensor made before the tab decides once,
+# from what Home Assistant has switched on (engine.PublishingMixin.settle_entity_choices).
+HA_ENTITIES_NOT_BY_DEFAULT = frozenset({"raw", "problem", "accepted", "rate", "reader_image"})
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
@@ -681,6 +824,33 @@ def active_custom(objects: dict) -> list[dict]:
     return [label for label in objects["custom"] if label["parent"] in objects["classes"]]
 
 
+def merge_sound(stored: dict | None) -> dict:
+    """Sound settings of a sensor: stored values on top of SOUND_DEFAULTS."""
+    merged = {**SOUND_DEFAULTS, **(stored or {})}
+    merged["sounds"] = list(merged.get("sounds") or [])
+    merged["thresholds"] = {k: float(v) for k, v in (merged.get("thresholds") or {}).items() if v is not None}
+    merged["custom"] = [dict(label) for label in merged.get("custom") or []]
+    return merged
+
+
+# What a new reading sensor starts with where it differs from what a stored one without it has.
+READING_NEW_SENSOR = {"straighten": True}
+
+
+def extra_digits(reading: dict) -> int:
+    """Digits a reading sensor reads beyond its wheels: one per pointer dial. Only a mechanical
+    counter read by a wheel reader has them. ("fraction", the last wheel's tenth as one more digit,
+    was offered in 0.12.0b1 only: a sensor that stored it reads as one without it.)"""
+    if reading.get("display") != "counter" or reading.get("counter_reader") != "wheels":
+        return 0
+    return len(reading.get("dials") or [])
+
+
+def value_decimals(reading: dict) -> int:
+    """Decimals of the value a reading sensor publishes: its own, and one more per extra digit."""
+    return int(reading.get("decimals", 0)) + extra_digits(reading)
+
+
 def merge_reading(stored: dict | None) -> dict:
     """Reading settings of a sensor: stored values on top of READING_DEFAULTS."""
     return {**READING_DEFAULTS, **(stored or {})}
@@ -732,7 +902,7 @@ BACKUP_PARTS: dict[str, dict] = {
     "history": {
         "optional": True,
         "tables": ("prediction", "reading_stat"),
-        "folders": ("history_dir",),
+        "folders": ("history_dir", "clips_dir"),
         "restore": "replace",
     },
     "models": {"optional": True, "tables": (), "folders": ("models_dir",), "restore": "add"},
@@ -815,6 +985,12 @@ class Settings:
         return self.media_dir / "thumbs"
 
     @property
+    def clips_dir(self) -> Path:
+        """Sound clips of the history: in the app's own storage, never in the media folder (Home
+        Assistant's media browser shows that to every user, and a clip may hold people's voices)."""
+        return self.data_dir / "clips"
+
+    @property
     def is_supervised(self) -> bool:
         return bool(self.supervisor_token)
 
@@ -828,6 +1004,7 @@ class Settings:
             self.sample_thumbs_dir,
             self.history_dir,
             self.thumbs_dir,
+            self.clips_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

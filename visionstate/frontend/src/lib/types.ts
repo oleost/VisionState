@@ -73,9 +73,81 @@ export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
 
 /**
  * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a
- * number from a display. Only state sensors are trained.
+ * number from a display; 'sound' hears sounds in a stream. Only state sensors are trained.
  */
-export type SensorKind = 'single_state' | 'objects' | 'reading';
+export type SensorKind = 'single_state' | 'objects' | 'reading' | 'sound';
+
+/** 'auto': windows a set number of dB above the background it learns are analysed; 'fixed': above a fixed level. */
+export type SoundLevel = 'auto' | 'fixed';
+
+/** What a sound sensor listens for and when (defaults: config sound_defaults). */
+export interface SoundSettings {
+  /** The model's sounds it listens for (config sounds). */
+  sounds: string[];
+  level: SoundLevel;
+  above_db: number;
+  fixed_db: number;
+  /** A sound stays heard this long after it was last heard. */
+  clear_after_s: number;
+  /** Keep the seconds around a sound that was heard (speech silenced first). */
+  clips: boolean;
+  /** Clips of a camera stream show its video too (off: sound only). */
+  video: boolean;
+  /** Own sounds learn what the room sounds like. */
+  learn_room: boolean;
+  /** A sound's own threshold (missing: the model's). */
+  thresholds: Record<string, number>;
+}
+
+/** An own sound of a sound sensor, taught from clips. */
+export interface OwnSound {
+  key: string;
+  name: string;
+}
+
+export interface SoundLive {
+  key: string;
+  name: string;
+  own: boolean;
+  threshold: number;
+  model_threshold: number;
+  on: boolean;
+  /** The last analysed window's score (0 while quiet). */
+  score: number;
+}
+
+export interface SensorSound extends SoundSettings {
+  custom: OwnSound[];
+  live: SoundLive[];
+  /** The level of each half second, newest last (dBFS). */
+  levels: number[];
+  /** The level a window must reach to be analysed (null: not learned yet). */
+  line: number | null;
+  analysed: boolean;
+  /** The stream's audio and video, once it was opened. */
+  stream: { codec: string; sample_rate: number; channels: number; video: { codec: string; width: number; height: number } | null } | null;
+}
+
+/** POST /sounds/preview: a stream listened to for a few seconds (new sensor wizard). */
+export interface SoundPreview {
+  ok: boolean;
+  error?: string;
+  model_error?: string;
+  stream: SensorSound['stream'];
+  seconds?: number;
+  levels?: number[];
+  sounds?: { key: string; score: number }[];
+}
+
+/** GET /sensors/{id}/sounds/taught: clips taught to a sound sensor. */
+export interface SoundTaught {
+  clips: { id: number; label: string; origin: string; created_at: string }[];
+  counts: Record<string, number>;
+  sounds: (OwnSound & { clips: number })[];
+  /** Windows of the room kept as "other". */
+  room: number;
+  trained: boolean;
+}
 
 export type ReadingMode = 'counter' | 'value' | 'time_left';
 /** 'counter' is a mechanical counter with rolling digit wheels; the others are digital displays. */
@@ -117,6 +189,10 @@ export interface ReadingSettings {
   counter_reader: CounterReader;
   /** counter_reader "wheels": the wheel reader's id ("" = the default). */
   wheel_reader: string;
+  /** Read the region straightened: four corners, the first edge its top (imaging.region_image). */
+  straighten: boolean;
+  /** counter_reader "wheels": the meter's pointer dials, ×0.1 first (each one more decimal). */
+  dials: Dial[];
   /** Values and times left, and counters with change_limit "step": the largest change between two
    * readings (0 = no limit). */
   max_step: number;
@@ -157,6 +233,21 @@ export interface ReadingQuality {
 }
 
 /** What the number reader makes of a fresh frame (new sensor wizard). */
+/** A pointer dial: its circle in units of the region's height from its top-left corner, in the plane
+ * the counter is read in (straightened); ccw = it turns anticlockwise. */
+export interface Dial {
+  x: number;
+  y: number;
+  r: number;
+  ccw: boolean;
+}
+
+/** A pointer dial as read: where its needle was found (0.0-9.9; null = none seen) and how sure (0-1). */
+export interface DialRead {
+  needle: number | null;
+  certainty: number;
+}
+
 export interface ReadPreview {
   image: string;
   read_image: string;
@@ -165,6 +256,13 @@ export interface ReadPreview {
   value: string | null;
   /** A mechanical counter read with another number of digits than it has wheels. */
   wrong_digit_count: boolean;
+  /** Counters read by a wheel reader: the meter face around the region, straightened as it is read, and
+   * the part of the plane it shows ([x1, y1, x2, y2] in units of the region's height): where dials go. */
+  face?: string;
+  face_box?: [number, number, number, number];
+  /** The region in the same units: from 0, 0 to region_width, 1. */
+  region_width?: number;
+  dials: DialRead[];
 }
 
 /** The last read of a reading sensor; reason = why it was rejected (null = accepted). */
@@ -347,6 +445,10 @@ export interface ObjectSettings {
   clear_after_s: number;
   /** Compare boxes with what was taught; off = the detector alone. */
   use_taught: boolean;
+  /** The shape of an object's snapshot: free, or width:height. */
+  snapshot_aspect: string;
+  /** A new snapshot once its boxes differ this much (0 to 1) from the last one's; 0: only when the count changes. */
+  snapshot_move: number;
   /** This sensor's own teaching limits; a missing one follows the global value. */
   teach?: TeachOverrides;
   faces?: FaceSettings;
@@ -478,6 +580,10 @@ export interface Sensor {
   enabled: boolean;
   /** Values go to Home Assistant; off: its entities stay unavailable (a sensor being tuned). */
   publish: boolean;
+  /** Off: it has no entities in Home Assistant at all. */
+  in_ha: boolean;
+  /** What can be chosen on its Home Assistant tab. */
+  ha_entities: HaEntity[];
   triggers: Triggers;
   review: ReviewOverrides;
   review_effective: ReviewRules;
@@ -486,12 +592,22 @@ export interface Sensor {
   states: StateDef[];
   objects: SensorObjects | null;
   reading: SensorReading | null;
+  sound: SensorSound | null;
   status: SensorStatus;
   trained: boolean;
   training: boolean;
   live: Live;
   model: ModelSummary | null;
   counts: Counts;
+}
+
+export interface HaEntity {
+  id: string;
+  name: string;
+  on: boolean;
+  /** An object sensor's: the class or own label it belongs to, and what it is of that object. */
+  object?: string;
+  column?: 'detected' | 'count' | 'snapshot';
 }
 
 export interface SensorInput {
@@ -503,11 +619,14 @@ export interface SensorInput {
   states: { key?: string; name: string; color?: string }[];
   objects?: ObjectSettings;
   reading?: ReadingSettings;
+  sound?: SoundSettings;
   interval_s?: number;
   threshold?: number;
   debounce?: number;
   enabled?: boolean;
   publish?: boolean;
+  in_ha?: boolean;
+  ha_entities?: Record<string, boolean>;
   triggers?: Triggers;
   review?: Partial<ReviewOverrides>;
 }
@@ -528,8 +647,6 @@ export interface AppConfig {
     [number, number]
   >;
   light_domains: string[];
-  /** Whether a new sensor sends its values to Home Assistant. */
-  publish_default: boolean;
   /** A view with live frames renews its hold on a sensor's light this often; a lease runs out after lease_s. */
   light_view: { renew_s: number; lease_s: number };
   trigger_max_entities: number;
@@ -543,7 +660,7 @@ export interface AppConfig {
   backup: { parts: { key: BackupPart; optional: boolean }[]; credentials: boolean; max_restore_gb: number };
   object_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   object_defaults: ObjectSettings;
-  object_limits: Record<'min_size' | 'clear_after_s', [number, number]>;
+  object_limits: Record<'min_size' | 'clear_after_s' | 'snapshot_move', [number, number]>;
   object_max_classes: number;
   object_labels: ObjectLabel[];
   object_popular: string[];
@@ -567,6 +684,9 @@ export interface AppConfig {
   reading_device_classes: string[];
   /** Mechanical counters: the share of each digit field's width that is read. */
   reading_counter_cell_share: number;
+  /** Pointer dials: at most max_dials, radius within dial_radius, centre at most dial_reach outside the
+   * region (both in units of the region's height). */
+  reading_dials: { max_dials: number; dial_radius: [number, number]; dial_reach: number };
   /** Longest "What meter is this?" text of a readings export. */
   reading_export_meter_max_chars: number;
   storage_defaults: { history_max_gb: number };
@@ -575,6 +695,24 @@ export interface AppConfig {
   history: { page_size: number; max_page_size: number; max_filter_values: number; window_presets_h: number[]; poll_s: number };
   /** What a history row can be, per sensor kind (names are unique across kinds). */
   history_events: Record<SensorKind, string[]>;
+  sound_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
+  sound_defaults: SoundSettings;
+  sound_limits: Record<'above_db' | 'fixed_db' | 'clear_after_s' | 'threshold', [number, number]>;
+  sound_levels: SoundLevel[];
+  sound: {
+    hop_s: number;
+    window_s: number;
+    live_levels: number;
+    max_sounds: number;
+    max_custom: number;
+    max_taught: number;
+    own_threshold: number;
+    floor_db: number;
+  };
+  /** The model's sounds a sensor can listen for. */
+  sounds: { key: string; name: string; group: string; threshold: number; device_class: string; icon: string }[];
+  /** The sounds LabelPicker shows first. */
+  sound_popular: string[];
 }
 
 export interface Status {
@@ -594,6 +732,10 @@ export interface Status {
   wheel_readers: string[];
   wheel_reader_name: string | null;
   wheel_reader_error: string;
+  /** The sound model (loaded on first use by a sound sensor). */
+  sound_model: string | null;
+  sound_model_name: string | null;
+  sound_model_error: string;
   /** The face model, and how many people and sensors that recognise faces there are. */
   faces: FaceStatus & { people: number; sensors: number };
   mqtt: { connected: boolean; host: string | null; error: string };
@@ -634,9 +776,12 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | null;
   reviewed: boolean;
   has_frame: boolean;
+  /** Sound sensors: the seconds around a sound (with the camera's video when `clip_video`). */
+  has_clip?: boolean;
+  clip_video?: boolean;
   /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask' |
    * 'face' (a face nobody is named for). */
   detections: Detection[] | null;
@@ -682,6 +827,8 @@ export interface ReviewItem extends Prediction {
     reading: ReadingSettings | null;
     /** Object sensors: the own labels a question can be about. */
     labels: OwnLabel[];
+    /** Sound sensors: the sounds it listens for and its own sounds an answer can name. */
+    sounds: { key: string; name: string; own: boolean }[];
   };
 }
 

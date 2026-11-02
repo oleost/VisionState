@@ -15,7 +15,9 @@ locally, on any CPU, with a polished UI inside Home Assistant.
 
 A second sensor kind, **object sensors**, finds common objects (people, cars, animals …) with a
 pretrained detector, and a third, **reading sensors**, reads a number from a display or the wheels
-of a meter. Neither needs training.
+of a meter. Neither needs training. A fourth, **sound sensors**, listens to a stream's sound and
+recognises sounds (sirens, alarms, a dog) with a pretrained model, and the household's own sounds
+taught from a few clips.
 
 ## 2. Goals / Non-goals
 
@@ -32,7 +34,10 @@ of a meter. Neither needs training.
 - Tracking objects across frames (identities, paths, line crossing), zones within one sensor,
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
-- Reading pointer dials (needle gauges, the small red hands on some water meters) — see §14.
+- Reading needle gauges (a pressure or temperature gauge). The pointer dials of a water meter are
+  read as part of its counter: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md).
+- Understanding speech: a sound sensor may know *that* someone speaks, never *what* is said (no
+  transcription, keywords or speaker recognition) — see [`SOUND_PLAN.md`](SOUND_PLAN.md) §6.
 - Cloud training or cloud inference; telemetry of any kind.
 - armv7 / i386 (deprecated by Home Assistant).
 
@@ -40,9 +45,9 @@ of a meter. Neither needs training.
 
 | Term | Meaning |
 |---|---|
-| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector) or `reading` (a number), fixed at creation. |
+| **Sensor** | One thing to recognise, e.g. "Garage door". Becomes one HA device with entities. Its **kind** is `single_state` (learned states), `objects` (detector), `reading` (a number) or `sound` (sounds in a stream), fixed at creation. |
 | **State** | One possible value of a sensor. Has a display name ("Open") and a key (`open`, derived from the name, used in HA). |
-| **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. |
+| **Source** | Where images come from: HA camera entity, HTTP snapshot URL, RTSP stream, or upload. A sound sensor's is a stream with sound (RTSP or HTTP). |
 | **ROI** | Region of interest — a rectangle, or a polygon (up to `ROI_MAX_POINTS` corners), cropped from the frame before classification; outside a polygon is filled with a neutral colour. |
 | **Sample** | A stored full frame with a state label; the ROI is applied when embedding, so moving the ROI never loses data. |
 | **Backbone** | Pre-trained vision model that turns an image into an embedding vector. |
@@ -267,6 +272,35 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   terms), ONNX conversions from Hugging Face pinned by revision and SHA-256. One conversion
   of D-FINE N was found broken during evaluation; tests with real CC0 photos
   (`tests/assets`, `tests/test_models.py`) now guard every model file. 8-bit variants were slower and worse on CPU.
+**A reading sensor's region can be straightened** (`reading["straighten"]`; issue #58: an
+ESP32-CAM that cannot hang straight above a meter): its four corners, the first edge the top, are
+turned into an upright rectangle by one perspective transform (`imaging.region_image`), so
+rotation at any angle and perspective are undone in one step — width and height the mean of the
+opposite edges, as for a rectangle seen at an angle. It is the region the user already draws, no
+new tool: the editor keeps it at four corners and marks the top (`RoiEditor` `quad`, *Turn*), and
+the switch (*Correct rotation and perspective*, `StraightenSwitch.svelte`) sits with the region it
+changes, not with the reading settings.
+Reading sensors only (decided 2026-10-29): for states and objects the region is a border, and four
+corners there are not a rectangle to straighten. A new reading sensor straightens; one saved before
+has no key and reads as it did (`settings.READING_NEW_SENSOR`). Each reading records whether it was
+straightened, so History, Review and the export cut its frame the same way.
+
+**A counter read by the wheel reader reads finer than its wheels with pointer dials** (issue #59,
+[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md)): with `reading["dials"]` the meter's pointer dials
+add one digit each (`settings.extra_digits`, `settings.value_decimals`). The last wheel's tenth as
+one more digit without dials (`reading["fraction"]`) was offered in 0.12.0b1 and taken out again
+(the plan's §4 says why). Dials are circles in the plane the counter
+is read in (`imaging.reading_plane`: the straightened region, or its box), in units of the region's
+height, so they move with the region and a dial seen at an angle is cut round with its 0 up. A
+needle is read without a model (`dials.read_needle`: redder than the dial's face, else its darkest
+part; its direction from its own hub to its tip, a probability over 100 positions) and the wheels and dials are decoded together
+(`readers.wheel_decode` with *smooth* links: a wheel or dial's tenth is the next one's digit), so
+the ×0.1 dial settles the last wheel and a needle on a number is settled by the next dial. The
+editor places dials on the straightened meter face around the region (`imaging.meter_face`), not
+on the camera picture, so circles stay round. A counter has dials when the user adds them. The
+change limit stays in the counter's own decimals; the settling tolerance and Home Assistant's display precision follow the
+value's.
+
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
 | ID | Model | Use |
@@ -425,6 +459,41 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
   that recommends other defaults does not change an installation. Registry entries are never
   changed or removed once released.
 
+**Sound sensors** (`sounds.py`, `engine/sound.py`, `api/sounds.py`; registry
+`backend/visionstate/sounds.json`; the research, measurements and decisions in
+[`SOUND_PLAN.md`](SOUND_PLAN.md)) listen all the time instead of checking frames. The stream
+(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream to 16 kHz
+mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
+each hop's level (dBFS) and analyses the newest window only when it is loud enough: above the
+background it learns (a low percentile of the recent levels, not learned while a sound is heard,
+so a long siren never becomes the background) by `above_db`, or above a fixed level. The model is
+**CED-Tiny** (Apache-2.0; trained on AudioSet, accepted 2026-10-29) with an embedding output added
+by `tools/soundmodel/make_model.py`: it takes the raw waveform and gives every AudioSet class's
+score (already probabilities) and a 576-number embedding. Each of its *sounds* in the registry is
+one or more classes with a threshold, in a group the picker lists it under; the well recognised
+ones (measured on CC0 recordings) are `popular`, the others start from a best guess users tune. A sound is heard when its score
+passed the threshold in `SOUND["on_windows"]` of the last `SOUND["of_windows"]` windows, and
+stays heard while it scores above `SOUND["off_share"]` of it and for `clear_after_s` after
+(`logic.hear`: two thresholds, more robust than a median filter).
+
+*Own sounds* are a small head per sensor (`sounds.SoundHead`: logistic regression with
+`classifier.fit` on the embedding, standardised over what it was trained on) for the own sounds
+against `sounds.OTHER`: taught clips (`sample` rows whose `object_label` is the own sound's key or
+`other`, embeddings cached under `roi_key` "sound"), the windows of the room that matched none of
+them (`learn_room`, at most `SOUND["room_kept"]`, in the heads folder, never exported) and 200
+everyday CC0 sounds every head starts from (`ced-tiny-other.npy`, `tools/soundmodel/make_other.py`):
+without them, five clips of a doorbell made a head that took noise for the doorbell.
+
+*Clips* (off by default): the seconds around a sound that was heard, cut from the stream's
+buffer once its seconds after arrived; every second with a speech score of at least
+`SOUND["speech_mute"]` is silenced first, and *Someone talking* never keeps one. On a stream with
+video (`sound["video"]`, on by default) the stream's thread also keeps the last seconds of video
+packets undecoded and the clip is an MP4 of the video copied from a key frame with the sound as
+AAC (`AudioStream.video_clip`); otherwise AAC alone (`sounds.encode_clip`). A heard sound that
+never scored above its threshold plus `SOUND["unsure_share"]` of the way to 1 is asked about in
+Review (with its clip); the answer is kept in the row and teaches the clip to an own sound. What
+a sound sensor never does: understand speech (§2).
+
 ## 6. Image sources
 
 | Source | Details |
@@ -438,7 +507,7 @@ Video upload: one frame every *N* seconds (default 5), near-duplicates skipped b
 hash, then the current model suggests a label for each frame. Upload and ZIP sizes are capped
 (`UPLOAD_LIMITS`). A single camera can feed multiple sensors, each with its own ROI.
 
-Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
+A sound sensor's address is checked when it is saved and again by its stream, since FFmpeg would open a local file too. Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
 pseudo-protocols), a camera an entity ID. A snapshot (a URL's or a Home Assistant camera's) is read
 up to `RUNTIME["max_frame_mb"]`, and every image is refused above `RUNTIME["max_image_megapixels"]`
@@ -548,8 +617,7 @@ unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`)
 device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
 without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_trigger`. The button is "Read now".
-Four more entities with `enabled_by_default: false` (nothing changes for users who do not turn
-them on): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+Four more entities exist only when chosen on the sensor's Home Assistant tab (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
 `settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
 memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
@@ -558,7 +626,7 @@ counter's unit via `settings.READING_RATE_UNITS`: kWh → kW power, m³ → m³/
 flow rate, else `<unit>/h`; `suggested_display_precision` from `mqtt.rate_precision`: enough
 decimals for the counter's smallest rise over the window, as Home Assistant otherwise showed
 0.03 m³/h as 0). A sensor that stops being a counter loses its rate entity. A fifth,
-*Reader image* (`image`, `reader_image`, diagnostic, also off by default), is the image the reader
+*Reader image* (`image`, `reader_image`, diagnostic, chosen in the same way), is the image the reader
 saw at the last reading (the region after display processing), as on the Live tab.
 
 Plus one app-wide **VisionState** device with `sensor.visionstate_review_queue` (frames waiting
@@ -566,6 +634,14 @@ for review; attributes: per-sensor breakdown, `oldest_waiting_since`). The revie
 uses Home Assistant's REST API (`persistent_notification`, `notify`), not MQTT.
 
 Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_trigger`.
+
+**Sound sensors** have one `binary_sensor` per sound (`mqtt.sound_topics`, unique ID
+`visionstate_<slug>_<sound key>`): `device_class: smoke` for smoke and fire alarms (decided
+2026-10-29; DOCS.md says it is no replacement for a smoke detector), `sound` for the others, and
+the pause switch; no frame and no "check now". A sound no longer listened for (or an own sound
+forgotten) loses its entity; each sound can be chosen away on the Home Assistant tab. Only changes
+are published: on/off, no scores. Paused, its sounds go off. It becomes unavailable only after
+`SOUND["offline_after_s"]` without audio: a reconnect is not news, and "no sound" is logged once.
 
 **Nothing changes at every check unless the result does** (decided 2026-10-26): the recorder of
 Home Assistant writes a state row for every `state_changed` event, which an MQTT entity fires when
@@ -582,8 +658,53 @@ Every other value is sent only when it differs from what that topic got last
 only throw it away. What was sent is forgotten when discovery is published (MQTT connected again,
 a sensor changed), so nothing waits for a change after the broker or Home Assistant restarted.
 
+**What a sensor has in Home Assistant** (decided 2026-10-31; the Home Assistant tab, one place
+instead of a choice here and a switch there). `mqtt.entity_options` lists what can be chosen, with
+its default (off: `settings.HA_ENTITIES_NOT_BY_DEFAULT` and the snapshots); `sensor.ha_entities`
+holds what was chosen against it, and `sensor.in_ha` off means no entities at all. What is chosen
+exists and is on: there is no `enabled_by_default` any more, as a second switch in Home Assistant
+would only make the tab wrong. Nothing is sent for what is not chosen (`mqtt.muted_topics`), so
+the broker holds no pictures nobody asked for.
+
+- *Removing is confirmed, once.* A patch first empties the configs and values with MQTT QoS 1
+  (`mqtt.MqttBridge.remove_confirmed`) and only then stores the choice; without a connection it
+  refuses (503) and nothing changes. Discovery only announces what is chosen, so nothing brings an
+  entity back, and no removal is repeated at every connection. The broker's answer does not prove Home
+  Assistant got it, but the tab is only reached through Ingress, so Home Assistant is running.
+  Without a broker at all there is nothing to remove.
+- *Home Assistant remembers a removed entity* (seen on 2026.10): when the same unique ID comes back it
+  gets its entity ID, name and switched-off state again. So what was ticked is switched on through the
+  entity registry, once (`engine.runtime.Runtime._enable_chosen`, which makes Home Assistant reload
+  its MQTT entities after about 30 s); one the user switches off there later stays off.
+- *Sensors from before the tab* have `ha_entities` null: what they had stays until
+  `engine.publishing.PublishingMixin.settle_entity_choices` reads Home Assistant's entity registry once
+  (`ha_events.our_enabled`): what is on there stays chosen, what is off there is removed. Changing
+  `enabled_by_default` alone would not have done it: Home Assistant uses it only when it first creates
+  an entity, and the tab would have shown as on what is off.
+- *Snapshots* (`image.…_<object>_snapshot`, object sensors; `imaging.snapshot`, tunables
+  `snapshot_*` in `settings.PUBLISH`, `engine.publishing.PublishingMixin._send_snapshot`): the union of
+  the object's boxes with a margin, at least a minimum size, kept inside the bounding box of the
+  region, so it shows nothing the sensor's *Last frame* does not. No boxes drawn. Sent when the count
+  changes or the boxes moved, not at a refresh (retained on the broker, so it survives restarts with
+  no table or folder; a parked car would otherwise add a row every few minutes), and before the
+  state, so an automation the state starts finds this picture. Nothing is sent when the object is
+  gone: the last one is what "last seen" should show. Not one entity per object (a changing number
+  of entities does not fit automations). Frigate's per-event picture URLs need its own integration;
+  here it is MQTT only, so an automation gets the newest picture.
+  *Shape* (`snapshot_aspect` in `settings.OBJECT_DEFAULTS`, discussion #62): free text on the Home
+  Assistant tab, as near as the region allows; the object is never cut and nothing is padded or
+  stretched, so a picture may miss the shape. *Movement* (`snapshot_move`): at a check the union of
+  the boxes is compared with that of the last picture sent (`imaging.box_change`), not of the last
+  check, so jitter does not add up and slow movement does. The default stands above what the
+  detector does to objects that stand still (the CC0 photos shifted a few pixels, 2026-11-01: up to
+  5 % with the same boxes, 15 % when a weak box's edge jumps); a weak box that comes and goes changes
+  the count, which sends a picture whatever this limit says. A picture is at most one per check and
+  each is a Home Assistant row, which is why it is a limit and the snapshot stays opt-in. Saving
+  pictures to files is left to an automation (Home Assistant's `image.snapshot`): keeping them is
+  an NVR's job, not decided here.
+
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
-removes its entities. **Send to Home Assistant** (`sensor.publish`, default
+removes its entities. **Don't send values** (`sensor.publish`, default
 `settings.SENSOR_PUBLISH_DEFAULT`, DB migration 9 keeps existing sensors on): when off, discovery
 stays (the entities and the IDs the user gave them are kept), but no value is published (the
 engine routes every sensor value through `_send`) and the sensor's availability topic is
@@ -607,9 +728,10 @@ outside Home Assistant it shows the expected IDs.
 Principle: **easy by default, details on demand.** Dark theme, responsive.
 
 1. **Dashboard** — cards per sensor: live thumbnail, state, confidence, 24 h timeline, health.
-2. **New sensor wizard** — camera → region → *detect*: states (names), objects (popular
-   first, all 80 behind "Show all") or a reading (display or counter), each tested on a fresh
-   frame → optional triggers.
+2. **New sensor wizard** — camera (a small picture from it, with a warning about a low-resolution
+   stream) → *detect*: states (names), objects (popular first, all 80 behind "Show all") or a
+   reading (display or counter), with the region drawn right there, because what a good region is
+   depends on the kind; objects and readings are tested on a fresh frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
 4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
@@ -639,15 +761,15 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     (`newer_than` = the newest row when loaded) and shown on request, so the list never moves
     under a finger. Index `(sensor_id, created_at, id)`; indexes added later are created at start-up.
 
-Reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
+Every sensor has a **Home Assistant** tab (§8). Besides it, reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
 image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
 the rejected and checked readings with *read correctly* / *misread*), **History** (new values
 and rejected readings) and **Settings** (mode,
 decimals, unit, device class, display, limits). The reading settings start with the type —
 *digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
-the region in the wizard and on the Settings tab).
+the region in the wizard and on the Settings tab, a straightened region's in its perspective, inside it).
 
-Object sensors have three tabs instead: **Live** (the exact analysed frame with its boxes and
+Object sensors have three instead: **Live** (the exact analysed frame with its boxes and
 per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
 boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
 was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
@@ -656,14 +778,20 @@ something was taught, so a sensor that was never taught looks exactly as before.
 change together with the frame they belong to, so the page does not move while the next frame
 loads.
 
+Sound sensors have **Live** (the level against its line, each sound's score against its threshold,
+the stream), **Own sounds** (the Quality tab's place: teaching and forgetting own sounds),
+**History** (heard / no longer heard, clips played after a tap) and **Settings** (sounds, levels,
+clips).
+
 ## 10. Data model & extensibility
 
 - SQLite; schema version in `PRAGMA user_version` (`db.SCHEMA_VERSION`) with additive migrations
   (`db.MIGRATIONS`). An older version started on a newer database ignores the columns it does not
   know (rollback works; checked by the upgrade test).
 - `sensor.kind`: `single_state`, `objects` (`sensor.objects` holds the fields of
-  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`) or `reading`
-  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`); reserved for `multi_label`. Every reading is
+  `settings.OBJECT_DEFAULTS`, the classes and the own labels `custom`), `reading`
+  (`sensor.reading` holds the fields of `settings.READING_DEFAULTS`) or `sound` (`sensor.sound`, the
+  fields of `settings.SOUND_DEFAULTS`); reserved for `multi_label`. Every reading is
   counted per sensor and local day in `reading_stat` (reads, accepted, rejected per reason);
   every rejected reading is a `prediction` row with its frame and `review_reason` "rejected"
   (one while the same reading waits for review, see §7)
@@ -691,6 +819,7 @@ loads.
 | Thumbnails of training images | `/data/thumbs/sample/` | Excluded (made again when asked for) |
 | The people's taught faces (crops, shared by every sensor) | `/data/faces/` | Yes |
 | History frames | `/media/visionstate/history/` (beta: `/media/visionstate_beta`) | With the media folder. Limits: 7 days and 2 GB by default, whichever comes first (see below) |
+| Sound clips of the history (`.m4a`, or `.mp4` with video) | `/data/clips/<sensor>/` (`Settings.clips_dir`; not the media folder: a clip may hold voices) | Yes; the same limits as history frames |
 
 What the user taught lives in `/data`, next to the database that lists it: Home Assistant backs up
 an app's `/data` (also by itself before every update) but not the media folder, so training
@@ -742,12 +871,13 @@ as a busy database would otherwise stop every sensor, MQTT and the API with it.
   `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
   region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 5`; 4 had no `"confidence_rule"`, 3 no `"box"`, 2 left out
+  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 7`; 6 had no pointer dials, 5 no `"straightened"`, 4 no `"confidence_rule"`, 3 no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
   seconds since the oldest reading; per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
   the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability (the one the confidence is made
-  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction), the reading
+  of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction; a meter's
+  pointer dials as more rows with where the needle was found, and each dial's picture as read), the reading
   settings without anything that tells where the sensor is (no source, name or region), the
   user's optional "What meter is this?" text, a README and a CC0 LICENSE — shared images may then
   be used in tests and evaluations. Images are crops of the stored frames at their resolution.
@@ -856,16 +986,22 @@ is part of backups and needs no restart.
 | **Backup of everything** ✅ | One file with everything (parts to leave out, camera passwords only when ticked), a restore that replaces it and keeps the entities, backups of every database version kept in the tests; uploads over 16 MB through Ingress; much less memory (no ONNX Runtime arena, classifier without scikit-learn) | 0.10.0 (betas 0.10.0b1–b7) |
 | **Wheel reader v2** ✅ | Benchmark, `wheels-v2` (cells with context, weakest-wheel confidence) the default for new counters, counters keep the wheel reader they read with, exports say where the region is in each image | 0.10.1 (betas 0.10.1b1–b4) |
 | **Lighter on Home Assistant** ✅ | Far fewer recorder rows and MQTT messages (values sent when they change, pictures and boxes at a change or every few minutes), less CPU per check, RTSP streams kept open during bursts, history keeps the camera's own JPEG, pages rest while hidden | 0.11.0 (betas 0.11.0b1–b2) |
+| **Straightened reading regions** ✅ | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
+| **Pointer dials** ✅ | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, at night, and placing dials by hand on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
+| **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object, with its shape and a new picture when it moves (discussion #62) | 0.13.0 (betas 0.12.0b6–0.13.0b6) |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
 import of a backup;
 less camera traffic (reuse the engine's latest frame in the UI);
 video de-duplication on the ROI instead of the full frame; light theme following Home
-Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md): pointer
-dials and gauges; several readings per sensor (a sign with four prices, a
-counter plus its dials); per-sensor model
+Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) and
+[`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md): gauges; several readings per sensor (a sign with
+four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
-detector) — until then, a state sensor covers many of them ("parcel on the doorstep").
+detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
+sensors: a Home Assistant camera's own sound, stock ESPHome microphones, telling a built-in sound
+it was wrong (a veto from "no" answers), CLAP sounds described by a text.

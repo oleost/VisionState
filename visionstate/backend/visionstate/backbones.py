@@ -3,7 +3,8 @@
 Available backbones are declared in ``backbones.json``; adding a model is a new entry there.
 Entries are never changed or removed once released, so a stored choice keeps working.
 Run ``python -m visionstate.backbones <dest>`` to download all bundled models (backbones,
-detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloaded on first use. ``download``/``locate`` work for every kind of spec.
+detectors, readers) for the Dockerfile and CI; ``--all`` adds the ones downloaded on first use (a
+model whose ``url`` is still empty, not published yet, is skipped). ``download``/``locate`` work for every kind of spec.
 """
 
 from __future__ import annotations
@@ -249,8 +250,8 @@ class Embedder:
 
 def all_specs() -> list:
     """Every model of every registry: backbones (states), detectors (objects), readers and wheel
-    readers (readings), the face detector and recognisers."""
-    from . import detectors, faces, readers
+    readers (readings), the face detector and recognisers, the sound models."""
+    from . import detectors, faces, readers, sounds
 
     return [
         *BACKBONES.values(),
@@ -259,6 +260,7 @@ def all_specs() -> list:
         *readers.WHEEL_READERS.values(),
         faces.DETECTOR,
         *faces.RECOGNISERS.values(),
+        *sounds.MODELS.values(),
     ]
 
 
@@ -269,5 +271,7 @@ if __name__ == "__main__":
     # Every bundled model; with --all also the ones downloaded on first use (the face models are
     # never bundled), for the tests of every model.
     for spec in all_specs():
-        if spec.bundled or "--all" in sys.argv:
+        if not spec.url:  # not published yet (tools/soundmodel/README.md): made by hand meanwhile
+            print(f"{spec.id}: not published yet, skipped", file=sys.stderr)
+        elif spec.bundled or "--all" in sys.argv:
             print(download(spec, destination))

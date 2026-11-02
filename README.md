@@ -6,8 +6,8 @@
 </p>
 
 <p align="center">
-  <b>Turn your cameras into Home Assistant sensors — with a local AI you teach in minutes.</b><br>
-  Is the garage door open? Who just came home, and is that our car? What does the water meter say?
+  <b>Turn your cameras and microphones into Home Assistant sensors — with a local AI you teach in minutes.</b><br>
+  Is the garage door open? Who just came home, and is that our car? What does the water meter say? Is the smoke alarm going off?
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
   <img src="docs/promo/dashboard.png" alt="VisionState with a driveway, a garage door and a water meter sensor" width="900">
 </p>
 
-## Three kinds of sensor
+## Four kinds of sensor
 
 ### 🚪 States
 
@@ -53,6 +53,17 @@ Pick from 80 objects — no training. Name people by their face once; every came
   <em>A few photos from your phone are enough to start; faces never leave your Home Assistant.</em>
 </p>
 
+### 🔊 Sounds
+
+*The smoke alarm is going off*, a siren, the dog barking, the baby crying — and your own doorbell or the washing machine beeping when it is done.
+
+Pick from about 80 sounds, or teach your own from a few clips. A camera's microphone or an ESP32 with a microphone; it hears what kind of sound it is, never what is said.
+
+<p align="center">
+  <img src="docs/promo/sound.png" alt="A sound sensor hearing a smoke alarm, with its level and each sound's score" width="900"><br>
+  <em>A smoke alarm heard in the hallway; the doorbell is an own sound, taught from a few clips.</em>
+</p>
+
 ### 🔢 Readings
 
 *The water, gas or power meter*, the minutes left on the washer.
@@ -62,8 +73,10 @@ Draw a box around the number. Counters only go up and land in the Energy dashboa
 ## Read a water, gas or power meter with an ESP32-CAM
 
 Put an ESP32-CAM (or any camera) above the meter, add it to Home Assistant with ESPHome or use its
-snapshot URL, and draw a box around the digits. VisionState reads the rolling wheels of a
-mechanical water or gas meter and the digits of an LCD or LED power meter, checks every value
+snapshot URL, and draw a box around the digits — a camera that cannot hang straight sees the
+meter turned or at an angle: put the box's corners on it, and it is read upright. VisionState reads the rolling wheels of a
+mechanical water or gas meter — down to the litre with the small pointer dials many water meters
+have — and the digits of an LCD or LED power meter, checks every value
 before it is published (a counter never goes down or jumps), and the total lands in the Energy
 dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
 on for each reading; a battery camera can trigger a check when it has a new picture.
@@ -77,7 +90,7 @@ on for each reading; a battery camera can trigger a check when it has a new pict
 
 - 🧠 **100 % local on any CPU** — Intel, AMD, Raspberry Pi 4/5. No cloud, no GPU, no subscription, no telemetry.
 - 🏠 **Native Home Assistant** — a sidebar app; every sensor is a normal device through MQTT discovery.
-- 🎥 **Any camera** — every `camera.*` entity (an ESP32-CAM with ESPHome, Reolink, Frigate …), or an RTSP / HTTP snapshot URL.
+- 🎥 **Any camera** — every `camera.*` entity (an ESP32-CAM with ESPHome, Reolink, Frigate …), or an RTSP / HTTP snapshot URL; for sound, a camera's RTSP stream or an ESP32 microphone.
 - 🎯 **Watch only what matters** — draw a region around the door or the driveway; the rest is ignored.
 - ⚡ **Checks when something happens** — on motion, a door contact or a change in the image, and can switch on a light for a camera in the dark.
 - 🔁 **Gets better as you use it** — unsure frames go to a review queue, wrong boxes are fixed with a tap, and suspicious labels are flagged.
@@ -91,6 +104,7 @@ on for each reading; a battery camera can trigger a check when it has a new pict
 
 - **State sensor** — the state with its confidence, the last frame, a button to check now and a switch to pause it.
 - **Object sensor** — an on/off sensor and a count for every object, person and own label.
+- **Sound sensor** — an on/off sensor for every sound it listens for (a smoke alarm as a *smoke* sensor), on while it is heard.
 
 Use them like any other sensor — for example, tell me when the garage door has been open for
 10 minutes:
@@ -110,13 +124,13 @@ actions:
 ## Install
 
 **Requirements:** Home Assistant OS or Supervised (2025.10 or newer), the **Mosquitto broker** app
-with the **MQTT** integration, and a camera.
+with the **MQTT** integration, and a camera (for sound: a camera with a microphone, or a microphone of its own).
 
 1. Click **Add repository** above — or add `https://github.com/oleost/VisionState` under
    **Settings → Apps → App store → ⋮ → Repositories**.
 2. Install **VisionState**, start it and open it from the sidebar.
-3. **New sensor** → pick a camera, draw a region, choose what to watch. The wizard tests it on a
-   fresh frame right away.
+3. **New sensor** → pick a camera, choose what to watch and draw a region around it. The wizard
+   tests it on a fresh frame right away.
 
 New features come to a separate **beta** app first: add `https://github.com/oleost/VisionState#beta`
 instead. Run only one of the two at a time (they publish the same sensors); move everything with
@@ -145,8 +159,12 @@ Home Assistant
   clear one is compared ([SFace](https://github.com/opencv/opencv_zoo), or
   [AuraFace](https://huggingface.co/fal/AuraFace-v1) on a fast PC) with the faces you named.
 - **Readings:** [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) reads digits; mechanical
-  counters use a small wheel reader made for VisionState ([`tools/wheelreader`](tools/wheelreader)).
+  counters use a small wheel reader made for VisionState ([`tools/wheelreader`](tools/wheelreader)),
+  read together with the meter's pointer dials.
   Every value is checked before it is published.
+- **Sounds:** [CED-Tiny](https://huggingface.co/mispeech/ced-tiny) listens to what is loud enough and
+  tells which sound it is; your own sounds are learned from its embedding of your clips
+  ([`tools/soundmodel`](tools/soundmodel)).
 
 ## Privacy & security
 
@@ -156,6 +174,9 @@ Home Assistant
   tick it.
 - Face recognition is off until you turn it on for a camera; faces are kept in the app's own
   storage and exported only if you tick it (a backup holds them unless you untick it).
+- A sound sensor hears what kind of sound it is, never what is said: there is no speech
+  recognition. Clips are off until you turn them on, and the seconds in which someone talks are
+  silenced before a clip is kept.
 
 ## Contributing
 
@@ -168,7 +189,8 @@ locally against a fake camera, checks, UI tests on desktop and phones) and
 
 [Apache-2.0](LICENSE). Bundled models: DINOv2 (Meta), D-FINE, PaddleOCR PP-OCRv6 and the
 VisionState wheel reader, all Apache-2.0. Face models, downloaded only when a camera recognises
-faces: YuNet (MIT), SFace or AuraFace (Apache-2.0). The screenshots use CC0 and public-domain
+faces: YuNet (MIT), SFace or AuraFace (Apache-2.0). The sound model, downloaded when the first sound
+sensor is made: CED-Tiny (Apache-2.0, trained on AudioSet). The screenshots use CC0 and public-domain
 images.
 
 If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕

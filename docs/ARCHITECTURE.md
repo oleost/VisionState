@@ -15,8 +15,9 @@ scripts/                channel.py (stable/beta config), fake_camera.py (test ca
                         (the demo sensors), CI helpers:
                         check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py
 tools/wheelreader/      training code of the wheel reader model (not part of the app image)
+tools/soundmodel/       how the sound model and its everyday "other" sounds are made (not part of the app image)
 docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md,
-                        FACE_RECOGNITION_PLAN.md, promo/ (README images)
+                        FACE_RECOGNITION_PLAN.md, SOUND_PLAN.md, promo/ (README images)
 .github/                CI workflow, Dependabot, issue forms
 ```
 
@@ -53,19 +54,21 @@ API as `request.app.state.runtime`.
 | `__main__.py`, `main.py` | Entry point (logging, uvicorn), FastAPI app, Ingress-only guard, static UI (hashed assets kept by the browser: `HashedAssets`) |
 | `settings.py` | **Every** default, limit and tunable, the app options (`Settings`), the `merge_*` helpers that fill a stored setting with defaults |
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
-| `storage.py` | Image files on disk: training samples, history frames, thumbnails; written whole or not at all |
+| `storage.py` | Image files on disk: training samples, history frames, sound clips, thumbnails; written whole or not at all |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
-| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips and recordings), `cameras.py` (camera and entity lists, the light, previews), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
+| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
-| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry |
+| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
+| `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or darker, at night), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
 | `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
+| `sounds.py` | The sound model (registry `sounds.json`, never bundled) and its sounds; levels and the line a window must reach; clips (AAC, speech silenced); the head for own sounds (`SoundHead`) and the everyday sounds every head starts from (`ced-tiny-other.npy`) |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
@@ -79,7 +82,8 @@ parts it uses — its class line says what it depends on:
 ```
 Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, TeachingMixin ── ModelsMixin ── TrainingMixin
         │                │                    └─ PublishingMixin
-        │                └─ ReadingChecksMixin ── ModelsMixin, PublishingMixin
+        │                ├─ ReadingChecksMixin ── ModelsMixin, PublishingMixin
+        │                └─ SoundMixin ── ModelsMixin, PublishingMixin
         ├─ HistoryMixin ── PublishingMixin                (all of them on RuntimeBase)
         └─ RemindersMixin ── PublishingMixin
 ```
@@ -89,14 +93,15 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `base.py` | `RuntimeBase`: the shared state (`__init__`), loading a sensor, its live state, waking it |
 | `runtime.py` | Lifecycle (start/stop), sensors coming and going, waking a sensor, triggers |
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
-| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next, looking for a face while a person is there (`steer_face_burst`) |
+| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next, looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
 | `checks.py` | Each sensor's loop, change detection (probe), the light, `run_once` and the state sensors' check |
 | `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
+| `sound.py` | Sound sensors: the sound model (on first use), listening (`_listen`, every hop instead of a check), deciding and publishing each sound, history rows, clips, review questions, own sounds (`train_sound_head`, the room's windows) |
 | `teaching.py` | Taught boxes of object sensors (index, embeddings) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
-| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`), the review queue entity, commands from it |
+| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`; an object's snapshot: `_send_snapshot`; what the sensor's Home Assistant tab leaves out is not sent), the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
 | `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
@@ -113,6 +118,8 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
       state sensor   → checks._run_states  backbone embedding → head → probabilities
       object sensor  → objects._run_objects detector → taught boxes (teaching) → faces → tracks (logic)
       reading sensor → reading._run_reading reader → parse → plausibility (change_limit) → debounce
+  sound sensor (instead of all of the above, every hop): sound._listen  what the stream received →
+      levels → loud enough? → model (sounds + embedding → own sounds' head) → logic.hear → clips
         │
         ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image
         └─ history: a Prediction row + frame, when the value changed or the frame goes to review
@@ -131,8 +138,9 @@ error is kept in `LiveState.error` and shown in the UI.
   the media folder (see `storage.Storage.face_path`).
 - **Files**: `<data>/samples/<sensor>/` (training images; for object sensors the crops of taught
   boxes — next to the database that lists them, so a backup holds both), `<data>/thumbs/sample/`,
-  `<data>/heads/` (trained heads, `<sensor id>.npz`), `<data>/models/` (downloaded models; models and thumbnails are
-  left out of backups); `<media>/history/<sensor>/` and `<media>/thumbs/history/`. Versions before
+  `<data>/heads/` (trained heads, `<sensor id>.npz`; a sound sensor's room, `<sensor id>.room.npy`), `<data>/models/` (downloaded models; models and thumbnails are
+  left out of backups); `<media>/history/<sensor>/` and `<media>/thumbs/history/`; sound clips of
+  the history in `<data>/clips/<sensor>/` (`Storage.history_path` puts a clip there by its suffix). Versions before
   the move kept training images in `<media>/samples/`: they are read there until
   `engine.HistoryMixin.move_samples` has copied them (`settings.SAMPLES_MOVE`). A file is removed
   only after the row that lists it (`db.Database.after_commit`), and an image that is gone anyway
@@ -141,7 +149,9 @@ error is kept in `LiveState.error` and shown in the UI.
 - **Object sensors' taught boxes** are `sample` rows with `object_label`, `detected`, `box` and
   `score`; own labels live in `sensor.objects["custom"]`. Readings and object events are
   `prediction` rows (see `db.py`).
-- **Settings of a sensor** that have many fields (`triggers`, `objects`, `reading`, `review`) are
+- **Sound sensors' taught clips** are `sample` rows whose `object_label` is an own sound's key or
+  `other`, the file a clip; own sounds live in `sensor.sound["custom"]`.
+- **Settings of a sensor** that have many fields (`triggers`, `objects`, `reading`, `sound`, `review`) are
   stored as JSON and always read through `settings.merge_*`, so a field added later gets its
   default for existing sensors without a migration.
 
@@ -156,10 +166,10 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/poll.ts` | Polling that rests while the page is hidden (`pollWhileVisible`: status, dashboard, sensor page) |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
-| `lib/objects.ts`, `lib/reading.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, region geometry, formatting |
+| `lib/objects.ts`, `lib/reading.ts`, `lib/sound.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, sounds, region geometry, formatting |
 | `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, states, limits that inherit (`LimitsEditor`)…) |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, a counter's pointer dials (`DialsEditor`, on the meter face `POST /preview/read` returns), a reading sensor's *Correct rotation and perspective* switch shown with the region (`StraightenSwitch`), *Edit: Counter | Dials* (`CounterDialsSwitch`), what is done to a whole region (`RegionButtons`), states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`; each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question |
 
 ## Recipes
 
@@ -171,9 +181,16 @@ error is kept in `LiveState.error` and shown in the UI.
    defaults and limits come from `/config`, never hard-coded.
 5. Tests: backend (`tests/test_reading.py`), and an e2e step when it changes the UI.
 
+**A new sound** (one the model can hear): an entry in `sounds.json` (`group`, `classes`, `threshold`,
+`device_class`, an icon of the set Home Assistant ships). Its key never changes once released, and
+no two sounds share a class (`tests/test_sound.py` checks). The picker lists it by its group;
+its threshold is a best guess users tune; `popular` (shown first) is for the ones recognised well
+on real recordings (docs/SOUND_PLAN.md §5).
+
 **A new Home Assistant entity**: its topic in `mqtt.topics` / `object_topics`, its discovery
 config in the builder of its kind in `mqtt.py` (`_state_entities`, `_object_entities`,
-`_reading_entities`; every sensor's: `discovery_messages`), the value from the engine through `self._send`, removal in
+`_reading_entities`; every sensor's: `discovery_messages`), when it can be chosen its line in
+`mqtt.entity_options`, the value from the engine through `self._send`, removal in
 `MqttBridge.remove_discovery`. Unique IDs and topics are never changed once released (entity IDs
 in Home Assistant hang on them).
 

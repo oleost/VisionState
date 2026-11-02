@@ -56,10 +56,22 @@ def our_entity_ids(registry: list[dict]) -> dict[str, str]:
     }
 
 
+def our_enabled(registry: list[dict]) -> set[str]:
+    """The unique IDs of our MQTT entities that are not switched off in Home Assistant."""
+    ids = our_entity_ids(registry)
+    return {e["unique_id"] for e in registry if e.get("unique_id") in ids and not e.get("disabled_by")}
+
+
 async def fetch_entity_ids(url: str, token: str) -> dict[str, str]:
     """The entity IDs Home Assistant gave our entities: they may end in _2, or the user changed them."""
+    return our_entity_ids(await fetch_registry(url, token))
+
+
+async def _registry_commands(url: str, token: str, commands: list[dict]) -> list:
+    """The results of commands to Home Assistant's entity registry, one connection, in order."""
     from websockets.asyncio.client import connect
 
+    results = []
     async with connect(url, max_size=None) as ws:
         first = json.loads(await ws.recv())
         if first.get("type") == "auth_required":
@@ -67,14 +79,27 @@ async def fetch_entity_ids(url: str, token: str) -> dict[str, str]:
             auth = json.loads(await ws.recv())
             if auth.get("type") != "auth_ok":
                 raise RuntimeError(f"authentication failed: {auth.get('message', auth.get('type'))}")
-        await ws.send(json.dumps({"id": 1, "type": "config/entity_registry/list"}))
-        while True:
-            message = json.loads(await ws.recv())
-            if message.get("id") == 1 and message.get("type") == "result":
-                break
-    if not message.get("success"):
-        raise RuntimeError(f"entity registry: {message.get('error', {}).get('message')}")
-    return our_entity_ids(message.get("result") or [])
+        for number, command in enumerate(commands, start=1):
+            await ws.send(json.dumps({"id": number, **command}))
+            while True:
+                message = json.loads(await ws.recv())
+                if message.get("id") == number and message.get("type") == "result":
+                    break
+            if not message.get("success"):
+                raise RuntimeError(f"entity registry: {message.get('error', {}).get('message')}")
+            results.append(message.get("result"))
+    return results
+
+
+async def fetch_registry(url: str, token: str) -> list[dict]:
+    """Home Assistant's entity registry."""
+    return (await _registry_commands(url, token, [{"type": "config/entity_registry/list"}]))[0] or []
+
+
+async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
+    """Switch these entities on in Home Assistant."""
+    update = "config/entity_registry/update"
+    await _registry_commands(url, token, [{"type": update, "entity_id": e, "disabled_by": None} for e in entity_ids])
 
 
 class HaEventListener:

@@ -77,6 +77,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             }
             if index is not None:
                 attributes["filtered"] = sum(1 for d in found if d.get("filtered") and d["key"] == key)
+            await self._send_snapshot(cfg, key, image, attributes["boxes"], track.count if track.on else 0)
             await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
             await self._send(cfg, ot["count"], str(track.count), retain=True)
             shows = (track.on, track.count, live.last_trigger, attributes.get("filtered"))

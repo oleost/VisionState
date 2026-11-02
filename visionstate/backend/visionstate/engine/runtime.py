@@ -11,13 +11,14 @@ from sqlalchemy import select
 
 from .. import backbones, classifier, detectors, faces, readers
 from ..db import Database, Sensor
-from ..ha_events import HaEventListener, fetch_entity_ids
+from ..ha_events import HaEventListener, enable_entities, fetch_registry, our_enabled, our_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
-from ..settings import KIND_OBJECTS, KIND_READING, KIND_STATES, RUNTIME, Settings, merge_triggers
+from ..settings import KIND_OBJECTS, KIND_READING, KIND_SOUND, KIND_STATES, RUNTIME, Settings, merge_triggers
 from .checks import ChecksMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
 from .reminders import RemindersMixin
+from .sound import room_path
 from .state import SensorConfig
 
 log = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
         await self.faces_settled()  # sensors that recognise faces: load the face model in the background
+        self._spawn(self.sound_settled())  # sound sensors with own sounds: their heads
         await self.refresh_trigger_entities()
         self.ha_events.start()
         self.mqtt.start()
@@ -87,6 +89,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await action(self.mqtt)
 
     async def stop(self) -> None:
+        for sensor_id in list(self.live):
+            self.stop_listening(sensor_id)
         for handle in self._retrain_handles.values():
             handle.cancel()
         for task in [*self._tasks.values(), *self._background]:
@@ -103,6 +107,9 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.embedder = self.detector = self.reader = None
         self.wheel_readers.clear()
         self.face_model = self.face_index = None
+        self.sound_model = None
+        self.sound_heads.clear()
+        self.sound_room.clear()
         self.heads.clear()
         self.taught.clear()
         self.live.clear()
@@ -113,7 +120,10 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         last_error = ""
         while True:
             try:
-                self.ha_entity_ids = await fetch_entity_ids(self.ha_events.url, self.ha_events.token)
+                registry = await fetch_registry(self.ha_events.url, self.ha_events.token)
+                self.ha_entity_ids = our_entity_ids(registry)
+                await self.settle_entity_choices(our_enabled(registry))
+                await self._enable_chosen(registry)
                 last_error = ""
             except asyncio.CancelledError:
                 raise
@@ -129,6 +139,17 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
                 continue
             await asyncio.sleep(RUNTIME["entity_registry_delay_s"])  # let Home Assistant create the entities
 
+    async def _enable_chosen(self, registry: list[dict]) -> None:
+        """Entities just ticked on a sensor's Home Assistant tab are on there, once. Home Assistant
+        gives a removed entity that comes back what it had, so one that was switched off stays off.
+        One switched off there later is the user's own choice and is left alone."""
+        found = [e for e in registry if e.get("unique_id") in self.enable_in_ha]
+        off = [e["entity_id"] for e in found if e.get("disabled_by")]
+        if off:
+            await enable_entities(self.ha_events.url, self.ha_events.token, off)
+            log.info("Switched on in Home Assistant, as chosen: %s", ", ".join(off))
+        self.enable_in_ha -= {e["unique_id"] for e in found}
+
     def _start_loop(self, sensor_id: int) -> None:
         self._wake.setdefault(sensor_id, asyncio.Event())
         if sensor_id not in self._tasks or self._tasks[sensor_id].done():
@@ -142,6 +163,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if cfg and cfg.is_objects:
             await self.faces_settled()  # made with face recognition on (the wizard)
+        if cfg and cfg.is_sound and cfg.sound["custom"]:
+            await self.train_sound_head(cfg)  # imported with own sounds
 
     async def sensor_updated(self, sensor_id: int, retrain: bool) -> None:
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
@@ -157,6 +180,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             await self.faces_settled()
         if cfg.kind == KIND_READING:
             await self.release_wheel_readers()  # a counter may read with another one now
+        if cfg.is_sound:
+            await self.train_sound_head(cfg)  # own sounds, or learning the room, may have changed
         self.wake(sensor_id)
 
     async def sensor_deleted(self, sensor_id: int, descriptor: SensorDescriptor) -> None:
@@ -165,7 +190,11 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         task = self._tasks.pop(sensor_id, None)
         if task:
             task.cancel()
+        self.stop_listening(sensor_id)
         self.live.pop(sensor_id, None)
+        self.sound_heads.pop(sensor_id, None)
+        self.sound_room.pop(sensor_id, None)
+        room_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)
         self.heads.pop(sensor_id, None)
         self.taught.pop(sensor_id, None)
         self._person_last = {k: v for k, v in self._person_last.items() if v[1] != sensor_id}
@@ -184,6 +213,8 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
             self.reader = None
         if descriptor.kind == KIND_READING:
             await self.release_wheel_readers()
+        if descriptor.kind == KIND_SOUND and not await asyncio.to_thread(self._sensor_ids, KIND_SOUND):
+            self.sound_model = None
         await asyncio.to_thread(backbones.release_memory)
 
     def set_global_review(self, rules: dict) -> None:

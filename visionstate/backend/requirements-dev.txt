@@ -1,5 +1,5 @@
 -r requirements.txt
-pytest==9.1.1
-ruff==0.16.9
+pytest==9.2.0
+ruff==0.17.3
 pytest-cov==7.1.0
-pyright==1.1.408
+pyright==1.1.414

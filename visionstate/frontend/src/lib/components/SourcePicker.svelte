@@ -5,7 +5,16 @@
   import { app } from '../app.svelte';
   import type { Camera } from '../types';
 
-  let { sourceType = $bindable('ha_camera'), source = $bindable('') }: { sourceType: string; source: string } = $props();
+  let {
+    sourceType = $bindable('ha_camera'),
+    source = $bindable(''),
+    ondone,
+  }: {
+    sourceType: string;
+    source: string;
+    /** A URL has been typed (the field was left, or Enter), or a type picked with a URL in it. */
+    ondone?: () => void;
+  } = $props();
 
   let cameras = $state<Camera[]>([]);
   let error = $state('');
@@ -32,6 +41,7 @@
   function pickUrl(type: string) {
     sourceType = type;
     source = urlSource;
+    ondone?.();
   }
 </script>
 
@@ -78,6 +88,8 @@
         placeholder={sourceType === 'rtsp' ? 'rtsp://user:pass@192.168.1.20:554/stream1' : 'http://192.168.1.20/snapshot.jpg'}
         bind:value={urlSource}
         oninput={() => (source = urlSource)}
+        onblur={() => ondone?.()}
+        onkeydown={(e) => e.key === 'Enter' && ondone?.()}
         aria-label="Source URL"
       />
     {/if}

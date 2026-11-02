@@ -31,7 +31,7 @@ from sqlalchemy.pool import QueuePool
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 18
 
 # Schema upgrades for existing databases, keyed on the version they upgrade to.
 # Each step is a list of (table, column, SQL type) columns to add.
@@ -46,6 +46,8 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     8: [("sensor", "entity_prefix", "BOOLEAN NOT NULL DEFAULT 1")],
     # Existing sensors keep sending to Home Assistant.
     9: [("sensor", "publish", "BOOLEAN NOT NULL DEFAULT 1")],
+    # The sensor's Home Assistant tab; ha_entities stays null until settled (see Sensor.ha_entities).
+    17: [("sensor", "in_ha", "BOOLEAN NOT NULL DEFAULT 1"), ("sensor", "ha_entities", "JSON")],
     10: [
         ("sample", "object_label", "VARCHAR(64)"),
         ("sample", "detected", "VARCHAR(64)"),
@@ -57,6 +59,7 @@ MIGRATIONS: dict[int, list[tuple[str, str, str]]] = {
     # 14: what a counter's limit learns per day (and a new table: reading_watch).
     14: [("reading_stat", "peak", "FLOAT"), ("reading_stat", "total", "FLOAT")],
     15: [("sensor", "frame_size", "JSON")],
+    18: [("sensor", "sound", "JSON")],
 }
 
 
@@ -149,8 +152,8 @@ class Sensor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(128))
-    # settings.SENSOR_KINDS: "single_state" (learned states), "objects" (detector) or "reading"
-    # (number on a display, OCR). Fixed at creation.
+    # settings.SENSOR_KINDS: "single_state" (learned states), "objects" (detector), "reading"
+    # (number on a display, OCR) or "sound" (sounds in a stream's audio). Fixed at creation.
     kind: Mapped[str] = mapped_column(String(32), default="single_state")
     source_type: Mapped[str] = mapped_column(String(32))  # see sources.SOURCE_TYPES
     source: Mapped[str] = mapped_column(String(1024))
@@ -167,12 +170,19 @@ class Sensor(Base):
     objects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Reading sensors: mode, decimals, unit …; see settings.READING_DEFAULTS.
     reading: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Sound sensors: the sounds it listens for, levels, clips …; see settings.SOUND_DEFAULTS.
+    sound: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Older sensors suggest "visionstate_<slug>…" entity IDs to Home Assistant, and keep doing so
     # (also when exported and imported), so entities that come back get the same ID. Newer sensors
     # let Home Assistant name them after the device and entity, like other integrations.
     entity_prefix: Mapped[bool] = mapped_column(Boolean, default=False)
     # Send values to Home Assistant (settings.SENSOR_PUBLISH_DEFAULT). Off: the entities stay unavailable.
     publish: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Off: the sensor has no entities in Home Assistant at all, and nothing is sent for it.
+    in_ha: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # The entities chosen against their default (mqtt.entity_options): entity -> on. Null: made before
+    # this could be chosen, and not settled yet (engine.PublishingMixin.settle_entity_choices).
+    ha_entities: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=dict)
     # Reading sensors: the camera picture's size [width, height] the region was drawn on (taken
     # from the first frame after the region or source changed). A frame of another size holds the
     # readings (engine/reading.py, "camera changed"): the region would show something else.

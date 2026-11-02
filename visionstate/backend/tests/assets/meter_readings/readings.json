@@ -1,0 +1,263 @@
+[
+ {
+  "image": "tolbag-0001.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0001-dial1.jpg",
+   "tolbag-0001-dial2.jpg",
+   "tolbag-0001-dial3.jpg",
+   "tolbag-0001-dial4.jpg"
+  ],
+  "value": "187.2879"
+ },
+ {
+  "image": "tolbag-0002.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0002-dial1.jpg",
+   "tolbag-0002-dial2.jpg",
+   "tolbag-0002-dial3.jpg",
+   "tolbag-0002-dial4.jpg"
+  ],
+  "value": "187.2787"
+ },
+ {
+  "image": "tolbag-0003.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0003-dial1.jpg",
+   "tolbag-0003-dial2.jpg",
+   "tolbag-0003-dial3.jpg",
+   "tolbag-0003-dial4.jpg"
+  ],
+  "value": "187.2788"
+ },
+ {
+  "image": "tolbag-0031.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0031-dial1.jpg",
+   "tolbag-0031-dial2.jpg",
+   "tolbag-0031-dial3.jpg",
+   "tolbag-0031-dial4.jpg"
+  ],
+  "value": "187.5924"
+ },
+ {
+  "image": "tolbag-0166.jpg",
+  "box": [
+   26,
+   9,
+   200,
+   68
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "tolbag-0166-dial1.jpg",
+   "tolbag-0166-dial2.jpg",
+   "tolbag-0166-dial3.jpg",
+   "tolbag-0166-dial4.jpg"
+  ],
+  "value": "187.3709"
+ },
+ {
+  "image": "pedro-0008.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0008-dial1.jpg"
+  ],
+  "value": "647.0394"
+ },
+ {
+  "image": "pedro-0003.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0003-dial1.jpg"
+  ],
+  "value": "647.4093"
+ },
+ {
+  "image": "pedro-0433.jpg",
+  "box": [
+   72,
+   18,
+   551,
+   139
+  ],
+  "digits": 7,
+  "decimals": 3,
+  "dials": [
+   "pedro-0433-dial1.jpg"
+  ],
+  "value": "646.8733"
+ },
+ {
+  "image": "zapadee-0566.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0566-dial1.jpg",
+   "zapadee-0566-dial2.jpg",
+   "zapadee-0566-dial3.jpg",
+   "zapadee-0566-dial4.jpg"
+  ],
+  "value": "979.7746"
+ },
+ {
+  "image": "zapadee-0146.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0146-dial1.jpg",
+   "zapadee-0146-dial2.jpg",
+   "zapadee-0146-dial3.jpg",
+   "zapadee-0146-dial4.jpg"
+  ],
+  "value": "979.9080"
+ },
+ {
+  "image": "zapadee-0045.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0045-dial1.jpg",
+   "zapadee-0045-dial2.jpg",
+   "zapadee-0045-dial3.jpg",
+   "zapadee-0045-dial4.jpg"
+  ],
+  "value": "980.0181"
+ },
+ {
+  "image": "zapadee-0446.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0446-dial1.jpg",
+   "zapadee-0446-dial2.jpg",
+   "zapadee-0446-dial3.jpg",
+   "zapadee-0446-dial4.jpg"
+  ],
+  "value": "979.7889"
+ },
+ {
+  "image": "zapadee-0116.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0116-dial1.jpg",
+   "zapadee-0116-dial2.jpg",
+   "zapadee-0116-dial3.jpg",
+   "zapadee-0116-dial4.jpg"
+  ],
+  "value": "979.9192"
+ },
+ {
+  "image": "zapadee-0170.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0170-dial1.jpg",
+   "zapadee-0170-dial2.jpg",
+   "zapadee-0170-dial3.jpg",
+   "zapadee-0170-dial4.jpg"
+  ],
+  "value": "979.8999"
+ },
+ {
+  "image": "zapadee-0086.jpg",
+  "box": [
+   66,
+   18,
+   505,
+   136
+  ],
+  "digits": 5,
+  "decimals": 0,
+  "dials": [
+   "zapadee-0086-dial1.jpg",
+   "zapadee-0086-dial2.jpg",
+   "zapadee-0086-dial3.jpg",
+   "zapadee-0086-dial4.jpg"
+  ],
+  "value": "979.9810"
+ }
+]

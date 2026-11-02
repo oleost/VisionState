@@ -6,13 +6,17 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
 
+from PIL import Image
 from sqlalchemy import func, select
 
+from .. import imaging
 from ..db import Prediction, Sensor
-from ..mqtt import REVIEW_TOPICS, object_topics, topics
-from ..settings import PUBLISH
+from ..mqtt import REVIEW_TOPICS, SensorDescriptor, entity_options, object_topics, sound_topics, topics
+from ..settings import APP_SLUG, HA_ENTITIES_NOT_BY_DEFAULT, PUBLISH
 from .base import RuntimeBase
 from .state import SensorConfig
 
@@ -20,12 +24,17 @@ log = logging.getLogger(__name__)
 
 
 class PublishingMixin(RuntimeBase):
+    @staticmethod
+    def _sends(cfg: SensorConfig, topic: str) -> bool:
+        """Whether this value of a sensor goes to Home Assistant (the sensor's Home Assistant tab)."""
+        return cfg.publish and cfg.in_ha and topic not in cfg.muted_topics
+
     async def _send(self, cfg: SensorConfig, topic: str, payload: str | bytes | dict, retain: bool = False) -> None:
         """Publish one of a sensor's values — unless it is not to be sent to Home Assistant, or it
         is what was sent last (sent again every PUBLISH["refresh_s"] all the same, and after MQTT
         (re)connects: publish_discovery forgets what was sent). Home Assistant would only throw an
         unchanged value away."""
-        if not cfg.publish:
+        if not self._sends(cfg, topic):
             return
         live = self.live_state(cfg.id)
         now = time.time()
@@ -47,7 +56,7 @@ class PublishingMixin(RuntimeBase):
         check filled its database. ``make`` builds the payload only when it is sent. After MQTT
         (re)connects, publish_discovery forgets what was sent, so the next check sends it again.
         """
-        if not cfg.publish:
+        if not self._sends(cfg, topic):
             return
         live = self.live_state(cfg.id)
         now = time.time()
@@ -57,6 +66,71 @@ class PublishingMixin(RuntimeBase):
         await self.mqtt.publish(topic, await asyncio.to_thread(make), retain=True)
         live.sent_on_change[topic] = (shows, now)
 
+    async def _send_snapshot(self, cfg: SensorConfig, key: str, image: Image.Image, boxes: list, count: int) -> None:
+        """An object's picture: sent when its count changed or its boxes moved far enough from those
+        of the last picture (so jitter never adds up, and slow movement does), before its state goes
+        on (so an automation that starts finds this one), and kept when it has gone (the broker
+        retains it)."""
+        topic = object_topics(cfg.slug, key)["snapshot"]
+        live = self.live_state(cfg.id)
+        if not count:
+            live.sent_on_change.pop(topic, None)
+            return
+        if not boxes or not self._sends(cfg, topic):
+            return
+        union = imaging.union_box(boxes)
+        sent = live.sent_on_change.get(topic)
+        if sent is not None:
+            sent_count, sent_union = cast(tuple[int, imaging.Box], sent[0])
+            move = cfg.objects["snapshot_move"]
+            if sent_count == count and (not move or imaging.box_change(sent_union, union) < move):
+                return
+
+        def make() -> bytes:
+            region = imaging.region_box(cfg.roi)
+            picture = imaging.snapshot(
+                image,
+                boxes,
+                region,
+                PUBLISH["snapshot_margin"],
+                PUBLISH["snapshot_min_px"],
+                imaging.aspect_ratio(cfg.objects["snapshot_aspect"]),
+            )
+            return imaging.encode_jpeg(picture, PUBLISH["snapshot_quality"])
+
+        await self.mqtt.publish(topic, await asyncio.to_thread(make), retain=True)
+        live.sent_on_change[topic] = ((count, union), time.time())
+
+    def _unsettled(self) -> list[tuple[int, SensorDescriptor]]:
+        """The sensors from before their entities could be chosen."""
+        with self.db.session() as s:
+            rows = s.scalars(select(Sensor).where(Sensor.ha_entities.is_(None))).all()
+            return [(row.id, SensorConfig.from_row(row).descriptor) for row in rows]
+
+    async def settle_entity_choices(self, enabled: set[str]) -> None:
+        """Once, for a sensor from before its entities could be chosen: those Home Assistant has
+        switched on stay, the ones it has off go (they were not in use). From then on the sensor's
+        Home Assistant tab alone decides. ``enabled``: the unique IDs that are on there."""
+        unsettled = await asyncio.to_thread(self._unsettled)
+        if not unsettled or not self.mqtt.connected:
+            return
+        for sensor_id, before in unsettled:
+            uid = f"{APP_SLUG}_{before.slug}"
+            chosen = {
+                option["id"]: True
+                for option in entity_options(before)
+                if option["id"] in HA_ENTITIES_NOT_BY_DEFAULT and f"{uid}_{option['id']}" in enabled
+            }
+            await self.mqtt.remove_confirmed(self.mqtt.removals(before, replace(before, chosen=chosen)))
+            await asyncio.to_thread(self._store_entity_choices, sensor_id, chosen)
+            log.info("%s: its diagnostic entities in Home Assistant are settled: %s", before.name, sorted(chosen))
+
+    def _store_entity_choices(self, sensor_id: int, chosen: dict[str, bool]) -> None:
+        with self.db.session() as s:
+            row = s.get(Sensor, sensor_id)
+            if row is not None and row.ha_entities is None:  # the user may have chosen meanwhile
+                row.ha_entities = chosen
+
     async def publish_discovery(self, cfg: SensorConfig) -> None:
         """Tell Home Assistant about a sensor's entities (again), and repeat what it last knew.
 
@@ -64,11 +138,18 @@ class PublishingMixin(RuntimeBase):
         classes no longer selected are removed; the availability, the pause switch and the last
         value are sent again, so nothing waits for the next check.
         """
+        if not cfg.in_ha:
+            return  # nothing of it in Home Assistant; what it had went when that was chosen
         t = topics(cfg.slug)
         if cfg.is_objects:
             current = set(cfg.object_keys)
             for key in self._published_classes.get(cfg.id, set()) - current:
                 await self.mqtt.remove_object_class(cfg.slug, key)  # deselected: remove its entities
+            self._published_classes[cfg.id] = current
+        if cfg.is_sound:
+            current = set(cfg.sound_keys)
+            for key in self._published_classes.get(cfg.id, set()) - current:
+                await self.mqtt.remove_sound(cfg.slug, key)  # no longer listened for: remove its entity
             self._published_classes[cfg.id] = current
         if cfg.is_reading and cfg.reading["mode"] != "counter":
             await self.mqtt.remove_rate(cfg.slug)  # only counters have a rate
@@ -87,6 +168,13 @@ class PublishingMixin(RuntimeBase):
         if cfg.is_objects:
             for key, track in (live.tracks if live else {}).items():
                 await self._send(cfg, object_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
+        elif cfg.is_sound:
+            heard = live.sound if live else None
+            for key in cfg.sound_keys:
+                track = heard.tracks.get(key) if heard else None
+                await self._send(
+                    cfg, sound_topics(cfg.slug, key)["state"], "ON" if track and track.on else "OFF", retain=True
+                )
         elif live and live.debouncer.published is not None:
             # Re-send the last state so it is not lost when discovery is (re)published.
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)

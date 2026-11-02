@@ -23,6 +23,8 @@
     bulb: 'M6 12.5h4M6.5 14.5h3M8 1.5a4.5 4.5 0 0 0-2.7 8.1c.4.3.7.8.7 1.4v1.5h4V11c0-.6.3-1.1.7-1.4A4.5 4.5 0 0 0 8 1.5',
     draw: 'M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3M8 5.5v5M5.5 8h5',
     tag: 'M2 2.5v5l6.5 6.5 5-5L7 2.5zM5 5h.01',
+    sound: 'M2.5 6h2.5l3-2.5v9L5 10H2.5zM10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.5 6.5 0 0 1 0 9',
+    mic: 'M8 2a2 2 0 0 0-2 2v4a2 2 0 0 0 4 0V4a2 2 0 0 0-2-2M4 7.5a4 4 0 0 0 8 0M8 11.5v2.5',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

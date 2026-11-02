@@ -12,9 +12,10 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, readers, teach
+from .. import backbones, classifier, detectors, faces, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
@@ -43,6 +44,7 @@ class RuntimeBase:
         # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
         self.ha_entity_ids: dict[str, str] = {}
         self._registry_wanted = asyncio.Event()  # discovery was published: read the registry again
+        self.enable_in_ha: set[str] = set()  # unique IDs just chosen: to be on (publishing._enable_chosen)
         self.global_review: dict = {}  # global review rules (DB setting "review")
         self.global_teach: dict = {}  # the user's teaching limits for all sensors (DB setting "teach")
         self.global_faces: dict = {}  # the user's face limits for all sensors (DB setting "faces")
@@ -79,6 +81,13 @@ class RuntimeBase:
         # published, and when and on which sensor they were last seen.
         self._person_where: dict[str, str] = {}
         self._person_last: dict[str, tuple[float, int]] = {}
+        # Sound sensors: the sound model (loaded on first use), each sensor's head for its own sounds,
+        # and the windows of its room kept as "other" (engine/sound.py).
+        self.sound_model: sounds.SoundModel | None = None
+        self.sound_model_error = ""
+        self._sound_lock = asyncio.Lock()
+        self.sound_heads: dict[int, sounds.SoundHead] = {}
+        self.sound_room: dict[int, np.ndarray] = {}
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
         self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes

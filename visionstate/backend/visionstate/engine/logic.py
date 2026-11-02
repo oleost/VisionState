@@ -1,13 +1,13 @@
-"""Pure decisions of the engine (no I/O): object tracks, review and its reminder, triggers and when
-to check next."""
+"""Pure decisions of the engine (no I/O): object tracks, review and its reminder, triggers, when
+to check next, and when a sound is heard."""
 
 from __future__ import annotations
 
 import math
 
 from .. import detectors, imaging, readers, teach
-from ..settings import DETECTION, FACES
-from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig
+from ..settings import DETECTION, FACES, SOUND
+from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig, SoundTrack
 
 
 def review_reason(
@@ -246,3 +246,27 @@ def percent(share: float) -> str:
     """A confidence for Home Assistant, in whole percent: a value that changes at every check
     makes Home Assistant store the entity's state again each time."""
     return f"{share * 100:.0f}"
+
+
+def hear(track: SoundTrack, score: float, threshold: float, now: float, clear_after_s: float) -> bool:
+    """One window of a sound: is it heard now? Returns whether that changed (``track.on``).
+
+    Heard once its score passed ``threshold`` in SOUND["on_windows"] of the last SOUND["of_windows"]
+    windows (one loud window of something else is no alarm). While heard, a window above the lower
+    threshold (SOUND["off_share"] of it) keeps it heard; it goes off when none was for ``clear_after_s``
+    (a smoke alarm pauses between its beeps, a dog between barks)."""
+    track.score = score
+    track.recent.append(score >= threshold)
+    if track.on:
+        if score >= threshold * SOUND["off_share"]:
+            track.last_heard = now
+            track.best = max(track.best, score)
+        if now - track.last_heard >= clear_after_s:
+            track.on = False
+            track.recent.clear()
+            return True
+        return False
+    if sum(track.recent) >= SOUND["on_windows"]:
+        track.on, track.last_heard, track.best = True, now, score
+        return True
+    return False

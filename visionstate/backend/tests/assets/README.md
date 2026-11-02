@@ -28,6 +28,18 @@ LICENSE.txt), cut to the sensor's region. `counter_turning.jpg` is another image
 export (`0632590`, the second-to-last wheel half way from 8 to 9 while the last shows 0), cut to
 the region the same way.
 
+`meter_dials.jpg` is a real water meter with five wheels and four pointer dials (pale, drop-shaped
+needles in a picture with a greenish cast; by eye `979.1540`, the ×0.0001 dial just past 9.9): an
+image from the readings a user exported from VisionState and shared in
+[issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the export's LICENSE.txt),
+as exported (the meter's face straightened).
+
+`meter_readings/` holds frames of three more meters with their dials' pictures, from the readings three
+users exported from VisionState and shared in
+[issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the exports' LICENSE.txt),
+as exported. `readings.json` lists each frame's region and its value as read by eye, not the
+reader's or the user's answer (two answers in the export contradict the needles).
+
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.
 
@@ -45,3 +57,17 @@ The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
 `backups/` holds a backup made by each database version and backup format (`backup-format<F>-schema<S>.zip`),
 drawn by our own code (`tests/backup_fixture.py`): every later version's tests restore each of
 them. Never change or remove one; add the next with `python -m tests.backup_fixture`.
+
+## Test sounds
+
+Real recordings for the sound sensor tests (the sound model must hear real sounds: drawn ones are
+not heard as what they are). All are CC0 (public domain dedication) from Freesound, as listed in
+the CC0 part of the FSD50K data set (its clip metadata gives each clip's licence and uploader): six
+seconds of each (the part the tests use), 16 kHz mono, as AAC in `sounds/`.
+
+| File | What the tests expect | Source (Freesound, uploader) |
+|---|---|---|
+| `sounds/siren.m4a` | a siren | [fire.wav](https://freesound.org/s/53448/), guitarguy1985 |
+| `sounds/dog_bark.m4a` | a small dog barking | [Small Dog Barking](https://freesound.org/s/361544/), josepharaoh99 |
+| `sounds/smoke_alarm.m4a` | a smoke alarm in the next room | [Smoke detector alarm, distant neighboring room](https://freesound.org/s/369847/), SpliceSound |
+| `sounds/speech.m4a` | a woman speaking (numbers in German) | [Numbers 0-9, German, Female Voice](https://freesound.org/s/414063/), Kinoton |

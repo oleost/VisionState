@@ -8,12 +8,14 @@
   import { app, stateInfo, toastError } from '../../app.svelte';
   import { fromQuery, keyName, queryString, toFilter, toQuery, windowLabel, type HistoryView } from '../../history';
   import { objectColor, objectKeys } from '../../objects';
+  import { soundColor } from '../../sound';
   import { href, paths, route, setQuery } from '../../router.svelte';
   import type { HistoryFacets, HistoryFilter, Prediction, Sensor, SensorKind } from '../../types';
   import { HISTORY_EVENTS } from '../../ui';
   import MultiSelect, { type Option } from '../MultiSelect.svelte';
   import ObjectRow from './ObjectRow.svelte';
   import ReadingRow from './ReadingRow.svelte';
+  import SoundRow from './SoundRow.svelte';
   import StateRow from './StateRow.svelte';
 
   let {
@@ -24,7 +26,12 @@
   }: { sensors: Sensor[]; locked?: Sensor | null; intro: string; onchange?: () => void } = $props();
 
   type RowProps = { item: Prediction; sensor: Sensor; showSensor?: boolean; onchange?: () => void };
-  const ROWS: Record<SensorKind, Component<RowProps>> = { single_state: StateRow, objects: ObjectRow, reading: ReadingRow };
+  const ROWS: Record<SensorKind, Component<RowProps>> = {
+    single_state: StateRow,
+    objects: ObjectRow,
+    reading: ReadingRow,
+    sound: SoundRow,
+  };
 
   const view = $derived(fromQuery(route.query));
   const shown = $derived<HistoryView>(locked ? { ...view, sensor: [locked.id] } : view);
@@ -141,7 +148,14 @@
       const option = options.get(f.key);
       if (option) option.count = (option.count ?? 0) + f.count;
       else {
-        const color = sensor?.kind === 'objects' ? objectColor(objectKeys(sensor), f.key) : sensor ? stateInfo(sensor, f.key).color : undefined;
+        const color =
+          sensor?.kind === 'objects'
+            ? objectColor(objectKeys(sensor), f.key)
+            : sensor?.kind === 'sound'
+              ? soundColor(sensor, f.key)
+              : sensor
+                ? stateInfo(sensor, f.key).color
+                : undefined;
         options.set(f.key, { value: f.key, label: keyName(sensor, f.key), count: f.count, color });
       }
     }

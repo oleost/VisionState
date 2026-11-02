@@ -2,6 +2,7 @@
 // and as the API takes it (lib/api.ts history).
 import { stateInfo } from './app.svelte';
 import { objectName } from './objects';
+import { soundName } from './sound';
 import type { HistoryFilter, Sensor } from './types';
 
 export interface HistoryView {
@@ -80,6 +81,7 @@ export function windowLabel(hours: number): string {
 /** The name of a key on a sensor: a state, an object class or an own label. */
 export function keyName(sensor: Sensor | undefined, key: string): string {
   if (sensor?.kind === 'objects') return objectName(key, sensor.objects?.custom ?? []);
+  if (sensor?.kind === 'sound') return soundName(key, sensor);
   if (sensor) return stateInfo(sensor, key).name;
   return objectName(key);
 }

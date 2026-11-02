@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.13.0
+
+**VisionState can now hear.** This release adds sound sensors, reads meters seen at an angle and
+meters with pointer dials, and gives you more control over what reaches Home Assistant.
+
+### New
+
+- **Sound sensors**: a sound sensor listens to a stream and tells Home Assistant what it hears: a
+  smoke alarm, a siren, a dog barking, someone talking and about 80 other sounds, each its own
+  on/off sensor. Everything runs locally. It knows that someone is talking, never what is said.
+  Choose **Listen** in the new sensor wizard. The sound model (about 7 MB) is downloaded when you
+  make the first sound sensor.
+- **Your own sounds**: teach it your doorbell or the washing machine's beep from a few recordings
+  or clips.
+- **Clips** (off by default): keep the seconds around a sound, with the camera's video if it has
+  any, to listen to and teach from. Speech in a clip is silenced before it is stored.
+- **Meters and displays seen turned or at an angle are read upright** (#58): put the region's four
+  corners on the corners of the digits or wheels and mark the top edge. The region is then read as
+  if the camera looked straight at it. This is on for new reading sensors. Existing sensors read as
+  before until you turn on *Correct rotation and perspective* on their Region card.
+- **Pointer dials** (#59): the small dials beside the wheels of many water meters (×0.1, ×0.01 …)
+  can be added to a mechanical counter read by the wheel reader, with *Edit: Dials* in the wizard or
+  in Settings. Each dial adds a digit, and wheels and dials are read together. Pale, drop-shaped and
+  wide two-ended needles are read too, and so are wheels that stand still until the dial is nearly
+  round. Review and the Quality tab show the wheels and each dial with the needle that was found.
+- **Object snapshots**: each object on an object sensor can have its own picture entity, such as
+  *Car snapshot*, for notifications and dashboards. Off until you tick it.
+  - **Shape** (#62): *Snapshot shape* is `free` or a width:height such as `1:1` or `16:9`. The
+    object is never cut.
+  - **Movement** (#62): a new picture can also be sent when the object has moved by a share you
+    set, so something parked sends nothing new. Every picture is a new row in Home Assistant's
+    history. Set it to 0 to send one only when the count changes.
+- **A Home Assistant tab on every sensor**: choose *Send values*, *Don't send values* (the entities
+  stay, unavailable) or *Not in Home Assistant* (no entities, nothing on MQTT), and tick which
+  entities the sensor has. *Send to Home Assistant* moved here from Settings.
+
+### Changed
+
+- **A simpler wizard: Camera, Detect, Checks.** The camera's picture and the low-resolution warning
+  now show where you pick the camera, and the region is drawn in the Detect step, for every kind. A
+  camera's light comes on in the first step. The last step offers *Not in Home Assistant*, so a
+  sensor can be set up before anything reaches Home Assistant or MQTT.
+- **Clearer errors**: a form's validation error now reads as a sentence.
+- **Updated dependencies**: FastAPI, ONNX Runtime, SQLAlchemy, PyAV, websockets, Svelte and Vite.
+
+### Fixed
+
+- **The live page no longer says "Checks every 10 s" with the regular check off** (#62). Only the
+  text was wrong: the regular check did stop.
+- **The list of lights and entities in the wizard** was cut off and could not be scrolled to its
+  end, and dragging its scrollbar closed it.
+
+### After this update
+
+Optional entities of reading sensors (raw reading, problem, accepted, rate, reader image) that are
+on in Home Assistant stay. Those that are off there are removed, once. New reading sensors have them
+only when ticked on the new tab.
+
+### What sound sensors have been tested on
+
+- **Tested:** a real Home Assistant with live HTTP streams, including one real smoke alarm heard
+  through an iPhone's microphone. That is one alarm in one home, not proof that it hears yours.
+- **Not tested:** RTSP from a real camera, Raspberry Pi 4, ESP32 microphones, clips in the Home
+  Assistant app on iOS, and false alarms over days in a real home. Thresholds are a best guess, so
+  try a sound on the Live tab and adjust. If you try a camera, please tell us the model and how it
+  went.
+
+**A smoke alarm sensor is an extra notification, never a replacement for a certified detector.**
+
 ## 0.11.0
 
 ### Better

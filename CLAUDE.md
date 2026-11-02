@@ -1,9 +1,10 @@
 # CLAUDE.md
 
-VisionState — a Home Assistant app that turns camera images into sensors, all locally:
+VisionState — a Home Assistant app that turns camera images and sound into sensors, all locally:
 **states** the user teaches it (garage door open/closed; embedding model + small per-sensor
-classifier), **objects** found by a pretrained detector (people, cars, animals) and **readings**
-(a number on a display or the wheels of a meter). This file is the contributor guide for people
+classifier), **objects** found by a pretrained detector (people, cars, animals), **readings**
+(a number on a display or the wheels of a meter) and **sounds** heard in a stream (sirens, alarms,
+own sounds taught from clips). This file is the contributor guide for people
 and AI assistants.
 
 - **Language:** everything in the repository (code, comments, UI text, docs, commit messages) is
@@ -27,7 +28,10 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | How to work: principles, checks, testing, pitfalls | this file |
 | The wheel reader model: data, licences, results, how to train it | [`tools/wheelreader/README.md`](tools/wheelreader/README.md) |
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
+| Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
+| Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
+| The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
 | Test image sources | `visionstate/backend/tests/assets/README.md` |
 
@@ -60,7 +64,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 
 - `visionstate/` is the Home Assistant app (build context of the Dockerfile); the map of the code
   is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — keep it current when the structure changes.
-- Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`. A new feature says
+- Sensor kinds (`settings.SENSOR_KINDS`): `single_state`, `objects`, `reading`, `sound`. A new feature says
   which kind(s) it applies to.
 - New engine code goes into the part (mixin) it belongs to. A long-running loop must survive any
   exception (log it once, try again) — only `CancelledError` may end it. Database work in an
@@ -68,7 +72,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - What is sent to Home Assistant must not change at every check unless the result does (no
   timestamps, no needless decimals, pictures through `_send_on_change`): Home Assistant stores
   every change as a new row (`docs/SCOPE.md` §8).
-- Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`): entries are never changed
+- Model registries (`backbones.json`, `detectors.json`, `readers.json`, `faces.json`, `sounds.json`): entries are never changed
   or removed once released (their texts, measured footprint and similarity limits may be); a new model gets a new id, pinned by Hugging Face revision and SHA-256,
   and is checked against real inputs in the tests (one public ONNX conversion turned out to be
   broken and only a test with real photos showed it).
@@ -76,6 +80,9 @@ Every fact has **one** home; other files link to it instead of repeating it.
   `api.ts`, app paths in `router.svelte.ts`. There is **no formatter** for the frontend (single
   quotes, ~120-character lines, kept by hand) — never run Prettier on it. Backend: ruff format.
 - Never rely on Ctrl/Shift/hover-only interactions; hide keyboard hints with `.kbd-only`.
+- A new sensor kind or feature uses the UI the others use (the picker, chips, score bars, review
+  answers, settings page: `docs/ARCHITECTURE.md` lists them). When it needs more, improve the shared
+  component for every kind; never a copy of it for one.
 - Test images must be CC0 / public domain (sources in `tests/assets/README.md`) or drawn by our own
   code (`tests/displays.py`). Local experiment data lives in `/VisionStateLocal/` (ignored by git,
   outside the Docker build context): images with other licences may be used there for trying things
@@ -115,7 +122,15 @@ itself (`__main__.py`).
   `backend/tests/assets`, for object sensors), `/display.jpg?text=12:05&style=lcd|led` (a drawn
   seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
-  `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size).
+  `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
+  `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and
+  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten) and
+  `/meter.jpg?value=187.34565&turn=20&tilt=0.2` (a drawn water meter: five wheels and four pointer
+  dials; `/meter-region.json` with the same `turn` and `tilt` gives its region and its dials as a
+  sensor stores them).
+  For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
+  `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
+  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model comes with `python -m visionstate.backbones models --all`.
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.
@@ -136,7 +151,8 @@ Many users run Home Assistant on phones and tablets.
 - **Automated:** `cd visionstate/frontend && npm run build && VS_PYTHON=../backend/.venv/Scripts/python npm run e2e`
   (Playwright, `e2e/`; once: `npx playwright install chromium webkit`). It starts the backend and
   `scripts/fake_camera.py`, seeds one sensor of each kind (a trained state sensor, an object sensor
-  on a real photo, reading sensors on a drawn display and a drawn mechanical counter), and runs every
+  on a real photo, reading sensors on a drawn display and a drawn mechanical counter, a sound sensor on
+  the fake camera's stream with sound — skipped while the sound model is not on disk), and runs every
   page on **desktop** (1440×900, mouse), **mobile** (Pixel 7, real touch via CDP) and **iphone**
   (iPhone 14, WebKit like the Home Assistant app on iOS): no console errors, no sideways scrolling,
   no text running out of buttons or cards, plus the wizard, region editor gestures, labelling,
@@ -154,12 +170,15 @@ Many users run Home Assistant on phones and tablets.
   watch it `--headed` or step through it `--ui`; after a failure `npx playwright show-trace
   test-results/<test>/trace.zip`.
 - **Demo sensors:** `python scripts/seed_demo.py --url <app> --images <camera>` seeds one sensor of
-  each kind (Driveway with Tom and "Our car", Garage door, Water meter) on any instance: locally
+  each kind (Driveway with Tom and "Our car", Garage door, Water meter, and with `--sound <stream>`
+  the sound sensor Hallway) on any instance: locally
   with `--images http://127.0.0.1:8765/photo` (the fake camera), or on an installed app with
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.
 - **Docs screenshots** (`docs/promo/`): seed the demo sensors on a local backend with a local MQTT
-  broker (so the header shows *MQTT connected*), then `node e2e/promo.mjs <app URL>` in
-  `visionstate/frontend` (1440 px wide, device scale 1.2). Not a broker another VisionState is
+  broker (so the header shows *MQTT connected*), with the fake camera's stream for the sound sensor
+  (`--sound http://127.0.0.1:8765/camera.ts`), then
+  `VS_PROMO_PLAY="http://127.0.0.1:8765/play?sound=smoke_alarm" node e2e/promo.mjs <app URL>` in
+  `visionstate/frontend` (1440 px wide, device scale 1.2; `sound.png` shows the smoke alarm heard). Not a broker another VisionState is
   connected to: both use the same client ID and push each other off every few seconds (on a test
   broker that is in use, `VISIONSTATE_DISCOVERY_PREFIX` keeps the entities out of Home Assistant,
   but not that).
@@ -167,6 +186,21 @@ Many users run Home Assistant on phones and tablets.
   maintainer before publishing.
 
 ## Test pitfalls found the hard way
+
+- Sound tests need the sound model on disk (`python -m visionstate.backbones models --all`): without `backend/models/ced-tiny.onnx` the e2e sound seed and tests are skipped
+  and look green. Check for "skipped" before calling a sound change tested.
+- A test must not hang on a score near a line the code decides by. The full CC0 siren scores
+  about 0.92, right at the review question's line (0.925 with threshold 0.85): asked or not by
+  where the 2-s windows fall. The e2e plays it quietly (`/play?sound=siren&gain=0.1`: about 0.6,
+  heard from 0.5, asked below 0.75). One sound can also be asked about as two (a siren as a smoke
+  alarm too): answer whichever question shows and count the queue before and after.
+- Playwright's `hasText` matches a case-insensitive substring: "Our siren heard" contains "siren
+  heard". Find a row by its exact heading: `filter({ has: page.getByText('Siren heard', { exact: true }) })`.
+- The fake camera serves every stream its own copy of what `/play` plays. It once shared one queue
+  (a sound went to whichever stream took it first), and a stream that ended could remove another
+  stream's queue (`list.remove` compares equal lists, and empty queues are equal), so after the
+  wizard tried a stream nothing reached the sensor. A test helper with threads needs the same care
+  as app code.
 
 - The UI polls frames and status, so the network never goes idle — wait for elements or for
   `img.complete`, never for `networkidle`.

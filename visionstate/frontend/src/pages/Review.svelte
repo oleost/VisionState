@@ -6,7 +6,9 @@
   import DetectionBoxes from '../lib/components/DetectionBoxes.svelte';
   import FaceQuestion from '../lib/components/FaceQuestion.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import ReadingSeen from '../lib/components/ReadingSeen.svelte';
   import ReadingVerdict from '../lib/components/ReadingVerdict.svelte';
+  import SoundQuestion from '../lib/components/sound/SoundQuestion.svelte';
   import RoiEditor from '../lib/components/RoiEditor.svelte';
   import { dateTime, pct } from '../lib/format';
   import { objectName } from '../lib/objects';
@@ -68,6 +70,8 @@
   const shown = $derived(editing ?? index);
   const current = $derived(items?.[shown] ?? null);
   const isReading = (item: ReviewItem) => item.sensor.kind === 'reading';
+  const isSound = (item: ReviewItem) => item.sensor.kind === 'sound';
+  const soundOf = (item: ReviewItem) => item.sensor.sounds?.find((s) => s.key === item.state_key)?.name ?? item.state_key;
   /** An object sensor's question: may this box be one of its own labels? */
   const question = (item: ReviewItem) => (item.sensor.kind === 'objects' ? ((item.probs as unknown as { ask?: ObjectQuestion }).ask ?? null) : null);
   const labelName = (item: ReviewItem, key: string) => objectName(key, item.sensor.labels);
@@ -77,6 +81,7 @@
     const q = question(item);
     if (q?.face && q.label === app.config?.face_unknown_key) return 'Who is this?';
     if (q) return `${labelName(item, q.label)}?`;
+    if (isSound(item)) return `${soundOf(item)}?`;
     return isReading(item) ? `“${readingDetail(item).text || '—'}”` : `${stateInfo(item.sensor, item.state_key).name} ${pct(item.confidence)}`;
   };
 
@@ -168,7 +173,7 @@
   const chosen = (key: string | null) => editing !== null && !!current && current.id in given && given[current.id] === key;
 
   function onkey(e: KeyboardEvent) {
-    if (!current || isReading(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
+    if (!current || isReading(current) || isSound(current) || (e.target as HTMLElement).closest('input, select, textarea')) return;
     if (e.key === 'Escape') editing = null;
     else if (question(current)?.face) return; // FaceQuestion has its own keys
     else if (question(current)) {
@@ -211,7 +216,8 @@
       <div class="col" style="gap:4px">
         <h1>Review</h1>
         <p class="small muted">
-          Frames the AI was unsure about, objects that may be one of your own labels, and readings that were rejected.
+          Frames the AI was unsure about, objects that may be one of your own labels, readings that were rejected, and
+          sounds that were only just heard.
           Answers for state sensors and own labels are learned from — a few clicks here help the most. Answers for
           readings show how reliable they are; the reader does not learn from them.
         </p>
@@ -247,12 +253,16 @@
             {@const reason = item.review_reason ? REVIEW_REASONS[item.review_reason] : null}
             <li class:current={i === shown} class:done={i < index}>
               {#snippet entry()}
-                <img
-                  src={api.historyImageUrl(item.id, isReading(item) ? 'region' : 'thumb')}
-                  class:whole={isReading(item)}
-                  alt=""
-                  loading="lazy"
-                />
+                {#if isSound(item)}
+                  <span class="clip-icon"><Icon name={item.clip_video ? 'film' : 'sound'} size={18} /></span>
+                {:else}
+                  <img
+                    src={api.historyImageUrl(item.id, isReading(item) ? 'region' : 'thumb')}
+                    class:whole={isReading(item)}
+                    alt=""
+                    loading="lazy"
+                  />
+                {/if}
                 <span class="col" style="gap:2px;min-width:0">
                   <strong class="small">{item.sensor.name}</strong>
                   <span class="xsmall" style:color={i < index ? TONE_COLOR.ok : TONE_COLOR[reason?.tone ?? 'muted']}>
@@ -292,6 +302,7 @@
         <button class="btn sm ghost frame-toggle" onclick={() => (wholeFrame = !wholeFrame)}>
           <Icon name={wholeFrame ? 'eye' : 'frame'} size={13} /> {wholeFrame ? 'Only the region' : 'Whole frame'}
         </button>
+        <ReadingSeen item={current} />
         <div class="col center">
           <p class="question">
             Did it read <span class="mono">“{d.text || '—'}”</span>{d.value ? ` (${d.value}${unitOf(current) ? ` ${unitOf(current)}` : ''})` : ''} right?
@@ -305,6 +316,18 @@
             <ReadingVerdict item={current} reading={current.sensor.reading} unit={unitOf(current)} large onanswer={readingAnswered} />
           {/key}
         </div>
+      {:else if current && isSound(current)}
+        {@render header(current)}
+        {#key current.id}
+          <SoundQuestion
+            item={current}
+            given={current.id in given ? given[current.id] : undefined}
+            onanswer={(text, answer) => {
+              if (current) given[current.id] = answer;
+              answered(text);
+            }}
+          />
+        {/key}
       {:else if current && question(current)?.face}
         {@render header(current)}
         {#key current.id}
@@ -390,6 +413,17 @@
 </div>
 
 <style>
+  .clip-icon {
+    width: 64px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    background: var(--c-surface-3);
+    color: var(--c-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .layout {
     display: grid;
     grid-template-columns: 320px minmax(0, 1fr);

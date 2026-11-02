@@ -5,10 +5,11 @@
   import { api } from '../../lib/api';
   import DetectionBoxes from '../../lib/components/DetectionBoxes.svelte';
   import FaceConsent from '../../lib/components/FaceConsent.svelte';
-  import ObjectPicker from '../../lib/components/ObjectPicker.svelte';
+  import LabelPicker from '../../lib/components/LabelPicker.svelte';
+  import RegionButtons from '../../lib/components/RegionButtons.svelte';
   import RoiEditor from '../../lib/components/RoiEditor.svelte';
   import { haSlug } from '../../lib/format';
-  import { objectCount } from '../../lib/objects';
+  import { objectCount, objectPicker } from '../../lib/objects';
   import type { Detection, FaceModelInfo, Roi } from '../../lib/types';
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
@@ -20,11 +21,13 @@
     roi = $bindable(),
     classes = $bindable(),
     faces = $bindable(),
+    frame,
   }: {
     sourceType: string;
     source: string;
     name: string;
     roi: Roi | null;
+    frame: string | null;
     classes: string[];
     /** Recognise people by their face (asked first, with what is stored and downloaded). */
     faces: boolean;
@@ -80,7 +83,7 @@
 
 <div class="col" style="gap:var(--space-3)">
   <h3>Which objects?</h3>
-  <ObjectPicker bind:selected={classes} />
+  <LabelPicker bind:selected={classes} {...objectPicker()} />
   {#if classes.includes('person')}
     <label class="check" data-testid="wizard-faces">
       <input
@@ -114,11 +117,11 @@
     {/if}
     {#if busy && image}<span class="faint"> (looking…)</span>{/if}
   {/snippet}
-  {#if image}
-    <RoiEditor src={image} bind:roi editable>
-      <DetectionBoxes {detections} {classes} />
-    </RoiEditor>
-  {/if}
+  <!-- The first step's frame until the test has one: the first test loads the detector, and may fail. -->
+  <div class="row wrap region-actions"><RegionButtons bind:roi /></div>
+  <RoiEditor src={image ?? frame} bind:roi editable>
+    <DetectionBoxes {detections} {classes} />
+  </RoiEditor>
 </TestCard>
 <HaPreview>
   {#each classes as key (key)}
@@ -150,5 +153,9 @@
   }
   .danger-text {
     color: var(--c-danger);
+  }
+  .region-actions {
+    gap: 8px;
+    padding: 0 16px 12px;
   }
 </style>
