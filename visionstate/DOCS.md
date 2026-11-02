@@ -653,6 +653,11 @@ Set up per sensor under **Settings → When to check**:
 | Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
 | After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
+State sensors using the exact same Home Assistant camera or HTTP snapshot address can share
+one fresh picture when their regular checks fall together. Each still checks its own region
+with its own model. This does not align their schedules or reuse an older picture. Manual
+checks, lights, change detection, bursts, RTSP and other sensor kinds keep their own paths.
+
 A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
 trigger entities, and change detection on for cameras without a motion sensor.
 
