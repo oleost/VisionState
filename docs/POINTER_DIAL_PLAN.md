@@ -153,6 +153,12 @@ there a wheel standing on the next digit would pass for one nearly there. How fa
 is found from the wheels before the last, not by fitting the last one to the needle. The confidence
 counts the share of each wheel that fits.
 
+One picture can still not tell two of these meters apart: a last wheel on a clean 8 with the ×0.1 dial
+at 9.9 is 7.99 where the wheel gets there early and 8.99 where it stands on its digit (issue #59: 188.99
+published for 187.99). The last value decides (`readers.settle_turning_wheel`, on the engine's reading,
+not in the wizard's preview, which has none): the closer of the two, but never lower to below it. Without
+a last value the reading stays and counts as unsure (`dial_wheel_undecided_score`).
+
 **What it gives.** The value with as many more decimals as there are dials (the counter's
 decimals plus the dials); the confidence the wheels' (as before) times the weakest dial's share
 (its needle's probability within `wheel_weakest_bins` of where the value puts it — a needle is

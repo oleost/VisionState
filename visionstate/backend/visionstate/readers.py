@@ -21,7 +21,7 @@ import re
 import threading
 from collections import deque
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -672,6 +672,54 @@ class WheelReader:
 
 
 # --- interpretation -------------------------------------------------------------------------------
+
+
+def same_precision(published: str | None, settings: dict) -> bool:
+    """Whether a published value has the decimals the sensor reads now (not: dials were added since)."""
+    return published is None or len(published.partition(".")[2]) == value_decimals(settings)
+
+
+def settle_turning_wheel(text: Text, last: float | None, settings: dict) -> Text:
+    """A counter with pointer dials whose last wheel stands on a whole digit while the ×0.1 dial is
+    nearly round: the value closest to the ``last`` one.
+
+    One picture can not tell these apart: a clean 8 with the dial at 9.9 is 7.99 on a meter whose
+    wheel gets there early, and 8.99 on one whose wheel stands on its digit until the dial is round.
+    Without a last value the reading stays, as unsure (READING["dial_wheel_undecided_score"]).
+    """
+    extra = extra_digits(settings)
+    found = text.details or {}
+    wheels = found.get("wheels")
+    if not extra or not wheels or not text.text.isdigit():
+        return text
+    digits = int(settings["digits"])
+    number = int(text.text)
+    unit = 10**extra
+    tenth = (number // (unit // 10)) % 10
+    seen = wheels["per_wheel"][digits - 1]["top"][0][0] - wheels["shift"]
+    digit = round(seen)
+    if tenth < READING["dial_wheel_exact_from"] or abs(seen - digit) > READING["wheel_slack_bins"] / 10:
+        return text
+    shown = (number // unit) % 10
+    if shown == digit % 10:
+        other = number - unit
+    elif shown == (digit - 1) % 10:
+        other = number + unit
+    else:
+        return text
+    if last is None:
+        return replace(text, score=min(text.score, READING["dial_wheel_undecided_score"]))
+    if other < 0 or other >= 10 ** (digits + extra):
+        return text
+    scale = 10 ** -value_decimals(settings)
+    if abs(other * scale - last) >= abs(number * scale - last):
+        return text
+    # A counter does not go down: never lower it to below the last value (a tenth of a wheel's
+    # digit under it: the needles jitter). A last value held back by the limit is not pulled further.
+    if other < number and other * scale < last - unit * scale / 10:
+        return text
+    details = {**wheels, "value": round(wheels["value"] + other - number, 1), "by_last_value": True}
+    return replace(text, text=f"{other:0{digits + extra}d}", details={**found, "wheels": details})
 
 
 def parse(text: str, settings: dict) -> float | None:

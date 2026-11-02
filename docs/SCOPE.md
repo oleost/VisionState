@@ -369,7 +369,13 @@ times its busiest shower) rejected right readings after a 35-minute update.
   value was published. A wheel read too high right after a long time away does get through —
   nothing tells it from water used meanwhile — and then the "went down" lock below applies.
   Until it learned, a rate applies: `max_rate`, or when that is 0 `standard_steps_per_min` steps
-  of the last digit a minute (issue #40's 0.04 m³ a minute, three decimals). It once set no limit
+  of the last digit a minute (issue #40's 0.04 m³ a minute, three decimals). The last digit is the
+  whole value's: with pointer dials the last dial's, in `standard_steps_per_min_dials` steps (one
+  of them is tiny, and 40 stopped ordinary water use on both four-dial meters of issue #59); the
+  always-allowed margin follows it too. Counted from the wheels alone, a counter of whole m³ with
+  four dials could rise 2 m³ at any reading, and a misread 188.99 for 187.99 went through. A
+  published value of other precision (dials or decimals changed since: `readers.same_precision`) is
+  no measure: the next reading is taken like a first one. It once set no limit
   until then; on issue #40's meter, switched to *Learn it*, a wheel read two digits off went
   through as +2.09 m³ in its first week. The UI shows the rate in use, and fills in the standard
   one when *Fixed rate* or *Fixed per reading* is chosen without a value; 0 there stays "no

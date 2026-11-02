@@ -139,6 +139,7 @@ def ui_config() -> dict:
         "reading_defaults": {**READING_DEFAULTS, "wheel_reader": readers.DEFAULT_WHEEL_READER, **READING_NEW_SENSOR},
         "reading_limits": READING_LIMITS,
         "counter_standard_steps_per_min": COUNTER_LIMIT["standard_steps_per_min"],
+        "counter_standard_steps_per_min_dials": COUNTER_LIMIT["standard_steps_per_min_dials"],
         "reading_modes": READING_MODES,
         "reading_displays": READING_DISPLAYS,
         "counter_readers": COUNTER_READERS,

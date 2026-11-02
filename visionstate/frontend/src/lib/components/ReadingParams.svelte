@@ -14,6 +14,7 @@
     mode,
     unit,
     decimals,
+    hasDials = false,
     intervalS,
     limit = null,
   }: {
@@ -26,7 +27,9 @@
     rateWindow: number;
     mode: ReadingMode;
     unit: string;
+    /** Of the whole value (settings.value_decimals). */
     decimals: number;
+    hasDials?: boolean;
     intervalS: number;
     /** What the counter's limit learned so far (from the sensor's view). */
     limit?: CounterLimit | null;
@@ -38,7 +41,10 @@
   const amount = (n: number) => `${Number(n.toPrecision(3))}${unit ? ` ${unit}` : ''}`;
   const round = (n: number) => Number(n.toPrecision(6));
   // The standard limit: steps of the last digit a minute, per hour or per check.
-  const standardRate = $derived(round((app.config?.counter_standard_steps_per_min ?? 0) * 10 ** -decimals * 60));
+  const standardSteps = $derived(
+    (hasDials ? app.config?.counter_standard_steps_per_min_dials : app.config?.counter_standard_steps_per_min) ?? 0,
+  );
+  const standardRate = $derived(round(standardSteps * 10 ** -decimals * 60));
   // Per check: in steps of the last digit, at least one.
   const standardStep = $derived(round(Math.max(1, Math.round((standardRate * intervalS) / 3600 / 10 ** -decimals)) * 10 ** -decimals));
   const learnedRate = $derived(changeLimit === 'auto' ? (limit?.rate ?? null) : null);

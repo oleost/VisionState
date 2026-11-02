@@ -12,6 +12,32 @@ MARGIN = COUNTER_LIMIT["margin_steps"] * 0.001
 BUSY = Learned(per_hour=0.55, per_day=0.8, days=9)
 
 
+def test_the_limit_follows_the_last_digit_of_the_whole_sensor():
+    dials = [{"x": 1.0, "y": 1.0, "r": 0.5, "ccw": False}] * 4
+    meter = merge_reading(
+        {
+            "mode": "counter",
+            "display": "counter",
+            "counter_reader": "wheels",
+            "digits": 5,
+            "decimals": 0,
+            "dials": dials,
+        }
+    )
+    assert change_limit.margin(meter) == pytest.approx(COUNTER_LIMIT["margin_steps"] * 0.0001)
+    assert change_limit.standard_rate(meter) == pytest.approx(
+        COUNTER_LIMIT["standard_steps_per_min_dials"] * 0.0001 * 60
+    )
+    # Issue #59: a whole digit too high, five minutes after the last reading, is over the limit;
+    # the 0.31 m³ an hour that meter really went up is not.
+    assert change_limit.limit(meter, None, 300) < 1.0
+    assert change_limit.limit(meter, None, 300) > 0.31 * 300 / 3600
+    assert change_limit.limit(meter, BUSY, 300) < 1.0
+    # Without dials as before: a counter of whole m³ may be a large one.
+    whole = {**meter, "dials": []}
+    assert change_limit.standard_rate(whole) == pytest.approx(COUNTER_LIMIT["standard_steps_per_min"] * 60)
+
+
 def test_limit_grows_with_time():
     assert change_limit.limit(FIXED, None, 60) == pytest.approx(MARGIN + 0.04)
     assert change_limit.limit(FIXED, None, 35 * 60) == pytest.approx(MARGIN + 1.4)

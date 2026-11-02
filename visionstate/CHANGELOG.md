@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.1b1
+
+**Fixes for counters, above all water meters with pointer dials (#59).**
+
+- **A counter with dials no longer jumps a whole digit when its last wheel reaches the next one.** A
+  last wheel on a clean digit with the ×0.1 dial nearly round can be read either side of that digit
+  (187.99 or 188.99): the last value now decides. A sensor without a last value treats such a reading
+  as unsure.
+- **The counter limit now counts the dials.** The limit and its margin looked at the wheels alone, so a
+  counter of whole m³ could rise 2 m³ at any reading. Both now follow the smallest step of the whole
+  sensor. **The standard limit of such a counter becomes much lower:** with four dials on whole m³, from
+  2400 to 2.4 m³/h. Until it has learned your meter, a higher real use is rejected and waits in Review:
+  raise *Reject a reading that goes up faster than* in Settings → Sensor output if needed, and answer
+  the newest rejected reading to let the counter go on from there.
+- **Adding dials to a counter that already has a value** no longer makes the finer value count as a
+  rise over the limit.
+
 ## 0.13.0
 
 **VisionState can now hear.** This release adds sound sensors, reads meters seen at an angle and

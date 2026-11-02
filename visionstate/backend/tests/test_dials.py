@@ -154,6 +154,61 @@ def test_a_wheel_that_lags_does_not_pull_a_needle_off_its_number():
     assert text.text == "06470400"
 
 
+def _turning(number: str, wheel: float, shift: float = 0.0) -> readers.Text:
+    """A reading of five wheels and two dials, with the last wheel seen at ``wheel``."""
+    rows = [{"at": 0.0, "p": 1.0, "top": [[0.0, 1.0]]} for _ in range(4)]
+    rows.append({"at": wheel, "p": 1.0, "top": [[wheel, 0.7], [wheel - 0.1, 0.3]]})
+    details = {"reader": "wheels", "wheels": {"value": float(number), "shift": shift, "per_wheel": rows}}
+    return readers.Text(number, 0.9, details)
+
+
+TWO_DIALS = merge_reading(
+    {
+        "mode": "counter",
+        "display": "counter",
+        "counter_reader": "wheels",
+        "digits": 5,
+        "decimals": 0,
+        "dials": [{"x": 1.0, "y": 1.0, "r": 0.5, "ccw": False}] * 2,
+    }
+)
+
+
+def test_the_last_value_decides_a_wheel_on_its_digit_with_the_dial_nearly_round():
+    settle = readers.settle_turning_wheel
+    # Issue #59: 187.99 read as 188.99 with the wheel on a clean 8.
+    settled = settle(_turning("0018899", 8.0), 187.98, TWO_DIALS)
+    assert settled.text == "0018799"
+    assert settled.details["wheels"]["by_last_value"]
+    assert settled.score == 0.9
+    # A wheel that stands on its digit until the dial is round: 8.99 is right, also when read too low.
+    assert settle(_turning("0018899", 8.0), 188.95, TWO_DIALS).text == "0018899"
+    assert settle(_turning("0018799", 8.0), 188.95, TWO_DIALS).text == "0018899"
+    # Across a wheel that carries: 189.99 and 190.99 with the last wheel on 0.
+    assert settle(_turning("0019099", 0.0), 189.9, TWO_DIALS).text == "0018999"
+    # The common shift of the wheels is taken off what the wheel shows.
+    assert settle(_turning("0018899", 8.1, shift=0.1), 187.98, TWO_DIALS).text == "0018799"
+    # Never down to below the last value, even when that is closer (a last value held back by its limit).
+    assert settle(_turning("0018899", 8.0), 188.2, TWO_DIALS).text == "0018899"
+    # No last value: the reading stays, unsure.
+    undecided = settle(_turning("0018899", 8.0), None, TWO_DIALS)
+    assert (undecided.text, undecided.score) == ("0018899", READING["dial_wheel_undecided_score"])
+
+
+def test_a_reading_that_is_not_in_doubt_stays_as_it_is():
+    settle = readers.settle_turning_wheel
+    far = 500.0  # a last value that would pull the reading if it could
+    for text in (
+        _turning("0018850", 8.0),  # the dial is not nearly round: it says which side
+        _turning("0018899", 8.5),  # the wheel is between digits: it says which digit
+        _turning("0018199", 8.0),  # the value is not next to what the wheel shows
+    ):
+        assert settle(text, far, TWO_DIALS) is text
+    # Without dials nothing changes.
+    plain = readers.Text("00188", 0.9, _turning("00188", 8.0).details)
+    assert settle(plain, far, {**TWO_DIALS, "dials": []}) is plain
+
+
 def test_a_last_wheel_that_stands_on_its_digit_until_the_dial_is_round():
     # 979.7746 on a meter whose last wheel only turns when the ×0.1 dial is nearly round: not 978.7746.
     picture = Image.new("RGB", (64, 32))
@@ -302,6 +357,82 @@ def test_the_last_wheel_is_rounded_without_dials(settings):
         stored = client.post("/api/v1/preview/read", json={**preview, "reading": {**reading, "fraction": True}}).json()
         assert stored["text"] == "0089932"
         assert "fraction" not in client.get("/api/v1/config").json()["reading_defaults"]
+
+
+@requires_reader
+def test_a_wheel_on_its_digit_does_not_make_a_meter_jump(settings):
+    """Issue #59: the last wheel on a clean 8 with the ×0.1 needle at 9.9 was published as 188.99
+    for 187.99. A sensor goes on from its last value, and a whole m³ more is over its limit."""
+
+    def picture(value: float, wheels: float | None = None) -> bytes:
+        image, _, _ = render_meter(value)
+        if wheels is not None:
+            image.paste(render_counter(wheels, 5, 0), (0, 0))
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    class Camera:
+        jpeg = picture(187.79)
+
+        async def grab(self, source_type, source):
+            return self.jpeg
+
+        async def close(self):
+            pass
+
+    _, roi, placed = render_meter(187.79)
+    camera = Camera()
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.grabber = camera
+        sid = client.post(
+            "/api/v1/sensors",
+            json={
+                "name": "Water",
+                "kind": "reading",
+                "source_type": "http",
+                "source": "http://fake",
+                "roi": roi,
+                "interval_s": 1,
+                "debounce": 1,
+                "reading": {
+                    "mode": "counter",
+                    "display": "counter",
+                    "digits": 5,
+                    "decimals": 0,
+                    "dials": placed,
+                    "change_limit": "fixed",
+                    "max_rate": 1000,  # room for the 0.2 m³ in the seconds of this test, not for a whole m³
+                },
+            },
+        ).json()["id"]
+        reading = lambda: client.get(f"/api/v1/sensors/{sid}").json()["reading"]  # noqa: E731
+        assert wait_for(lambda: reading()["value"] == "187.7900", timeout=20), (
+            reading()["value"],
+            reading()["last"],
+            reading()["limit"],
+        )
+        camera.jpeg = picture(187.9921, 188.0)
+        assert wait_for(lambda: reading()["value"] == "187.9921", timeout=20), (
+            reading()["value"],
+            reading()["last"],
+            reading()["limit"],
+        )
+        camera.jpeg = picture(188.9921)
+        assert wait_for(lambda: (reading()["last"] or {}).get("reason") == "changed too much", timeout=20), (
+            reading()["value"],
+            reading()["last"],
+            reading()["limit"],
+        )
+        assert reading()["value"] == "187.9921"
+
+
+def test_a_value_of_another_precision_is_no_measure_for_the_limit():
+    """Dials added to a sensor that published whole m³: 187 says nothing about 187.3456."""
+    assert readers.same_precision(None, TWO_DIALS)
+    assert readers.same_precision("187.34", TWO_DIALS)
+    assert not readers.same_precision("187", TWO_DIALS)
+    assert readers.same_precision("187", {**TWO_DIALS, "dials": []})
 
 
 @requires_reader
