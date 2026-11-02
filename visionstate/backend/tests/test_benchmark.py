@@ -89,6 +89,7 @@ def test_a_model_is_measured_with_the_sensors_paused_and_they_go_on_afterwards(s
             == 409
         )
         assert rt.benchmark_paused and client.get("/api/v1/status").json()["benchmark_running"]
+        assert client.get(f"/api/v1/sensors/{sid}").json()["status"] == "speed_test"  # not "needs training"
         run = _finished(client)
         assert run["state"] == "finished"
         [result] = run["results"]

@@ -28,18 +28,24 @@
     value === undefined ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
 
   const done = $derived((run?.results ?? []).filter((r) => r.status === 'done' && r.total));
-  const slowest = $derived(Math.max(1, ...done.map((r) => r.total!.median)));
-  const fastest = $derived(done.length ? done.reduce((a, b) => (b.total!.median < a.total!.median ? b : a)) : null);
-  const lightest = $derived(
-    done.filter((r) => r.memory_peak_mb !== undefined).reduce<SpeedTestResult | null>(
-      (a, b) => (!a || b.memory_peak_mb! < a.memory_peak_mb! ? b : a),
-      null,
-    ),
-  );
+  const resultRoles = $derived([...new Set((run?.results ?? []).map((r) => r.role))]);
+  // Models are only compared with those that can take their place: a face model is no detector.
+  const peers = (r: SpeedTestResult) => done.filter((o) => o.role === r.role);
+  const barShare = (r: SpeedTestResult) => (shown(r)! / Math.max(1, ...peers(r).map((o) => shown(o)!))) * 100;
+  const isFastest = (r: SpeedTestResult) =>
+    peers(r).length > 1 && Math.min(...peers(r).map((o) => shown(o)!)) === shown(r);
+  const isLightest = (r: SpeedTestResult) => {
+    const measured = peers(r).filter((o) => o.memory_peak_mb !== undefined);
+    return measured.length > 1 && Math.min(...measured.map((o) => o.memory_peak_mb!)) === r.memory_peak_mb;
+  };
+  /** A face model runs for each person seen, on top of the check: its own time is what counts. */
+  const perPerson = (r: SpeedTestResult) => r.role === 'face_models';
+  const shown = (r: SpeedTestResult) => (perPerson(r) ? r.ai?.median : r.total?.median);
 
   /** How much of the time between two checks a model takes. */
   function keepsUp(r: SpeedTestResult): string {
     if (!run || !r.total) return '';
+    if (perPerson(r)) return 'This comes on top of the object detector, for each person seen.';
     if (run.sensor.kind === 'sound') {
       const share = r.total.p95 / 1000 / (r.hop_s ?? 1);
       return share < 1
@@ -211,24 +217,30 @@
           {run.machine.cpus ?? '?'} CPUs{run.machine.memory_mb ? `, ${Math.round(run.machine.memory_mb / 1000)} GB memory` : ''}{done[0]?.picture ? `; pictures of ${done[0].picture}, ${done[0].picture_kb} kB` : ''}.
           Times are the median of the rounds, with 95 % of them within the second number.
         </p>
-        {#each run.results as r (key(r))}
+        {#each resultRoles as role (role)}
+        <h4 class="role">{SPEED_TEST_ROLES[role] ?? role}</h4>
+        {#each run.results.filter((x) => x.role === role) as r (key(r))}
           <div class="result" data-testid="speed-test-result">
             <div class="row wrap between">
               <strong>{r.name}</strong>
               <span class="row wrap">
                 {#if r.current}<span class="chip">In use</span>{/if}
-                {#if done.length > 1 && r === fastest}<span class="chip ok">Fastest</span>{/if}
-                {#if done.length > 1 && r === lightest}<span class="chip ok">Least memory</span>{/if}
+                {#if isFastest(r)}<span class="chip ok">Fastest</span>{/if}
+                {#if isLightest(r)}<span class="chip ok">Least memory</span>{/if}
               </span>
             </div>
             {#if r.total}
-              <div class="bar" title="Whole check"><span style:width="{Math.max(2, (r.total.median / slowest) * 100)}%"></span></div>
+              <div class="bar"><span style:width="{Math.max(2, barShare(r))}%"></span></div>
               <div class="numbers small">
-                <span><span class="muted">{run.sensor.kind === 'sound' ? 'Each analysis' : 'Whole check'}</span> <b>{ms(r.total.median)}</b> <span class="muted">/ {ms(r.total.p95)}</span></span>
+                {#if perPerson(r)}
+                  <span><span class="muted">Each person</span> <b>{ms(r.ai?.median)}</b> <span class="muted">/ {ms(r.ai?.p95)}</span></span>
+                {:else}
+                  <span><span class="muted">{run.sensor.kind === 'sound' ? 'Each analysis' : 'Whole check'}</span> <b>{ms(r.total.median)}</b> <span class="muted">/ {ms(r.total.p95)}</span></span>
+                {/if}
                 {#if r.camera}<span><span class="muted">Camera</span> {ms(r.camera.median)}</span>{/if}
                 {#if r.sound_ready_ms !== undefined}<span><span class="muted">Stream open with sound after</span> {ms(r.sound_ready_ms)}</span>{/if}
                 {#if r.decode}<span><span class="muted">Decode</span> {ms(r.decode.median)}</span>{/if}
-                <span><span class="muted">AI</span> {ms(r.ai?.median)}</span>
+                {#if !perPerson(r) && run.sensor.kind !== 'sound'}<span><span class="muted">AI</span> {ms(r.ai?.median)}</span>{/if}
                 {#if r.memory_peak_mb !== undefined}
                   <span><span class="muted">Memory</span> {r.memory_peak_mb} MB <span class="muted">peak, {r.memory_loaded_mb} MB loaded</span></span>
                 {:else}
@@ -246,6 +258,7 @@
             {/if}
           </div>
         {/each}
+        {/each}
         {#if run.deleted.length}<p class="small muted">Downloaded for the test and deleted again: {run.deleted.join(', ')}.</p>{/if}
         <p class="small muted">To use another model, choose it under <a href={href(paths.settings())}>AI model</a>.</p>
       </section>
@@ -260,6 +273,11 @@
   }
   .tight {
     gap: 4px;
+  }
+  .role {
+    margin: 8px 0 0;
+    font: inherit;
+    color: var(--c-muted, inherit);
   }
   .between {
     justify-content: space-between;

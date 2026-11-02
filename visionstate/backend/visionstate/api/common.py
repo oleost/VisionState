@@ -668,6 +668,8 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         trained = head is not None and rt.embedder is not None and head.backbone == rt.embedder.spec.id
     if not sensor.enabled:
         status = "disabled"
+    elif rt.benchmark_paused:
+        status = "speed_test"  # its model is out of memory for now: it says nothing about the sensor
     elif live and live.available is False:
         status = "unavailable"
     elif not trained:

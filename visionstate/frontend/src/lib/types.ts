@@ -69,7 +69,7 @@ export interface TriggerInfo {
   at: number;
 }
 
-export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
+export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled' | 'speed_test';
 
 /**
  * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a

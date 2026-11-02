@@ -52,6 +52,7 @@ export const TONE_COLOR: Record<Tone, string> = {
 export const SENSOR_STATUS: Record<SensorStatus, { label: string; tone: Tone }> = {
   ok: { label: 'Good', tone: 'ok' },
   untrained: { label: 'Needs training', tone: 'warn' },
+  speed_test: { label: 'Paused: speed test', tone: 'warn' },
   unavailable: { label: 'Camera unavailable', tone: 'danger' },
   disabled: { label: 'Paused', tone: 'muted' },
 };

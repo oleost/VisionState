@@ -277,6 +277,7 @@ class BenchmarkMixin(ChecksMixin):
     async def _benchmark_run(self, run: BenchmarkRun, cfg: SensorConfig) -> None:
         light = "" if cfg.is_sound else cfg.triggers["light_entity"]
         stopping = False
+        ended = "failed"
         try:
             await self._benchmark_wait_for_quiet()
             if light:
@@ -288,23 +289,29 @@ class BenchmarkMixin(ChecksMixin):
             for index, pick in enumerate(run.picks, 1):
                 run.index = index
                 await self._benchmark_one(run, cfg, pick)
-            run.state = "finished"
+            ended = "finished"
         except asyncio.CancelledError:
-            run.state = "cancelled"
+            ended = "cancelled"
             stopping = not run.cancelled  # the app stops: nothing to come back to
             if stopping:
                 raise
         except Exception as err:  # noqa: BLE001 - the sensors must go on whatever happens
             log.exception("The speed test failed")
-            run.state, run.error = "failed", redact(str(err)) or type(err).__name__
+            run.error = redact(str(err)) or type(err).__name__
         finally:
-            run.finished_at = time.time()
-            run.step = "Done"
-            if light:
-                await self.lights.release(light, "benchmark")
-            run.deleted = await asyncio.to_thread(self.benchmark_delete_downloads, run.keep)
+            # Running until all of this is done: the page shows the results with what was deleted, and
+            # nothing here may keep the sensors from going on.
+            run.step = "Finishing"
+            try:
+                if light:
+                    await self.lights.release(light, "benchmark")
+                run.deleted = await asyncio.to_thread(self.benchmark_delete_downloads, run.keep)
+            except Exception:  # noqa: BLE001
+                log.exception("Could not clean up after the speed test")
             if not stopping:
                 await self._benchmark_resume()
+            run.finished_at = time.time()
+            run.state = ended
 
     async def _benchmark_wait_for_quiet(self) -> None:
         """Until the checks that were running and any training have ended."""
@@ -329,7 +336,10 @@ class BenchmarkMixin(ChecksMixin):
             log.exception("Could not load the backbone again")
             self.embedder_error = redact(str(err))
         self.benchmark_paused = False
-        await self.faces_settled()
+        try:
+            await self.faces_settled()
+        except Exception:  # noqa: BLE001 - the sensors go on without faces, as when loading them fails
+            log.exception("Could not load the face model again")
         for sensor_id in list(self._wake):
             self.wake(sensor_id)
         later, self._retrain_after_benchmark = self._retrain_after_benchmark, set()
@@ -393,13 +403,13 @@ class BenchmarkMixin(ChecksMixin):
             asyncio.to_thread(backbones.download, file, self.settings.models_dir, progress)
         )
         try:
-            await asyncio.shield(fetching)
+            await asyncio.wait([fetching])  # being stopped does not cancel it
         except asyncio.CancelledError:
             stop.set()
             await asyncio.wait([fetching])
-            if not fetching.cancelled():
-                fetching.exception()  # DownloadStopped, or what the download ended with
+            fetching.exception()  # DownloadStopped, or what the download ended with
             raise
+        fetching.result()
 
     async def _benchmark_measure(self, run: BenchmarkRun, cfg: SensorConfig, role: str, spec, result: dict) -> None:  # noqa: ANN001
         before = process_memory_mb()
@@ -490,6 +500,8 @@ class BenchmarkMixin(ChecksMixin):
             await asyncio.to_thread(infer, image)
             t3 = time.perf_counter()
             size = image.size
+            del image
+            await asyncio.to_thread(backbones.trim_memory)  # as after every check, not counted
             if number >= BENCHMARK["warmup_rounds"]:
                 camera.append(t1 - t0)
                 decode.append(t2 - t1)
