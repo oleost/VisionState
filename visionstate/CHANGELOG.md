@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.1b1
+## 0.13.1
 
 **Fixes for counters, above all water meters with pointer dials (#59).**
 
