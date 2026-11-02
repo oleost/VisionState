@@ -4,7 +4,7 @@
   import Nav from './lib/components/Nav.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import { pollWhileVisible } from './lib/poll';
-  import { route } from './lib/router.svelte';
+  import { href, paths, route } from './lib/router.svelte';
   import { POLL, SENSOR_TABS, type SensorTab } from './lib/ui';
   import Dashboard from './pages/Dashboard.svelte';
   import History from './pages/History.svelte';
@@ -13,6 +13,7 @@
   import Review from './pages/Review.svelte';
   import SensorPage from './pages/SensorPage.svelte';
   import Settings from './pages/Settings.svelte';
+  import SpeedTest from './pages/SpeedTest.svelte';
 
   let ready = $state(false);
 
@@ -28,6 +29,11 @@
 
 <Nav />
 <main>
+  {#if app.status?.benchmark_running && section !== 'speed-test'}
+    <div class="notice warn speed-test-running">
+      A speed test is running: all sensors are paused. <a href={href(paths.speedTest())}>See how it goes</a>
+    </div>
+  {/if}
   {#if !ready}
     <div class="page">
       {#if app.error}<div class="notice danger">Could not reach the VisionState backend: {app.error}</div>{:else}<p class="muted">Loading…</p>{/if}
@@ -42,6 +48,8 @@
     <History />
   {:else if section === 'people'}
     <People />
+  {:else if section === 'speed-test'}
+    <SpeedTest />
   {:else if section === 'settings'}
     {#key app.restored}<Settings />{/key}
   {:else}

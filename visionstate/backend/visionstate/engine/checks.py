@@ -31,6 +31,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         event = self._wake[sensor_id]
         last_error = ""
         while True:
+            self._steps_running += 1
             try:
                 timeout = await self._sensor_step(sensor_id)
             except asyncio.CancelledError:
@@ -43,6 +44,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
                 timeout = RUNTIME["loop_retry_s"]
             else:
                 last_error = ""
+            finally:
+                self._steps_running -= 1
             if timeout is False:
                 return  # the sensor was deleted
             try:
@@ -57,6 +60,9 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
         if cfg is None:
             return False
+        if self.benchmark_paused:
+            await self._paused_for_benchmark(cfg)
+            return None  # woken when the speed test has ended
         if cfg.is_sound:
             return await self._listen(cfg)  # listens all the time instead of checking frames
         live = self.live_state(sensor_id)
@@ -84,6 +90,14 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             due_at, _ = next_check_at(cfg, live, time.time())
         timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
         return None if math.isinf(timeout) else timeout  # no regular check: sleep until woken
+
+    async def _paused_for_benchmark(self, cfg: SensorConfig) -> None:
+        """A sensor during the speed test: no checks; a sound sensor lets go of its stream."""
+        if cfg.is_sound:
+            self.stop_listening(cfg.id)
+            heard = self.live_state(cfg.id).sound
+            if heard is not None:
+                await self._nothing_heard(cfg, heard)
 
     async def _light_before(self, cfg: SensorConfig) -> float | None:
         """Hold the sensor's light on for a check (see lights.py).

@@ -528,6 +528,18 @@ after it asked) — about 30 ms a frame, for 4–6 % of one core while it is ope
 nobody asked for that long, so a check at the regular interval still connects for one frame and
 nothing decodes in between.
 
+**Speed test** (discussion #71; `engine.benchmark`, tunables `settings.BENCHMARK`). The numbers in the
+model registries are of one desktop CPU, which says little about a NAS or a Raspberry Pi, and a
+machine's speed depends on its own camera too. So the test uses a sensor's own source and every model
+that sensor could use, and does the work of a check, not only a model run. Everything is paused
+(sensors, and their models out of memory): simple, and the memory of a model can be read from the
+process, which is why it is only measured where `/proc` says so. Models are tested one at a time, as
+two large ones at once would not fit on a small machine (a model that does not fit in the free memory
+times `memory_room` is skipped). Results stay in memory, nothing goes in a backup. What is downloaded for
+it is noted before the download (a file in the models folder), so even a crash leaves nothing behind
+after the next start; a stopped download ends before anything is deleted, or its thread would put the
+finished file back. It measures speed and memory, not quality: that needs a right answer per picture.
+
 ## 7. When and how a sensor decides
 
 - **Triggers** (per sensor, `sensor.triggers`, defaults in `settings.TRIGGER_DEFAULTS`):

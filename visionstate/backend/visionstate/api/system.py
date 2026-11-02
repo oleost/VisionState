@@ -211,6 +211,7 @@ async def status(request: Request) -> dict:
     mqtt = rt.mqtt
     return {
         "version": VERSION,
+        "benchmark_running": rt.benchmark_running(),
         "sensors": sensors,
         "review_count": review,
         "backbone": rt.embedder.spec.id if rt.embedder else None,

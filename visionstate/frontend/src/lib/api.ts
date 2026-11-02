@@ -11,6 +11,8 @@ import type {
   FaceStatus,
   ImportResult,
   ModelKind,
+  SpeedTestInfo,
+  SpeedTestRun,
   People,
   PhotoResult,
   Camera,
@@ -146,6 +148,11 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
+  speedTest: () => request<SpeedTestInfo>('benchmark'),
+  speedTestRun: () => request<{ run: SpeedTestRun | null }>('benchmark/run'),
+  startSpeedTest: (sensorId: number, models: { role: string; id: string }[], keep: boolean) =>
+    request<{ run: SpeedTestRun }>('benchmark', send('POST', { sensor_id: sensorId, models, keep })),
+  cancelSpeedTest: () => request<{ run: SpeedTestRun | null }>('benchmark/cancel', send('POST')),
   saveSettings: (body: { backbone: string; detector?: string; reader?: string; face_model?: string }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
   storage: () => request<StorageInfo>('storage'),

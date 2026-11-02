@@ -335,3 +335,14 @@ export const HISTORY_INTRO: Record<SensorKind, string> = {
 
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;
+
+/** The speed test: how often the page asks how it goes, and the kinds of model it tests. */
+export const SPEED_TEST_POLL_MS = 1_000;
+export const SPEED_TEST_ROLES: Record<string, string> = {
+  backbones: 'State models',
+  detectors: 'Object detectors',
+  face_models: 'Face recognition (for each person seen)',
+  readers: 'Text and number readers',
+  wheel_readers: 'Wheel readers',
+  sound_models: 'Sound models',
+};
