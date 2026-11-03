@@ -96,6 +96,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
             handle.cancel()
         for task in [*self._tasks.values(), *self._background]:
             task.cancel()
+        await self.shared_frames.close()
         await self.mqtt.stop()
         await self.ha_events.stop()
         await self.grabber.close()
@@ -193,6 +194,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
             task.cancel()
         self.stop_listening(sensor_id)
         self.live.pop(sensor_id, None)
+        self._camera_of.pop(sensor_id, None)
         self.sound_heads.pop(sensor_id, None)
         self.sound_room.pop(sensor_id, None)
         room_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)

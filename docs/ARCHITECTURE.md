@@ -58,6 +58,7 @@ API as `request.app.state.runtime`.
 | `engine/` | The runtime — see below |
 | `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips and recordings), `cameras.py` (camera and entity lists, the light, previews), `benchmark.py` (the speed test), `review.py` (review queue and answers), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
 | `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
+| `shared_frames.py` | Sensors on the same camera asking at the same moment: one picture, taken after all of them asked, decoded once. Nothing kept afterwards; a sensor with a light or alone on its camera does not use it |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
@@ -93,7 +94,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `base.py` | `RuntimeBase`: the shared state (`__init__`), loading a sensor, its live state, waking it |
 | `runtime.py` | Lifecycle (start/stop), sensors coming and going, waking a sensor, triggers |
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
-| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next, looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
+| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next (on the moments the sensors on a camera have in common: `aligned`), looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
 | `checks.py` | Each sensor's loop, change detection (probe), the light, `run_once` and the state sensors' check |
 | `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
@@ -113,7 +114,8 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   │                                        change detection (checks.probe), the UI, an MQTT command
   ├─ load_sensor → SensorConfig            a fresh snapshot of the row, every pass
   ├─ light on? (checks._light_before)      lights.py, frames thrown away while it warms up
-  ├─ grab a frame (sources.FrameGrabber)   → LiveState.frames (the UI labels these)
+  ├─ grab a frame (sources.FrameGrabber)   → LiveState.frames (the UI labels these); one picture
+  │                                        for every sensor on the camera asking now (shared_frames.py)
   ├─ decode (imaging.decode)
   └─ by kind:
       state sensor   → checks._run_states  backbone embedding → head → probabilities

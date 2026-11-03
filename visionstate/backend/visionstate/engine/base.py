@@ -15,12 +15,13 @@ from typing import Any
 import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, readers, sounds, teach
+from .. import backbones, classifier, detectors, faces, imaging, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
 from ..mqtt import MqttBridge
 from ..settings import RUNTIME, Settings, merge_review, merge_teach
+from ..shared_frames import SharedFrames
 from ..sources import FrameGrabber, HomeAssistant
 from ..storage import Storage
 from .state import LiveState, SensorConfig
@@ -40,6 +41,10 @@ class RuntimeBase:
         self.ha = HomeAssistant(settings)
         self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
         self.grabber = FrameGrabber(self.ha)
+        self.shared_frames = SharedFrames(
+            lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
+        )
+        self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
         # The speed test (engine/benchmark.py): the last one, and while it runs no sensor checks.
         self.benchmark = None
         self.benchmark_paused = False

@@ -757,6 +757,10 @@ RUNTIME = {
     "max_concurrent_inferences": 2,
     "inference_threads": 0,  # threads per model run (backbones.cpu_session); 0: one per physical core
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
+    # Sensors on the same camera: requests this close together share one picture (shared_frames.py),
+    # and their checks fall on the same moments, with room for a late wake-up (engine.logic.aligned).
+    "shared_frame_window_s": 0.1,
+    "shared_frame_slack_s": 0.5,
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
     "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,

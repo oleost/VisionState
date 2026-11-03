@@ -653,6 +653,12 @@ Set up per sensor under **Settings → When to check**:
 | Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
 | After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
+Sensors on the exact same camera or address take their pictures together: their regular checks
+fall on the same moments (a sensor every 30 s and one every 60 s meet every minute), and they share
+one fresh picture, each checking its own region with its own model. A check can therefore come a
+little sooner than its interval after a trigger, never later. A sensor with a light, or alone on its
+camera, takes its pictures by itself.
+
 A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
 trigger entities, and change detection on for cameras without a motion sensor.
 

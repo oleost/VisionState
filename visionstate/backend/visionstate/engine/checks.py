@@ -15,13 +15,14 @@ from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
 from ..settings import RUNTIME, UNKNOWN_STATE
+from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
 from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
 from .sound import SoundMixin
-from .state import SensorConfig
+from .state import LiveState, SensorConfig
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if cfg.is_sound:
             return await self._listen(cfg)  # listens all the time instead of checking frames
         live = self.live_state(sensor_id)
+        self._note_camera(cfg, live)
         due_at, kind = next_check_at(cfg, live, time.time())
         if not cfg.enabled and not live.force_paused:
             live.force = False  # paused: no check after a retrain or a model change, only when asked
@@ -90,6 +92,18 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             due_at, _ = next_check_at(cfg, live, time.time())
         timeout = max(0.05, due_at - time.time()) if cfg.enabled else cfg.interval_s
         return None if math.isinf(timeout) else timeout  # no regular check: sleep until woken
+
+    def _note_camera(self, cfg: SensorConfig, live: LiveState) -> None:
+        """Whether this sensor shares its camera with another, at every pass. A sensor with a light
+        does not: its frames are taken in the light, a frame without it would be no baseline. One
+        alone on its camera takes its frames and keeps its moments as if nothing was shared."""
+        key = (cfg.source_type, cfg.source)
+        if cfg.enabled and not cfg.triggers["light_entity"]:
+            self._camera_of[cfg.id] = key
+        else:
+            self._camera_of.pop(cfg.id, None)
+        users = sum(camera == key for camera in self._camera_of.values())
+        live.shares_camera = cfg.id in self._camera_of and users > 1
 
     async def _paused_for_benchmark(self, cfg: SensorConfig) -> None:
         """A sensor during the speed test: no checks; a sound sensor lets go of its stream."""
@@ -189,7 +203,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # baseline is not, so every comparison would look like a change. Compare later.
             return
         try:
-            frame_id, data = await self.grab(cfg)
+            frame_id, data, _ = await self._grab_for_check(cfg)
             # Only for the signature: decoded small (a check that follows decodes it whole).
             small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
@@ -223,6 +237,14 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         data = await self.grabber.grab(cfg.source_type, cfg.source)
         return self.live_state(cfg.id).remember(data), data
 
+    async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
+        """A frame for a check without a light: together with the other sensors on the camera asking now."""
+        live = self.live_state(cfg.id)
+        if not live.shares_camera:
+            return *(await self.grab(cfg)), None
+        frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+        return live.remember(frame.data), frame.data, frame
+
     async def run_once(
         self,
         cfg: SensorConfig,
@@ -239,19 +261,20 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         t = topics(cfg.slug)
         live.last_run = time.time()
         lit = False  # the frame was taken with the sensor's light on
+        shared = None
         try:
             if data is None:
                 wait = await self._light_before(cfg)
                 try:
                     if wait is None:
-                        frame_id, data = await self.grab(cfg)
+                        frame_id, data, shared = await self._grab_for_check(cfg)
                     else:
                         frame_id, data = await self._grab_in_light(cfg, wait)
                         lit = True
                 finally:
                     self._light_after(cfg)
             if image is None:
-                image = await asyncio.to_thread(imaging.decode, data)
+                image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
