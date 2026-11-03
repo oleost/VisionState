@@ -1033,7 +1033,11 @@ is part of backups and needs no restart.
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
 import of a backup;
-less camera traffic (reuse the engine's latest frame in the UI);
+less camera traffic (reuse the engine's latest frame in the UI); shared pictures for sensors with a
+light (only with the same camera *and* light: on the same moments, the longest light delay of them,
+the warm-up frames and the checked one shared — today each warms up and checks on its own time, the
+light itself already held together by `lights.py`); burst checks of sensors on one camera on shared
+moments too (today they share when they happen to coincide);
 video de-duplication on the ROI instead of the full frame; light theme following Home
 Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) and
 [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md): gauges; several readings per sensor (a sign with
