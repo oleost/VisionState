@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.0b3
+
+**Sound sensors can listen to a camera in Home Assistant.**
+
+- The sound source is now picked like the camera of the other sensors: your cameras in Home
+  Assistant first, a stream URL (RTSP, go2rtc, an ESP32 microphone) below. Cameras without a stream
+  in Home Assistant (snapshots only) are greyed out.
+- A camera picked there is heard through Home Assistant's own stream of it: no address or password
+  to type. It hears the same as the camera's RTSP stream, but several seconds later (about 10 on the
+  doorbell it was tried on), and it takes a little while to start. When a sound must be known at
+  once, or when the wizard hears nothing (Home Assistant passes on only some kinds of sound), use
+  the camera's RTSP stream.
+- RTSP from a real camera has now been tried too: a Reolink doorbell, with speech, a dog and a siren.
+
 ## 0.14.0b2
 
 **Sensors on the same camera share their pictures (#63, thanks to @Docter77).**
