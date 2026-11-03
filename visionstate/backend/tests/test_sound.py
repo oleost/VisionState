@@ -3,6 +3,7 @@ discovery and the whole flow over the API (docs/SOUND_PLAN.md)."""
 
 import re
 import time
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -610,3 +611,151 @@ def test_a_sensor_needs_something_to_listen_for(settings):  # noqa: F811
         assert client.post("/api/v1/sensors", json={**body, "sound": {"sounds": []}}).status_code == 400
         sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
         assert client.patch(f"/api/v1/sensors/{sid}", json={"sound": {"sounds": []}}).status_code == 400
+
+
+# --- a Home Assistant camera's own sound --------------------------------------------------------------
+
+
+def test_a_home_assistant_camera_gives_its_stream_address(settings):  # noqa: F811
+    """camera/stream over the WebSocket API: the address of its HLS stream, asked with the token."""
+    import asyncio
+    import json
+
+    from websockets.asyncio.server import serve
+
+    from visionstate.sources import HomeAssistant, SourceError
+
+    async def handler(ws):  # noqa: ANN001
+        await ws.send(json.dumps({"type": "auth_required"}))
+        assert json.loads(await ws.recv())["access_token"] == "token"
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        request = json.loads(await ws.recv())
+        assert request["type"] == "camera/stream" and request["format"] == "hls"
+        if request["entity_id"] == "camera.snapshots":
+            error = {"code": "home_assistant_error", "message": "camera.snapshots does not support play stream service"}
+            await ws.send(json.dumps({"id": request["id"], "type": "result", "success": False, "error": error}))
+            return
+        result = {"url": "/api/hls/abc123/master_playlist.m3u8"}
+        await ws.send(json.dumps({"id": request["id"], "type": "result", "success": True, "result": result}))
+
+    async def scenario() -> None:
+        async with serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            ha = HomeAssistant(replace(settings, ha_url=f"http://127.0.0.1:{port}", ha_token="token"))
+            try:
+                url, headers = await ha.stream_address("camera.front_door")
+                assert url == f"http://127.0.0.1:{port}/api/hls/abc123/master_playlist.m3u8"
+                assert headers == {"Authorization": "Bearer token"}
+                with pytest.raises(SourceError, match="does not support play stream"):
+                    await ha.stream_address("camera.snapshots")
+            finally:
+                await ha.close()
+
+    asyncio.run(scenario())
+
+
+def test_cameras_say_whether_they_stream(settings):  # noqa: F811
+    """Only a camera with a stream in Home Assistant has sound to listen to (CameraEntityFeature.STREAM)."""
+    import asyncio
+
+    import httpx
+
+    from visionstate.sources import HomeAssistant
+
+    states = [
+        {"entity_id": "camera.door", "state": "idle", "attributes": {"friendly_name": "Door", "supported_features": 2}},
+        {"entity_id": "camera.snap", "state": "idle", "attributes": {"friendly_name": "Snap", "supported_features": 0}},
+        {"entity_id": "camera.old", "state": "idle", "attributes": {"friendly_name": "Old"}},
+        {"entity_id": "light.hall", "state": "on", "attributes": {}},
+    ]
+
+    async def scenario() -> list[dict]:
+        ha = HomeAssistant(replace(settings, ha_url="http://ha", ha_token="token"))
+        ha._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=states)))
+        try:
+            return await ha.cameras()
+        finally:
+            await ha.close()
+
+    assert {c["entity_id"]: c["stream"] for c in asyncio.run(scenario())} == {
+        "camera.door": True,
+        "camera.snap": False,
+        "camera.old": False,
+    }
+
+
+def test_a_camera_stream_is_asked_for_each_time_it_is_opened(monkeypatch):
+    """The address holds a token that ends with Home Assistant's stream: asked for again at every
+    reconnect (a failure is shown and tried again), and opened with the headers it came with."""
+    import asyncio
+
+    from visionstate.sources import SourceError, open_audio
+
+    monkeypatch.setitem(SOUND, "reconnect_min_s", 0.1)
+    server = SoundServer()
+    asked: list[str] = []
+
+    class FakeHa:
+        async def stream_address(self, entity_id: str) -> tuple[str, dict[str, str]]:
+            asked.append(entity_id)
+            if len(asked) == 1:
+                raise SourceError(f"{entity_id}: the camera is starting")
+            return server.url, {"Authorization": "Bearer token"}
+
+    async def scenario() -> None:
+        stream = open_audio(FakeHa(), "ha_camera", "camera.front_door")  # type: ignore[arg-type]
+        try:
+            for _ in range(200):
+                if stream.total:
+                    break
+                await asyncio.sleep(0.05)
+            assert stream.total and stream.info["codec"] == "pcm_s16le"
+        finally:
+            stream.close()
+
+    try:
+        asyncio.run(scenario())
+        assert asked[:2] == ["camera.front_door", "camera.front_door"]
+        assert server.headers and server.headers[0]["Authorization"] == "Bearer token"
+    finally:
+        server.close()
+
+
+def test_a_sound_sensor_can_listen_to_a_home_assistant_camera(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        body = {"name": "Door", "kind": "sound", "source_type": "ha_camera", "sound": {"sounds": ["siren"]}}
+        assert client.post("/api/v1/sensors", json={**body, "source": "not an entity"}).status_code == 400
+        made = client.post("/api/v1/sensors", json={**body, "source": "camera.front_door"})
+        assert made.status_code == 201, made.text
+        sid = made.json()["id"]
+        # No Home Assistant here: said on the sensor, as any stream that does not open.
+        assert wait_for(lambda: "not configured" in client.get(f"/api/v1/sensors/{sid}").json()["live"]["error"])
+        moved = client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "rtsp", "source": "rtsp://cam/live"})
+        assert moved.status_code == 200 and moved.json()["source_type"] == "rtsp"
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "ha_camera"}).status_code == 400
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "http"}).status_code == 400
+        preview = {"source_type": "http", "source": "http://cam/snap.jpg"}
+        assert client.post("/api/v1/sounds/preview", json=preview).status_code == 400
+
+
+@requires_sound
+def test_a_sound_in_the_middle_of_a_burst_is_heard(settings):  # noqa: F811
+    """A Home Assistant camera's stream (HLS) delivers seconds of sound at once: every window in it
+    is analysed, not only the newest (a siren in the middle of a segment was missed)."""
+    server = SoundServer(burst_s=8.0, speed=2.0)
+    siren = recording("siren")[: 3 * RATE]  # shorter than a burst
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Door", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            # Played followed by 4 s of quiet, so the siren sits in the middle of the next burst.
+            server.play(np.concatenate([siren, np.zeros(4 * RATE, dtype=np.float32)]))
+            heard = {"sensor": sid, "event": "heard"}
+            assert wait_for(lambda: client.get("/api/v1/history", params=heard).json()["items"], timeout=30)
+    finally:
+        server.close()

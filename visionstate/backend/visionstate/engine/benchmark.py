@@ -39,7 +39,7 @@ from ..settings import (
     VERSION,
 )
 from ..sounds import MODELS as SOUND_MODELS
-from ..sources import AudioStream
+from ..sources import open_audio
 from .checks import ChecksMixin
 from .state import SensorConfig
 
@@ -554,7 +554,7 @@ class BenchmarkMixin(ChecksMixin):
     async def _benchmark_sound_rounds(
         self, run: BenchmarkRun, cfg: SensorConfig, infer: Callable, result: dict
     ) -> None:
-        stream = AudioStream(cfg.source, False)
+        stream = open_audio(self.ha, cfg.source_type, cfg.source)
         try:
             run.step = "Listening to the stream"
             t0 = time.monotonic()

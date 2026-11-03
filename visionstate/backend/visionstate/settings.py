@@ -151,7 +151,7 @@ BENCHMARK = {
     "min_rounds": 3,
     "max_model_s": 120.0,
     "wait_quiet_s": 60.0,  # how long checks and training that were running get to end
-    "sound_wait_s": 30.0,  # how long a stream gets to deliver a window of sound
+    "sound_wait_s": 30.0,  # how long a stream gets to deliver a window of sound (at least SOUND["ha_open_s"])
     "memory_sample_s": 0.02,
     "memory_room": 1.3,  # a model is not loaded without this many times its footprint free
 }
@@ -320,7 +320,7 @@ SOUND_LIMITS = {
 SOUND = {
     "rate": 16_000,  # samples per second the model takes (mono)
     "window_s": 2.0,  # what one analysis hears
-    "hop_s": 0.5,  # how often the newest window is analysed (when it is loud enough)
+    "hop_s": 0.5,  # a window is analysed for every hop of this much sound (when it is loud enough)
     # A sound is "heard" when its score passed its threshold in on_windows of the last of_windows
     # windows; it stays heard while it scores above off_share of its threshold (hysteresis), and
     # for clear_after_s after that.
@@ -345,6 +345,10 @@ SOUND = {
     # lower than the "speech" sound's threshold, so speech is rather silenced once too often.
     "speech_mute": 0.2,
     "speech_key": "speech",  # the model's sound for "someone is talking": never keeps a clip
+    "open_s": 10.0,  # a stream address must open, and then send something, within this
+    # A Home Assistant camera's sound comes through Home Assistant's own stream (HLS), which takes
+    # longer to open: Home Assistant starts it and waits for its first segments.
+    "ha_open_s": 30.0,
     "reconnect_min_s": 2.0,  # a stream that failed is opened again after this, doubling up to the max
     "reconnect_max_s": 60.0,
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again

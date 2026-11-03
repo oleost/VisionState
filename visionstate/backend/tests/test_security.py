@@ -23,6 +23,10 @@ from visionstate.settings import Settings
         ),
         ("Connection to rtsp://u:p@cam failed", "Connection to rtsp://***@cam failed"),
         ("http://cam/snapshot.jpg", "http://cam/snapshot.jpg"),
+        (  # a Home Assistant camera's stream (a sound sensor): the token is the key to the camera
+            "Input/output error: 'http://supervisor/core/api/hls/f0e1d2c3/master_playlist.m3u8'",
+            "Input/output error: 'http://supervisor/core/api/hls/***/master_playlist.m3u8'",
+        ),
     ],
 )
 def test_redact(raw, expected):

@@ -758,6 +758,8 @@ export interface Camera {
   entity_id: string;
   name: string;
   state: string;
+  /** It has a stream in Home Assistant: a sound sensor can listen to it. */
+  stream: boolean;
 }
 
 export interface SampleItem {

@@ -525,8 +525,14 @@ A sound sensor listens to a stream's sound all the time and tells Home Assistant
 each sound is an on/off sensor (`binary_sensor`), on while the sound is heard and for a few
 seconds after (*A sound stays heard for*). In the wizard, choose **Listen** first.
 
-**Where the sound comes from** (*Stream with sound*):
+**Where the sound comes from** (*Sound source*):
 
+- a camera in Home Assistant, picked as for the other sensors: VisionState listens to the camera's
+  own stream in Home Assistant. Only cameras with a stream can be picked (a camera that gives only
+  snapshots is greyed out). It hears what the camera's RTSP stream hears, but later: several
+  seconds behind the camera (about 10 on the doorbell it was tried on). It takes a while to start, and Home Assistant passes on only some
+  kinds of sound (AAC is one): when the wizard hears nothing, or when a sound must be known at
+  once, use the camera's RTSP stream instead;
 - a camera's RTSP stream — switch its microphone (its audio) on in the camera first. A camera's
   sub stream is enough: the sound is the same;
 - a go2rtc restream (`rtsp://homeassistant.local:8554/<name>` with the go2rtc app): one connection

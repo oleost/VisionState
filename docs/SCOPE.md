@@ -468,9 +468,11 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
 **Sound sensors** (`sounds.py`, `engine/sound.py`, `api/sounds.py`; registry
 `backend/visionstate/sounds.json`; the research, measurements and decisions in
 [`SOUND_PLAN.md`](SOUND_PLAN.md)) listen all the time instead of checking frames. The stream
-(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream to 16 kHz
-mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
-each hop's level (dBFS) and analyses the newest window only when it is loud enough: above the
+(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream, or of a
+Home Assistant camera's own stream (HLS; its address is asked of Home Assistant each time it is
+opened), to 16 kHz mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
+each hop's level (dBFS) and analyses the window that ends with each hop (a Home Assistant camera's
+stream delivers several seconds at once) only when it is loud enough: above the
 background it learns (a low percentile of the recent levels, not learned while a sound is heard,
 so a long siren never becomes the background) by `above_db`, or above a fixed level. The model is
 **CED-Tiny** (Apache-2.0; trained on AudioSet, accepted 2026-10-29) with an embedding output added
@@ -1045,5 +1047,5 @@ four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
-sensors: a Home Assistant camera's own sound, stock ESPHome microphones, telling a built-in sound
+sensors: stock ESPHome microphones, telling a built-in sound
 it was wrong (a veto from "no" answers), CLAP sounds described by a text.

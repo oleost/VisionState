@@ -2,8 +2,9 @@
 
 A sound sensor's loop comes here every SOUND["hop_s"] instead of checking a frame: it takes what the
 stream (sources.AudioStream, a thread of its own) received since, keeps the level of each hop,
-and analyses the newest window when it is loud enough — above the line (``sounds.line_db``). Each
-sound is then decided over the last windows (logic.hear) and published when that changes. A sound
+and analyses the window that ends with each hop when it is loud enough — above the line
+(``sounds.line_db``); a stream that delivers seconds at once has them all analysed. Each sound is
+then decided over the last windows (logic.hear) and published when that changes. A sound
 that begins to be heard writes a history row; with clips on, the seconds around it are cut from
 the stream's buffer once they arrived, speech in them silenced, and kept with the row.
 
@@ -28,7 +29,7 @@ from ..db import Embedding, Prediction, Sample
 from ..mqtt import sound_topics, topics
 from ..redact import redact
 from ..settings import KIND_SOUND, SOUND
-from ..sources import AudioStream
+from ..sources import AudioStream, open_audio
 from ..storage import is_clip
 from .base import RuntimeBase
 from .logic import hear
@@ -98,7 +99,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if stream is None or stream.url != cfg.source or stream.closed or stream.video != video:
             if stream is not None:
                 stream.close()
-            stream = heard.stream = AudioStream(cfg.source, video)
+            stream = heard.stream = open_audio(self.ha, cfg.source_type, cfg.source, video)
             heard.consumed = 0
             for clip in heard.clips:  # cut by the old stream's sample numbers
                 heard.clip_pending.pop(clip["row"], None)
@@ -111,7 +112,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         new, heard.consumed = stream.since(heard.consumed)
         await self._sound_availability(cfg, stream, heard)
         if len(new):
-            await self._hear(cfg, model, stream, heard, new)
+            await self._hear(cfg, model, stream, heard, new, heard.consumed)
         await self._cut_clips(cfg, model, stream, heard)
         return max(0.05, SOUND["hop_s"] - (time.monotonic() - started))
 
@@ -121,7 +122,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             track.recent.clear()  # those windows must not count towards the next time it listens
             if track.on:
                 track.on, track.row = False, None
-                await self._sound_changed(cfg, None, heard, key, track, sounds.SILENCE_DB)
+                await self._sound_changed(cfg, None, heard, key, track, sounds.SILENCE_DB, 0)
 
     async def _sound_availability(self, cfg: SensorConfig, stream: AudioStream, heard: SoundLive) -> None:
         live = self.live_state(cfg.id)
@@ -141,44 +142,70 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         await self._send(cfg, topics(cfg.slug)["availability"], "online" if available else "offline", retain=True)
 
     async def _hear(
-        self, cfg: SensorConfig, model: sounds.SoundModel, stream: AudioStream, heard: SoundLive, new: np.ndarray
+        self,
+        cfg: SensorConfig,
+        model: sounds.SoundModel,
+        stream: AudioStream,
+        heard: SoundLive,
+        new: np.ndarray,
+        end: int,
     ) -> None:
-        """Levels of the new hops; the newest window analysed when loud enough; each sound decided."""
-        hop = int(SOUND["hop_s"] * stream.rate)
-        hops = [new[i : i + hop] for i in range(0, len(new), hop)]
+        """Levels of the new hops (``new``: the samples up to sample number ``end``), and each sound
+        decided on each hop: the window that ends with it is analysed when it is loud enough. A stream
+        may deliver many hops at once (a Home Assistant camera's stream: a segment of several seconds
+        at a time); each is analysed, not only the newest, or a sound in the middle would be missed."""
+        rate = stream.rate
+        hop, size = int(SOUND["hop_s"] * rate), int(SOUND["window_s"] * rate)
         hearing = any(track.on for track in heard.tracks.values())
-        for part in hops:
-            level = sounds.level_db(part)
+        ends: list[int] = []  # the sample number each hop ends at
+        levels: list[float] = []  # the loudest hop of the window that ends with each
+        for i in range(0, len(new), hop):
+            level = sounds.level_db(new[i : i + hop])
             heard.levels.append(level)
             if not hearing:  # a siren that goes on for minutes must not become the background
                 heard.background.append(level)
+            ends.append(end - len(new) + min(i + hop, len(new)))
+            levels.append(max(list(heard.levels)[-int(SOUND["window_s"] / SOUND["hop_s"]) :]))
         heard.line = sounds.line_db(cfg.sound, sounds.background_db(list(heard.background)))
-        recent = list(heard.levels)[-int(SOUND["window_s"] / SOUND["hop_s"]) :]
-        loud = heard.line is not None and max(recent, default=sounds.SILENCE_DB) >= heard.line
+        loud = [j for j, level in enumerate(levels) if heard.line is not None and level >= heard.line]
         keys = cfg.sound_keys
-        scores = dict.fromkeys(keys, 0.0)
-        embedding = None
+        analysed: dict[int, tuple[dict[str, float], np.ndarray]] = {}  # hop -> its scores and embedding
         if loud:
-            window = stream.tail(SOUND["window_s"])
+            # The new samples and a window's length before them (fewer when the buffer has no more).
+            audio = stream.segment(max(0, end - len(new) - size), end)
+            if audio is None:
+                audio = new
+            first = end - len(audio)
+            windows = np.zeros((len(loud), size), dtype=np.float32)
+            for n, j in enumerate(loud):
+                part = audio[max(0, ends[j] - size - first) : ends[j] - first]
+                windows[n, size - len(part) :] = part
             async with self._sem:
-                raw, embeddings = await asyncio.to_thread(model.run, window[None, :])
-            scores.update(model.sound_scores(raw[0], keys))
-            embedding = embeddings[0]
+                raw, embeddings = await asyncio.to_thread(model.run, windows)
             head = self.sound_heads.get(cfg.id)
-            if head is not None:
-                for key, p in head.predict(embedding[None, :])[0].items():
+            own = head.predict(embeddings) if head is not None else None
+            for n, j in enumerate(loud):
+                scores = dict.fromkeys(keys, 0.0)
+                scores.update(model.sound_scores(raw[n], keys))
+                for key, p in (own[n] if own is not None else {}).items():
                     if key in scores:
                         scores[key] = p
-        heard.analysed, heard.scores = loud, scores if loud else {}
+                analysed[j] = (scores, embeddings[n])
+        newest = len(ends) - 1
+        heard.analysed = newest in analysed
+        heard.scores = analysed[newest][0] if heard.analysed else {}
         now = time.time()
-        level = max(recent, default=sounds.SILENCE_DB)
-        for key in keys:
-            track = heard.tracks.setdefault(key, SoundTrack())
-            if hear(track, scores[key], self.sound_threshold(cfg, key), now, cfg.sound["clear_after_s"]):
-                await self._sound_changed(cfg, stream, heard, key, track, level)
+        for j, at in enumerate(ends):
+            scores = analysed[j][0] if j in analysed else dict.fromkeys(keys, 0.0)
+            when = now - (end - at) / rate  # a hop that came in a burst: as long ago as it is in the stream
+            for key in keys:
+                track = heard.tracks.setdefault(key, SoundTrack())
+                if hear(track, scores[key], self.sound_threshold(cfg, key), when, cfg.sound["clear_after_s"]):
+                    await self._sound_changed(cfg, stream, heard, key, track, levels[j], at)
         for key in [k for k in heard.tracks if k not in keys]:
             del heard.tracks[key]  # no longer listened for
-        if embedding is not None and cfg.sound["custom"] and cfg.sound["learn_room"]:
+        if loud and cfg.sound["custom"] and cfg.sound["learn_room"]:
+            scores, embedding = analysed[loud[-1]]
             self._keep_room(cfg, heard, embedding, scores)
 
     def sound_threshold(self, cfg: SensorConfig, key: str) -> float:
@@ -190,10 +217,17 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         return spec.threshold if spec else SOUND["own_threshold"]
 
     async def _sound_changed(
-        self, cfg: SensorConfig, stream: AudioStream | None, heard: SoundLive, key: str, track: SoundTrack, level: float
+        self,
+        cfg: SensorConfig,
+        stream: AudioStream | None,
+        heard: SoundLive,
+        key: str,
+        track: SoundTrack,
+        level: float,
+        at: int,
     ) -> None:
-        """A sound began or stopped to be heard: publish it, and write a history row (with a clip
-        to cut once its seconds after arrived)."""
+        """A sound began or stopped to be heard in the window that ends at sample number ``at``:
+        publish it, and write a history row (with a clip to cut once its seconds after arrived)."""
         await self._send(cfg, sound_topics(cfg.slug, key)["state"], "ON" if track.on else "OFF", retain=True)
         score = track.best if not track.on else track.score
         row = await asyncio.to_thread(self._record_sound, cfg.id, key, track.on, score, level)
@@ -201,14 +235,14 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             await self._maybe_ask(cfg, key, track, heard)
         track.row = row if track.on else None
         if stream is not None and track.on and cfg.sound["clips"] and key != SOUND["speech_key"]:
-            onset = stream.total - int(SOUND["window_s"] * stream.rate)
+            onset = at - int(SOUND["window_s"] * stream.rate)
             heard.clip_pending[row] = None
             heard.clips.append(
                 {
                     "row": row,
                     "key": key,
                     "start": max(0, onset - int(SOUND["clip_before_s"] * stream.rate)),
-                    "end": stream.total + int(SOUND["clip_after_s"] * stream.rate),
+                    "end": at + int(SOUND["clip_after_s"] * stream.rate),
                 }
             )
         if not track.on:

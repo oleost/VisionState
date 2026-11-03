@@ -94,7 +94,8 @@ discovery, export/import and backup with the others.
      seconds before it from the ring buffer.
    - *Faint sounds that matter* (a beep two rooms away) can stay below the line; the Live tab is
      where the user checks it.
-4. **Classify** the newest window (about two seconds, every half second; CED takes any length).
+4. **Classify** the newest window (about two seconds, every half second; CED takes any length) —
+   the window of every half second when a stream delivers several seconds at once (HLS).
    When the CPU falls behind, windows are dropped, never queued: sound is live. For own sounds the
    window's embedding goes to the sensor's own small head (§5).
 5. **Decide with two thresholds per sound** (hysteresis): *on* when the score passed the upper
@@ -306,10 +307,20 @@ As for images: CC0 / public domain, or drawn by our own code.
   cameras allow only a few connections at once, and a sound sensor holds one all day: a go2rtc
   restream (the go2rtc app's RTSP server) shares one camera connection — Frigate recommends the
   same for its audio.
-- **A Home Assistant camera's own sound** (picking `camera.front_door` as image sensors do) is the
-  easiest for users and wanted, but not known to be possible: Home Assistant gives apps snapshots,
-  not sound, and the stream it has inside (HLS, often seconds behind) may not be reachable from an
-  app. Looked into first when testing with real microphones and Home Assistant; until then, RTSP.
+- **A Home Assistant camera's own sound** (picking `camera.front_door` as image sensors do): the
+  WebSocket command `camera/stream` gives the address of the camera's HLS stream in Home Assistant,
+  with its sound (a Reolink doorbell: AAC 16 kHz, as over RTSP), and the app reads it through the
+  Supervisor with its own token. The address holds a token that ends with the stream (a restart of
+  Home Assistant, the stream stopped), so it is asked for again each time the stream is opened, never
+  stored. Only cameras with a stream (`CameraEntityFeature.STREAM`) can be picked. It opens slowly
+  (10–13 s: Home Assistant answers the playlist once the stream's first segment exists), and is read
+  from the newest segment (`live_start_index`) to be as little behind as HLS allows. FFmpeg reads
+  whole segments, so the sound comes a segment at a time (as long as the camera's key frame
+  interval): on the Reolink doorbell the sound came 7–8 s after its RTSP stream's, in bursts of about
+  8 s, and a siren was heard 10–12 s later than over RTSP, with the same scores and clips with video
+  — every window of a burst is analysed (a siren in its middle was missed when only the newest was). Home
+  Assistant passes on only some audio codecs: a camera whose sound does not come through is
+  listened to over RTSP.
 - **ESP32 microphones.** A cheap ESP32 with an I2S microphone (such as an INMP441) in each room is a
   strong case: camera audio is often poor (§12), and a room without a camera can still listen. 16 kHz
   16-bit mono is about 256 kbit/s, easy over Wi-Fi.
@@ -343,8 +354,7 @@ No question for the maintainer is open. Decided on 2026-10-29:
 - Every sound of the model a home could want is offered, the poorly recognised ones too (glass, a
   doorbell, a door, a microwave): no promises; thresholds are a best guess that users tune (§2).
 - Phase 1 listens to RTSP and HTTP streams, go2rtc restreams and ESP32 microphones among them; no
-  push (§10). A Home Assistant camera's own sound is wanted and looked into when testing with real
-  microphones and Home Assistant; voice satellites are left out for now.
+  push (§10). A Home Assistant camera's own sound came after (§10); voice satellites are left out for now.
 - The smoke alarm's threshold is 0.4 (2026-10-31): on a real Home Assistant a CC0 siren reached 0.31,
   and so turned a *smoke* entity on, while one real alarm through a phone scored 0.64–0.88 and a CC0
   recording 0.90. Two alarms are little to go on: looked at again with more real ones.
@@ -390,11 +400,10 @@ RTMP to a test relay, turned its entity on within about a second, peaking at 0.8
 3. **A Raspberry Pi 4** (or the CI's aarch64 image): time per second of audio, memory with the
    sound model loaded, how many sound sensors it carries beside the image sensors — then the
    number in DOCS.md, and the model's `ram_mb`/`time_ms` in `sounds.json`.
-4. **A Home Assistant camera's own sound** (§10: wanted, not known to be possible).
-5. **An ESP32 with an I2S microphone** sending WAV over HTTP: firmware to recommend in DOCS.md.
-6. **A day of a household's background and TV:** false alarms per day, the thresholds in
+4. **An ESP32 with an I2S microphone** sending WAV over HTTP: firmware to recommend in DOCS.md.
+5. **A day of a household's background and TV:** false alarms per day, the thresholds in
    `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*.
-7. **Own sounds recorded at home** (a doorbell, an appliance beep): clips needed, `own_threshold`.
+6. **Own sounds recorded at home** (a doorbell, an appliance beep): clips needed, `own_threshold`.
 
 **Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
 cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the

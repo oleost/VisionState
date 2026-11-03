@@ -17,7 +17,7 @@ from .. import sounds
 from ..db import Prediction, Sample, Sensor
 from ..engine import Runtime
 from ..settings import KIND_SOUND, SOUND, UPLOAD_LIMITS, merge_sound
-from ..sources import AudioStream, SourceError, check_source
+from ..sources import SOUND_SOURCE_TYPES, SourceError, check_source, open_audio
 from ..storage import CLIP_SUFFIX, is_clip
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 
@@ -27,6 +27,7 @@ CLIP_S = 4.0  # what is kept of an uploaded recording: its loudest seconds
 
 
 class PreviewIn(BaseModel):
+    source_type: str = "rtsp"  # sources.SOUND_SOURCE_TYPES
     source: str = Field(min_length=1, max_length=1024)
 
 
@@ -35,13 +36,16 @@ async def preview(body: PreviewIn, request: Request) -> dict:
     """Listen to a stream for a few seconds (the wizard): whether it has sound, what kind (codec,
     sample rate), its level, and the model's sounds that scored best."""
     rt = runtime(request)
+    if body.source_type not in SOUND_SOURCE_TYPES:
+        raise HTTPException(400, "Unknown source type")
     try:
-        check_source("rtsp", body.source)
+        check_source(body.source_type, body.source)
     except SourceError as err:
         raise HTTPException(400, str(err)) from err
-    stream = AudioStream(body.source)
+    stream = open_audio(rt.ha, body.source_type, body.source)
     try:
-        deadline = time.monotonic() + PREVIEW_S
+        # A Home Assistant camera's stream takes longer to open.
+        deadline = time.monotonic() + PREVIEW_S + (SOUND["ha_open_s"] if body.source_type == "ha_camera" else 0)
         while time.monotonic() < deadline and stream.total < PREVIEW_S * stream.rate * 0.6:
             await asyncio.sleep(0.25)
             if stream.error and not stream.total:

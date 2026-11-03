@@ -1,4 +1,5 @@
-"""Home Assistant WebSocket API: state changes of selected entities, and our entities' IDs."""
+"""Home Assistant WebSocket API: state changes of selected entities, our entities' IDs, and a
+camera's own stream."""
 
 from __future__ import annotations
 
@@ -67,8 +68,8 @@ async def fetch_entity_ids(url: str, token: str) -> dict[str, str]:
     return our_entity_ids(await fetch_registry(url, token))
 
 
-async def _registry_commands(url: str, token: str, commands: list[dict]) -> list:
-    """The results of commands to Home Assistant's entity registry, one connection, in order."""
+async def ws_commands(url: str, token: str, commands: list[dict]) -> list:
+    """The results of commands to Home Assistant's WebSocket API, one connection, in order."""
     from websockets.asyncio.client import connect
 
     results = []
@@ -86,20 +87,27 @@ async def _registry_commands(url: str, token: str, commands: list[dict]) -> list
                 if message.get("id") == number and message.get("type") == "result":
                     break
             if not message.get("success"):
-                raise RuntimeError(f"entity registry: {message.get('error', {}).get('message')}")
+                raise RuntimeError(f"{command['type']}: {message.get('error', {}).get('message')}")
             results.append(message.get("result"))
     return results
 
 
 async def fetch_registry(url: str, token: str) -> list[dict]:
     """Home Assistant's entity registry."""
-    return (await _registry_commands(url, token, [{"type": "config/entity_registry/list"}]))[0] or []
+    return (await ws_commands(url, token, [{"type": "config/entity_registry/list"}]))[0] or []
 
 
 async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
     """Switch these entities on in Home Assistant."""
     update = "config/entity_registry/update"
-    await _registry_commands(url, token, [{"type": update, "entity_id": e, "disabled_by": None} for e in entity_ids])
+    await ws_commands(url, token, [{"type": update, "entity_id": e, "disabled_by": None} for e in entity_ids])
+
+
+async def camera_stream(url: str, token: str, entity_id: str) -> str:
+    """The path of a camera's own stream in Home Assistant (HLS, with the camera's sound). It holds a
+    token that is valid while the stream runs: asked for again each time the stream is opened."""
+    command = {"type": "camera/stream", "entity_id": entity_id, "format": "hls"}
+    return (await ws_commands(url, token, [command]))[0]["url"]
 
 
 class HaEventListener:

@@ -17,6 +17,7 @@ from typing import cast
 import httpx
 import numpy as np
 
+from .ha_events import camera_stream, websocket_url
 from .redact import redact
 from .settings import RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
@@ -27,6 +28,9 @@ SOURCE_TYPES = {
     "http": "HTTP snapshot URL",
     "rtsp": "RTSP stream",
 }
+# What a sound sensor listens to: a Home Assistant camera's own stream, or a stream address.
+SOUND_SOURCE_TYPES = ("ha_camera", "rtsp")
+CAMERA_STREAM = 2  # Home Assistant's CameraEntityFeature.STREAM: the camera has a stream (and its sound)
 
 
 # Notify services not offered for the push: the notification in Home Assistant is sent anyway, and
@@ -83,6 +87,8 @@ class HomeAssistant:
             token = settings.ha_token
         self.enabled = bool(self.base and token)
         self.supervised = settings.is_supervised
+        self._token = token
+        self._ws_url = websocket_url(settings)
         self._app_path: str | None = None
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {token}"}, timeout=RUNTIME["http_timeout_s"]
@@ -101,11 +107,24 @@ class HomeAssistant:
                 "entity_id": s["entity_id"],
                 "name": s.get("attributes", {}).get("friendly_name", s["entity_id"]),
                 "state": s.get("state"),
+                # A stream in Home Assistant: what a sound sensor can listen to.
+                "stream": bool(int(s.get("attributes", {}).get("supported_features") or 0) & CAMERA_STREAM),
             }
             for s in resp.json()
             if s["entity_id"].startswith("camera.")
         ]
         return sorted(cams, key=lambda c: c["name"].lower())
+
+    async def stream_address(self, entity_id: str) -> tuple[str, dict[str, str]]:
+        """A camera's own stream in Home Assistant (HLS, with its sound), and the headers to ask for
+        it with (through the Supervisor, the app's token)."""
+        if not self.enabled or not self._ws_url:
+            raise SourceError("Home Assistant API is not configured")
+        try:
+            path = await camera_stream(self._ws_url, self._token, entity_id)
+        except Exception as err:  # noqa: BLE001 - no stream (the camera cannot stream, is off, …)
+            raise SourceError(f"{entity_id}: {redact(str(err)) or type(err).__name__}") from err
+        return self.base.removesuffix("/api") + path, {"Authorization": f"Bearer {self._token}"}
 
     async def entities(self) -> list[dict]:
         """All entities (id, name, domain, state), for picking trigger entities."""
@@ -396,11 +415,16 @@ class AudioStream:
     too — undecoded, the last SOUND["video_buffer_s"] seconds — so a clip can show what happened
     (``video_clip``: the video copied as it is, from a key frame, with the clip's sound as AAC).
     Without, they are dropped undecoded.
+
+    With ``ha``, ``url`` is a Home Assistant camera: its own stream is asked of Home Assistant each
+    time it is opened (the address holds a token that ends with the stream). Made on the event loop.
     """
 
-    def __init__(self, url: str, video: bool = False):
+    def __init__(self, url: str, video: bool = False, ha: HomeAssistant | None = None):
         self.url = url
         self.video = video
+        self._ha = ha
+        self._loop = asyncio.get_running_loop() if ha is not None else None
         self.rate = SOUND["rate"]
         self._buf = np.zeros(int(SOUND["buffer_s"] * self.rate), dtype=np.float32)
         self.total = 0  # samples received since the stream was first opened
@@ -597,16 +621,27 @@ class AudioStream:
         from av.error import FFmpegError
 
         got = False
-        try:
-            check_source("rtsp", self.url)  # FFmpeg would open a local file as well
-        except SourceError as err:
-            self.error = str(err)
-            return False
         options = {"timeout": STREAM_OPTIONS["timeout"]}
-        if self.url.lower().startswith(("rtsp://", "rtsps://")):
+        open_s = SOUND["open_s"]
+        try:
+            if self._ha is not None and self._loop is not None:
+                asked = asyncio.run_coroutine_threadsafe(self._ha.stream_address(self.url), self._loop)
+                url, headers = asked.result(RUNTIME["http_timeout_s"])
+                options["headers"] = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+                options["live_start_index"] = "-1"  # from the newest segment: as little behind as HLS allows
+                open_s = SOUND["ha_open_s"]
+                # Home Assistant answers the playlist once the stream's first segment exists.
+                options["timeout"] = str(int(open_s * 1_000_000))
+            else:
+                url = self.url
+            check_source("rtsp", url)  # FFmpeg would open a local file as well
+        except Exception as err:  # noqa: BLE001 - no address now: tried again after the pause
+            self.error = redact(str(err)) or type(err).__name__
+            return False
+        if url.lower().startswith(("rtsp://", "rtsps://")):
             options["rtsp_transport"] = STREAM_OPTIONS["rtsp_transport"]
         try:
-            with av.open(self.url, options=options, timeout=10) as container:
+            with av.open(url, options=options, timeout=(open_s, SOUND["open_s"])) as container:
                 if not container.streams.audio:
                     self.error = "The stream has no sound (is the camera's microphone switched on?)"
                     return False
@@ -651,3 +686,8 @@ class AudioStream:
             self.error = redact(str(err)) or type(err).__name__
             log.warning("Sound of %s failed: %s", redact(self.url), self.error)
         return got
+
+
+def open_audio(ha: HomeAssistant, source_type: str, source: str, video: bool = False) -> AudioStream:
+    """A sound sensor's stream: a Home Assistant camera's own stream, or a stream address."""
+    return AudioStream(source, video, ha if source_type == "ha_camera" else None)

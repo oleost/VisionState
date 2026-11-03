@@ -18,7 +18,6 @@
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
   import SensorParams from '../../lib/components/SensorParams.svelte';
   import SoundEditor from '../../lib/components/sound/SoundEditor.svelte';
-  import StreamField from '../../lib/components/sound/StreamField.svelte';
   import SourcePicker from '../../lib/components/SourcePicker.svelte';
   import StraightenSwitch from '../../lib/components/StraightenSwitch.svelte';
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
@@ -71,7 +70,7 @@
   function soundUpdate() {
     const thresholds: Record<string, number | null> = { ...sound.thresholds };
     for (const key of Object.keys(thresholdsBefore)) if (!(key in thresholds)) thresholds[key] = null;
-    return { name, source, review, sound: { ...sound, thresholds } };
+    return { name, source_type: sourceType, source, review, sound: { ...sound, thresholds } };
   }
   // A reading sensor's region straightened: four corners, its top marked (RoiEditor quad).
   const straightened = $derived(readingSensor && reading.straighten);
@@ -169,7 +168,7 @@
       <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>
       {#if soundSensor}
-        <StreamField bind:source />
+        <SourcePicker sound bind:sourceType bind:source />
       {:else}
         <SourcePicker bind:sourceType bind:source />
         <LightEditor bind:triggers lightError={sensor.live.light_error} />

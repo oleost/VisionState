@@ -13,11 +13,14 @@ _QUERY_SECRET = re.compile(
     r"(?P<key>[?&](?:" + "|".join(re.escape(k) for k in SECRET_QUERY_KEYS) + r"))=[^&#\s'\"]*",
     re.IGNORECASE,
 )
+_HLS_TOKEN = re.compile(r"(?P<path>/api/hls/)[^/\s'\"]+")  # a Home Assistant camera's stream (sources.py)
 
 
 def redact(text: str) -> str:
-    """``rtsp://user:pw@cam/…`` → ``rtsp://***@cam/…``; ``?user=a&password=b`` → ``?user=***&password=***``."""
+    """``rtsp://user:pw@cam/…`` → ``rtsp://***@cam/…``; ``?user=a&password=b`` → ``?user=***&password=***``;
+    ``/api/hls/<token>/…`` → ``/api/hls/***/…``."""
     text = _USERINFO.sub(lambda m: f"{m.group('scheme')}{MASK}@", text)
+    text = _HLS_TOKEN.sub(lambda m: f"{m.group('path')}{MASK}", text)
     return _QUERY_SECRET.sub(lambda m: f"{m.group('key')}={MASK}", text)
 
 

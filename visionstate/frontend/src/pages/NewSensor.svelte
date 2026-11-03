@@ -11,7 +11,6 @@
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { haSlug, slugify } from '../lib/format';
   import { go, href, paths } from '../lib/router.svelte';
-  import StreamField from '../lib/components/sound/StreamField.svelte';
   import type { ReadingSettings, Roi, SensorKind, SoundSettings, Triggers } from '../lib/types';
   import { HA_MODES, LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
   import CameraPreview from './wizard/CameraPreview.svelte';
@@ -34,6 +33,7 @@
   let mode = $state<'picture' | 'sound'>('picture');
   const STEPS = $derived(mode === 'sound' ? SOUND_STEPS : PICTURE_STEPS);
   let sound = $state<SoundSettings>(structuredClone($state.snapshot(app.config!.sound_defaults)));
+  let streamType = $state('ha_camera'); // a Home Assistant camera, or a stream address ('rtsp')
   let streamSource = $state('');
 
   let step = $state(0);
@@ -165,7 +165,7 @@
       const sensor = await api.createSensor({
         name: name.trim(),
         kind: 'sound',
-        source_type: 'rtsp',
+        source_type: streamType,
         source: streamSource.trim(),
         roi: null,
         states: [],
@@ -286,7 +286,7 @@
             Sensor name
             <input class="input" bind:value={name} placeholder="Hallway" />
           </label>
-          <div class="col" style="max-width:640px;gap:6px"><StreamField bind:source={streamSource} /></div>
+          <SourcePicker sound bind:sourceType={streamType} bind:source={streamSource} />
         {:else}
           <div class="col" style="gap:6px">
             <h2>Name it and pick a camera</h2>
@@ -317,7 +317,7 @@
             the sensor runs.
           </p>
         </div>
-        <SoundStep source={streamSource.trim()} name={name.trim()} bind:sound />
+        <SoundStep sourceType={streamType} source={streamSource.trim()} name={name.trim()} bind:sound />
         {@render notInHaChoice()}
       {:else if step === 1}
         <div class="col" style="gap:6px">

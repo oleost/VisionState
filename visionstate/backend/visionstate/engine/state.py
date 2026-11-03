@@ -257,7 +257,7 @@ class SoundLive:
         default_factory=lambda: deque(maxlen=int(SOUND["background_s"] / SOUND["hop_s"]))
     )  # levels the background is learned from
     line: float | None = None  # the level a window must reach to be analysed
-    analysed: bool = False  # the newest window was loud enough and analysed
+    analysed: bool = False  # the newest hop's window was loud enough and analysed
     scores: dict[str, float] = field(default_factory=dict)  # the last analysed window's, per sound
     tracks: dict[str, SoundTrack] = field(default_factory=dict)
     clips: list[dict] = field(default_factory=list)  # {"row", "start", "end", "key"}: cut once received

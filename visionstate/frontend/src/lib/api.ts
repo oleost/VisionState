@@ -365,7 +365,8 @@ export const api = {
   },
 
   /** Sound sensors: listen to a stream for a few seconds (the wizard). */
-  soundPreview: (source: string) => request<SoundPreview>('sounds/preview', send('POST', { source })),
+  soundPreview: (sourceType: string, source: string) =>
+    request<SoundPreview>('sounds/preview', send('POST', { source_type: sourceType, source })),
   soundTaught: (id: number) => request<SoundTaught>(`sensors/${id}/sounds/taught`),
   /** Teach a history clip as an own sound (`label`), a new one (`newName`) or another sound ('other'). */
   teachSoundClip: (id: number, historyId: number, label: string | null, newName?: string) =>
