@@ -94,7 +94,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `base.py` | `RuntimeBase`: the shared state (`__init__`), loading a sensor, its live state, waking it |
 | `runtime.py` | Lifecycle (start/stop), sensors coming and going, waking a sensor, triggers |
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
-| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next, looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
+| `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next (on the moments the sensors on a camera have in common: `aligned`), looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
 | `checks.py` | Each sensor's loop, change detection (probe), the light, `run_once` and the state sensors' check |
 | `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
@@ -114,7 +114,8 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   │                                        change detection (checks.probe), the UI, an MQTT command
   ├─ load_sensor → SensorConfig            a fresh snapshot of the row, every pass
   ├─ light on? (checks._light_before)      lights.py, frames thrown away while it warms up
-  ├─ grab a frame (sources.FrameGrabber)   → LiveState.frames (the UI labels these)
+  ├─ grab a frame (sources.FrameGrabber)   → LiveState.frames (the UI labels these); one picture
+  │                                        for every sensor on the camera asking now (shared_frames.py)
   ├─ decode (imaging.decode)
   └─ by kind:
       state sensor   → checks._run_states  backbone embedding → head → probabilities

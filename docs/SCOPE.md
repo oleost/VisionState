@@ -520,10 +520,16 @@ it could not do this without pictures older than the sensors expect. That alone 
 measured on a test Home Assistant (four sensors on one HTTP camera at 3, 3, 6 and 6 s), 60 requests
 a minute became 29 right after a restart, 50 ten minutes later, and 60 again once one check moved a
 sensor, since each counted from its own last check. So their regular checks and probes fall on
-moments the camera's sensors have in common (`engine.logic.aligned`): 20 a minute, whatever happened
-(about 10 % CPU of the app either way: inference runs per sensor, the gain is fewer requests to the
-camera and Home Assistant). A sensor with a light does not share: warm-up frames must be real, and a
-lit frame is no baseline. One alone on its camera changes in nothing.
+moments the camera's sensors have in common (`engine.logic.aligned`): 20 a minute, whatever happened.
+On real cameras (four object sensors at 10, 10, 20 and 30 s on a doorbell through Home Assistant and
+four on a phone's RTSP stream, 15 minutes each): 17 RTSP connections a minute became 6; checks of the
+doorbell no longer waited up to 10 s for a picture (four at once were too many for it), and the
+phone's checks took a steady 2 s instead of 0.5–4 s. The gain is the camera's, not the CPU's:
+inference still runs per sensor, and as the sensors now check at the same moment it comes in bursts
+(the app's CPU 95th percentile about 87 % instead of 75 %, its average a few points higher, its
+memory a little lower as each picture is decoded once). A sensor with a light does not share:
+warm-up frames must be real, and a lit frame is no baseline. One alone on its camera changes in
+nothing.
 
 A sound sensor's address is checked when it is saved and again by its stream, since FFmpeg would open a local file too. Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
@@ -1019,6 +1025,8 @@ is part of backups and needs no restart.
 | **Straightened reading regions** ✅ | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
 | **Pointer dials** ✅ | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, at night, and placing dials by hand on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
 | **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object, with its shape and a new picture when it moves (discussion #62) | 0.13.0 (betas 0.12.0b6–0.13.0b6) |
+| **Speed test** ✅ | Settings → Speed test: AI models measured on the user's own machine with a sensor's camera or microphone, models downloaded for it and deleted again, a report to share (discussion #71) | beta 0.14.0b1 |
+| **Sensors on one camera share pictures** ✅ | One picture for every sensor on a camera asking at the same moment, their checks on the moments they have in common (issue #63, with @Docter77) | beta 0.14.0b2 |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 
