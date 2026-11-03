@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.13.1b1
+## 0.14.0b1
+
+**Speed test (#71): see how fast each AI model is on your own machine.**
+
+- **Settings → Speed test** measures AI models with the camera or microphone of one of your sensors:
+  the time of a whole check and its parts (camera, decoding, AI), the memory each model takes, and
+  whether it keeps up with the sensor's interval. Test the model in use, or all of them to compare.
+- Models you do not have are downloaded for the test and deleted again afterwards, unless you tick
+  *Keep the downloaded models*. Models you already had stay. A model that does not fit in the free
+  memory is skipped.
+- All sensors are paused while the test runs. They keep their last values in Home Assistant and go on
+  by themselves afterwards.
+- *Download report* gives the numbers as a text file to share, without names or addresses.
+
+## 0.13.1
 
 **Fixes for counters, above all water meters with pointer dials (#59).**
 

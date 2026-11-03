@@ -197,6 +197,7 @@ def test_sensor_loop_survives_an_unexpected_error(monkeypatch, caplog):
     """A failing pass (e.g. the database is busy) is logged once and tried again, not the end of the sensor."""
     monkeypatch.setitem(vs_settings.RUNTIME, "loop_retry_s", 0.01)
     rt = Runtime.__new__(Runtime)
+    rt._steps_running = 0
     passes = []
 
     async def step(sensor_id):

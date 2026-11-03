@@ -48,6 +48,9 @@ class TrainingMixin(RuntimeBase):
         if self._on_loop(self.schedule_retrain, sensor_id, delay):
             self.training.add(sensor_id)  # show "training" right away
             return
+        if self.benchmark_paused:  # no model to train with now
+            self._retrain_after_benchmark.add(sensor_id)
+            return
         loop = asyncio.get_running_loop()
         handle = self._retrain_handles.pop(sensor_id, None)
         if handle:

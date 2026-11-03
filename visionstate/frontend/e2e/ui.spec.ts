@@ -2040,3 +2040,30 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   await expect(card).toHaveCount(0);
   errors.expectNone();
 });
+
+test('the speed test: a model measured on a sensor, the sensors paused meanwhile', async ({ page, request }, info) => {
+  test.setTimeout(120_000);
+  const errors = watchErrors(page);
+  const sensorId = await seededSensorId(request);
+  await page.goto('#/settings');
+  await press(page.getByTestId('speed-test-link').getByRole('link', { name: 'Open the speed test' }), info);
+  const form = page.getByTestId('speed-test');
+  await form.getByRole('combobox', { name: 'Sensor to test with' }).selectOption(String(sensorId));
+  await expect(form.getByRole('checkbox', { checked: true })).toHaveCount(1); // the model in use, ready to test
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=speed-test] .btn, [data-testid=speed-test] .chip');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test.png'), fullPage: true });
+  await press(form.getByRole('button', { name: 'Test 1 model' }), info);
+  const results = page.getByTestId('speed-test-result');
+  await expect(results).toHaveCount(1, { timeout: 90_000 });
+  await expect(results.first()).toContainText('Whole check');
+  await expect(results.first()).toContainText('In use');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=speed-test-results] .btn, [data-testid=speed-test-results] .chip');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test-results.png'), fullPage: true });
+  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Download report' }).click()]);
+  expect(file.suggestedFilename()).toBe('visionstate-speed-test.txt');
+  // Over: the sensors go on.
+  await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
+  errors.expectNone();
+});

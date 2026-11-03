@@ -719,6 +719,22 @@ The filter is part of the page address, so a reload keeps it and a bookmark open
 New entries do not push the list down while you read it: **Show N new** appears instead.
 How long history is kept is set under **Settings → Storage** (below).
 
+## Speed test
+
+**Settings → Speed test** measures AI models on your own machine, with the camera or microphone of one
+of your sensors, so you can see what your hardware can do before you choose. Pick a sensor and the
+models to test (all of them if you like), and start. For each model you get the time of a whole check
+and its parts (camera, decoding, AI), how much memory it takes, and whether it fits the sensor's
+interval. *Download report* gives the numbers as a text file to share, without names or addresses.
+
+- **All sensors are paused while it runs**, also the ones on other cameras, so the numbers are of one
+  model alone. They keep their last values in Home Assistant and go on by themselves afterwards.
+- Models you do not have are downloaded for the test and **deleted afterwards**, unless you tick
+  *Keep the downloaded models*. A model that does not fit in the free memory is skipped.
+- It measures speed and memory, not how good a model is at your picture. Testing only shows the numbers:
+  to use another model, choose it under *AI model*.
+- Memory is only measured on Linux, so on Home Assistant, not when running it on a Windows PC.
+
 ## Backup, export and import
 
 **Settings → Backup** puts everything in one file and restores it — to move VisionState to

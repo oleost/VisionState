@@ -57,6 +57,7 @@ def engine(camera):
     obj = object.__new__(ChecksMixin)
     obj.live = {}
     obj._camera_of = {}
+    obj.benchmark_paused = False
     obj.grabber = camera
     obj.shared_frames = SharedFrames(camera.grab, camera.decode, 0.001)
     obj._send = AsyncMock()

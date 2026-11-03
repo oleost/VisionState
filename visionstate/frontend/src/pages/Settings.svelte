@@ -10,7 +10,7 @@
   import StorageCard from '../lib/components/StorageCard.svelte';
   import TeachLimitsEditor from '../lib/components/TeachLimitsEditor.svelte';
   import { bySize, mb, size } from '../lib/format';
-  import { go, paths } from '../lib/router.svelte';
+  import { go, href, paths } from '../lib/router.svelte';
   import type {
     FaceLimitsInfo,
     FaceOverrides,
@@ -229,6 +229,12 @@
           <span>{row.value}</span>
         </div>
       {/each}
+    </section>
+
+    <section class="card pad col" data-testid="speed-test-link">
+      <h3>Speed test</h3>
+      <p class="small muted">Measure AI models on this machine, with the camera or microphone of one of your sensors.</p>
+      <a class="btn" style="align-self:flex-start" href={href(paths.speedTest())}>Open the speed test</a>
     </section>
 
     <section class="card pad col">

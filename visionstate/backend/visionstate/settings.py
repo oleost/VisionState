@@ -143,6 +143,18 @@ READING_LIMITS = {
 # reading allows more change, but only time the counter was not seen: down, or read unsure.
 # Readings that were read with confidence but went over the limit hold that time still, so a
 # misread that repeats can never wait its way through.
+# The speed test (engine/benchmark.py). Rounds of one model, the first ones not counted (its first
+# run is slower); a slow model stops after max_model_s, with min_rounds at least.
+BENCHMARK = {
+    "rounds": 10,
+    "warmup_rounds": 1,
+    "min_rounds": 3,
+    "max_model_s": 120.0,
+    "wait_quiet_s": 60.0,  # how long checks and training that were running get to end
+    "sound_wait_s": 30.0,  # how long a stream gets to deliver a window of sound
+    "memory_sample_s": 0.02,
+    "memory_room": 1.3,  # a model is not loaded without this many times its footprint free
+}
 COUNTER_LIMIT = {
     # "auto": the largest rise over this window per day, and the day's total rise, of the last
     # learn_days days; the second largest of them (one misread that slipped through does not

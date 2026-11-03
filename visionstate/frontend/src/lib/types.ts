@@ -69,7 +69,7 @@ export interface TriggerInfo {
   at: number;
 }
 
-export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
+export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled' | 'speed_test';
 
 /**
  * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a
@@ -719,6 +719,7 @@ export interface AppConfig {
 
 export interface Status {
   version: string;
+  benchmark_running: boolean;
   sensors: number;
   review_count: number;
   backbone: string | null;
@@ -938,4 +939,78 @@ export interface LightHold {
   on: boolean;
   wait_s: number | null;
   error: string;
+}
+
+/** The speed test (GET /benchmark). */
+export interface SpeedTestModel {
+  role: string;
+  id: string;
+  name: string;
+  description: string;
+  installed: boolean;
+  download_size: number;
+  available: boolean;
+  current: boolean;
+  ram_mb: number;
+  time_ms: number;
+  accuracy: number;
+}
+
+export interface SpeedTestInfo {
+  sensors: {
+    id: number;
+    name: string;
+    kind: SensorKind;
+    source_type: string;
+    interval_s: number;
+    models: SpeedTestModel[];
+  }[];
+  rounds: number;
+  run: SpeedTestRun | null;
+}
+
+export interface SpeedTestTiming {
+  median: number;
+  p95: number;
+}
+
+export interface SpeedTestResult {
+  role: string;
+  id: string;
+  name: string;
+  status: 'done' | 'skipped' | 'failed' | 'cancelled';
+  error: string;
+  current: boolean;
+  download_s?: number | null;
+  load_ms?: number;
+  rounds?: number;
+  camera?: SpeedTestTiming | null;
+  decode?: SpeedTestTiming | null;
+  ai?: SpeedTestTiming | null;
+  total?: SpeedTestTiming | null;
+  picture?: string | null;
+  picture_kb?: number;
+  memory_loaded_mb?: number;
+  memory_peak_mb?: number;
+  window_s?: number;
+  hop_s?: number;
+  sound_ready_ms?: number;
+}
+
+export interface SpeedTestRun {
+  state: 'running' | 'finished' | 'cancelled' | 'failed';
+  step: string;
+  index: number;
+  total: number;
+  round: number;
+  rounds: number;
+  downloaded_mb: number;
+  error: string;
+  sensor: { id: number; name: string; kind: SensorKind; source_type: string; interval_s: number };
+  results: SpeedTestResult[];
+  started_at: number;
+  finished_at: number | null;
+  deleted: string[];
+  kept: boolean;
+  machine: { version: string; cpus: number | null; memory_mb: number | null; arch: string | null };
 }

@@ -28,6 +28,7 @@ export const paths = {
   /** `query`: a history filter (lib/history.ts toQuery). */
   history: (query = '') => withQuery('history', query),
   settings: () => 'settings',
+  speedTest: () => 'speed-test',
 };
 
 export const href = (path: string) => `#/${path}`;

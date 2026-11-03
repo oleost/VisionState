@@ -145,7 +145,7 @@ export function objectSummary(sensor: Sensor): string {
  * face model failed: its Faces card says why). It works without faces meanwhile. */
 export function facesBusy(sensor: Pick<Sensor, 'kind' | 'enabled' | 'objects'>): string {
   const f = app.status?.faces;
-  if (!f || f.error || !sensor.enabled || !isObjectSensor(sensor) || !sensor.objects?.faces?.enabled) return '';
+  if (!f || f.error || app.status?.benchmark_running || !sensor.enabled || !isObjectSensor(sensor) || !sensor.objects?.faces?.enabled) return '';
   if (f.progress) return 'Downloading faces…';
   if (f.embedding) return `Learning faces… ${f.embedding.done}/${f.embedding.total}`;
   return f.loaded ? '' : 'Loading faces…';

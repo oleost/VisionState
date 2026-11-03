@@ -45,6 +45,12 @@ class RuntimeBase:
             lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
         )
         self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
+        # The speed test (engine/benchmark.py): the last one, and while it runs no sensor checks.
+        self.benchmark = None
+        self.benchmark_paused = False
+        self._benchmark_task: asyncio.Task | None = None
+        self._steps_running = 0
+        self._retrain_after_benchmark: set[int] = set()
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
         self.ha_entity_ids: dict[str, str] = {}

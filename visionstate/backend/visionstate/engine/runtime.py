@@ -14,7 +14,7 @@ from ..db import Database, Sensor
 from ..ha_events import HaEventListener, enable_entities, fetch_registry, our_enabled, our_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
 from ..settings import KIND_OBJECTS, KIND_READING, KIND_SOUND, KIND_STATES, RUNTIME, Settings, merge_triggers
-from .checks import ChecksMixin
+from .benchmark import BenchmarkMixin
 from .history import HistoryMixin
 from .logic import entity_triggers
 from .reminders import RemindersMixin
@@ -24,11 +24,11 @@ from .state import SensorConfig
 log = logging.getLogger(__name__)
 
 
-class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
+class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
     """Runs every sensor, trains heads and publishes results; one instance per app.
 
     The parts live in mixins, one file each, on top of ``RuntimeBase`` (base.py: the shared state).
-    Each part inherits the parts it uses, so ChecksMixin brings in objects, reading, teaching,
+    Each part inherits the parts it uses, so BenchmarkMixin brings in the checks, ChecksMixin objects, reading, teaching,
     models, training and publishing; HistoryMixin the clean-up; RemindersMixin the review reminder.
     """
 
@@ -49,6 +49,7 @@ class Runtime(ChecksMixin, HistoryMixin, RemindersMixin):
         self.storage_rules = await asyncio.to_thread(self.db.get_dict, "storage")
         self.reminder_rules = await asyncio.to_thread(self.db.get_dict, "reminder")
         self.reminder_sent_at = await asyncio.to_thread(self.db.get_setting, "reminder_sent_at")
+        await asyncio.to_thread(self.benchmark_delete_downloads)  # a speed test that never ended
         # Keep the models this installation uses, even when a later release recommends others.
         await asyncio.to_thread(self._pin_setting, "backbone", backbones.DEFAULT_BACKBONE)
         await asyncio.to_thread(self._pin_setting, "detector", detectors.DEFAULT_DETECTOR)
