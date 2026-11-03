@@ -383,9 +383,8 @@ RTMP to a test relay, turned its entity on within about a second, peaking at 0.8
 
 **What is left:**
 
-1. **RTSP from a real camera:** not tested, for lack of a camera with sound (the iPhone app used
-   sends sound over RTMP only). Which cameras send sound, which codecs (G.711 at 8 kHz, AAC, Opus),
-   whether PyAV gets the track; a camera that allows few connections (go2rtc restream).
+1. **Other RTSP cameras:** RTSP works with a real camera sending AAC; other codecs (G.711 at
+   8 kHz, Opus) and a camera that allows few connections (go2rtc restream) are not tested.
 2. **By hand:** own sounds recorded on a phone. iOS: does an AAC `.m4a` and an fMP4 video clip play
    in the Home Assistant app?
 3. **A Raspberry Pi 4** (or the CI's aarch64 image): time per second of audio, memory with the
