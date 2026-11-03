@@ -2041,6 +2041,27 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   errors.expectNone();
 });
 
+test('the threads per AI model are chosen with the models, applied without a restart', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  const field = page.getByTestId('inference-threads');
+  const select = field.getByRole('combobox', { name: 'Threads per AI model' });
+  await expect(select).toHaveValue('0');
+  await expect(select.locator('option').first()).toHaveText(/^Automatic( \(\d+\))?$/); // no number on Windows: ONNX Runtime counts
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.card');
+  try {
+    await select.selectOption('1');
+    await press(page.getByRole('button', { name: 'Apply' }), info);
+    await expect.poll(async () => (await (await request.get('api/v1/settings')).json()).inference_threads).toBe(1);
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled(); // saved: nothing left to apply
+  } finally {
+    const now = await (await request.get('api/v1/settings')).json();
+    await request.put('api/v1/settings', { data: { backbone: now.backbone, inference_threads: 0 } });
+  }
+  errors.expectNone();
+});
+
 test('the speed test: a model measured on a sensor, the sensors paused meanwhile', async ({ page, request }, info) => {
   test.setTimeout(120_000);
   const errors = watchErrors(page);
@@ -2058,6 +2079,7 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   await expect(results).toHaveCount(1, { timeout: 90_000 });
   await expect(results.first()).toContainText('Whole check');
   await expect(results.first()).toContainText('In use');
+  await expect(page.getByTestId('speed-test-results')).toContainText('threads per model (automatic)');
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '[data-testid=speed-test-results] .btn, [data-testid=speed-test-results] .chip');
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test-results.png'), fullPage: true });

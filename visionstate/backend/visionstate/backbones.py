@@ -15,6 +15,7 @@ import gc
 import hashlib
 import json
 import logging
+import os
 import sys
 import threading
 import urllib.request
@@ -158,6 +159,63 @@ def locate(spec: ModelFile, search_dirs: list[Path]) -> Path | None:
     return None
 
 
+# Threads per model run chosen by the user (DB setting "inference_threads", set_threads); 0: automatic.
+_threads = RUNTIME["inference_threads"]
+
+
+def _cpuinfo() -> str:
+    """What Linux says about the CPUs (empty elsewhere)."""
+    try:
+        return Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def cpu_cores() -> int | None:
+    """The CPU cores this process may use: one per physical core (hyper-threads, which add little
+    to a model run, not counted), at most the CPUs it is allowed to run on. Where /proc/cpuinfo does
+    not say which CPUs share a core (ARM boards, which have no hyper-threads), every usable CPU.
+    None off Linux (a PC running it for development): ONNX Runtime then counts them itself."""
+    info = _cpuinfo()
+    if not info:
+        return None
+    affinity = getattr(os, "sched_getaffinity", None)
+    usable = len(affinity(0)) if affinity else (os.cpu_count() or 1)
+    cores, chip = set(), ""
+    for line in info.splitlines():
+        key, _, value = line.partition(":")
+        key = key.strip()
+        if key == "physical id":
+            chip = value.strip()
+        elif key == "core id":
+            cores.add((chip, value.strip()))
+    return max(1, min(len(cores), usable)) if cores else usable
+
+
+def cpu_flags() -> list[str]:
+    """The CPU features that make model runs faster, as /proc/cpuinfo names them (empty elsewhere)."""
+    line = next((ln for ln in _cpuinfo().splitlines() if ln.startswith(("flags", "Features"))), "")
+    have = set(line.partition(":")[2].split())
+    return [flag for flag in RUNTIME["cpu_flags"] if flag in have]
+
+
+def set_threads(count: int) -> None:
+    """Threads per model run for the sessions made from now on (0: automatic, see inference_threads)."""
+    global _threads
+    _threads = max(0, int(count))
+
+
+def chosen_threads() -> int:
+    """The threads per model run the user chose (0: automatic)."""
+    return _threads
+
+
+def inference_threads() -> int:
+    """Threads each model run uses: the user's choice, or one per core (cpu_cores); 0 where the
+    cores are not known, which lets ONNX Runtime count them."""
+    return _threads or cpu_cores() or 0
+
+
 def cpu_session(model_path: Path):
     """An ONNX Runtime session on the CPU — the only target, deliberately (docs/SCOPE.md).
 
@@ -170,8 +228,8 @@ def cpu_session(model_path: Path):
     it that memory is freed after every run, for about 6 % more time per check.
 
     No spinning: by default ONNX Runtime's threads keep a core busy while they wait for work, which
-    on a small machine takes CPU from Home Assistant itself; RUNTIME["inference_threads"] threads
-    per model (0: ONNX Runtime's choice, one per physical core).
+    on a small machine takes CPU from Home Assistant itself (docs/SCOPE.md has the measurements).
+    inference_threads() threads per model run.
     """
     import onnxruntime as ort
 
@@ -179,7 +237,7 @@ def cpu_session(model_path: Path):
     options.enable_cpu_mem_arena = False
     options.add_session_config_entry("session.intra_op.allow_spinning", "0")
     options.add_session_config_entry("session.inter_op.allow_spinning", "0")
-    options.intra_op_num_threads = RUNTIME["inference_threads"]
+    options.intra_op_num_threads = inference_threads()
     options.log_severity_level = 3
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     return ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])

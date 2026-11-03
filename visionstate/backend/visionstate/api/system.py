@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,6 +16,7 @@ from sqlalchemy import func, select
 
 from .. import backbones, detectors, faces, readers, sounds
 from ..db import Person, Prediction, Sensor
+from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
     BACKUP,
@@ -252,6 +254,7 @@ class SettingsIn(BaseModel):
     detector: str | None = None  # object sensors; None keeps the current one
     reader: str | None = None  # reading sensors; None keeps the current one
     face_model: str | None = None  # face recognition on object sensors; None keeps the current one
+    inference_threads: int | None = None  # threads per model run, 0: one per core; None keeps it
 
 
 # The models a user chooses, per kind (the keys of their lists in GET /settings).
@@ -330,6 +333,11 @@ def get_settings(request: Request) -> dict:
         "sound_models": [
             {**model(spec), "data": spec.data, "published": bool(spec.url)} for spec in sounds.MODELS.values()
         ],
+        # Threads per model run: the user's choice (0: automatic, one per core: "threads_auto"), up to
+        # one per CPU the machine has.
+        "inference_threads": _stored_threads(rt),
+        "threads_auto": backbones.cpu_cores(),
+        "threads_max": os.cpu_count() or 1,
         "options": {
             "discovery_prefix": rt.settings.discovery_prefix,
             "mqtt_host": rt.settings.mqtt_host or "(from Home Assistant)",
@@ -349,7 +357,12 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown reader")
     if body.face_model is not None and body.face_model not in faces.RECOGNISERS:
         raise HTTPException(400, "Unknown face model")
+    if body.inference_threads is not None and not 0 <= body.inference_threads <= (os.cpu_count() or 1):
+        raise HTTPException(400, "Threads must be between 0 (automatic) and the number of CPUs")
     current = await asyncio.to_thread(get_settings, request)
+    threads_changed = body.inference_threads is not None and body.inference_threads != current["inference_threads"]
+    if threads_changed and rt.benchmark_running():
+        raise HTTPException(409, "The speed test is running. Change the threads when it has finished.")
     # Only reload what changed: a new backbone retrains every state sensor.
     if body.backbone != current["backbone"]:
         try:
@@ -368,7 +381,18 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
             raise HTTPException(500, f"Could not load reader: {redact(str(err))}") from err
     if body.face_model is not None and body.face_model != current["face_model"]:
         await rt.set_face_model(body.face_model)  # loads in the background when a sensor uses faces
+    if threads_changed:
+        assert body.inference_threads is not None
+        try:
+            await rt.set_threads(body.inference_threads)
+        except Exception as err:  # noqa: BLE001
+            raise HTTPException(500, f"Could not load the models again: {redact(str(err))}") from err
     return await asyncio.to_thread(get_settings, request)
+
+
+def _stored_threads(rt: Runtime) -> int:
+    value = rt.db.get_setting("inference_threads", RUNTIME["inference_threads"])
+    return value if isinstance(value, int) else RUNTIME["inference_threads"]
 
 
 @router.post("/faces/retry")

@@ -84,6 +84,27 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         for sensor_id in object_sensors:
             self.wake(sensor_id, force=True)
 
+    async def set_threads(self, count: int) -> None:
+        """Threads per model run (0: one per core). Every loaded model is loaded again with them: the
+        backbone now, the others on their next use, as after a start (a running check finishes with the
+        old one)."""
+        await asyncio.to_thread(self.db.set_setting, "inference_threads", count)
+        backbones.set_threads(count)
+        log.info("Threads per model run: %s", backbones.inference_threads())
+        backbone = await asyncio.to_thread(self.db.get_text, "backbone", backbones.DEFAULT_BACKBONE)
+        await self.load_embedder(backbone)
+        async with self._detector_lock:
+            self.detector = None
+        async with self._reader_lock:
+            self.reader = None
+        async with self._wheel_reader_lock:
+            self.wheel_readers.clear()
+        async with self._sound_lock:
+            self.sound_model = None
+        async with self._face_lock:
+            self.face_model = None  # the next check that recognises faces loads it again (faces.py)
+        await asyncio.to_thread(backbones.release_memory)
+
     async def load_reader(self, reader_id: str) -> readers.Reader:
         spec = readers.READERS.get(reader_id) or readers.READERS[readers.DEFAULT_READER]
         path = self.model_path(spec)

@@ -40,7 +40,9 @@ one event loop:
 - **RTSP grabs** run on threads of their own (`sources.FrameGrabber`, `RUNTIME["rtsp_workers"]`),
   so a camera that does not answer holds none of the default pool's.
 - **AI inference and training** runs in worker threads too, at most
-  `RUNTIME["max_concurrent_inferences"]` at a time (the semaphore `Runtime._sem`).
+  `RUNTIME["max_concurrent_inferences"]` at a time (the semaphore `Runtime._sem`), each model run on
+  `backbones.inference_threads()` threads (the DB setting `inference_threads`, set at start and by
+  `Runtime.set_threads`, which loads the models again).
 - **Long-running loops** (one per sensor, MQTT, the Home Assistant event stream, clean-up) catch
   every exception except `CancelledError`, log it once and go on.
 

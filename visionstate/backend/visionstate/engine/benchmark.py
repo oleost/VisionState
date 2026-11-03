@@ -169,7 +169,14 @@ class BenchmarkRun:
         lines = [
             f"VisionState {m.get('version')} speed test, {m.get('cpus') or '?'} CPUs"
             + (f" ({m['arch']})" if m.get("arch") else "")
-            + (f", {round(m['memory_mb'] / 1000)} GB" if m.get("memory_mb") else ""),
+            + (f", {round(m['memory_mb'] / 1000)} GB" if m.get("memory_mb") else "")
+            + (
+                f", {m['threads']} thread{'s' if m['threads'] > 1 else ''} per model"
+                if m.get("threads")
+                else ", threads per model"
+            )
+            + (" (automatic)" if m.get("threads_auto") else "")
+            + (f", {' '.join(m['cpu_flags'])}" if m.get("cpu_flags") else ""),
             f"{self.sensor['kind']} sensor, {self.sensor['source_type']}{picture}",
             "",
             "model | whole check | camera | decode | AI | memory",
@@ -302,6 +309,9 @@ class BenchmarkMixin(ChecksMixin):
             "cpus": os.cpu_count(),
             "memory_mb": round(total) if (total := total_memory_mb()) else None,
             "arch": platform.machine() or None,
+            "threads": backbones.inference_threads(),
+            "threads_auto": backbones.chosen_threads() == 0,
+            "cpu_flags": backbones.cpu_flags(),
         }
 
     async def _benchmark_run(self, run: BenchmarkRun, cfg: SensorConfig) -> None:

@@ -26,6 +26,7 @@
   let detector = $state('');
   let reader = $state('');
   let faceModel = $state('');
+  let threads = $state(0);
   let saving = $state(false);
   let importInput: HTMLInputElement;
   let reviewRules = $state<ReviewRules | null>(null);
@@ -114,6 +115,7 @@
       detector = s.detector;
       reader = s.reader;
       faceModel = s.face_model;
+      threads = s.inference_threads;
     })
     .catch(toastError);
 
@@ -124,14 +126,20 @@
   const selectedFace = $derived(info?.face_models.find((m) => m.id === faceModel));
   const retrains = $derived(info !== null && backbone !== info.backbone);
   const changed = $derived(
-    info !== null && (retrains || detector !== info.detector || reader !== info.reader || faceModel !== info.face_model),
+    info !== null &&
+      (retrains ||
+        detector !== info.detector ||
+        reader !== info.reader ||
+        faceModel !== info.face_model ||
+        threads !== info.inference_threads),
   );
+  const threadChoices = $derived(info ? Array.from({ length: info.threads_max }, (_, i) => i + 1) : []);
 
   async function save() {
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, detector, reader, face_model: faceModel });
+      info = await api.saveSettings({ backbone, detector, reader, face_model: faceModel, inference_threads: threads });
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
       if (retrained) loadTeach(); // the defaults depend on the state model
@@ -305,6 +313,19 @@
             >
           </div>
         {/if}
+        <label class="field" data-testid="inference-threads">
+          Threads per AI model
+          <select class="input" bind:value={threads}>
+            <option value={0}>Automatic{info.threads_auto ? ` (${info.threads_auto})` : ''}</option>
+            {#each threadChoices as n (n)}
+              <option value={n}>{n}</option>
+            {/each}
+          </select>
+          <span class="hint"
+            >How many CPU cores each check may use. Automatic: one per core. On a virtual machine or NAS that shares its
+            CPU, fewer can be faster; the speed test shows it.</span
+          >
+        </label>
         <div class="row">
           <button class="btn primary" disabled={!changed || saving} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}

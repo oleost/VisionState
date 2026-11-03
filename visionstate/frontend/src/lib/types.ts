@@ -933,6 +933,11 @@ export interface SettingsInfo {
   /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
   face_model: string;
   face_models: FaceModelInfo[];
+  /** Threads per model run: the user's choice, 0 = automatic (one per core, `threads_auto`); at most `threads_max`. */
+  inference_threads: number;
+  /** Null where the app cannot count the cores (a PC running it for development): ONNX Runtime does. */
+  threads_auto: number | null;
+  threads_max: number;
   options: Record<string, string | number>;
 }
 
@@ -1014,5 +1019,14 @@ export interface SpeedTestRun {
   finished_at: number | null;
   deleted: string[];
   kept: boolean;
-  machine: { version: string; cpus: number | null; memory_mb: number | null; arch: string | null };
+  machine: {
+    version: string;
+    cpus: number | null;
+    memory_mb: number | null;
+    arch: string | null;
+    /** 0: counted by ONNX Runtime (off Linux). */
+    threads: number;
+    threads_auto: boolean;
+    cpu_flags: string[];
+  };
 }

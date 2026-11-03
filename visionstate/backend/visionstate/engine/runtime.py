@@ -57,6 +57,8 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         self.face_choice = await asyncio.to_thread(self.db.get_text, "face_model", faces.DEFAULT_RECOGNISER)
         if self.face_choice not in faces.RECOGNISERS:
             self.face_choice = faces.DEFAULT_RECOGNISER
+        threads = await asyncio.to_thread(self.db.get_setting, "inference_threads", RUNTIME["inference_threads"])
+        backbones.set_threads(threads if isinstance(threads, int) else RUNTIME["inference_threads"])
         backbone_id = await asyncio.to_thread(self.db.get_text, "backbone", backbones.DEFAULT_BACKBONE)
         try:
             await self.load_embedder(backbone_id)

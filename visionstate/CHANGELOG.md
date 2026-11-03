@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0b4
+
+**Choose how many CPU threads the AI uses (#71, thanks to @ecdlguy).**
+
+- **Settings → AI model → Threads per AI model**: *Automatic* uses one per CPU core, as before. On a
+  virtual machine or NAS that shares its CPU with other work, fewer threads can be faster: on a NAS
+  VM with 4 vCPUs and one guaranteed core, a check took 1.7 s where 2 vCPUs took 1 s. The change
+  applies at once, without a restart, and the speed test shows whether it helped.
+- The speed test now shows the threads each model ran with and the CPU features that make AI faster
+  (such as AVX2, or ASIMD on ARM), also in the downloaded report, so results from different machines
+  compare.
+- The AI's threads still sleep while they wait for work instead of keeping the CPU busy. Measured
+  again: keeping it busy was at most about 10 % faster, for up to three times the CPU, and twice as
+  slow when there were more threads than free cores.
+
 ## 0.14.0b3
 
 **Sound sensors can listen to a camera in Home Assistant.**

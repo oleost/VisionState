@@ -102,6 +102,18 @@ so retraining only runs the backbone on new or changed samples.
   about 6 % more time per check. The footprints of the detectors were measured again this way.
   ONNX Runtime's threads do not spin while they wait for work (`backbones.cpu_session`): by
   default they keep cores busy between runs, CPU taken from Home Assistant on the same machine.
+  Measured again (2026-11-03, D-FINE N/S/M and DINOv2 small, spinning on against off): with no more
+  threads than free cores spinning was 0–11 % faster for up to 250 % more CPU (a 12-core desktop, a
+  2-vCPU VM); with more threads than cores, 75–127 % slower (the VM with 4 threads); a user's
+  Ryzen V1500B NAS VM was sometimes faster, sometimes slower, and unstable with 8 threads. Shared
+  and virtual CPUs are where most installations run, so spinning stays off and is not an option.
+- **Threads per model run** (`backbones.inference_threads`): one per physical core unless the user
+  chooses a number (Settings → AI model; it reloads the models, no restart). Not capped by
+  default: on the desktop the light models were fastest at 4–8 threads, but D-FINE M kept gaining
+  up to all 12 cores (321 ms at 4, 193 ms at 12). The choice is for shared CPUs: a user's NAS VM
+  with 4 vCPUs (so 4 threads) and one guaranteed core was slower than with 2 vCPUs (D-FINE N 1.7 s
+  against 0.97 s).
+  The speed test shows the threads and the CPU features (AVX2, ASIMD…) so reports compare.
 - DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
   also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
   object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base

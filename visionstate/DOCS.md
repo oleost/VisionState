@@ -731,7 +731,9 @@ How long history is kept is set under **Settings → Storage** (below).
 of your sensors, so you can see what your hardware can do before you choose. Pick a sensor and the
 models to test (all of them if you like), and start. For each model you get the time of a whole check
 and its parts (camera, decoding, AI), how much memory it takes, and whether it fits the sensor's
-interval. *Download report* gives the numbers as a text file to share, without names or addresses.
+interval. The results also show the machine: its CPUs and memory, the threads each model ran
+with, and the CPU features that make AI faster (such as AVX2 or, on ARM, ASIMD). *Download report*
+gives the numbers as a text file to share, without names or addresses.
 
 - **All sensors are paused while it runs**, also the ones on other cameras, so the numbers are of one
   model alone. They keep their last values in Home Assistant and go on by themselves afterwards.
@@ -859,6 +861,12 @@ others and whether it is included, downloaded or still to download. A downloaded
 not in use can be deleted there to free the disk (it is downloaded again when chosen); a face
 model only while no sensor recognises faces with it. A choice you made stays when a later
 version recommends another model.
+
+**Threads per AI model** (under the choices): how many CPU cores one check may use. *Automatic*
+uses one per core, which is fastest on a machine of its own. On a virtual machine or a NAS that
+shares its CPU with other work, fewer threads can be faster: when the threads wait for cores
+that are busy elsewhere, a check can take twice as long. Try a number and run the **Speed test**
+again to see; the change applies at once, without a restart.
 
 ## App options
 

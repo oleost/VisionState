@@ -28,6 +28,17 @@
     value === undefined ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
 
   const done = $derived((run?.results ?? []).filter((r) => r.status === 'done' && r.total));
+  // The machine, as the report puts it: CPUs, memory, threads per model run and the CPU features that speed it up.
+  const machine = $derived.by(() => {
+    const m = run?.machine;
+    if (!m) return '';
+    const parts = [`${m.cpus ?? '?'} CPUs`];
+    if (m.memory_mb) parts.push(`${Math.round(m.memory_mb / 1000)} GB memory`);
+    const threads = m.threads === 1 ? '1 thread' : `${m.threads || ''} threads`.trim();
+    parts.push(`${threads} per model${m.threads_auto ? ' (automatic)' : ''}`);
+    if (m.cpu_flags?.length) parts.push(m.cpu_flags.join(' ').toUpperCase());
+    return parts.join(', ');
+  });
   const resultRoles = $derived([...new Set((run?.results ?? []).map((r) => r.role))]);
   // Models are only compared with those that can take their place: a face model is no detector.
   const peers = (r: SpeedTestResult) => done.filter((o) => o.role === r.role);
@@ -185,7 +196,7 @@
         {#if run.state === 'cancelled'}<div class="notice warn">The test was stopped: the rest was not tested.</div>{/if}
         {#if run.state === 'failed'}<div class="notice danger">The test failed: {run.error}</div>{/if}
         <p class="small muted">
-          {run.machine.cpus ?? '?'} CPUs{run.machine.memory_mb ? `, ${Math.round(run.machine.memory_mb / 1000)} GB memory` : ''}{done[0]?.picture ? `; pictures of ${done[0].picture}, ${done[0].picture_kb} kB` : ''}.
+          {machine}{done[0]?.picture ? `; pictures of ${done[0].picture}, ${done[0].picture_kb} kB` : ''}.
           Times are the median of the rounds, with 95 % of them within the second number.
         </p>
         {#each resultRoles as role (role)}

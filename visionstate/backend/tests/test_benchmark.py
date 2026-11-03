@@ -101,6 +101,7 @@ def test_a_model_is_measured_with_the_sensors_paused_and_they_go_on_afterwards(s
         assert report.status_code == 200 and "attachment" in report.headers["content-disposition"]
         assert f"\n{model['id']} | " in report.text
         assert "secret" not in report.text and "Door" not in report.text  # no addresses, no names
+        assert "threads per model (automatic)" in report.text
 
         # The camera was asked for the warm-up too; the sensor checks again, with its model back.
         assert wait_for(lambda: not rt.benchmark_paused and rt.embedder is not None, timeout=30)

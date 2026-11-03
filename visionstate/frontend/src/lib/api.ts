@@ -155,7 +155,13 @@ export const api = {
   cancelSpeedTest: () => request<{ run: SpeedTestRun | null }>('benchmark/cancel', send('POST')),
   /** The last results as a text file (copying is not allowed everywhere). */
   speedTestReportUrl: `${BASE}benchmark/report`,
-  saveSettings: (body: { backbone: string; detector?: string; reader?: string; face_model?: string }) =>
+  saveSettings: (body: {
+    backbone: string;
+    detector?: string;
+    reader?: string;
+    face_model?: string;
+    inference_threads?: number;
+  }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
   storage: () => request<StorageInfo>('storage'),
   saveStorage: (body: { history_days: number; history_max_gb: number }) =>

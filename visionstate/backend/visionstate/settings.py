@@ -759,7 +759,11 @@ HA_ENTITIES_NOT_BY_DEFAULT = frozenset({"raw", "problem", "accepted", "rate", "r
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
-    "inference_threads": 0,  # threads per model run (backbones.cpu_session); 0: one per physical core
+    # Threads per model run (backbones.inference_threads) until the user chooses (Settings → AI model);
+    # 0: one per core (backbones.cpu_cores).
+    "inference_threads": 0,
+    # CPU features shown with the speed test's results (backbones.cpu_flags), as /proc/cpuinfo names them.
+    "cpu_flags": ("avx", "avx2", "fma", "avx512f", "avx512_vnni", "avx_vnni", "asimd", "asimddp"),
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
     # Sensors on the same camera: requests this close together share one picture (shared_frames.py),
     # and their checks fall on the same moments, with room for a late wake-up (engine.logic.aligned).
