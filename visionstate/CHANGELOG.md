@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0b2
+
+**Sensors on the same camera share their pictures (#63, thanks to @Docter77).**
+
+- Sensors on the exact same camera or address now take one picture together, and their regular
+  checks fall on the same moments (a sensor every 30 s and one every 60 s meet every minute). Each
+  still checks its own region with its own model.
+- The camera gets far fewer requests: with four sensors on a camera's RTSP stream, 6 connections a
+  minute instead of 17. A doorbell camera through Home Assistant no longer made checks wait up to
+  10 s for a picture, and checks take a steadier time.
+- A check can come a little sooner than its interval after a trigger, never later. The work of the
+  sensors on one camera now comes at the same moment, so the app's CPU has short, higher peaks and
+  its average use is a little higher; its memory is a little lower.
+- A sensor with a light, or alone on its camera, takes its pictures by itself as before.
+
 ## 0.14.0b1
 
 **Speed test (#71): see how fast each AI model is on your own machine.**
