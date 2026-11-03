@@ -97,6 +97,10 @@ def test_a_model_is_measured_with_the_sensors_paused_and_they_go_on_afterwards(s
         assert result["total"]["median"] >= result["ai"]["median"] > 0
         assert result["picture"] == "320×240"
         assert "secret" not in json.dumps(run)
+        report = client.get("/api/v1/benchmark/report")
+        assert report.status_code == 200 and "attachment" in report.headers["content-disposition"]
+        assert f"\n{model['id']} | " in report.text
+        assert "secret" not in report.text and "Door" not in report.text  # no addresses, no names
 
         # The camera was asked for the warm-up too; the sensor checks again, with its model back.
         assert wait_for(lambda: not rt.benchmark_paused and rt.embedder is not None, timeout=30)
@@ -195,6 +199,7 @@ def test_what_cannot_be_tested_is_refused(settings):
         sid = _state_sensor(client)
         pick = {"role": "detectors", "id": "dfine-n-coco"}
         assert client.post("/api/v1/benchmark", json={"sensor_id": sid, "models": [pick]}).status_code == 400
+        assert client.get("/api/v1/benchmark/report").status_code == 404  # nothing tested yet
         pick = {"role": "backbones", "id": "no-such-model"}
         assert client.post("/api/v1/benchmark", json={"sensor_id": sid, "models": [pick]}).status_code == 400
         pick = {"role": "backbones", "id": backbones.DEFAULT_BACKBONE}

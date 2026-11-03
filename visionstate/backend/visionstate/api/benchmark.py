@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .common import API_PREFIX, runtime
@@ -34,6 +35,17 @@ async def benchmark(request: Request) -> dict:
 def benchmark_run(request: Request) -> dict:
     """What the running test is doing, or the last one's results (polled while it runs)."""
     return {"run": runtime(request).benchmark_view()}
+
+
+@router.get("/benchmark/report")
+def benchmark_report(request: Request) -> PlainTextResponse:
+    """The last results as a text file to share (a file, as copying is not allowed on http)."""
+    run = runtime(request).benchmark
+    if run is None or run.state == "running":
+        raise HTTPException(404, "No finished speed test")
+    return PlainTextResponse(
+        run.report(), headers={"Content-Disposition": 'attachment; filename="visionstate-speed-test.txt"'}
+    )
 
 
 @router.post("/benchmark", status_code=202)

@@ -719,7 +719,7 @@ How long history is kept is set under **Settings → Storage** (below).
 of your sensors, so you can see what your hardware can do before you choose. Pick a sensor and the
 models to test (all of them if you like), and start. For each model you get the time of a whole check
 and its parts (camera, decoding, AI), how much memory it takes, and whether it fits the sensor's
-interval. *Copy report* gives the numbers as text to share, without names or addresses.
+interval. *Download report* gives the numbers as a text file to share, without names or addresses.
 
 - **All sensors are paused while it runs**, also the ones on other cameras, so the numbers are of one
   model alone. They keep their last values in Home Assistant and go on by themselves afterwards.

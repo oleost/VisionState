@@ -2061,6 +2061,8 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '[data-testid=speed-test-results] .btn, [data-testid=speed-test-results] .chip');
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test-results.png'), fullPage: true });
+  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Download report' }).click()]);
+  expect(file.suggestedFilename()).toBe('visionstate-speed-test.txt');
   // Over: the sensors go on.
   await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
   errors.expectNone();

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
-  import { app, toast, toastError } from '../lib/app.svelte';
+  import { app, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import { pollWhileVisible } from '../lib/poll';
   import { href, paths } from '../lib/router.svelte';
@@ -109,35 +109,6 @@
     }
   }
 
-  /** Without names or addresses: fit to paste in a post. */
-  function report(): string {
-    if (!run) return '';
-    const m = run.machine;
-    const lines = [
-      `VisionState ${m.version} speed test, ${m.cpus ?? '?'} CPUs${m.arch ? ` (${m.arch})` : ''}${m.memory_mb ? `, ${Math.round(m.memory_mb / 1000)} GB` : ''}`,
-      `${run.sensor.kind} sensor, ${run.sensor.source_type}${done[0]?.picture ? `, ${done[0].picture}, ${done[0].picture_kb} kB` : ''}`,
-      '',
-      'model | whole check | camera | decode | AI | memory',
-    ];
-    for (const r of run.results) {
-      lines.push(
-        r.total
-          ? `${r.id} | ${ms(r.total.median)} (p95 ${ms(r.total.p95)}) | ${ms(r.camera?.median)} | ${ms(r.decode?.median)} | ${ms(r.ai?.median)} | ${r.memory_peak_mb ?? '?'} MB`
-          : `${r.id} | ${r.status}`,
-      );
-    }
-    return lines.join('\n');
-  }
-
-  async function copyReport() {
-    try {
-      await navigator.clipboard.writeText(report());
-      toast('Copied');
-    } catch {
-      toast('Could not copy: your browser does not allow it here');
-    }
-  }
-
   onMount(() => {
     void load();
     return pollWhileVisible(SPEED_TEST_POLL_MS, () => void poll());
@@ -209,7 +180,7 @@
       <section class="card pad col" data-testid="speed-test-results">
         <div class="row wrap between">
           <h3>Results{run.sensor.name ? `: ${run.sensor.name}` : ''}</h3>
-          <button class="btn sm" onclick={copyReport}>Copy report</button>
+          <a class="btn sm" href={api.speedTestReportUrl} download><Icon name="download" size={14} /> Download report</a>
         </div>
         {#if run.state === 'cancelled'}<div class="notice warn">The test was stopped: the rest was not tested.</div>{/if}
         {#if run.state === 'failed'}<div class="notice danger">The test failed: {run.error}</div>{/if}

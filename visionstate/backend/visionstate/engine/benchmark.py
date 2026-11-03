@@ -154,6 +154,36 @@ class BenchmarkRun:
             "machine": self.machine,
         }
 
+    def report(self) -> str:
+        """The results as text to share: without names or addresses, fit to paste in a post."""
+
+        def ms(t: dict | None, key: str = "median") -> str:
+            if not t:
+                return "—"
+            v = t[key]
+            return f"{v / 1000:.1f} s" if v >= 1000 else f"{round(v)} ms"
+
+        m = self.machine
+        done = [r for r in self.results if r["status"] == "done" and r.get("total")]
+        picture = f", {done[0]['picture']}, {done[0]['picture_kb']} kB" if done and done[0].get("picture") else ""
+        lines = [
+            f"VisionState {m.get('version')} speed test, {m.get('cpus') or '?'} CPUs"
+            + (f" ({m['arch']})" if m.get("arch") else "")
+            + (f", {round(m['memory_mb'] / 1000)} GB" if m.get("memory_mb") else ""),
+            f"{self.sensor['kind']} sensor, {self.sensor['source_type']}{picture}",
+            "",
+            "model | whole check | camera | decode | AI | memory",
+        ]
+        for r in self.results:
+            if not r.get("total"):
+                lines.append(f"{r['id']} | {r['status']}")
+                continue
+            lines.append(
+                f"{r['id']} | {ms(r['total'])} (p95 {ms(r['total'], 'p95')}) | {ms(r.get('camera'))} | "
+                f"{ms(r.get('decode'))} | {ms(r.get('ai'))} | {r.get('memory_peak_mb', '?')} MB"
+            )
+        return "\n".join(lines) + "\n"
+
 
 class BenchmarkMixin(ChecksMixin):
     # --- What can be tested ----------------------------------------------------------------------
