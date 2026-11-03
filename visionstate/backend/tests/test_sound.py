@@ -756,6 +756,8 @@ def test_a_sound_in_the_middle_of_a_burst_is_heard(settings):  # noqa: F811
             # Played followed by 4 s of quiet, so the siren sits in the middle of the next burst.
             server.play(np.concatenate([siren, np.zeros(4 * RATE, dtype=np.float32)]))
             heard = {"sensor": sid, "event": "heard"}
-            assert wait_for(lambda: client.get("/api/v1/history", params=heard).json()["items"], timeout=30)
+            found = wait_for(lambda: client.get("/api/v1/history", params=heard).json()["items"], timeout=30)
+            sound = view()["sound"]
+            assert found, (sound["line"], sound["stream"], [round(x) for x in sound["levels"]], view()["live"])
     finally:
         server.close()
