@@ -271,15 +271,15 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
   this->image_ = nullptr;
   this->waiting_for_image_ = true;
   uint32_t asked = millis();
-  this->camera_->request_image(camera::WEB_REQUESTER);
-  // The camera hands pictures out in the main loop, which sleeps while nothing happens: it is woken
-  // only for a picture taken while one is asked for, and with two buffers one is ready already. And
-  // it gives at most one picture per 1/max_framerate, so a wake right after the last picture is
-  // answered with "too soon", and the loop sleeps again. So it is woken until the picture comes.
-  // Without this the second picture of a fresh snapshot never came on a device nobody listened to
-  // (a listener's sound keeps the loop busy).
+  // Asked for again every WAKE_EVERY_MS until it comes, and the main loop woken each time:
+  // - the camera clears its requests after handing a picture out (single_requesters_ = 0), and this
+  //   task runs on the other core: a request made right after the last picture (the fresh one of a
+  //   snapshot) was wiped out before the camera saw it;
+  // - the camera hands pictures out in the main loop, which sleeps while nothing happens.
+  // Both only showed with nobody listening: a listener's sound keeps the cores and the loop busy.
   bool got = false;
   while (!got && millis() - asked < timeout_ms) {
+    this->camera_->request_image(camera::WEB_REQUESTER);
     App.wake_loop_threadsafe();
     got = xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(WAKE_EVERY_MS)) == pdTRUE;
   }
