@@ -12,6 +12,22 @@
   whole frame, with a finger or the mouse, play only the part kept, and *Teach* it.
 - As in every clip, seconds with someone talking are silenced before you hear or keep it.
 
+**Teach the built-in sounds with clips of your own.**
+
+- Every built-in sound a sensor listens for — a siren, a dog, a door — now has a card on **Own
+  sounds** with *It is this* and *It is not this*: record clips there, add recordings, or teach a
+  clip from the History.
+- Clips of it make it hear the sound as your microphone hears it, also when the AI alone was not
+  sure enough. A clip of what it is not — a cupboard door, a siren on TV — holds the sound back when
+  something is clearly like that clip; the Live tab shows *Held back*. It stays the same sensor in
+  Home Assistant.
+- Answers in Review now teach too: *yes* adds the clip to the sound, *no* to what it is not.
+- **A threshold from your answers:** once a sound has a few answers, its card shows how your "yes"
+  and "no" fare at its threshold, and suggests a better one — *Use* sets it. When no threshold
+  tells them apart, it says so: then clips do it.
+- Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
+  instead of only the loudest, so one recording teaches more.
+
 ## 0.14.0b4
 
 **Choose how many CPU threads the AI uses (#71, thanks to @ecdlguy).**
