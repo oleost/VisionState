@@ -421,6 +421,28 @@ def test_an_own_sound_is_recorded_from_the_stream_and_trimmed(settings, monkeypa
 
 
 @requires_sound
+def test_a_recording_lasts_as_long_as_it_was_held_on_a_stream_that_sends_seconds_at_once(settings, monkeypatch):  # noqa: F811
+    # A Home Assistant camera's stream sends a segment of seconds at a time: between Start and Stop
+    # nothing may arrive, and the recording is still as long as Start to Stop was.
+    monkeypatch.setitem(SOUND, "record_after_s", 4.0)
+    server = SoundServer(burst_s=3.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+            base = f"/api/v1/sensors/{sid}/sounds/recording"
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            rec = client.post(base).json()
+            time.sleep(1.5)
+            stopped = client.post(f"{base}/{rec['id']}/stop")
+            assert stopped.status_code == 200, stopped.text
+            made = stopped.json()
+            assert 1.4 <= made["stop_s"] <= 2.5 and made["seconds"] >= made["stop_s"] + 3.9
+    finally:
+        server.close()
+
+
+@requires_sound
 def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
     server = SoundServer(speed=1.0, video=True)
     try:

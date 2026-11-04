@@ -391,11 +391,16 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     async def stop_recording(self, recording: SoundRecording) -> SoundRecording:
         """Stop pressed: the recording goes on for SOUND["record_after_s"] (the stream comes late),
         then its seconds are taken from the stream's buffer and speech in them silenced. At most
-        SOUND["record_max_s"] count up to Stop."""
+        SOUND["record_max_s"] count up to Stop, measured in time held."""
         if recording.samples is not None:
             return recording  # stopped already (Stop sent twice)
         stream, rate = recording.stream, recording.stream.rate
-        stop = min(stream.total, recording.start + int(SOUND["record_max_s"] * rate))
+        # As long as it was held, not what arrived meanwhile: a stream that sends seconds at once
+        # (a Home Assistant camera's) may have sent nothing between Start and Stop.
+        held = min(time.monotonic() - recording.started, SOUND["record_max_s"])
+        if held < SOUND["record_min_s"]:
+            raise RecordingError("Too short: record for a moment longer")
+        stop = recording.start + int(held * rate)
         end = stop + int(SOUND["record_after_s"] * rate)
         deadline = time.monotonic() + SOUND["record_after_s"] + SOUND["stall_s"]
         while stream.total < end and not stream.closed and time.monotonic() < deadline:
@@ -403,8 +408,8 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         samples = stream.segment(recording.start, min(end, stream.total))
         if samples is None:
             raise RecordingError("The stream was opened again while recording: record it again")
-        if stop - recording.start < SOUND["record_min_s"] * rate:
-            raise RecordingError("Too short: record for a moment longer")
+        if len(samples) < SOUND["record_min_s"] * rate:
+            raise RecordingError("No sound came after Start: record it again")
         model = await self.ensure_sound_model()
         async with self._sem:
             quiet, muted = await asyncio.to_thread(model.silence_speech, samples, SOUND["speech_mute"])
