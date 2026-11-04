@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "esphome/core/alloc_helpers.h"
+#include "esphome/core/application.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
@@ -194,6 +195,7 @@ esp_err_t VisionStateStream::handle_audio_(httpd_req_t *req) {
     this->listeners_.push_back(listener);
     this->listener_count_ = this->listeners_.size();
   }
+  App.wake_loop_threadsafe();  // loop() starts the microphone: now, not when the loop next wakes
   if (xTaskCreate(&VisionStateStream::listener_task_, "vs_listener", LISTENER_TASK_STACK, listener, 5, nullptr) !=
       pdPASS) {
     ESP_LOGE(TAG, "Could not start a task for the listener");
@@ -213,6 +215,7 @@ void VisionStateStream::remove_listener_(Listener *listener) {
     this->listeners_.erase(it);
   this->listener_count_ = this->listeners_.size();
   delete listener;
+  App.wake_loop_threadsafe();  // loop() stops the microphone when the last one left
 }
 
 void VisionStateStream::listener_task_(void *arg) {
@@ -268,6 +271,11 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
   this->waiting_for_image_ = true;
   uint32_t asked = millis();
   this->camera_->request_image(camera::WEB_REQUESTER);
+  // The camera hands pictures out in the main loop, which sleeps while nothing happens (it is woken
+  // only for a picture taken while one is asked for: with two buffers one is ready already, and
+  // nobody wakes it). Without this, the second picture of a fresh snapshot waited until something
+  // else woke the loop — always, while a listener's sound kept it busy; never, without one.
+  App.wake_loop_threadsafe();
   if (xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     this->waiting_for_image_ = false;
     ESP_LOGW(TAG, "The camera gave no picture in %" PRIu32 " ms", timeout_ms);
