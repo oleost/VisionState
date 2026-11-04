@@ -710,6 +710,9 @@ export interface AppConfig {
     max_taught: number;
     own_threshold: number;
     floor_db: number;
+    record_max_s: number;
+    record_after_s: number;
+    record_min_s: number;
   };
   /** The model's sounds a sensor can listen for. */
   sounds: { key: string; name: string; group: string; threshold: number; device_class: string; icon: string }[];
@@ -1029,4 +1032,16 @@ export interface SpeedTestRun {
     threads_auto: boolean;
     cpu_flags: string[];
   };
+}
+
+/** An own sound recorded from a sound sensor's stream, stopped: what the trimmer shows. */
+export interface SoundRecording {
+  id: string;
+  seconds: number;
+  /** Where Stop was pressed (seconds from Start); the rest came after, for the stream's delay. */
+  stop_s: number;
+  muted_s: number;
+  /** The loudest sample of each 1/peaks_per_s second, 0…1. */
+  peaks: number[];
+  peaks_per_s: number;
 }

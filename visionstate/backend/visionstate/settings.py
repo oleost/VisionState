@@ -364,6 +364,14 @@ SOUND = {
     "unsure_share": 0.5,
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
+    # Recording an own sound from the sensor's stream (Start, Stop): stopped by itself after
+    # record_max_s, and it goes on for record_after_s after Stop, as a stream comes some seconds late,
+    # to trim the clip into. Both fit in buffer_s. A recording not taught is forgotten after
+    # record_keep_s; a clip trimmed from it is at least record_min_s long.
+    "record_max_s": 20.0,
+    "record_after_s": 8.0,
+    "record_keep_s": 600.0,
+    "record_min_s": 0.5,
 }
 
 DETECTION = {

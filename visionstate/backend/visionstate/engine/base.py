@@ -24,7 +24,7 @@ from ..settings import RUNTIME, Settings, merge_review, merge_teach
 from ..shared_frames import SharedFrames
 from ..sources import FrameGrabber, HomeAssistant
 from ..storage import Storage
-from .state import LiveState, SensorConfig
+from .state import LiveState, SensorConfig, SoundRecording
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +99,7 @@ class RuntimeBase:
         self._sound_lock = asyncio.Lock()
         self.sound_heads: dict[int, sounds.SoundHead] = {}
         self.sound_room: dict[int, np.ndarray] = {}
+        self.sound_recordings: dict[int, SoundRecording] = {}  # an own sound being recorded, per sensor
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
         self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes

@@ -210,6 +210,30 @@ def encode_clip(samples: np.ndarray, rate: int) -> bytes:
     return buf.getvalue()
 
 
+def encode_wav(samples: np.ndarray, rate: int) -> bytes:
+    """Sound as a 16-bit WAV file: every sample where it was (a recording trimmed in the browser)."""
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes((np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+    return buf.getvalue()
+
+
+def peaks(samples: np.ndarray, rate: int, per_s: int) -> list[float]:
+    """The loudest sample of each 1/``per_s`` second, 0…1 of the loudest of all (a waveform to draw)."""
+    step = max(1, rate // per_s)
+    count = -(-len(samples) // step)
+    if not count:
+        return []
+    padded = np.abs(np.pad(samples, (0, count * step - len(samples))).reshape(count, step)).max(axis=1)
+    top = float(padded.max())
+    return [round(float(p) / top, 3) for p in padded] if top > 0 else [0.0] * count
+
+
 def decode_audio(data: bytes, rate: int) -> np.ndarray:
     """The sound of a clip or an uploaded file (any format FFmpeg reads) as ``rate`` Hz mono, -1…1."""
     import av

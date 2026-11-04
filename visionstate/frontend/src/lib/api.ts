@@ -37,6 +37,7 @@ import type {
   SettingsInfo,
   SoundPreview,
   SoundSettings,
+  SoundRecording,
   SoundTaught,
   Status,
   StorageInfo,
@@ -391,6 +392,20 @@ export const api = {
       body: form,
     });
   },
+  /** Record an own sound from the sensor's stream: Start, Stop (answers once the seconds after Stop came), trim. */
+  startSoundRecording: (id: number) =>
+    request<{ id: string; max_s: number; after_s: number }>(`sensors/${id}/sounds/recording`, send('POST')),
+  stopSoundRecording: (id: number, recordingId: string) =>
+    request<SoundRecording>(`sensors/${id}/sounds/recording/${recordingId}/stop`, send('POST')),
+  soundRecordingUrl: (id: number, recordingId: string) => `${BASE}sensors/${id}/sounds/recording/${recordingId}/audio`,
+  /** Teach the trimmed part (seconds from Start) as an own sound, a new one (`newName`) or another sound. */
+  teachSoundRecording: (id: number, recordingId: string, startS: number, endS: number, label: string | null, newName?: string) =>
+    request<{ id: number; label: string; made: boolean }>(
+      `sensors/${id}/sounds/recording/${recordingId}/teach`,
+      send('POST', { start_s: startS, end_s: endS, label: newName ? null : label, new_name: newName || null }),
+    ),
+  discardSoundRecording: (id: number, recordingId: string) =>
+    request<void>(`sensors/${id}/sounds/recording/${recordingId}`, send('DELETE')),
   soundClipUrl: (sampleId: number) => `${BASE}sound-clips/${sampleId}`,
   forgetSoundClip: (sampleId: number) => request<void>(`sound-clips/${sampleId}`, send('DELETE')),
   forgetSound: (id: number, key: string) => request<void>(`sensors/${id}/sounds/${encodeURIComponent(key)}`, send('DELETE')),

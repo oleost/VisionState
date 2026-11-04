@@ -2,12 +2,14 @@
   // A sound sensor's own sounds, laid out like the People page: "Add an own sound" (a name and its
   // first recordings), then one card per sound with the clips it was taught from (play, forget) and
   // "Add recordings", and "Other sounds" (what they are not). A recording is a phone's voice memo
-  // or any sound or video file: its loudest seconds are kept.
+  // or any sound or video file (its loudest seconds are kept), or recorded from the sensor's own
+  // stream with Record and trimmed (SoundRecorder).
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import ClipPlayer from '../../lib/components/sound/ClipPlayer.svelte';
+  import SoundRecorder from '../../lib/components/sound/SoundRecorder.svelte';
   import { dateTime, plural } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import type { Sensor, SoundTaught } from '../../lib/types';
@@ -19,6 +21,9 @@
   let taught = $state<SoundTaught | null>(null);
   let newName = $state('');
   let adding = $state<string | null>(null); // the label recordings are being added to ('' = a new sound)
+  let recordingFor = $state<string | null>(null); // the label being recorded from the stream ('' = a new sound)
+  let recordName = $state(''); // the new sound's name, as it was when Record was tapped
+  const busy = $derived(adding !== null || recordingFor !== null);
   const max = $derived(app.config?.sound.max_custom ?? 10);
   const full = $derived((taught?.sounds.length ?? 0) >= max);
 
@@ -72,6 +77,18 @@
     }
   }
 
+  function record(label: string) {
+    recordName = label ? '' : newName.trim();
+    recordingFor = label;
+  }
+
+  async function recorded() {
+    if (recordingFor === '') newName = '';
+    recordingFor = null;
+    await load();
+    onchange();
+  }
+
   const clipsOf = (label: string) => (taught?.clips ?? []).filter((c) => c.label === label);
 </script>
 
@@ -80,6 +97,31 @@
   <label class="btn {primary ? 'primary' : 'sm'}" for={id} class:disabled>
     <Icon name="mic" size={14} /> {adding === label ? 'Adding…' : text}
   </label>
+{/snippet}
+
+{#snippet recordButton(label: string, disabled: boolean, primary = false)}
+  <button
+    type="button"
+    class="btn {primary ? 'primary' : 'sm'}"
+    onclick={() => record(label)}
+    disabled={disabled || !sensor.enabled}
+    data-testid="record-{label || 'new'}"
+  >
+    <Icon name="record" size={14} /> Record
+  </button>
+{/snippet}
+
+{#snippet recorder(label: string, target: string)}
+  {#if recordingFor === label}
+    <SoundRecorder
+      sensorId={sensor.id}
+      label={label || null}
+      newName={label ? undefined : recordName}
+      {target}
+      ondone={recorded}
+      onclose={() => (recordingFor = null)}
+    />
+  {/if}
 {/snippet}
 
 {#snippet clipList(label: string)}
@@ -105,14 +147,20 @@
 
   <section class="card pad col add" data-testid="add-own-sound">
     <h3>Add an own sound</h3>
-    <p class="small muted">A name, and a few recordings of it: any sound or video file (its loudest four seconds are kept). On a phone, this can record right away.</p>
+    <p class="small muted">
+      A name, and a few clips of it: <em>Record</em> it from the sensor's own microphone and trim the clip, or add recordings —
+      any sound or video file (its loudest four seconds are kept; on a phone, this can record right away).
+    </p>
+    {#if !sensor.enabled}<p class="small muted">Recording from the stream works while the sensor listens: it is paused now.</p>{/if}
     {#if full}
       <p class="small warn-text">This sensor has {max} own sounds, the most it can have. Forget one to add another.</p>
     {:else}
       <div class="row wrap add-row">
         <input class="input" bind:value={newName} placeholder="Name, e.g. Doorbell" maxlength="64" aria-label="Name of the new own sound" />
-        {@render addButton('', 'sound-files', 'Add recordings', !newName.trim() || adding !== null, true)}
+        {@render recordButton('', !newName.trim() || busy, true)}
+        {@render addButton('', 'sound-files', 'Add recordings', !newName.trim() || busy)}
       </div>
+      {@render recorder('', newName.trim() || recordName)}
     {/if}
   </section>
 
@@ -125,12 +173,14 @@
             <span class="xsmall faint">{s.clips ? plural(s.clips, 'clip') : 'No clips: it is never heard until it is taught some'}</span>
           </div>
           <div class="row wrap actions">
-            {@render addButton(s.key, `sound-files-${s.key}`, 'Add recordings', adding !== null)}
+            {@render recordButton(s.key, busy)}
+            {@render addButton(s.key, `sound-files-${s.key}`, 'Add recordings', busy)}
             <ConfirmButton class="btn sm danger" onconfirm={() => forgetSound(s.key, s.name)} confirmLabel="Tap again to forget {s.name}">
               <Icon name="trash" size={14} /> Forget
             </ConfirmButton>
           </div>
         </div>
+        {@render recorder(s.key, s.name)}
         {@render clipList(s.key)}
       </section>
     {/each}
@@ -140,8 +190,12 @@
           <h3>Other sounds <span class="faint count">{taught.counts.other ?? 0}</span></h3>
           <span class="xsmall faint">What your own sounds are not</span>
         </div>
-        <div class="row wrap actions">{@render addButton('other', 'sound-files-other', 'Add recordings', adding !== null)}</div>
+        <div class="row wrap actions">
+          {@render recordButton('other', busy)}
+          {@render addButton('other', 'sound-files-other', 'Add recordings', busy)}
+        </div>
       </div>
+      {@render recorder('other', 'another sound')}
       <p class="small muted">
         Each sensor also starts from 200 everyday sounds{sensor.sound?.learn_room
           ? `, and learns this room as it listens (${plural(taught.room, 'sound')} so far)`

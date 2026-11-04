@@ -175,6 +175,7 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   review: 'Review',
   import: 'Import',
   history: 'History',
+  recording: 'Recorded from the stream',
 };
 
 export const SENSOR_TABS = [

@@ -1,5 +1,5 @@
 """Sound sensors: trying a stream before a sensor is made, and teaching own sounds from clips (a
-clip in the history, or an uploaded recording)."""
+clip in the history, an uploaded recording, or one recorded from the sensor's stream and trimmed)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from sqlalchemy import select
 from .. import sounds
 from ..db import Prediction, Sample, Sensor
 from ..engine import Runtime
+from ..engine.sound import RecordingError
+from ..engine.state import SoundRecording
 from ..settings import KIND_SOUND, SOUND, UPLOAD_LIMITS, merge_sound
 from ..sources import SOUND_SOURCE_TYPES, SourceError, check_source, open_audio
 from ..storage import CLIP_SUFFIX, is_clip
@@ -24,6 +26,7 @@ from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 router = APIRouter(prefix=API_PREFIX, tags=["sounds"])
 PREVIEW_S = 6.0  # how long a stream is listened to before a sound sensor is made
 CLIP_S = 4.0  # what is kept of an uploaded recording: its loudest seconds
+PEAKS_PER_S = 20  # the waveform of a recording from the stream, drawn to trim it
 
 
 class PreviewIn(BaseModel):
@@ -196,6 +199,101 @@ async def upload_clips(
             label, new_name = result["label"], None
     await _taught(rt, sensor_id)
     return {"added": added}
+
+
+# --- recording from the sensor's stream ------------------------------------------------------------
+
+
+class TrimIn(BaseModel):
+    """The part of a recording taught (seconds from Start), as an own sound, a new one or OTHER."""
+
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    label: str | None = Field(default=None, max_length=64)
+    new_name: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+def _recording(rt: Runtime, sensor_id: int, recording_id: str) -> SoundRecording:
+    recording = rt.get_recording(sensor_id, recording_id)
+    if recording is None:
+        raise HTTPException(404, "This recording is gone: record it again")
+    return recording
+
+
+def _is_sound_sensor(rt: Runtime, sensor_id: int) -> None:
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_SOUND)
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording", status_code=201)
+async def start_recording(sensor_id: int, request: Request) -> dict:
+    """Start recording an own sound from the sensor's stream (it must be listening)."""
+    rt = runtime(request)
+    await asyncio.to_thread(_is_sound_sensor, rt, sensor_id)
+    try:
+        recording = rt.start_recording(sensor_id)
+    except RecordingError as err:
+        raise HTTPException(409, str(err)) from err
+    return {"id": recording.id, "max_s": SOUND["record_max_s"], "after_s": SOUND["record_after_s"]}
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording/{recording_id}/stop")
+async def stop_recording(sensor_id: int, recording_id: str, request: Request) -> dict:
+    """Stop: answers once the seconds after Stop arrived (SOUND["record_after_s"]), with the
+    recording's length, where Stop was, and its waveform."""
+    rt = runtime(request)
+    try:
+        recording = await rt.stop_recording(_recording(rt, sensor_id, recording_id))
+    except RecordingError as err:
+        raise HTTPException(409, str(err)) from err
+    samples = recording.samples
+    assert samples is not None
+    rate = recording.stream.rate
+    return {
+        "id": recording.id,
+        "seconds": round(len(samples) / rate, 2),
+        "stop_s": recording.stop_s,
+        "muted_s": recording.muted_s,
+        "peaks": await asyncio.to_thread(sounds.peaks, samples, rate, PEAKS_PER_S),
+        "peaks_per_s": PEAKS_PER_S,
+    }
+
+
+@router.get("/sensors/{sensor_id}/sounds/recording/{recording_id}/audio")
+async def recording_audio(sensor_id: int, recording_id: str, request: Request) -> Response:
+    """A stopped recording as WAV (speech silenced), to listen to while trimming."""
+    rt = runtime(request)
+    recording = _recording(rt, sensor_id, recording_id)
+    if recording.samples is None:
+        raise HTTPException(409, "Still recording")
+    data = await asyncio.to_thread(sounds.encode_wav, recording.samples, recording.stream.rate)
+    return Response(data, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording/{recording_id}/teach", status_code=201)
+async def teach_recording(sensor_id: int, recording_id: str, body: TrimIn, request: Request) -> dict:
+    """Teach the trimmed part of a stopped recording; the recording is then forgotten."""
+    rt = runtime(request)
+    recording = _recording(rt, sensor_id, recording_id)
+    if recording.samples is None:
+        raise HTTPException(409, "Still recording")
+    rate = recording.stream.rate
+    part = recording.samples[int(body.start_s * rate) : int(body.end_s * rate)]
+    if len(part) < SOUND["record_min_s"] * rate:
+        raise HTTPException(400, f"Keep at least {SOUND['record_min_s']:g} s of the recording")
+    encoded = await asyncio.to_thread(sounds.encode_clip, part, rate)
+    result = await asyncio.to_thread(_add_clip, rt, sensor_id, encoded, body.label, body.new_name, "recording")
+    rt.sound_recordings.pop(sensor_id, None)
+    await _taught(rt, sensor_id)
+    return result
+
+
+@router.delete("/sensors/{sensor_id}/sounds/recording/{recording_id}", status_code=204)
+async def discard_recording(sensor_id: int, recording_id: str, request: Request) -> Response:
+    rt = runtime(request)
+    if rt.get_recording(sensor_id, recording_id) is not None:
+        rt.sound_recordings.pop(sensor_id, None)
+    return Response(status_code=204)
 
 
 @router.get("/sensors/{sensor_id}/sounds/taught")

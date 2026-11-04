@@ -9,6 +9,7 @@ import {
   METER_REGION,
   METER_URL,
   PHOTO_URL,
+  PLAY_URL,
   READING_SENSOR_NAME,
   SOUND_WAV_URL,
   TURNED_COUNTER_REGION,
@@ -2036,6 +2037,50 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   await expectNoHorizontalOverflow(page);
   const forget = card.getByRole('button', { name: /Forget/ }).first();
   await press(forget, info);
+  await press(card.getByRole('button', { name: /Tap again/ }), info);
+  await expect(card).toHaveCount(0);
+  errors.expectNone();
+});
+
+test('own sounds: recorded from the stream, trimmed by its ends, taught and forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(90_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  const name = `Chime ${info.project.name}`;
+  await page.getByLabel('Name of the new own sound').fill(name);
+  await press(page.getByTestId('record-new'), info);
+  const recorder = page.getByTestId('sound-recorder');
+  const stop = recorder.getByTestId('record-stop');
+  await expect(stop).toBeEnabled();
+  await expect(recorder.getByTestId('record-clock')).not.toHaveText('0:00'); // the clock runs
+  await request.get(PLAY_URL('chime'));
+  await page.waitForTimeout(1500);
+  await press(stop, info);
+  await expect(recorder.getByText(/Listening \d+ s more/)).toBeVisible();
+  // Then the trimmer: from Start to Stop kept, the seconds after there to take in.
+  const range = recorder.getByTestId('trim-range');
+  await expect(range).toBeVisible({ timeout: 30_000 });
+  await expect(recorder.getByTestId('clip-trimmer').getByText('Stop', { exact: true })).toBeVisible(); // where Stop was
+  const before = await range.textContent();
+  const end = recorder.getByRole('slider', { name: 'End of the clip' });
+  const from = await center(end);
+  await drag(page, info, from, { x: from.x + 60, y: from.y });
+  await expect(range).not.toHaveText(before ?? '');
+  const startHandle = recorder.getByRole('slider', { name: 'Start of the clip' });
+  const at = await center(startHandle);
+  await drag(page, info, at, { x: at.x + 20, y: at.y });
+  await expect(range).not.toHaveText(/^0\.0–/);
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=sound-recorder] .btn');
+  await press(recorder.getByTestId('trim-play'), info);
+  await press(recorder.getByTestId('record-teach'), info);
+  const card = page.getByTestId(`own-sound-chime_${info.project.name}`);
+  await expect(card).toContainText('1 clip');
+  await expect(card).toContainText('Recorded from the stream');
+  await expect(recorder).toHaveCount(0);
+  await press(card.getByRole('button', { name: /Forget/ }).first(), info);
   await press(card.getByRole('button', { name: /Tap again/ }), info);
   await expect(card).toHaveCount(0);
   errors.expectNone();

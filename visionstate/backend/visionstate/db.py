@@ -213,7 +213,7 @@ class Sample(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     sensor_id: Mapped[int] = mapped_column(ForeignKey("sensor.id", ondelete="CASCADE"), index=True)
     filename: Mapped[str] = mapped_column(String(256))
-    origin: Mapped[str] = mapped_column(String(32))  # snapshot | upload | video | review | import
+    origin: Mapped[str] = mapped_column(String(32))  # snapshot | upload | video | review | import | history | recording
     use_roi: Mapped[bool] = mapped_column(Boolean, default=True)
     is_night: Mapped[bool] = mapped_column(Boolean, default=False)
     width: Mapped[int] = mapped_column(Integer, default=0)

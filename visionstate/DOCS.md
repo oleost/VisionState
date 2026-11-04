@@ -560,8 +560,13 @@ teach yours as an own sound. A sound on TV is a real sound to the sensor.
 
 **Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
 door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
-(with clips on: *Teach this clip as*), or from recordings made with a phone (*Add an own sound*,
-or *Add recordings* on a sound: any sound or video file; its loudest four seconds are kept). A
+(with clips on: *Teach this clip as*), recorded from the sensor's own stream (*Record*: tap it,
+make the sound, tap *Stop*), or from recordings made with a phone (*Add recordings*: any sound or
+video file; its loudest four seconds are kept). A recording from the stream goes on for a few
+seconds after *Stop*, because a stream comes a little late (a Home Assistant camera's most):
+drag the ends of the clip to keep only the sound — at first it keeps what came between *Start* and
+*Stop* — play it to check, and *Teach* it. As in every clip, seconds with someone talking are
+silenced. It records only while the sensor listens (not paused). A
 doorbell, a door or a microwave is out of the box too, but heard much better as an own sound: it
 learns *your* doorbell from its own clips. About five clips is a good start. Each own sound is an
 on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts

@@ -235,6 +235,19 @@ class FaceBurst:
 
 
 @dataclass
+class SoundRecording:
+    """An own sound being recorded from a sound sensor's stream (Start, Stop), then trimmed."""
+
+    id: str
+    stream: AudioStream  # sample numbers belong to this stream: one opened again ends the recording
+    start: int  # the stream's sample number at Start
+    started: float = field(default_factory=time.monotonic)
+    stop_s: float | None = None  # seconds from Start to Stop, once stopped
+    samples: np.ndarray | None = None  # Start to record_after_s after Stop, speech silenced
+    muted_s: int = 0  # seconds of it silenced as speech
+
+
+@dataclass
 class SoundTrack:
     """What a sound sensor publishes for one sound, and the windows that decide it (logic.hear)."""
 

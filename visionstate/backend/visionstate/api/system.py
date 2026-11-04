@@ -167,6 +167,9 @@ def ui_config() -> dict:
                 "max_taught",
                 "own_threshold",
                 "floor_db",
+                "record_max_s",
+                "record_after_s",
+                "record_min_s",
             )
         },
         "sounds": [

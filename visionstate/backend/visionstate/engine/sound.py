@@ -11,7 +11,9 @@ the stream's buffer once they arrived, speech in them silenced, and kept with th
 Own sounds are taught from clips (samples whose ``object_label`` is the own sound's key, or
 sounds.OTHER for "not this"): a small head per sensor on the model's embeddings, trained again
 when they change. With "learn the room" on, loud windows that matched no own sound are kept as
-OTHER too (in the heads folder, never exported).
+OTHER too (in the heads folder, never exported). An own sound can also be recorded from the
+stream itself (Start, Stop and some seconds more for the stream's delay, then trimmed in the UI):
+the seconds come from the same buffer, speech silenced like a clip's.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -35,11 +38,15 @@ from .base import RuntimeBase
 from .logic import hear
 from .models import ModelsMixin
 from .publishing import PublishingMixin
-from .state import SensorConfig, SoundLive, SoundTrack
+from .state import SensorConfig, SoundLive, SoundRecording, SoundTrack
 
 log = logging.getLogger(__name__)
 
 EMBEDDING_KEY = "sound"  # Embedding.roi_key of a taught clip's embedding
+
+
+class RecordingError(Exception):
+    """A recording from a sensor's stream that cannot be made (said to the user as it is)."""
 
 
 def room_path(heads_dir: Path, sensor_id: int) -> Path:
@@ -79,6 +86,9 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if live is not None and live.sound is not None and live.sound.stream is not None:
             live.sound.stream.close()
             live.sound.stream = None
+        recording = self.sound_recordings.get(sensor_id)
+        if recording is not None and recording.samples is None:  # its seconds are gone with the stream
+            del self.sound_recordings[sensor_id]
 
     # --- Listening ------------------------------------------------------------------------------
 
@@ -352,6 +362,55 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 return
             row.frame = filename
             row.probs = {**(row.probs or {}), "muted_s": muted}
+
+    # --- Recording an own sound from the stream --------------------------------------------------
+
+    def start_recording(self, sensor_id: int) -> SoundRecording:
+        """Start pressed: the stream's sample number now (one recording per sensor; a new one
+        replaces it). Only while the sensor hears its stream."""
+        self._forget_old_recordings()
+        live = self.live.get(sensor_id)
+        stream = live.sound.stream if live is not None and live.sound is not None else None
+        if stream is None or stream.closed or not stream.delivering:
+            raise RecordingError("The sensor does not hear its stream now: it must be listening, with sound coming")
+        recording = SoundRecording(id=uuid.uuid4().hex, stream=stream, start=stream.total)
+        self.sound_recordings[sensor_id] = recording
+        return recording
+
+    def get_recording(self, sensor_id: int, recording_id: str) -> SoundRecording | None:
+        self._forget_old_recordings()
+        recording = self.sound_recordings.get(sensor_id)
+        return recording if recording is not None and recording.id == recording_id else None
+
+    def _forget_old_recordings(self) -> None:
+        now = time.monotonic()
+        for sensor_id, recording in list(self.sound_recordings.items()):
+            if now - recording.started > SOUND["record_keep_s"]:
+                del self.sound_recordings[sensor_id]
+
+    async def stop_recording(self, recording: SoundRecording) -> SoundRecording:
+        """Stop pressed: the recording goes on for SOUND["record_after_s"] (the stream comes late),
+        then its seconds are taken from the stream's buffer and speech in them silenced. At most
+        SOUND["record_max_s"] count up to Stop."""
+        if recording.samples is not None:
+            return recording  # stopped already (Stop sent twice)
+        stream, rate = recording.stream, recording.stream.rate
+        stop = min(stream.total, recording.start + int(SOUND["record_max_s"] * rate))
+        end = stop + int(SOUND["record_after_s"] * rate)
+        deadline = time.monotonic() + SOUND["record_after_s"] + SOUND["stall_s"]
+        while stream.total < end and not stream.closed and time.monotonic() < deadline:
+            await asyncio.sleep(0.2)
+        samples = stream.segment(recording.start, min(end, stream.total))
+        if samples is None:
+            raise RecordingError("The stream was opened again while recording: record it again")
+        if stop - recording.start < SOUND["record_min_s"] * rate:
+            raise RecordingError("Too short: record for a moment longer")
+        model = await self.ensure_sound_model()
+        async with self._sem:
+            quiet, muted = await asyncio.to_thread(model.silence_speech, samples, SOUND["speech_mute"])
+        recording.samples, recording.muted_s = quiet, muted
+        recording.stop_s = round((stop - recording.start) / rate, 2)
+        return recording
 
     # --- Own sounds -----------------------------------------------------------------------------
 

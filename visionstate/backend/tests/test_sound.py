@@ -363,6 +363,63 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
         server.close()
 
 
+def test_a_recording_is_drawn_and_played_back_as_it_was():
+    samples = np.concatenate([np.zeros(RATE // 2), 0.5 * np.ones(RATE // 4), np.zeros(RATE // 4)]).astype(np.float32)
+    drawn = sounds.peaks(samples, RATE, 20)
+    assert len(drawn) == 20 and max(drawn) == 1.0 and drawn[0] == 0.0 and drawn[11] == 1.0
+    assert sounds.peaks(np.zeros(0, np.float32), RATE, 20) == []
+    back = sounds.decode_audio(sounds.encode_wav(samples, RATE), RATE)
+    assert len(back) == len(samples) and abs(float(back[RATE // 2 + 10]) - 0.5) < 0.01
+    # The longest recording and the seconds after Stop fit in what the stream keeps.
+    assert SOUND["record_max_s"] + SOUND["record_after_s"] < SOUND["buffer_s"]
+
+
+@requires_sound
+def test_an_own_sound_is_recorded_from_the_stream_and_trimmed(settings, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(SOUND, "record_after_s", 1.0)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+            base = f"/api/v1/sensors/{sid}/sounds/recording"
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            started = client.post(base)
+            assert started.status_code == 201, started.text
+            rec = started.json()
+            assert rec["after_s"] == 1.0 and rec["max_s"] == SOUND["record_max_s"]
+            server.play(chime(seed=3))
+            time.sleep(1.0)
+            stopped = client.post(f"{base}/{rec['id']}/stop")
+            assert stopped.status_code == 200, stopped.text
+            made = stopped.json()
+            assert made["stop_s"] >= 1.0 and made["seconds"] >= made["stop_s"] + 0.9  # and a second after Stop
+            assert abs(len(made["peaks"]) - made["seconds"] * made["peaks_per_s"]) <= 1 and max(made["peaks"]) == 1.0
+            audio = client.get(f"{base}/{rec['id']}/audio")
+            assert audio.status_code == 200 and audio.headers["content-type"] == "audio/wav"
+            assert abs(len(sounds.decode_audio(audio.content, RATE)) / RATE - made["seconds"]) < 0.05
+            assert client.post(f"{base}/{rec['id']}/teach", json={"start_s": 1.0, "end_s": 1.2}).status_code == 400
+            taught = client.post(
+                f"{base}/{rec['id']}/teach", json={"start_s": 0.0, "end_s": made["seconds"], "new_name": "Bell"}
+            )
+            assert taught.status_code == 201, taught.text
+            assert taught.json()["label"] == "bell" and taught.json()["made"]
+            clips = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()["clips"]
+            assert [(c["label"], c["origin"]) for c in clips] == [("bell", "recording")]
+            clip = client.get(f"/api/v1/sound-clips/{clips[0]['id']}")
+            assert abs(len(sounds.decode_audio(clip.content, RATE)) / RATE - made["seconds"]) < 0.2
+            # Taught once: the recording is gone.
+            assert client.get(f"{base}/{rec['id']}/audio").status_code == 404
+            # Stopped at once: too short. Paused: nothing to record from.
+            again = client.post(base).json()
+            assert client.post(f"{base}/{again['id']}/stop").status_code == 409
+            assert client.patch(f"/api/v1/sensors/{sid}", json={"enabled": False}).status_code == 200
+            assert wait_for(lambda: client.post(base).status_code == 409)
+            assert client.post(f"/api/v1/sensors/{sid + 1}/sounds/recording").status_code == 404
+    finally:
+        server.close()
+
+
 @requires_sound
 def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
     server = SoundServer(speed=1.0, video=True)
