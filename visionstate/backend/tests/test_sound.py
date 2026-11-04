@@ -483,7 +483,7 @@ def test_a_threshold_is_suggested_from_the_answers():
 
 
 @requires_sound
-def test_a_built_in_sound_learns_from_clips_and_answers_and_is_held_back_by_what_it_is_not(settings, quick):  # noqa: F811
+def test_a_built_in_sound_learns_from_clips_and_answers_and_what_it_is_not(settings, quick, monkeypatch):  # noqa: F811
     server = SoundServer(speed=2.0)
     try:
         with TestClient(create_app(settings)) as client:
@@ -543,6 +543,26 @@ def test_a_built_in_sound_learns_from_clips_and_answers_and_is_held_back_by_what
             built = {b["key"]: b for b in taught()["builtin"]}
             assert (built["doorbell"]["clips"], built["doorbell"]["not_clips"]) == (6, 0)
             assert built["doorbell"]["advice"]["yes"] == 1 and built["doorbell"]["advice"]["no"] == 0
+
+            # A clip forgotten while it is embedded is left out, not a failed training.
+            from visionstate.db import Embedding, Sample
+
+            rt = client.app.state.runtime
+            with rt.db.session() as s:
+                s.query(Embedding).delete()
+            first = taught()["clips"][0]["id"]
+            real = rt.clip_embeddings
+
+            def forgetting(model, data):  # noqa: ANN001, ANN202
+                with rt.db.session() as s:
+                    sample = s.get(Sample, first)
+                    if sample is not None:
+                        s.delete(sample)
+                return real(model, data)
+
+            monkeypatch.setattr(rt, "clip_embeddings", forgetting)
+            vectors, labels = rt._sound_vectors(sid, rt.sound_model)
+            assert vectors and len(vectors) == len(labels)
     finally:
         server.close()
 

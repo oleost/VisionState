@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from .. import backbones, sounds
 from ..db import Embedding, Prediction, Sample
@@ -509,13 +510,18 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 embedded = self.clip_embeddings(model, data)
                 buf = io.BytesIO()
                 np.save(buf, embedded)
-                with self.db.session() as s:
-                    s.merge(
-                        Embedding(sample_id=sample_id, backbone=model.id, roi_key=EMBEDDING_KEY, vector=buf.getvalue())
-                    )
-                    old = s.get(Embedding, (sample_id, model.id, OLD_EMBEDDING_KEY))
-                    if old is not None:
-                        s.delete(old)
+                try:
+                    with self.db.session() as s:
+                        s.merge(
+                            Embedding(
+                                sample_id=sample_id, backbone=model.id, roi_key=EMBEDDING_KEY, vector=buf.getvalue()
+                            )
+                        )
+                        old = s.get(Embedding, (sample_id, model.id, OLD_EMBEDDING_KEY))
+                        if old is not None:
+                            s.delete(old)
+                except IntegrityError:
+                    continue  # the clip was forgotten meanwhile (its head is trained again for that)
             else:
                 embedded = np.load(io.BytesIO(vector))
             vectors += list(embedded)
