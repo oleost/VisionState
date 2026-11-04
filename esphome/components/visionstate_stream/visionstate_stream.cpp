@@ -24,6 +24,23 @@ static const uint32_t SILENT_GIVE_UP_MS = 10000;            // no sound from the
 static const uint32_t IMAGE_TIMEOUT_MS = 5000;
 static const uint32_t WAKE_EVERY_MS = 50;  // the main loop is woken this often while a picture is waited for
 static const uint32_t LISTENER_TASK_STACK = 4096;
+// Sockets beside the listeners' (as __init__.py counts them): a snapshot, and an answer to a third
+// listener, at the same time.
+static const uint8_t SPARE_SOCKETS = 2;
+
+// Every answer that is not a stream closes its connection: a client keeping it open (HTTP keep-alive:
+// Home Assistant, a media player, VisionState's snapshots) would hold one of the few sockets, and with
+// them all held no one else could connect. The server closes it once the handler has returned.
+static esp_err_t answered(httpd_req_t *req) {
+  httpd_sess_trigger_close(req->handle, httpd_req_to_sockfd(req));
+  return ESP_OK;
+}
+
+static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err) {
+  httpd_resp_set_hdr(req, "Connection", "close");
+  httpd_resp_send_err(req, err, nullptr);
+  return answered(req);
+}
 
 static void put_u32(uint8_t *p, uint32_t v) {
   p[0] = v & 0xff;
@@ -74,7 +91,7 @@ void VisionStateStream::setup() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = this->port_;
   config.ctrl_port = this->port_;
-  config.max_open_sockets = this->max_listeners_ + 1;
+  config.max_open_sockets = this->max_listeners_ + SPARE_SOCKETS;
   config.backlog_conn = 2;
   config.lru_purge_enable = false;  // a listener is never pushed off for a newcomer
   config.max_uri_handlers = 4;
@@ -99,6 +116,8 @@ void VisionStateStream::setup() {
       .user_ctx = this,
   };
   httpd_register_uri_handler(this->httpd_, &snapshot);
+  httpd_register_err_handler(this->httpd_, HTTPD_404_NOT_FOUND, not_found);
+  httpd_register_err_handler(this->httpd_, HTTPD_405_METHOD_NOT_ALLOWED, not_found);
 }
 
 void VisionStateStream::loop() {
@@ -159,6 +178,7 @@ bool VisionStateStream::authorized_(httpd_req_t *req) {
     }
   }
   httpd_resp_set_status(req, "401 Unauthorized");
+  httpd_resp_set_hdr(req, "Connection", "close");
   httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"VisionState\"");
   httpd_resp_sendstr(req, "Unauthorized\n");
   return false;
@@ -166,30 +186,32 @@ bool VisionStateStream::authorized_(httpd_req_t *req) {
 
 esp_err_t VisionStateStream::handle_audio_(httpd_req_t *req) {
   if (!this->authorized_(req))
-    return ESP_OK;
+    return answered(req);
 #ifndef USE_VISIONSTATE_MICROPHONE
-  httpd_resp_send_404(req);
-  return ESP_OK;
+  return not_found(req, HTTPD_404_NOT_FOUND);
 #else
   if (this->listener_count_ >= this->max_listeners_) {
     httpd_resp_set_status(req, "409 Conflict");
+    httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_sendstr(req, "Too many listeners\n");
-    return ESP_OK;
+    return answered(req);
   }
   size_t bytes = std::max<size_t>(CHUNK_BYTES * 2, BYTES_PER_SECOND * this->buffer_ms_ / 1000);
   bytes -= bytes % 2;
   std::shared_ptr<ring_buffer::RingBuffer> buffer = ring_buffer::RingBuffer::create(bytes);
   if (buffer == nullptr) {
+    httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-    return ESP_OK;
+    return answered(req);
   }
   auto *listener = new Listener();
   listener->buffer = buffer;
   listener->parent = this;
   if (httpd_req_async_handler_begin(req, &listener->req) != ESP_OK) {
     delete listener;
+    httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not start the stream");
-    return ESP_OK;
+    return answered(req);
   }
   {
     LockGuard guard(this->lock_);
@@ -297,15 +319,12 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
 
 esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
   if (!this->authorized_(req))
-    return ESP_OK;
+    return answered(req);
 #ifndef USE_VISIONSTATE_CAMERA
-  httpd_resp_send_404(req);
-  return ESP_OK;
+  return not_found(req, HTTPD_404_NOT_FOUND);
 #else
-  if (this->camera_ == nullptr) {
-    httpd_resp_send_404(req);
-    return ESP_OK;
-  }
+  if (this->camera_ == nullptr)
+    return not_found(req, HTTPD_404_NOT_FOUND);
   // The camera keeps a picture ready, taken right after the last one was fetched (up to its idle
   // interval ago, and before a light was switched on): with fresh_snapshot, that one is thrown away.
   std::shared_ptr<camera::CameraImage> image = this->take_image_(IMAGE_TIMEOUT_MS);
@@ -315,12 +334,15 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
   }
   if (image == nullptr) {
     ESP_LOGW(TAG, "No picture from the camera");
+    httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No picture from the camera");
-    return ESP_OK;
+    return answered(req);
   }
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-  return httpd_resp_send(req, reinterpret_cast<const char *>(image->get_data_buffer()), image->get_data_length());
+  httpd_resp_set_hdr(req, "Connection", "close");
+  httpd_resp_send(req, reinterpret_cast<const char *>(image->get_data_buffer()), image->get_data_length());
+  return answered(req);
 #endif
 }
 

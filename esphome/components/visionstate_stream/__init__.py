@@ -34,10 +34,10 @@ def _both_or_neither(config):
 
 
 def _consume_sockets(config):
-    """One listening socket, and one per listener plus one for a snapshot."""
+    """One listening socket, and one per listener plus SPARE_SOCKETS (stream.cpp) for the rest."""
     from esphome.components import socket
 
-    socket.consume_sockets(config[CONF_MAX_LISTENERS] + 1, "visionstate_stream")(config)
+    socket.consume_sockets(config[CONF_MAX_LISTENERS] + 2, "visionstate_stream")(config)
     socket.consume_sockets(1, "visionstate_stream", socket.SocketType.TCP_LISTEN)(config)
     return config
 
