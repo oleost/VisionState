@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.0b5
+
+**Record an own sound straight from the sensor's microphone.**
+
+- On **Own sounds**, *Record* now sits beside *Add recordings*: tap it, make the sound (shut the
+  door, ring the bell), and tap *Stop*. No phone recording to make and upload first.
+- A stream comes a few seconds late, more so a camera heard through Home Assistant, so the
+  recording goes on for a few seconds after *Stop*. Then trim the clip: a waveform with a frame
+  around the part kept, at first what came between *Start* and *Stop*. Drag either end, or the
+  whole frame, with a finger or the mouse, play only the part kept, and *Teach* it.
+- As in every clip, seconds with someone talking are silenced before you hear or keep it.
+
 ## 0.14.0b4
 
 **Choose how many CPU threads the AI uses (#71, thanks to @ecdlguy).**
