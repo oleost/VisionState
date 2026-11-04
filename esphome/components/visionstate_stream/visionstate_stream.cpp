@@ -22,6 +22,7 @@ static const size_t CHUNK_BYTES = 1024;                     // 32 ms
 static const uint32_t READ_WAIT_MS = 250;                   // a read that waits longer gives up for now
 static const uint32_t SILENT_GIVE_UP_MS = 10000;            // no sound from the microphone this long: close
 static const uint32_t IMAGE_TIMEOUT_MS = 5000;
+static const uint32_t WAKE_EVERY_MS = 50;  // the main loop is woken this often while a picture is waited for
 static const uint32_t LISTENER_TASK_STACK = 4096;
 
 static void put_u32(uint8_t *p, uint32_t v) {
@@ -271,12 +272,18 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
   this->waiting_for_image_ = true;
   uint32_t asked = millis();
   this->camera_->request_image(camera::WEB_REQUESTER);
-  // The camera hands pictures out in the main loop, which sleeps while nothing happens (it is woken
-  // only for a picture taken while one is asked for: with two buffers one is ready already, and
-  // nobody wakes it). Without this, the second picture of a fresh snapshot waited until something
-  // else woke the loop — always, while a listener's sound kept it busy; never, without one.
-  App.wake_loop_threadsafe();
-  if (xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+  // The camera hands pictures out in the main loop, which sleeps while nothing happens: it is woken
+  // only for a picture taken while one is asked for, and with two buffers one is ready already. And
+  // it gives at most one picture per 1/max_framerate, so a wake right after the last picture is
+  // answered with "too soon", and the loop sleeps again. So it is woken until the picture comes.
+  // Without this the second picture of a fresh snapshot never came on a device nobody listened to
+  // (a listener's sound keeps the loop busy).
+  bool got = false;
+  while (!got && millis() - asked < timeout_ms) {
+    App.wake_loop_threadsafe();
+    got = xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(WAKE_EVERY_MS)) == pdTRUE;
+  }
+  if (!got) {
     this->waiting_for_image_ = false;
     ESP_LOGW(TAG, "The camera gave no picture in %" PRIu32 " ms", timeout_ms);
     return nullptr;
