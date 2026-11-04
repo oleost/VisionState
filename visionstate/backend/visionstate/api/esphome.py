@@ -52,6 +52,7 @@ async def devices(request: Request) -> dict:
         entities = await ha.entities()
     except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: the address is typed instead
         return {"devices": [], "waiting": [], "error": redact(str(err)) or type(err).__name__}
+    ids = {e["entity_id"] for e in entities}
     found = []
     for e in entities:
         if not (e["entity_id"].startswith("sensor.") and e["entity_id"].endswith("_ip_address")):
@@ -61,7 +62,11 @@ async def devices(request: Request) -> dict:
         except ValueError:
             continue
         name = str(e.get("name") or e["entity_id"]).removesuffix(" IP address").removesuffix(" IP Address")
-        found.append({"entity_id": e["entity_id"], "name": name, "address": e["state"]})
+        base = e["entity_id"].removeprefix("sensor.").removesuffix("_ip_address")
+        light = f"light.{base}_flash"  # an ESP32-CAM's flash (esphome/packages/camera-esp32-cam.yaml)
+        found.append(
+            {"entity_id": e["entity_id"], "name": name, "address": e["state"], "light": light if light in ids else None}
+        )
     try:
         waiting = await ha.discovered("esphome")
     except Exception:  # noqa: BLE001 - not allowed or not reachable: only the added devices are listed

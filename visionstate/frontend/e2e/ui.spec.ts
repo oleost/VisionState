@@ -2266,7 +2266,7 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await press(guide.getByRole('button', { name: 'Make a sound sensor' }), info);
   await expect(page.getByRole('heading', { name: 'Name it and pick a stream with sound' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Stream with sound' })).toHaveValue(sound);
-  await expect(page.getByLabel('Sensor name')).toHaveValue('Front door');
+  await expect(page.getByLabel('Sensor name')).toHaveValue('Front door sound'); // not the device's own name
   expect(page.url()).not.toContain(password); // the password never goes into the address bar
   errors.expectNone();
 });

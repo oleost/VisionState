@@ -157,6 +157,7 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
         async def entities():
             return [
                 {"entity_id": "sensor.front_door_ip_address", "name": "Front door IP address", "state": "10.0.0.7"},
+                {"entity_id": "light.front_door_flash", "name": "Front door Flash", "state": "off"},
                 {"entity_id": "sensor.old_ip_address", "name": "Old IP address", "state": "unavailable"},
                 {"entity_id": "sensor.temperature", "name": "Temperature", "state": "21"},
             ]
@@ -170,7 +171,12 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
         got = client.get("/api/v1/esphome/devices").json()
         assert got["waiting"] == ["vs-garage"]  # found, not added yet
         assert got["devices"] == [
-            {"entity_id": "sensor.front_door_ip_address", "name": "Front door", "address": "10.0.0.7"}
+            {
+                "entity_id": "sensor.front_door_ip_address",
+                "name": "Front door",
+                "address": "10.0.0.7",
+                "light": "light.front_door_flash",
+            }
         ]
 
 

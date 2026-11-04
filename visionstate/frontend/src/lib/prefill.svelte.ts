@@ -5,6 +5,8 @@ export interface NewSensorPrefill {
   name: string;
   sourceType: string;
   source: string;
+  /** A light the device has (an ESP32-CAM's flash): offered, not switched on by itself. */
+  light?: string | null;
 }
 
 export const prefill = $state<{ newSensor: NewSensorPrefill | null }>({ newSensor: null });

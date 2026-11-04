@@ -137,11 +137,15 @@
   function makeSensor(mode: 'sound' | 'picture') {
     const address = mode === 'sound' ? checked?.addresses.sound : checked?.addresses.picture;
     if (!address) return;
+    // Not the device's own name: Home Assistant names the sensor's entities after it, next to the
+    // device's (switch.hallway_enabled and switch.hallway_enabled_2), and the two sensors look alike.
+    const base = friendly.replace(/ (microphone|camera)$/i, '');
     prefill.newSensor = {
       mode,
-      name: friendly.replace(/ (microphone|camera)$/i, ''),
+      name: `${base} ${mode === 'sound' ? 'sound' : 'camera'}`,
       sourceType: mode === 'sound' ? 'rtsp' : 'http',
       source: address,
+      light: mode === 'picture' ? (devices.find((d) => d.address === host.trim())?.light ?? null) : null,
     };
     go(paths.newSensor());
   }

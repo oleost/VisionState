@@ -1130,4 +1130,6 @@ export interface EsphomeDevice {
   entity_id: string;
   name: string;
   address: string;
+  /** Its flash (an ESP32-CAM), offered as the light for checks in the dark. */
+  light: string | null;
 }

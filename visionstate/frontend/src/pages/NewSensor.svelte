@@ -53,7 +53,19 @@
   let previewUrl = $state<string | null>(null);
   let previewSize = $state<[number, number] | null>(null);
   // A small picture, or a source named like a sub-stream: maybe the camera's low-resolution stream.
-  const lowStream = $derived(previewSize !== null && (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)));
+  // An ESP32 from the guide has one picture size, its own: no word about a camera's low-resolution stream.
+  const fromGuide = (s: string) => given?.mode === 'picture' && s === given.source;
+  const lowStream = $derived(
+    !fromGuide(source) &&
+      previewSize !== null &&
+      (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)),
+  );
+  // The guide's device has a flash: offered as the light (one tap), never switched on unasked.
+  let lightKey = $state(0);
+  function useFlash() {
+    triggers.light_entity = given!.light!;
+    lightKey++;
+  }
   let previewError = $state('');
   let previewBusy = $state(false);
   let previewLoad = 0; // the load that counts: a slow answer from the camera picked before is dropped
@@ -85,7 +97,8 @@
       previewUrl = null;
       previewSize = null;
       previewError = '';
-      if (picture && type === 'ha_camera' && chosen) loadPreview();
+      // A Home Assistant camera at once; an address once typed — or at once, from the ESP32 guide.
+      if (picture && chosen && (type === 'ha_camera' || fromGuide(chosen))) loadPreview();
     });
   });
 
@@ -301,7 +314,13 @@
             <input class="input" bind:value={name} placeholder="Garage door" />
           </label>
           <SourcePicker bind:sourceType bind:source ondone={urlTyped} />
-          <div style="max-width:640px"><LightEditor bind:triggers /></div>
+          {#if given?.light && triggers.light_entity !== given.light}
+            <p class="small" data-testid="esp32-flash">
+              The device has a flash (<span class="mono">{given.light}</span>): it can light the picture for checks in the
+              dark. <button class="btn sm" onclick={useFlash}>Use the flash</button>
+            </p>
+          {/if}
+          <div style="max-width:640px">{#key lightKey}<LightEditor bind:triggers />{/key}</div>
           <div class="after-hold">
             <CameraPreview
               url={previewUrl}
