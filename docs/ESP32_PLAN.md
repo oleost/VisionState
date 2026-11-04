@@ -30,6 +30,12 @@ both behind HTTP Basic auth on one port; the *Microphone* switch, the gain, the 
 listeners, the light while someone listens, the flash as a light. Compiled for both boards and all
 three kinds (CI: `.github/workflows/esphome.yml`). What has been tried on a board is in §5.
 
+In VisionState: the ESP32 guide (*Set one up with ESPHome*; the files are in
+[`ARCHITECTURE.md`](ARCHITECTURE.md)) writes the device's file, follows it into Home Assistant
+(found, waiting to be added, its address), checks it and makes the sensor. A sound sensor whose
+stream is pure digital silence for `SOUND["dead_silence_s"]` says *Pure silence* (every sound
+source, not only an ESP32: a camera with its audio off sends the same).
+
 ## 3. Listening in Home Assistant: open
 
 The firmware gives the direct address. How Home Assistant plays it is **not checked**; these are
@@ -78,12 +84,21 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
 
 On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has not arrived):
 
-- [ ] Both boards start, join the Wi-Fi and show up in Home Assistant.
-- [ ] `/audio.wav` answers with the login and refuses without it (401), a third listener gets 409,
-      and VisionState's sound sensor takes the stream (silence without a microphone).
-- [ ] `/snapshot.jpg` on the ESP32-CAM: the picture, how long it takes, and whether it is fresh.
-- [ ] The ESP32-CAM with the camera and the microphone's I2S running together (the empty I2S port
-      in `esp32-cam-microphone.yaml`): does the camera still work?
+- [x] Both boards start, join the Wi-Fi and show up in Home Assistant, installed through the guide
+      (2026-11-04).
+- [x] `/audio.wav` answers with the login and refuses without it (401; a wrong path 404), a third
+      listener gets 409, and VisionState's sound sensor takes the stream: 16 kHz mono, about
+      32 kB/s, all zeros without a microphone (2026-11-04, the DevKit). The *Microphone* switch off
+      gives silence without breaking the stream; after *Restart* the device is back in about 7 s with
+      the switch as it was, and VisionState listens again by itself.
+- [x] `/snapshot.jpg` on the ESP32-CAM: the picture comes, fresh, also with no one else looking
+      (2026-11-04; at first it did not: ESPHome's camera forgets a request made while it hands out
+      the last picture, so the component asks again until one comes). An image sensor (objects) on
+      it in VisionState works, the flash as its light. *Not measured*: how long a snapshot takes
+      against the Home Assistant camera entity.
+- [x] The ESP32-CAM with the camera and the microphone's I2S running together (the empty I2S port
+      in `esp32-cam-microphone.yaml`): the camera works (2026-11-04, no microphone wired yet). The
+      flash must stay off the camera's LEDC channel 0 (`camera-esp32-cam.yaml` uses channel 2).
 - [ ] The mute pin: GPIO12 on the ESP32-CAM is a strapping pin — does the board still start with
       the switch closed and open?
 - [ ] With the INMP441: the level of a smoke alarm at a few metres and the gain it needs, how long

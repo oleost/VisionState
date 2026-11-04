@@ -354,6 +354,9 @@ SOUND = {
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
     "offline_after_s": 20.0,  # unavailable only after this long without audio: a reconnect is not news
     "live_levels": 120,  # levels (one per hop) the Live tab shows
+    # A stream of nothing but digital silence (sounds.SILENCE_DB) for this long is said to be: no
+    # room is that quiet, so its microphone is not wired, broken or muted (an ESP32's switch).
+    "dead_silence_s": 60.0,
     "max_sounds": 20,  # the model's sounds per sensor (one entity each)
     "max_custom": 10,  # own sounds per sensor (one entity each)
     "max_taught": 50,  # clips taught per own sound

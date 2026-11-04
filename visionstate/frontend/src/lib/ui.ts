@@ -16,6 +16,10 @@ export const TOAST_MS = 5_000;
 
 /** Shown on a sensor that is held back: readings, or what is sent to Home Assistant (its Home Assistant tab). */
 export const CAMERA_CHANGED = { label: 'Camera changed', help: 'Readings are held: check the region' };
+export const DEAD_SILENT = {
+  label: 'Pure silence',
+  help: 'The stream has been pure digital silence for a while, quieter than any room: is the microphone wired, or muted (on an ESP32, its Microphone switch or mute switch)?',
+};
 export const NOT_SENT = { label: 'Values not sent', help: 'Its entities in Home Assistant are unavailable until you choose “Send values” on its Home Assistant tab.' };
 export const NOT_IN_HA = { label: 'Not in Home Assistant', help: 'It has no entities in Home Assistant. Choose “Send values” on its Home Assistant tab to create them.' };
 /** A sensor's Home Assistant tab: what it has there. */

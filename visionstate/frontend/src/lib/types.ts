@@ -126,6 +126,8 @@ export interface SensorSound extends SoundSettings {
   /** The level a window must reach to be analysed (null: not learned yet). */
   line: number | null;
   analysed: boolean;
+  /** Nothing but digital silence for a while: a microphone not wired, broken or muted. */
+  dead_silent: boolean;
   /** The stream's audio and video, once it was opened. */
   stream: { codec: string; sample_rate: number; channels: number; video: { codec: string; width: number; height: number } | null } | null;
 }

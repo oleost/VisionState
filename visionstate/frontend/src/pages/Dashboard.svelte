@@ -17,7 +17,7 @@
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { CAMERA_CHANGED, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
+  import { CAMERA_CHANGED, DEAD_SILENT, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
 
   let sensors = $state<Sensor[] | null>(null);
   let importInput: HTMLInputElement;
@@ -130,6 +130,8 @@
                   >{facesBusy(s)}</span
                 >{:else if s.reading?.camera_changed}<span class="chip warn" title={CAMERA_CHANGED.help}
                   >{CAMERA_CHANGED.label}</span
+                >{:else if s.sound?.dead_silent && s.status === 'ok'}<span class="chip warn" title={DEAD_SILENT.help}
+                  >{DEAD_SILENT.label}</span
                 >{:else}<span class="chip {status.tone}">{status.label}</span>{/if}
             </div>
             <div class="col" style="gap:2px">

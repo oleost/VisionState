@@ -179,6 +179,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         for i in range(0, len(new), hop):
             level = sounds.level_db(new[i : i + hop])
             heard.levels.append(level)
+            heard.silent_hops = heard.silent_hops + 1 if level <= sounds.SILENCE_DB else 0
+            if heard.silent_hops == int(SOUND["dead_silence_s"] / SOUND["hop_s"]):  # once, as it begins
+                log.warning(
+                    "Sensor %s: its stream is pure digital silence: is the microphone wired, or muted?", cfg.slug
+                )
             if not hearing:  # a siren that goes on for minutes must not become the background
                 heard.background.append(level)
             ends.append(end - len(new) + min(i + hop, len(new)))

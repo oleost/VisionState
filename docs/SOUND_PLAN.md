@@ -325,8 +325,8 @@ As for images: CC0 / public domain, or drawn by our own code.
   strong case: camera audio is often poor (§12), and a room without a camera can still listen. 16 kHz
   16-bit mono is about 256 kbit/s, easy over Wi-Fi.
   - *A stream of its own* (firmware that sends the microphone as an HTTP stream of WAV or raw PCM, or
-    over RTSP) needs nothing beyond phase 1. It is not stock ESPHome; community components exist
-    (e.g. an HTTP transport in `gnumpi/esphome_audio`) and phase 0 picks one to recommend.
+    over RTSP) needs nothing beyond phase 1. It is not stock ESPHome: VisionState has its own
+    component and packages for it (below).
   - **Recommended: the ESP32 streams all the time** and VisionState decides what is loud enough
     (§4, step 3): the firmware stays simple, the level is set in the UI, not in firmware.
   - *Optional later: the ESP32 sends only when it is loud* (keeping about a second from before the

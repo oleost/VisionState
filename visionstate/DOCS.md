@@ -542,14 +542,17 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
 
 **An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
 guide for an ESP32 DevKit with an INMP441 microphone, or an ESP32-CAM with its camera (and a
-microphone too, if you like). It shows the wiring, writes the configuration to put into the
-ESPHome app with a password for the device, and once the device is on the network checks that it
-answers and makes the sensor with its address. The firmware, its boards and how it is built:
+microphone too, if you like). It shows the wiring and gives the device's file to download (the
+Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
+device. Once the device is installed it tells you to add it in Home Assistant (and shows the
+encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
 `esphome/README.md` in the repository.
 
 The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it
-runs.
+runs. A stream that stays pure digital silence — quieter than any room — shows *Pure silence*:
+its microphone is not wired, is broken, or is muted (on an ESP32, its *Microphone* switch or mute
+switch; on a camera, its audio switched off). The sensor hears nothing then.
 
 **What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
 of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised

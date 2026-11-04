@@ -56,9 +56,24 @@ that gives at least 1 A; a weak one makes it restart when the camera or Wi-Fi dr
 
 ## Install it
 
-The easiest way: VisionState's ESP32 guide (*Set one up with ESPHome*, under a new sensor's sound or
-image source). It shows the wiring and writes the device's whole file, Wi-Fi and password included,
-to paste into ESPHome's *Empty configuration*. By hand, with the examples:
+**With VisionState's guide** (*Set one up with ESPHome*, under a new sensor's sound or image
+source):
+
+1. Pick the board and what it is (microphone, camera, both), its name and whether a mute switch is
+   wired. The guide shows the wiring.
+2. Type the Wi-Fi's name and password (the guide makes up the password for VisionState). These stay
+   in the browser: VisionState never receives them.
+3. *Download* the device's file. In the ESPHome app: *New device* → *Advanced set up options* →
+   *Import from file*. Nothing in the file needs editing.
+4. *Install*: the first time over USB, then over Wi-Fi. The first build takes several minutes.
+5. Home Assistant finds the device (*Settings → Devices & services → Discovered*). *Add* asks for the
+   device's **encryption key**: the guide shows it, and it is in the file under `api: encryption:
+   key:`. It is not the password for VisionState.
+6. The guide sees the device in Home Assistant, fills in its address, checks the sound and the
+   picture with the password, and makes the sensor (named after the device, *… sound* or
+   *… camera*; an ESP32-CAM's flash is offered as the sensor's light).
+
+**By hand, with the examples:**
 
 1. In the ESPHome app, make a new device for an ESP32. ESPHome writes its name, the Wi-Fi and an
    API key.
@@ -68,6 +83,19 @@ to paste into ESPHome's *Empty configuration*. By hand, with the examples:
 3. Add the stream's password to ESPHome's secrets: `vs_stream_password: <a password>`.
 4. *Install*: the first time over USB, then over Wi-Fi. Home Assistant finds the device and asks to
    add it.
+5. In VisionState, a sound sensor with the stream address above as its *RTSP or stream* source, or
+   an image sensor with the snapshot address as its *HTTP snapshot URL*.
+
+## When something is wrong
+
+| What you see | Why |
+|---|---|
+| *401* in the guide's check, or the sensor gets no sound | The password is not the one in the device's file (`stream_password`). |
+| *409* | Two listeners are on already (VisionState and someone else): close one. |
+| *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
+| Very quiet sound | Raise *Microphone gain* in Home Assistant. |
+| The ESP32-CAM restarts, or the picture fails | A weak 5 V supply (see above). |
+| Home Assistant does not ask to add the device | It is not on the Wi-Fi yet (ESPHome's log shows it), or Home Assistant is on another network. |
 
 ## The parts
 

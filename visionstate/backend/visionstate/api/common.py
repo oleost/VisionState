@@ -622,6 +622,8 @@ def sound_view(sensor: Sensor, live: LiveState | None) -> dict | None:
         "levels": list(heard.levels) if heard else [],
         "line": heard.line if heard else None,
         "analysed": bool(heard and heard.analysed),
+        # Nothing but digital silence for SOUND["dead_silence_s"]: a microphone not wired or muted.
+        "dead_silent": bool(heard and heard.silent_hops * SOUND["hop_s"] >= SOUND["dead_silence_s"]),
         "stream": getattr(stream, "info", None) or None,
     }
 

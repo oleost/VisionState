@@ -770,6 +770,28 @@ def test_a_paused_sensor_hears_nothing(settings, quick):  # noqa: F811
 
 
 @requires_sound
+def test_a_stream_of_pure_digital_silence_is_said_to_be(settings, monkeypatch):  # noqa: F811
+    """An ESP32 without its microphone (or muted) sends zeros: the sensor is "ok", and deaf."""
+    monkeypatch.setitem(SOUND, "dead_silence_s", 2.0)
+    server = SoundServer(background=np.zeros(RATE, dtype=np.float32), speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            assert not view()["sound"]["dead_silent"]
+            assert wait_for(lambda: view()["sound"]["dead_silent"])
+            assert view()["status"] == "ok"  # it hears its stream: only what is in it is wrong
+            server.play(noise(1.0))  # any sound at all, the quietest room's included
+            assert wait_for(lambda: not view()["sound"]["dead_silent"])
+    finally:
+        server.close()
+
+
+@requires_sound
 def test_it_goes_on_listening_while_a_clip_waits_for_its_video(settings, quick, monkeypatch):  # noqa: F811
     from concurrent.futures import Future
 

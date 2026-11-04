@@ -9,6 +9,7 @@
   import { pct } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import { soundColor } from '../../lib/sound';
+  import { DEAD_SILENT } from '../../lib/ui';
   import type { Sensor } from '../../lib/types';
 
   let { sensor }: { sensor: Sensor; onchange?: () => void } = $props();
@@ -25,6 +26,8 @@
         <span class="spacer"></span>
         {#if sensor.live.available === false}
           <span class="chip danger">No sound</span>
+        {:else if sound.dead_silent}
+          <span class="chip warn">{DEAD_SILENT.label}</span>
         {:else if sound.analysed}
           <span class="chip ok">Analysing</span>
         {:else}
@@ -33,6 +36,8 @@
       </div>
       {#if sensor.live.error}
         <div class="notice danger small" data-testid="sound-error"><Icon name="alert" /><span>{sensor.live.error}</span></div>
+      {:else if sound.dead_silent}
+        <div class="notice warn small" data-testid="sound-dead-silent"><Icon name="alert" /><span>{DEAD_SILENT.help}</span></div>
       {/if}
       <LevelChart levels={sound.levels} line={sound.line} floor={Math.min(app.config?.sound.floor_db ?? -70, -70) - 20} />
       <p class="xsmall muted">
