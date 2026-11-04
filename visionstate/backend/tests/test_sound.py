@@ -456,6 +456,19 @@ def test_a_built_in_sound_is_corrected_by_the_households_clips():
     assert sounds.correct(0.6, 0.95, 0.85, threshold)[1] is False  # more like its own clips
 
 
+def test_a_taught_clip_is_learned_from_its_loud_windows():
+    quiet, loud = noise(1.0) * 0.01, recording("siren")
+    clip = np.concatenate([quiet, loud, quiet])
+    found = sounds.loud_windows(clip, RATE)
+    size = int(SOUND["window_s"] * RATE)
+    assert 1 < len(found) <= SOUND["teach_windows"] and found.shape[1] == size
+    levels = [sounds.level_db(w) for w in found]
+    assert (
+        min(levels) >= sounds.level_db(sounds.loudest_window(clip, RATE, SOUND["window_s"])) - SOUND["teach_within_db"]
+    )
+    assert sounds.loud_windows(loud[: RATE // 2], RATE).shape == (1, size)  # shorter than a window: padded
+
+
 def test_a_threshold_is_suggested_from_the_answers():
     from visionstate import advice
 
@@ -489,19 +502,18 @@ def test_a_built_in_sound_learns_from_clips_and_answers_and_is_held_back_by_what
                 return client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()
 
             # The drawn chime taught as the built-in doorbell, and the siren as what the siren is not
-            # (a siren on TV, say): every part of the recording.
+            # (a siren on TV, say): one clip of it, as one recording of the TV would be.
             chimes = [
                 ("files", (f"bell{i}.m4a", sounds.encode_clip(chime(gain=0.2 + 0.05 * i, seed=i), RATE), "audio/mp4"))
                 for i in range(5)
             ]
             assert client.post(upload, files=chimes, data={"label": "doorbell"}).status_code == 201
             siren = recording("siren")
-            parts = [siren[i : i + 4 * RATE] for i in range(0, len(siren) - 2 * RATE, 2 * RATE)]
-            sirens = [("files", (f"s{i}.m4a", sounds.encode_clip(p, RATE), "audio/mp4")) for i, p in enumerate(parts)]
-            assert client.post(upload, files=sirens, data={"label": "not:siren"}).status_code == 201
+            tv = [("files", ("tv.m4a", sounds.encode_clip(siren, RATE), "audio/mp4"))]
+            assert client.post(upload, files=tv, data={"label": "not:siren"}).status_code == 201
             assert client.post(upload, files=chimes[:1], data={"label": "not:dog_bark"}).status_code == 400
             built = {b["key"]: b for b in taught()["builtin"]}
-            assert built["doorbell"]["clips"] == 5 and built["siren"]["not_clips"] == len(parts)
+            assert built["doorbell"]["clips"] == 5 and built["siren"]["not_clips"] == 1
             assert taught()["trained"] and taught()["sounds"] == []  # no own sound made
 
             assert wait_for(lambda: view()["sound"]["line"] is not None)

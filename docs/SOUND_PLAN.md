@@ -370,6 +370,12 @@ No question for the maintainer is open. Decided on 2026-10-29:
   that like it and for `clear_after_s` (as a sound stays heard): the windows at the edges of a CC0
   siren, half siren and half quiet, let it through before. Review answers teach these clips; the
   threshold is suggested, never changed by itself (`docs/SCOPE.md` §7). Same entity, same IDs.
+  Measured on the CC0 siren taught once as "not siren": a taught clip gave the head one window, its
+  loudest, and the siren's start (quieter, and half quiet in the window that hears it begin) came
+  through. Every taught clip — own sounds' too — is now learned from its loud windows
+  (`sounds.loud_windows`: every `teach_hop_s`, within `teach_within_db` of the loudest, half a window
+  of quiet added at either end); with 6 dB or without the quiet ends it still came through now and
+  then, with both it was held back ten times in ten.
 
 ## 12. Pitfalls to avoid
 

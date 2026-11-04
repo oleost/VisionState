@@ -19,6 +19,7 @@ the seconds come from the same buffer, speech silenced like a clip's.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import time
 import uuid
@@ -42,7 +43,10 @@ from .state import SensorConfig, SoundLive, SoundRecording, SoundTrack
 
 log = logging.getLogger(__name__)
 
-EMBEDDING_KEY = "sound"  # Embedding.roi_key of a taught clip's embedding
+# Embedding.roi_key of a taught clip's embeddings: one per loud window (sounds.loud_windows), as an
+# .npy array. Rows of the first key held one, of the loudest window only: replaced when met.
+EMBEDDING_KEY = "sound-windows"
+OLD_EMBEDDING_KEY = "sound"
 
 
 class RecordingError(Exception):
@@ -215,6 +219,8 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                         if was_held:
                             held.add(key)
                             track.held_at = when
+                            if not holding:  # once per sound, as it is heard once
+                                track.held_count += 1
                 analysed[j] = (scores, embeddings[n], held)
         newest = len(ends) - 1
         heard.analysed = newest in analysed
@@ -226,9 +232,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             when = now - (end - at) / rate  # a hop that came in a burst: as long ago as it is in the stream
             for key in keys:
                 track = heard.tracks.setdefault(key, SoundTrack())
-                was, track.held = track.held, key in held
-                if track.held and not was:
-                    track.held_count += 1
+                track.held = key in held
                 if hear(track, scores[key], self.sound_threshold(cfg, key), when, cfg.sound["clear_after_s"]):
                     await self._sound_changed(cfg, stream, heard, key, track, levels[j], at)
         for key in [k for k in heard.tracks if k not in keys]:
@@ -470,14 +474,14 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         np.save(part, room)
         part.replace(path)
 
-    def clip_embedding(self, model: sounds.SoundModel, data: bytes) -> np.ndarray:
-        """The embedding of a clip's loudest window (what a taught clip is compared with)."""
+    def clip_embeddings(self, model: sounds.SoundModel, data: bytes) -> np.ndarray:
+        """The embeddings of a taught clip's loud windows (what the head learns it from): N × 576."""
         samples = sounds.decode_audio(data, model.spec.rate)
-        window = sounds.loudest_window(samples, model.spec.rate, SOUND["window_s"])
-        return model.run(window[None, :])[1][0]
+        return model.run(sounds.loud_windows(samples, model.spec.rate))[1].astype(np.float32)
 
     def _sound_vectors(self, sensor_id: int, model: sounds.SoundModel) -> tuple[list[np.ndarray], list[str]]:
-        """The embeddings and labels of a sound sensor's taught clips (embedded once, then cached)."""
+        """The embeddings and labels of a sound sensor's taught clips, one per loud window of each
+        (embedded once, then cached)."""
         with self.db.session() as s:
             rows = s.execute(
                 select(Sample.id, Sample.filename, Sample.object_label).where(
@@ -502,17 +506,20 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                     data = self.storage.sample_path(sensor_id, filename).read_bytes()
                 except OSError:
                     continue
-                embedded = self.clip_embedding(model, data).astype(np.float32)
+                embedded = self.clip_embeddings(model, data)
+                buf = io.BytesIO()
+                np.save(buf, embedded)
                 with self.db.session() as s:
                     s.merge(
-                        Embedding(
-                            sample_id=sample_id, backbone=model.id, roi_key=EMBEDDING_KEY, vector=embedded.tobytes()
-                        )
+                        Embedding(sample_id=sample_id, backbone=model.id, roi_key=EMBEDDING_KEY, vector=buf.getvalue())
                     )
-                vectors.append(embedded)
+                    old = s.get(Embedding, (sample_id, model.id, OLD_EMBEDDING_KEY))
+                    if old is not None:
+                        s.delete(old)
             else:
-                vectors.append(np.frombuffer(vector, dtype=np.float32))
-            labels.append(label)
+                embedded = np.load(io.BytesIO(vector))
+            vectors += list(embedded)
+            labels += [label] * len(embedded)
         return vectors, labels
 
     async def train_sound_head(self, cfg: SensorConfig) -> None:

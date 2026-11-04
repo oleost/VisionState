@@ -249,6 +249,27 @@ def decode_audio(data: bytes, rate: int) -> np.ndarray:
     return np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(0, np.float32)
 
 
+def loud_windows(samples: np.ndarray, rate: int) -> np.ndarray:
+    """The windows of a taught clip it is learned from: every SOUND["teach_hop_s"], those within
+    SOUND["teach_within_db"] of the loudest, at most SOUND["teach_windows"] (the loudest first, then
+    in time order), half a window of quiet added at either end; a clip shorter than a window is one
+    window, padded."""
+    size = int(SOUND["window_s"] * rate)
+    if len(samples) <= size:
+        return loudest_window(samples, rate, SOUND["window_s"])[None, :]
+    # Half a window of quiet on either side: a window that hears the sound begin or end is learned too.
+    samples = np.pad(samples, (size // 2, size // 2))
+    step = int(SOUND["teach_hop_s"] * rate)
+    starts = list(range(0, len(samples) - size + 1, step))
+    if starts[-1] != len(samples) - size:
+        starts.append(len(samples) - size)  # the end too
+    windows = np.stack([samples[i : i + size] for i in starts]).astype(np.float32)
+    levels = np.array([level_db(w) for w in windows])
+    keep = np.flatnonzero(levels >= levels.max() - SOUND["teach_within_db"])
+    keep = np.sort(keep[np.argsort(-levels[keep], kind="stable")][: SOUND["teach_windows"]])
+    return windows[keep]
+
+
 def loudest_window(samples: np.ndarray, rate: int, window_s: float) -> np.ndarray:
     """The ``window_s`` seconds of ``samples`` with the most energy (all of it when shorter, padded)."""
     size = int(window_s * rate)

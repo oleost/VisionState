@@ -258,7 +258,7 @@ class SoundTrack:
     best: float = 0.0  # the best score since it was heard (for the history)
     row: int | None = None  # the history row of the time it began to be heard
     held: bool = False  # the last window: the model held back by a clip that is not this sound (sounds.correct)
-    held_count: int = 0  # times it was held back since the app started (a run of windows counts once)
+    held_count: int = 0  # times it was held back since the app started (once per sound, through its pauses)
     held_at: float = 0.0  # when a window last held it back (it stays held back through pauses)
 
 

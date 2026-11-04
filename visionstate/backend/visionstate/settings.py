@@ -364,6 +364,12 @@ SOUND = {
     "unsure_share": 0.5,
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
+    # A taught clip is learned from its loud windows, not only its loudest: every teach_hop_s, the
+    # windows within teach_within_db of the loudest, at most teach_windows (the loudest of them).
+    # One window of a siren held back only that part of it; its start, half siren, came through.
+    "teach_hop_s": 1.0,
+    "teach_within_db": 12.0,
+    "teach_windows": 8,
     # Recording an own sound from the sensor's stream (Start, Stop): stopped by itself after
     # record_max_s, and it goes on for record_after_s after Stop, as a stream comes some seconds late,
     # to trim the clip into. Both fit in buffer_s. A recording not taught is forgotten after
