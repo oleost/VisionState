@@ -264,6 +264,38 @@ def loudest_window(samples: np.ndarray, rate: int, window_s: float) -> np.ndarra
 # --- Own sounds -----------------------------------------------------------------------------------
 
 OTHER = "other"  # the head's class for everything that is none of the own sounds
+# A built-in sound taught with the household's own clips: its own clips are labelled with its key,
+# the clips that are not it ("No" answers) with this prefix and its key. Both are classes of the head.
+NOT_PREFIX = "not:"
+
+
+def not_label(key: str) -> str:
+    return NOT_PREFIX + key
+
+
+def lift(p: float, threshold: float) -> float:
+    """A head's probability on a built-in sound's scale: SOUND["own_threshold"] lands on the
+    sound's threshold, 0 and 1 stay where they are (so one score bar shows both)."""
+    own = SOUND["own_threshold"]
+    if p <= own:
+        return p / own * threshold
+    return threshold + (p - own) / (1.0 - own) * (1.0 - threshold)
+
+
+def correct(
+    score: float, yes: float | None, no: float | None, threshold: float, holding: bool = False
+) -> tuple[float, bool]:
+    """A built-in sound's score with the household's clips: heard when the model is sure enough or
+    its own clips are (``yes``, the head's probability), and the model held back when the window is
+    clearly like a clip that is not it (``no`` at least SOUND["own_threshold"] and above ``yes``).
+    Like a sound that is heard, a sound held back (``holding``: a moment ago) stays held back while
+    ``no`` is above SOUND["off_share"] of that, so the windows at its edges, half of it, do not let
+    it through. Returns the score, and whether the model was held back."""
+    mine = lift(yes, threshold) if yes is not None else 0.0
+    line = SOUND["own_threshold"] * (SOUND["off_share"] if holding else 1.0)
+    if no is not None and no >= line and no > (yes or 0.0) and score > mine:
+        return mine, True
+    return max(score, mine), False
 
 
 @dataclass

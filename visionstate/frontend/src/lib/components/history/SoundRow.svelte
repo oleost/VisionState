@@ -50,7 +50,7 @@
     <div class="col full">
       <ClipPlayer src={api.historyClipUrl(p.id)} video={p.clip_video} />
       {#if muted}<span class="xsmall faint">{muted} s silenced: someone was talking.</span>{/if}
-      <ClipTeach {sensor} historyId={p.id} {onchange} />
+      <ClipTeach {sensor} historyId={p.id} soundKey={p.state_key} {onchange} />
     </div>
   {/if}
 </div>

@@ -16,6 +16,9 @@ export function soundPicker() {
   };
 }
 
+/** The label of clips that are not the built-in sound `key` (backend sounds.not_label). */
+export const notLabel = (key: string) => `not:${key}`;
+
 /** LiveChips of a sound sensor: each sound it listens for, on while heard. */
 export function soundChips(sensor: Sensor) {
   return {

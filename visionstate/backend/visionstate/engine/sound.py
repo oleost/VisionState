@@ -179,7 +179,10 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         heard.line = sounds.line_db(cfg.sound, sounds.background_db(list(heard.background)))
         loud = [j for j, level in enumerate(levels) if heard.line is not None and level >= heard.line]
         keys = cfg.sound_keys
-        analysed: dict[int, tuple[dict[str, float], np.ndarray]] = {}  # hop -> its scores and embedding
+        custom = {c["key"] for c in cfg.sound["custom"]}
+        head = self.sound_heads.get(cfg.id)
+        # hop -> its scores, embedding, and the built-in sounds held back by a clip that is not them
+        analysed: dict[int, tuple[dict[str, float], np.ndarray, set[str]]] = {}
         if loud:
             # The new samples and a window's length before them (fewer when the buffer has no more).
             audio = stream.segment(max(0, end - len(new) - size), end)
@@ -192,30 +195,46 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 windows[n, size - len(part) :] = part
             async with self._sem:
                 raw, embeddings = await asyncio.to_thread(model.run, windows)
-            head = self.sound_heads.get(cfg.id)
             own = head.predict(embeddings) if head is not None else None
             for n, j in enumerate(loud):
+                when = time.time() - (end - ends[j]) / rate
                 scores = dict.fromkeys(keys, 0.0)
                 scores.update(model.sound_scores(raw[n], keys))
-                for key, p in (own[n] if own is not None else {}).items():
-                    if key in scores:
-                        scores[key] = p
-                analysed[j] = (scores, embeddings[n])
+                probs = own[n] if own is not None else {}
+                held: set[str] = set()
+                for key in keys:
+                    if key in custom:
+                        scores[key] = probs.get(key, 0.0)
+                    elif key in probs or sounds.not_label(key) in probs:  # taught with the household's clips
+                        yes, no = probs.get(key), probs.get(sounds.not_label(key))
+                        threshold = self.sound_threshold(cfg, key)
+                        # Held back a moment ago: still, through its pauses (as a sound stays heard).
+                        track = heard.tracks.setdefault(key, SoundTrack())
+                        holding = when - track.held_at <= cfg.sound["clear_after_s"]
+                        scores[key], was_held = sounds.correct(scores[key], yes, no, threshold, holding)
+                        if was_held:
+                            held.add(key)
+                            track.held_at = when
+                analysed[j] = (scores, embeddings[n], held)
         newest = len(ends) - 1
         heard.analysed = newest in analysed
         heard.scores = analysed[newest][0] if heard.analysed else {}
         now = time.time()
         for j, at in enumerate(ends):
             scores = analysed[j][0] if j in analysed else dict.fromkeys(keys, 0.0)
+            held = analysed[j][2] if j in analysed else set()
             when = now - (end - at) / rate  # a hop that came in a burst: as long ago as it is in the stream
             for key in keys:
                 track = heard.tracks.setdefault(key, SoundTrack())
+                was, track.held = track.held, key in held
+                if track.held and not was:
+                    track.held_count += 1
                 if hear(track, scores[key], self.sound_threshold(cfg, key), when, cfg.sound["clear_after_s"]):
                     await self._sound_changed(cfg, stream, heard, key, track, levels[j], at)
         for key in [k for k in heard.tracks if k not in keys]:
             del heard.tracks[key]  # no longer listened for
-        if loud and cfg.sound["custom"] and cfg.sound["learn_room"]:
-            scores, embedding = analysed[loud[-1]]
+        if loud and (custom or head is not None) and cfg.sound["learn_room"]:
+            scores, embedding, _ = analysed[loud[-1]]
             self._keep_room(cfg, heard, embedding, scores)
 
     def sound_threshold(self, cfg: SensorConfig, key: str) -> float:
@@ -420,13 +439,13 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
     # --- Own sounds -----------------------------------------------------------------------------
 
     def _keep_room(self, cfg: SensorConfig, heard: SoundLive, embedding: np.ndarray, scores: dict) -> None:
-        """A loud window that matched none of the own sounds, kept as "other" (at most one per
-        SOUND["room_every_s"], the newest SOUND["room_kept"])."""
+        """A loud window that matched none of the sensor's sounds (its own, and the built-in ones it
+        listens for), kept as "other" (at most one per SOUND["room_every_s"], the newest
+        SOUND["room_kept"])."""
         now = time.time()
         if now - heard.room_at < SOUND["room_every_s"]:
             return
-        own = [c["key"] for c in cfg.sound["custom"]]
-        if any(scores.get(key, 0.0) >= self.sound_threshold(cfg, key) * SOUND["off_share"] for key in own):
+        if any(scores.get(key, 0.0) >= self.sound_threshold(cfg, key) * SOUND["off_share"] for key in cfg.sound_keys):
             return
         heard.room_at = now
         room = self.sound_room.get(cfg.id)
@@ -497,9 +516,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         return vectors, labels
 
     async def train_sound_head(self, cfg: SensorConfig) -> None:
-        """Train a sound sensor's head for its own sounds again (taught clips, "not this" answers,
-        and the room's windows when it learns them); none without own sounds. A failure (the model
-        cannot be loaded) is logged: the sensor goes on with the model's sounds."""
+        """Train a sound sensor's head again: its own sounds, and the built-in sounds it listens for
+        that were taught with the household's clips (theirs and those that are not them), from the
+        taught clips, "No" answers and the room's windows when it learns them; none without any of
+        those. A failure (the model cannot be loaded) is logged: the sensor goes on with the model's
+        sounds."""
         try:
             await self._train_sound_head(cfg)
         except Exception:  # noqa: BLE001
@@ -507,13 +528,15 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
     async def _train_sound_head(self, cfg: SensorConfig) -> None:
         own = {c["key"] for c in cfg.sound["custom"]}
-        if not own:
+        builtin = [k for k in cfg.sound["sounds"] if k in sounds.SOUNDS]
+        wanted = own | set(builtin) | {sounds.not_label(k) for k in builtin} | {sounds.OTHER}
+        if not own and not await asyncio.to_thread(self._has_taught, cfg.id, wanted - {sounds.OTHER}):
             self.sound_heads.pop(cfg.id, None)
             return
         model = await self.ensure_sound_model()
         async with self._sem:
             vectors, labels = await asyncio.to_thread(self._sound_vectors, cfg.id, model)
-        keep = [i for i, label in enumerate(labels) if label in own or label == sounds.OTHER]
+        keep = [i for i, label in enumerate(labels) if label in wanted]
         x = [vectors[i] for i in keep]
         y = [labels[i] for i in keep]
         if cfg.sound["learn_room"]:
@@ -535,9 +558,16 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         else:
             self.sound_heads[cfg.id] = head
 
+    def _has_taught(self, sensor_id: int, labels: set[str]) -> bool:
+        with self.db.session() as s:
+            found = s.scalar(
+                select(Sample.id).where(Sample.sensor_id == sensor_id, Sample.object_label.in_(labels)).limit(1)
+            )
+            return found is not None
+
     async def sound_settled(self) -> None:
-        """At start-up: the heads of the sound sensors that have own sounds."""
+        """At start-up: the heads of the sound sensors that have own sounds or taught built-in ones."""
         for sensor_id in await asyncio.to_thread(self._sensor_ids, KIND_SOUND):
             cfg = await asyncio.to_thread(self.load_sensor, sensor_id)
-            if cfg is not None and cfg.sound["custom"]:
+            if cfg is not None:
                 await self.train_sound_head(cfg)

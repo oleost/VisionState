@@ -167,8 +167,8 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if cfg and cfg.is_objects:
             await self.faces_settled()  # made with face recognition on (the wizard)
-        if cfg and cfg.is_sound and cfg.sound["custom"]:
-            await self.train_sound_head(cfg)  # imported with own sounds
+        if cfg and cfg.is_sound:
+            await self.train_sound_head(cfg)  # imported with own sounds or taught built-in ones
 
     async def sensor_updated(self, sensor_id: int, retrain: bool) -> None:
         cfg = await asyncio.to_thread(self.load_sensor, sensor_id)

@@ -2017,6 +2017,18 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   const before = await waiting();
   await press(page.getByRole('button', { name: /^Yes, / }), info);
   await expect.poll(waiting).toBe(before - 1);
+  // The answer taught the clip to that built-in sound, which then hears it surely and asks no more:
+  // forget it, so the next project is asked too.
+  const taught = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+  const builtin = new Set((taught.builtin as { key: string }[]).map((b) => b.key));
+  await expect.poll(async () => {
+    const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+    return (now.clips as { label: string }[]).filter((c) => builtin.has(c.label)).length;
+  }).toBeGreaterThan(0);
+  const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+  for (const c of now.clips as { id: number; label: string }[]) {
+    if (builtin.has(c.label)) await request.delete(`api/v1/sound-clips/${c.id}`);
+  }
   errors.expectNone();
 });
 
@@ -2083,6 +2095,34 @@ test('own sounds: recorded from the stream, trimmed by its ends, taught and forg
   await press(card.getByRole('button', { name: /Forget/ }).first(), info);
   await press(card.getByRole('button', { name: /Tap again/ }), info);
   await expect(card).toHaveCount(0);
+  errors.expectNone();
+});
+
+test('a built-in sound taught with a clip of what it is not, recorded from the stream, then forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(90_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  // Not the siren: the other tests need it heard.
+  const card = page.getByTestId('builtin-sound-dog_bark');
+  await expect(card).toContainText('built-in');
+  await expect(page.getByTestId('builtin-sound-siren')).toBeVisible();
+  await press(card.getByTestId('record-not:dog_bark'), info);
+  const recorder = card.getByTestId('sound-recorder');
+  await expect(recorder.getByTestId('record-stop')).toBeEnabled();
+  await request.get(PLAY_URL('chime'));
+  await page.waitForTimeout(1500);
+  await press(recorder.getByTestId('record-stop'), info);
+  await expect(recorder.getByTestId('trim-range')).toBeVisible({ timeout: 30_000 });
+  await expect(recorder.getByTestId('record-teach')).toHaveText(/Teach as not Dog/);
+  await press(recorder.getByTestId('record-teach'), info);
+  await expect(card.getByText('It is not this 1')).toBeVisible();
+  await expect(card).toContainText('Recorded from the stream');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid^=builtin-sound] .btn');
+  await press(card.getByRole('button', { name: 'Forget this clip' }), info);
+  await expect(card.getByText('It is not this 0')).toBeVisible();
   errors.expectNone();
 });
 

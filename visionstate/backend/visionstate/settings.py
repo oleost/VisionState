@@ -374,6 +374,11 @@ SOUND = {
     "record_min_s": 0.5,
 }
 
+# A threshold suggested from review answers (advice.py): from at least this many answers.
+ADVICE = {
+    "min_answers": 3,
+}
+
 DETECTION = {
     "nms_iou": 0.7,  # boxes of one class overlapping more than this are the same object
     "max_detections": 100,

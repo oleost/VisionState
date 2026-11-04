@@ -643,6 +643,14 @@ finished file back. It measures speed and memory, not quality: that needs a righ
   An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
   two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
   relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
+  **A threshold from the answers** (`advice.threshold_advice`, one way for every kind; the UI's
+  `ThresholdAdvice`): each answer is the score of what was asked about and whether it was right; the
+  threshold that lets the most "yes" and the fewest "no" pass (a "yes" held back counting twice) is
+  *suggested*, never set by itself — the user taps *Use*. It also says when no threshold separates
+  them: then taught examples have to (own labels, own sounds, a built-in sound's clips). Questions
+  are asked only near the threshold, so the answers cover that band; the suggestion stays within it
+  in practice. Sound sensors have it (each built-in sound, on Own sounds); the other kinds are on
+  the roadmap (§14).
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
@@ -1059,5 +1067,6 @@ four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
-sensors: stock ESPHome microphones, telling a built-in sound
-it was wrong (a veto from "no" answers), CLAP sounds described by a text.
+sensors: stock ESPHome microphones, CLAP sounds described by a text; a threshold suggested from
+the answers (`advice.py`) for the other kinds too — a state sensor's confidence, a reading's, a
+face's or a taught box's similarity — on the same `ThresholdAdvice`.

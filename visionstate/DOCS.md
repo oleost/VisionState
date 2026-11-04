@@ -594,9 +594,22 @@ camera's H.264 sub stream. Clips are kept in the app's own storage (not the medi
 every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
 part of the history in a backup.
 
+**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the **Own
+sounds** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
+from the History, *Teach this clip as*). From clips of it, it also hears the sound when the AI
+alone was not sure enough — your own door, as it sounds through your microphone. A clip of what it
+is not — a cupboard door, a siren on TV — holds the built-in sound back when something is clearly
+like that clip; the Live tab then shows *Held back*, and the card how often. It stays the same
+sensor in Home Assistant.
+
+**A threshold from your answers.** Every answer about a built-in sound is kept with the score it
+had. Once there are a few, its card on **Own sounds** shows how your "yes" and "no" fare at the
+threshold now, and suggests one that keeps more of the "yes" and fewer of the "no" heard: *Use*
+sets it. When no threshold tells them apart, teach it with clips instead.
+
 **Review.** With clips on, a sound that was only just heard is asked about in Review: listen (or
-watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer is
-kept; an own sound learns from it, the built-in sounds do not change.
+watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer
+teaches the clip: *yes* as that sound (an own one or a built-in one), *no* as not it.
 
 **Privacy.** A sensor that listens hears what kind of sound it is, **never what is said**: there
 is no speech recognition. *Someone talking* only says that someone is. Before a clip is kept,

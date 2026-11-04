@@ -13,12 +13,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import sounds
+from .. import advice, sounds
 from ..db import Prediction, Sample, Sensor
 from ..engine import Runtime
 from ..engine.sound import RecordingError
 from ..engine.state import SoundRecording
-from ..settings import KIND_SOUND, SOUND, UPLOAD_LIMITS, merge_sound
+from ..settings import KIND_SOUND, SOUND, SOUND_LIMITS, UPLOAD_LIMITS, merge_sound
 from ..sources import SOUND_SOURCE_TYPES, SourceError, check_source, open_audio
 from ..storage import CLIP_SUFFIX, is_clip
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
@@ -27,6 +27,7 @@ router = APIRouter(prefix=API_PREFIX, tags=["sounds"])
 PREVIEW_S = 6.0  # how long a stream is listened to before a sound sensor is made
 CLIP_S = 4.0  # what is kept of an uploaded recording: its loudest seconds
 PEAKS_PER_S = 20  # the waveform of a recording from the stream, drawn to trim it
+ADVICE_ROWS = 2000  # history rows of a sensor looked at for the answers a threshold is suggested from
 
 
 class PreviewIn(BaseModel):
@@ -83,7 +84,8 @@ async def preview(body: PreviewIn, request: Request) -> dict:
 
 class TeachClipIn(BaseModel):
     """A clip in the history taught as one of the sensor's own sounds (``label``), as a new own
-    sound (``new_name``), or as "not any of them" (``label``: sounds.OTHER)."""
+    sound (``new_name``), as "not any of them" (``label``: sounds.OTHER), or as one of the built-in
+    sounds it listens for, or not that one (``label``: its key, or sounds.not_label of it)."""
 
     history_id: int
     label: str | None = Field(default=None, max_length=64)
@@ -105,16 +107,28 @@ def own_sound(sound: dict, name: str) -> dict:
     return {"key": key, "name": name}
 
 
+def builtin_keys(sound: dict) -> list[str]:
+    """The built-in sounds a sensor listens for that can be taught with clips (not speech: it never
+    keeps a clip)."""
+    return [k for k in sound["sounds"] if k in sounds.SOUNDS and k != SOUND["speech_key"]]
+
+
 def _label(sensor: Sensor, label: str | None, new_name: str | None) -> tuple[str, bool]:
-    """The label to teach (an own sound's key or OTHER), and whether a new own sound was made."""
+    """The label to teach (an own sound's key, OTHER, or a built-in sound's key or "not" it), and
+    whether a new own sound was made."""
     sound = merge_sound(sensor.sound)
     if new_name:
         made = own_sound(sound, new_name)
         sensor.sound = {**(sensor.sound or {}), "custom": [*sound["custom"], made]}
         return made["key"], True
-    if label is not None and (label == sounds.OTHER or label in {c["key"] for c in sound["custom"]}):
+    builtin = builtin_keys(sound)
+    allowed = {sounds.OTHER, *(c["key"] for c in sound["custom"]), *builtin, *map(sounds.not_label, builtin)}
+    if label is not None and label in allowed:
         return label, False
-    raise HTTPException(400, "Teach a clip as one of the sensor's own sounds, a new one, or as another sound")
+    raise HTTPException(
+        400,
+        "Teach a clip as one of the sensor's sounds (its own or a built-in one it listens for), a new one, or another",
+    )
 
 
 def _add_clip(rt: Runtime, sensor_id: int, data: bytes, label: str | None, new_name: str | None, origin: str) -> dict:
@@ -123,7 +137,7 @@ def _add_clip(rt: Runtime, sensor_id: int, data: bytes, label: str | None, new_n
         key, made = _label(sensor, label, new_name)
         taught = s.scalars(select(Sample.id).where(Sample.sensor_id == sensor_id, Sample.object_label == key)).all()
         if key != sounds.OTHER and len(taught) >= SOUND["max_taught"]:
-            raise HTTPException(400, f"An own sound can have at most {SOUND['max_taught']} clips")
+            raise HTTPException(400, f"A sound can have at most {SOUND['max_taught']} clips of each kind")
         filename = rt.storage.save_sample_clip(sensor_id, data)
         sample = Sample(sensor_id=sensor_id, filename=filename, origin=origin, object_label=key)
         s.add(sample)
@@ -151,6 +165,10 @@ async def teach_history_clip(rt: Runtime, sensor_id: int, body: TeachClipIn) -> 
             if row is None or row.sensor_id != sensor_id or not is_clip(row.frame):
                 raise HTTPException(404, "No clip in this history row")
             path = rt.storage.history_path(sensor_id, row.frame or "")
+            # Taught as the built-in sound it was heard as, or as not that one: an answer about it,
+            # as in Review (what the threshold advice counts).
+            if row.state_key in sounds.SOUNDS and body.label in (row.state_key, sounds.not_label(row.state_key)):
+                row.probs = {**(row.probs or {}), "answer": "yes" if body.label == row.state_key else "no"}
         try:
             data = path.read_bytes()
         except OSError as err:
@@ -310,17 +328,60 @@ def taught_clips(sensor_id: int, request: Request) -> dict:
         counts: dict[str, int] = {}
         for row in rows:
             counts[row.object_label or ""] = counts.get(row.object_label or "", 0) + 1
-        own = merge_sound(sensor.sound)["custom"]
+        settings = merge_sound(sensor.sound)
+        own = settings["custom"]
         room = rt.sound_room.get(sensor_id)
+        builtin = builtin_keys(settings)
+        answers = _answers(s, sensor_id, builtin)
+        live = rt.live.get(sensor_id)
+        tracks = live.sound.tracks if live is not None and live.sound is not None else {}
+        lo_hi = SOUND_LIMITS["threshold"]
         return {
             "clips": [
                 {"id": x.id, "label": x.object_label, "origin": x.origin, "created_at": iso(x.created_at)} for x in rows
             ],
             "counts": counts,
             "sounds": [{**c, "clips": counts.get(c["key"], 0)} for c in own],
+            "builtin": [
+                {
+                    "key": key,
+                    "name": sounds.SOUNDS[key].name,
+                    "clips": counts.get(key, 0),
+                    "not_clips": counts.get(sounds.not_label(key), 0),
+                    "held": tracks[key].held_count if key in tracks else 0,
+                    "threshold": (threshold := settings["thresholds"].get(key, sounds.SOUNDS[key].threshold)),
+                    "model_threshold": sounds.SOUNDS[key].threshold,
+                    "advice": advice.threshold_advice(*answers.get(key, ([], [])), threshold, lo_hi),
+                }
+                for key in builtin
+            ],
             "room": int(len(room)) if isinstance(room, np.ndarray) and room.size else 0,
             "trained": sensor_id in rt.sound_heads,
         }
+
+
+def _answers(s, sensor_id: int, keys: list[str]) -> dict[str, tuple[list[float], list[float]]]:  # noqa: ANN001 - a Session
+    """Per built-in sound: the best scores of the times it was heard and answered "yes", and of
+    those answered otherwise (no, one of the own sounds, a new one), the newest ADVICE_ROWS."""
+    rows = s.execute(
+        select(Prediction.state_key, Prediction.confidence, Prediction.probs)
+        .where(
+            Prediction.sensor_id == sensor_id,
+            Prediction.state_key.in_(keys),
+            Prediction.published_key == "on",
+            Prediction.confidence.is_not(None),
+        )
+        .order_by(Prediction.id.desc())
+        .limit(ADVICE_ROWS)
+    ).all()
+    out: dict[str, tuple[list[float], list[float]]] = {}
+    for key, confidence, probs in rows:
+        answer = (probs or {}).get("answer")
+        if answer is None or confidence is None:
+            continue
+        yes, no = out.setdefault(key, ([], []))
+        (yes if answer == "yes" else no).append(float(confidence))
+    return out
 
 
 @router.get("/sound-clips/{sample_id}")

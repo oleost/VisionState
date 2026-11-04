@@ -613,6 +613,7 @@ def sound_view(sensor: Sensor, live: LiveState | None) -> dict | None:
                 "model_threshold": spec.threshold if spec else SOUND["own_threshold"],
                 "on": bool(track and track.on),
                 "score": track.score if track else 0.0,
+                "held": bool(track and track.held),  # held back by a clip that is not this sound
             }
         )
     return {

@@ -19,6 +19,7 @@ from ..db import Person, Prediction, Sensor
 from ..engine import Runtime
 from ..redact import redact
 from ..settings import (
+    ADVICE,
     BACKUP,
     BACKUP_PARTS,
     COUNTER_LIMIT,
@@ -156,6 +157,7 @@ def ui_config() -> dict:
         "sound_defaults": SOUND_DEFAULTS,
         "sound_limits": SOUND_LIMITS,
         "sound_levels": SOUND_LEVELS,
+        "advice": ADVICE,
         "sound": {
             k: SOUND[k]
             for k in (

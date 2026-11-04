@@ -360,6 +360,16 @@ No question for the maintainer is open. Decided on 2026-10-29:
   recording 0.90. Two alarms are little to go on: looked at again with more real ones.
 - The name stays VisionState; the README, the store text and the app's description say it hears
   too.
+- **A built-in sound is taught with the household's clips** (2026-11-04, the maintainer: "yes"
+  and "no" must both do something, as a layer that can overrule the built-in answer, and a
+  threshold suggested from the answers). Clips of it (label its key) and of what it is not (label
+  `not:<key>`) are classes of the sensor's head, as own sounds are; `sounds.correct` decides each
+  window: heard when the model or its own clips are sure enough (the head's probability put on the
+  sound's scale, `sounds.lift`), held back when the window is clearly like a "not" clip (at least
+  `own_threshold`, and more than like its own clips). Held back, it stays so while windows are half
+  that like it and for `clear_after_s` (as a sound stays heard): the windows at the edges of a CC0
+  siren, half siren and half quiet, let it through before. Review answers teach these clips; the
+  threshold is suggested, never changed by itself (`docs/SCOPE.md` §7). Same entity, same IDs.
 
 ## 12. Pitfalls to avoid
 
@@ -405,7 +415,8 @@ RTMP to a test relay, turned its entity on within about a second, peaking at 0.8
    `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*.
 6. **Own sounds recorded at home** (a doorbell, an appliance beep): clips needed, `own_threshold`.
 
-**Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
-cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the
+**Known limits to keep in mind**: a built-in sound held back by its "not this" clips (§11) is
+held back only where a window is clearly like one of them: a TV that plays many different sirens
+needs a clip of each kind; the
 level line ignores sounds below it by design; clips of an H.265 stream may not play in every
 browser (the Live tab warns).

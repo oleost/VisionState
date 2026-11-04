@@ -3,14 +3,18 @@
   // first recordings), then one card per sound with the clips it was taught from (play, forget) and
   // "Add recordings", and "Other sounds" (what they are not). A recording is a phone's voice memo
   // or any sound or video file (its loudest seconds are kept), or recorded from the sensor's own
-  // stream with Record and trimmed (SoundRecorder).
+  // stream with Record and trimmed (SoundRecorder). Below them, the built-in sounds it listens for,
+  // each taught the same way with clips of it and of what it is not, and a threshold suggested from
+  // the answers about it (ThresholdAdvice).
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import ClipPlayer from '../../lib/components/sound/ClipPlayer.svelte';
   import SoundRecorder from '../../lib/components/sound/SoundRecorder.svelte';
-  import { dateTime, plural } from '../../lib/format';
+  import ThresholdAdvice from '../../lib/components/ThresholdAdvice.svelte';
+  import { notLabel } from '../../lib/sound';
+  import { dateTime, pct, plural } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import type { Sensor, SoundTaught } from '../../lib/types';
   import { SAMPLE_ORIGINS } from '../../lib/ui';
@@ -87,6 +91,17 @@
     recordingFor = null;
     await load();
     onchange();
+  }
+
+  async function setThreshold(key: string, threshold: number) {
+    try {
+      await api.updateSensor(sensor.id, { sound: { thresholds: { [key]: threshold } } });
+      toast(`Heard from ${pct(threshold)}`);
+      await load();
+      onchange();
+    } catch (err) {
+      toastError(err);
+    }
   }
 
   const clipsOf = (label: string) => (taught?.clips ?? []).filter((c) => c.label === label);
@@ -184,6 +199,53 @@
         {@render clipList(s.key)}
       </section>
     {/each}
+    {#if taught.builtin.length}
+      <div class="col builtin-intro">
+        <h3>Built-in sounds</h3>
+        <p class="small muted">
+          The sounds it knows out of the box, taught the same way: with clips of yours it also hears the sound from them, and
+          a clip of what it is not — a cupboard door, a siren on TV — holds it back when something is clearly like that clip.
+          Answers in Review add these clips too.
+        </p>
+      </div>
+      {#each taught.builtin as b (b.key)}
+        {@const no = notLabel(b.key)}
+        <section class="card pad col" data-testid="builtin-sound-{b.key}">
+          <div class="col" style="gap:2px">
+            <h3>{b.name} <span class="chip muted">built-in</span></h3>
+            <span class="xsmall faint">
+              Heard from {pct(b.threshold)}{b.held ? ` · held back ${b.held} ${b.held === 1 ? 'time' : 'times'} since the app started` : ''}
+            </span>
+          </div>
+          <ThresholdAdvice
+            advice={b.advice}
+            verb="heard"
+            hint="Teach it with clips below: they tell it apart."
+            onapply={(t) => setThreshold(b.key, t)}
+          />
+          <div class="col sub">
+            <div class="row wrap sub-title">
+              <span class="small"><strong>It is this</strong> <span class="faint">{b.clips}</span></span>
+              <span class="spacer"></span>
+              {@render recordButton(b.key, busy)}
+              {@render addButton(b.key, `sound-files-${b.key}`, 'Add recordings', busy)}
+            </div>
+            {@render recorder(b.key, b.name)}
+            {@render clipList(b.key)}
+          </div>
+          <div class="col sub">
+            <div class="row wrap sub-title">
+              <span class="small"><strong>It is not this</strong> <span class="faint">{b.not_clips}</span></span>
+              <span class="spacer"></span>
+              {@render recordButton(no, busy)}
+              {@render addButton(no, `sound-files-not-${b.key}`, 'Add recordings', busy)}
+            </div>
+            {@render recorder(no, `not ${b.name}`)}
+            {@render clipList(no)}
+          </div>
+        </section>
+      {/each}
+    {/if}
     <section class="card pad col">
       <div class="card-title">
         <div class="col" style="gap:2px">
@@ -226,6 +288,18 @@
   .count {
     font-weight: 400;
     margin-left: 4px;
+  }
+  .builtin-intro {
+    gap: var(--space-1);
+  }
+  .sub {
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--c-border);
+  }
+  .sub-title {
+    gap: var(--space-2);
+    align-items: center;
   }
   .actions {
     gap: var(--space-2);

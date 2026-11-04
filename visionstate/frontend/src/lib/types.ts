@@ -114,6 +114,8 @@ export interface SoundLive {
   on: boolean;
   /** The last analysed window's score (0 while quiet). */
   score: number;
+  /** The last window: the model held back by a clip that is not this sound (a built-in one taught with clips). */
+  held: boolean;
 }
 
 export interface SensorSound extends SoundSettings {
@@ -147,6 +149,28 @@ export interface SoundTaught {
   /** Windows of the room kept as "other". */
   room: number;
   trained: boolean;
+  /** The built-in sounds it listens for: taught with clips of theirs (`clips`, label = key) and of what they are
+   * not (`not_clips`, label = `not:key`), held back how often since the app started, and a threshold from the answers. */
+  builtin: {
+    key: string;
+    name: string;
+    clips: number;
+    not_clips: number;
+    held: number;
+    threshold: number;
+    model_threshold: number;
+    advice: ThresholdAdvice;
+  }[];
+}
+
+/** A threshold suggested from review answers (one way for every sensor kind): how many "yes" and "no" pass now, and
+ * with the suggested threshold (none without enough answers or a better one); whether one threshold separates them. */
+export interface ThresholdAdvice {
+  yes: number;
+  no: number;
+  current: { threshold: number; yes_passed: number; no_passed: number };
+  suggested: { threshold: number; yes_passed: number; no_passed: number } | null;
+  separable: boolean;
 }
 
 export type ReadingMode = 'counter' | 'value' | 'time_left';
@@ -701,6 +725,8 @@ export interface AppConfig {
   sound_defaults: SoundSettings;
   sound_limits: Record<'above_db' | 'fixed_db' | 'clear_after_s' | 'threshold', [number, number]>;
   sound_levels: SoundLevel[];
+  /** Thresholds suggested from review answers: from at least `min_answers` answers. */
+  advice: { min_answers: number };
   sound: {
     hop_s: number;
     window_s: number;

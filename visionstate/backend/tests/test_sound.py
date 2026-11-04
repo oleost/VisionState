@@ -442,6 +442,99 @@ def test_a_recording_lasts_as_long_as_it_was_held_on_a_stream_that_sends_seconds
         server.close()
 
 
+def test_a_built_in_sound_is_corrected_by_the_households_clips():
+    threshold = 0.3
+    assert sounds.lift(SOUND["own_threshold"], threshold) == pytest.approx(threshold)
+    assert sounds.lift(0.0, threshold) == 0.0 and sounds.lift(1.0, threshold) == pytest.approx(1.0)
+    assert sounds.correct(0.6, None, None, threshold) == (0.6, False)  # the model alone: as it was
+    assert sounds.correct(0.05, 0.95, None, threshold)[0] > threshold  # its own clips hear it
+    score, held = sounds.correct(0.6, 0.1, 0.9, threshold)  # clearly like a clip that is not it
+    assert score < threshold and held
+    assert sounds.correct(0.6, 0.1, 0.6, threshold)[1] is False  # half like it: not at first…
+    assert sounds.correct(0.6, 0.1, 0.6, threshold, holding=True)[1]  # …but once held back, it stays
+    assert sounds.correct(0.6, 0.1, 0.5, threshold) == (0.6, False)  # not clearly like one: the model stands
+    assert sounds.correct(0.6, 0.95, 0.85, threshold)[1] is False  # more like its own clips
+
+
+def test_a_threshold_is_suggested_from_the_answers():
+    from visionstate import advice
+
+    limits = (0.01, 0.99)
+    assert advice.threshold_advice([0.5], [0.3], 0.25, limits)["suggested"] is None  # too few answers
+    found = advice.threshold_advice([0.6, 0.7, 0.55], [0.3, 0.35, 0.4], 0.25, limits)
+    assert found["current"] == {"threshold": 0.25, "yes_passed": 3, "no_passed": 3} and found["separable"]
+    assert found["suggested"] == {"threshold": 0.41, "yes_passed": 3, "no_passed": 0}  # the nearest that does it
+    assert advice.threshold_advice([0.6, 0.7], [0.3], 0.5, limits)["suggested"] is None  # already right
+    mixed = advice.threshold_advice([0.4, 0.6], [0.5, 0.7], 0.3, limits)
+    assert not mixed["separable"]
+
+
+@requires_sound
+def test_a_built_in_sound_learns_from_clips_and_answers_and_is_held_back_by_what_it_is_not(settings, quick):  # noqa: F811
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["doorbell", "siren"], "clips": True, "clear_after_s": 2}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound}).json()["id"]
+            upload = f"/api/v1/sensors/{sid}/sounds/upload"
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            def live(key: str) -> dict:
+                return next(s for s in view()["sound"]["live"] if s["key"] == key)
+
+            def taught() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()
+
+            # The drawn chime taught as the built-in doorbell, and the siren as what the siren is not
+            # (a siren on TV, say): every part of the recording.
+            chimes = [
+                ("files", (f"bell{i}.m4a", sounds.encode_clip(chime(gain=0.2 + 0.05 * i, seed=i), RATE), "audio/mp4"))
+                for i in range(5)
+            ]
+            assert client.post(upload, files=chimes, data={"label": "doorbell"}).status_code == 201
+            siren = recording("siren")
+            parts = [siren[i : i + 4 * RATE] for i in range(0, len(siren) - 2 * RATE, 2 * RATE)]
+            sirens = [("files", (f"s{i}.m4a", sounds.encode_clip(p, RATE), "audio/mp4")) for i, p in enumerate(parts)]
+            assert client.post(upload, files=sirens, data={"label": "not:siren"}).status_code == 201
+            assert client.post(upload, files=chimes[:1], data={"label": "not:dog_bark"}).status_code == 400
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["clips"] == 5 and built["siren"]["not_clips"] == len(parts)
+            assert taught()["trained"] and taught()["sounds"] == []  # no own sound made
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            for _ in range(4):
+                server.play(chime(seed=9))
+                if wait_for(lambda: live("doorbell")["on"], timeout=10):
+                    break
+            assert live("doorbell")["on"]
+            # The siren is held back: never heard, and counted.
+            server.play(siren)
+            assert wait_for(lambda: taught()["builtin"][1]["held"] >= 1, timeout=20)
+            time.sleep(len(siren) / RATE / 2)  # all of it sent (at twice the speed)
+            heard = client.get("/api/v1/history", params={"sensor": sid, "event": "heard"}).json()["items"]
+            assert all(item["state_key"] != "siren" for item in heard) and not live("siren")["on"]
+
+            # Answers about the built-in doorbell teach its clip, and are what a threshold is suggested from.
+            def rows() -> list[dict]:
+                items = client.get("/api/v1/history", params={"sensor": sid, "event": "heard"}).json()["items"]
+                return [i for i in items if i["state_key"] == "doorbell" and i["has_clip"]]
+
+            assert wait_for(lambda: bool(rows()), timeout=20)
+            row = rows()[0]
+            assert client.post(f"/api/v1/review/{row['id']}", json={"action": "no"}).status_code == 200
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["not_clips"] == 1 and built["doorbell"]["advice"]["no"] == 1
+            assert client.post(f"/api/v1/review/{row['id']}", json={"action": "yes"}).status_code == 200
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert (built["doorbell"]["clips"], built["doorbell"]["not_clips"]) == (6, 0)
+            assert built["doorbell"]["advice"]["yes"] == 1 and built["doorbell"]["advice"]["no"] == 0
+    finally:
+        server.close()
+
+
 @requires_sound
 def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
     server = SoundServer(speed=1.0, video=True)

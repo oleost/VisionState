@@ -1,7 +1,7 @@
 <script lang="ts">
   // "Was this a siren?" — a sound that was only just heard. Listen to its clip (watch it, on a
   // camera) and answer: yes, no, it was one of the sensor's own sounds, or a new one. The answer is
-  // kept, and teaches the clip where it can (an own sound, or "other" for the own sounds).
+  // kept, and teaches the clip: as the sound (an own or a built-in one), or as not it.
   import { api } from '../../api';
   import { toastError } from '../../app.svelte';
   import { pct } from '../../format';
@@ -53,7 +53,7 @@
     choices={own}
     noun="sound"
     noLabel="No, something else"
-    footnote="Your answer is kept. An own sound learns from it; the built-in sounds do not change."
+    footnote="Your answer teaches the sound with this clip: yes, it was; no, it was not (see Own sounds)."
     {given}
     {busy}
     onanswer={answer}
