@@ -336,6 +336,7 @@ As for images: CC0 / public domain, or drawn by our own code.
     on a wake word, and Home Assistant does not pass that audio on to apps. Listening all day needs
     an integration of its own — phase 4, once phase 0 has checked what ESPHome offers. Voice
     satellites (Home Assistant's own voice hardware) are left out for now.
+  - **Our own firmware** for an ESP32 microphone, with or without a camera: [`ESP32_PLAN.md`](ESP32_PLAN.md).
   - **No push** (the maintainer's decision, 2026-10-29): VisionState always opens the connection; a
     device never connects to VisionState to deliver audio, which would break the rule that the app
     is only reachable through Home Assistant Ingress.
