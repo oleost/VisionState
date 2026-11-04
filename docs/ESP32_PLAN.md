@@ -43,7 +43,7 @@ the ways to try, in this order:
 
 | Way | What it would give | Not checked |
 |---|---|---|
-| **A media player** plays the address (`media_player.play_media`) | listening on a speaker, or in the browser with a browser media player | whether players take an endless WAV with a login |
+| **A media player** plays the address (`media_player.play_media`) | listening on a speaker, or in the browser with a browser media player | other players than Cast. A Google Cast speaker (2026-11-04) plays a WAV from Home Assistant's `/local`, also with the device's endless header, but the device never saw it as a listener. Most likely the receiver does not send the `user:password@` of an address; not proven, since the device's stream also has no length (chunked) and the file had one. Not taken further: a speaker is not the goal (the maintainer, 2026-11-04) |
 | **go2rtc** (its app) takes the address and gives Home Assistant a camera with sound | a camera card with sound; for the ESP32-CAM picture and sound together | the CPU it takes, and what Home Assistant shows for sound with no picture |
 | **The device serves RTSP** as well | one address like an IP camera's, for Home Assistant and VisionState | whether Home Assistant takes RTSP with sound only, or MJPEG pictures without converting them |
 
@@ -94,8 +94,19 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
 - [x] `/snapshot.jpg` on the ESP32-CAM: the picture comes, fresh, also with no one else looking
       (2026-11-04; at first it did not: ESPHome's camera forgets a request made while it hands out
       the last picture, so the component asks again until one comes). An image sensor (objects) on
-      it in VisionState works, the flash as its light. *Not measured*: how long a snapshot takes
-      against the Home Assistant camera entity.
+      it in VisionState works, the flash as its light. A snapshot takes about 180 ms (median of 15;
+      at most 300), Home Assistant's camera entity about 80 ms, but that is the picture ESPHome
+      kept ready, taken after the last fetch.
+- [x] Clients that keep their connection open (HTTP keep-alive) do not lock the device out
+      (2026-11-04). They did: the Cast speaker's attempt, and VisionState's own snapshots, held the
+      one spare socket, and no new connection was taken until a restart, while the open streams
+      went on. Every answer that is not a stream now closes its connection, and two sockets are
+      spare; tried on both boards with keep-alive clients on 401, 404, the snapshot and 409.
+- [x] Gaps in the sound without a microphone (2026-11-04, both boards, 55 minutes, VisionState and
+      a second listener on each, snapshots every 10 s from two clients on the ESP32-CAM): the 21
+      quiet minutes at the end had no gap over 250 ms on either board, snapshots included. Before
+      that, short bursts of 250–730 ms gaps came only while devices were being tested, installed
+      or restarted. A day's run, and gaps with a real microphone, are still to do (below).
 - [x] The ESP32-CAM with the camera and the microphone's I2S running together (the empty I2S port
       in `esp32-cam-microphone.yaml`): the camera works (2026-11-04, no microphone wired yet). The
       flash must stay off the camera's LEDC channel 0 (`camera-esp32-cam.yaml` uses channel 2).
