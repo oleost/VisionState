@@ -29,6 +29,8 @@ export const paths = {
   history: (query = '') => withQuery('history', query),
   settings: () => 'settings',
   speedTest: () => 'speed-test',
+  /** The guide for an ESP32 microphone or camera of your own. */
+  esp32: () => 'esp32',
 };
 
 export const href = (path: string) => `#/${path}`;

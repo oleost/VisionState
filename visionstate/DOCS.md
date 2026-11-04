@@ -540,6 +540,13 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
 - a microphone of its own: an ESP32 with an I2S microphone (such as an INMP441) sending its sound
   as an HTTP stream of WAV, for a room without a camera.
 
+**An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
+guide for an ESP32 DevKit with an INMP441 microphone, or an ESP32-CAM with its camera (and a
+microphone too, if you like). It shows the wiring, writes the configuration to put into the
+ESPHome app with a password for the device, and once the device is on the network checks that it
+answers and makes the sensor with its address. The firmware, its boards and how it is built:
+`esphome/README.md` in the repository.
+
 The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it
 runs.

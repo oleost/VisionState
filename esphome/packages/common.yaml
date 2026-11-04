@@ -1,0 +1,78 @@
+# Every VisionState device: Wi-Fi, the Home Assistant API, updates over the air, the stream's
+# server with its login, and a light that is on while someone listens or looks.
+substitutions:
+  stream_port: "8081"
+  stream_username: visionstate
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.10.0
+  project:
+    name: oleost.visionstate
+    version: "1.0.0-dev"
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  # The device's own file sets them: as values, or as ESPHome secrets (wifi_ssid: !secret wifi_ssid).
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  # Modem sleep leaves gaps in the sound and slows pictures down.
+  power_save_mode: none
+  ap: {}
+
+captive_portal:
+
+visionstate_stream:
+  id: vs_stream
+  port: ${stream_port}
+  username: ${stream_username}
+  password: ${stream_password}
+  listeners:
+    name: Listeners
+    on_value:
+      - if:
+          condition:
+            lambda: return x > 0;
+          then:
+            - output.turn_on: vs_light
+          else:
+            - output.turn_off: vs_light
+
+output:
+  - platform: gpio
+    id: vs_light
+    pin:
+      number: ${light_pin}
+      inverted: ${light_inverted}
+
+sensor:
+  - platform: wifi_signal
+    name: Wi-Fi signal
+    update_interval: 60s
+    entity_category: diagnostic
+  - platform: uptime
+    name: Uptime
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP address
+      entity_category: diagnostic
+  - platform: version
+    name: ESPHome version
+    hide_timestamp: true
+    entity_category: diagnostic
+
+button:
+  - platform: restart
+    name: Restart
+    entity_category: config

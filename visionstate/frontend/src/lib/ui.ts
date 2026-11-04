@@ -350,3 +350,14 @@ export const SPEED_TEST_ROLES: Record<string, string> = {
   wheel_readers: 'Wheel readers',
   sound_models: 'Sound models',
 };
+
+/** How an INMP441 is wired to an ESP32 (the ESP32 guide): the microphone's pin, and the board's —
+ *  a power pin, or the key of a pin in the board's settings (settings.ESPHOME). */
+export const INMP441_WIRING: { mic: string; board: string; pin?: string }[] = [
+  { mic: 'VDD', board: '3V3' },
+  { mic: 'GND', board: 'GND' },
+  { mic: 'SCK', board: '', pin: 'mic_sck' },
+  { mic: 'WS', board: '', pin: 'mic_ws' },
+  { mic: 'SD', board: '', pin: 'mic_sd' },
+  { mic: 'L/R', board: 'GND' },
+];

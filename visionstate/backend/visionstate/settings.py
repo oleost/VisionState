@@ -389,6 +389,40 @@ ADVICE = {
     "min_answers": 3,
 }
 
+# ESP32 devices of our own, built with ESPHome (esphome/ in the repository, docs/ESP32_PLAN.md): what
+# the guide on the ESP32 page writes (esphome.py). The boards' pins are the defaults of
+# esphome/packages/board-*.yaml (tests/test_esphome.py keeps them the same).
+ESPHOME = {
+    "repository": "https://github.com/oleost/VisionState",
+    # The branch the firmware is built on until it is released (then the tag esphome-v1, as esphome/examples has).
+    "ref": "esp32",
+    "port": 8081,  # visionstate_stream's port
+    "username": "visionstate",
+    "password_chars": 20,  # a password the guide makes up
+    "check_timeout_s": 6.0,
+    "kinds": {
+        "microphone": "Microphone",
+        "camera": "Camera",
+        "camera_microphone": "Camera and microphone",
+    },
+    "boards": {
+        "esp32-devkit": {
+            "name": "ESP32 DevKit",
+            "description": "ESP32-WROOM-32, 30 or 38 pins",
+            "kinds": ["microphone"],
+            "light": "The blue LED",
+            "pins": {"mic_sck": "GPIO26", "mic_ws": "GPIO25", "mic_sd": "GPIO33", "mute_pin": "GPIO32"},
+        },
+        "esp32-cam": {
+            "name": "ESP32-CAM",
+            "description": "AI-Thinker layout and its clones; the microphone on the SD card's pins",
+            "kinds": ["camera", "camera_microphone"],
+            "light": "The small red LED on the back",
+            "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
+        },
+    },
+}
+
 DETECTION = {
     "nms_iou": 0.7,  # boxes of one class overlapping more than this are the same object
     "max_detections": 100,

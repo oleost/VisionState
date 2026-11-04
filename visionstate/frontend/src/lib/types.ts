@@ -739,6 +739,14 @@ export interface AppConfig {
   sound_levels: SoundLevel[];
   /** Thresholds suggested from review answers: from at least `min_answers` answers. */
   advice: { min_answers: number };
+  /** The ESP32 guide (settings.ESPHOME). */
+  esphome: {
+    port: number;
+    username: string;
+    password_chars: number;
+    kinds: Record<string, string>;
+    boards: Record<string, EsphomeBoard>;
+  };
   sound: {
     hop_s: number;
     window_s: number;
@@ -1082,4 +1090,44 @@ export interface SoundRecording {
   /** The loudest sample of each 1/peaks_per_s second, 0…1. */
   peaks: number[];
   peaks_per_s: number;
+}
+
+/** A board the ESP32 guide writes a configuration for, with its default pins. */
+export interface EsphomeBoard {
+  name: string;
+  description: string;
+  kinds: string[];
+  light: string;
+  pins: Record<string, string>;
+}
+
+export interface EsphomeConfiguration {
+  name: string;
+  friendly_name: string;
+  /** The whole file, with {{field}} where the page puts the user's values (never sent to VisionState). */
+  yaml: string;
+  fields: string[];
+  port: number;
+  username: string;
+  sound: boolean;
+  picture: boolean;
+}
+
+export interface EsphomeCheckPart {
+  ok: boolean;
+  status: number | null;
+  detail?: string;
+  bytes?: number;
+}
+
+export interface EsphomeCheck {
+  addresses: { sound?: string; picture?: string };
+  sound?: EsphomeCheckPart;
+  picture?: EsphomeCheckPart;
+}
+
+export interface EsphomeDevice {
+  entity_id: string;
+  name: string;
+  address: string;
 }

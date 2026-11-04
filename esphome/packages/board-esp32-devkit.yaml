@@ -1,0 +1,14 @@
+# A generic ESP32 DevKit (ESP32-WROOM-32, 30 or 38 pins). The pins are the defaults the docs wire;
+# change them under substitutions in your own file.
+substitutions:
+  light_pin: GPIO2        # the blue LED on most DevKits
+  light_inverted: "false"
+  mic_sck: GPIO26         # INMP441 SCK
+  mic_ws: GPIO25          # INMP441 WS
+  mic_sd: GPIO33          # INMP441 SD
+  mute_pin: GPIO32        # a switch to GND, if you wire one (packages/mute-pin.yaml)
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf

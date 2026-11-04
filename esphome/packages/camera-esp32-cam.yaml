@@ -1,0 +1,39 @@
+# The ESP32-CAM's OV2640 as a camera entity in Home Assistant and as /snapshot.jpg, and its flash
+# LED as a light (off until something switches it on).
+substitutions:
+  camera_resolution: 800x600
+
+esp32_camera:
+  id: vs_camera
+  name: Camera
+  external_clock:
+    pin: GPIO0
+    frequency: 20MHz
+  i2c_pins:
+    sda: GPIO26
+    scl: GPIO27
+  data_pins: [GPIO5, GPIO18, GPIO19, GPIO21, GPIO36, GPIO39, GPIO34, GPIO35]
+  vsync_pin: GPIO25
+  href_pin: GPIO23
+  pixel_clock_pin: GPIO22
+  power_down_pin: GPIO32
+  resolution: ${camera_resolution}
+  jpeg_quality: 10
+  # Two buffers: a picture asked for is the newest the camera has (CAMERA_GRAB_LATEST).
+  frame_buffer_count: 2
+  idle_framerate: 0.1 fps
+
+visionstate_stream:
+  camera: vs_camera
+
+output:
+  - platform: ledc
+    id: vs_flash_output
+    pin: GPIO4
+
+light:
+  - platform: monochromatic
+    id: vs_flash
+    name: Flash
+    output: vs_flash_output
+    restore_mode: ALWAYS_OFF

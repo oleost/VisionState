@@ -1,0 +1,35 @@
+# A camera and a microphone for VisionState on a generic ESP32-CAM with an INMP441 on the SD card's
+# pins (no SD card then).
+#
+# In ESPHome: make a new device for an ESP32 (it writes the name, the Wi-Fi and an API key), then
+# replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+substitutions:
+  name: vs-front-door
+  friendly_name: Front door
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+  # mic_sck: GPIO14
+  # mic_ws: GPIO15
+  # mic_sd: GPIO13
+  # mute_pin: GPIO12
+
+external_components:
+  - source: github://oleost/VisionState@esphome-v1
+
+packages:
+  visionstate:
+    url: https://github.com/oleost/VisionState
+    ref: esphome-v1
+    files:
+      - esphome/packages/board-esp32-cam.yaml
+      - esphome/packages/common.yaml
+      - esphome/packages/camera-esp32-cam.yaml
+      - esphome/packages/esp32-cam-microphone.yaml  # before microphone.yaml
+      - esphome/packages/microphone.yaml
+      - esphome/packages/mute-pin.yaml  # leave this line out if you wire no mute switch
+
+api:
+  encryption:
+    key: !secret vs_front_door_api_key  # or the key ESPHome wrote for the device

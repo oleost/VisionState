@@ -31,7 +31,8 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
 | Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
-| ESP32 microphones and cameras of our own (firmware, found through Home Assistant): the plan | [`docs/ESP32_PLAN.md`](docs/ESP32_PLAN.md) |
+| ESP32 microphones and cameras of our own: the plan, the decisions, what is checked | [`docs/ESP32_PLAN.md`](docs/ESP32_PLAN.md) |
+| The ESPHome firmware: boards, wiring, how to install it | [`esphome/README.md`](esphome/README.md) |
 | The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
 | Test image sources | `visionstate/backend/tests/assets/README.md` |

@@ -7,6 +7,7 @@
   import { href, paths, route } from './lib/router.svelte';
   import { POLL, SENSOR_TABS, type SensorTab } from './lib/ui';
   import Dashboard from './pages/Dashboard.svelte';
+  import Esp32Device from './pages/Esp32Device.svelte';
   import History from './pages/History.svelte';
   import NewSensor from './pages/NewSensor.svelte';
   import People from './pages/People.svelte';
@@ -48,6 +49,8 @@
     <History />
   {:else if section === 'people'}
     <People />
+  {:else if section === 'esp32'}
+    <Esp32Device />
   {:else if section === 'speed-test'}
     <SpeedTest />
   {:else if section === 'settings'}

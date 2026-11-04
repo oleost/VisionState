@@ -65,6 +65,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ...sound,
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
+    ['esp32', 'esp32', 'An ESP32 microphone or camera of your own'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
     ['upload', `sensors/${id}/upload`, 'Drop images, ZIP archives or video here'],
     ['dataset', `sensors/${id}/dataset`, /\d+ images/],
@@ -2191,5 +2192,61 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   expect(file.suggestedFilename()).toBe('visionstate-speed-test.txt');
   // Over: the sensors go on.
   await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
+  errors.expectNone();
+});
+
+test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a sensor from the device', async ({
+  page,
+}, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await press(page.getByTestId('esp32-link').getByRole('link', { name: 'Set one up with ESPHome' }), info);
+  const guide = page.getByTestId('esp32-guide');
+  await expect(guide.getByRole('heading', { name: 'An ESP32 microphone or camera of your own' })).toBeVisible();
+  const yaml = guide.getByRole('textbox', { name: 'ESPHome configuration' });
+  await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
+
+  // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
+  await press(guide.getByText('ESP32-CAM', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await guide.getByRole('textbox', { name: 'Device name' }).fill('Front door');
+  await press(guide.getByText(/A mute switch on a pin/), info);
+  await expect(yaml).toHaveValue(/esp32-cam-microphone\.yaml[\s\S]*microphone\.yaml[\s\S]*mute-pin\.yaml/);
+  await expect(yaml).toHaveValue(/name: front-door/);
+  await expect(guide.locator('table')).toContainText('GPIO14');
+  await expect(guide.locator('table')).toContainText('GPIO12 to GND');
+  // The Wi-Fi and the device's password are fields of the page, filled into the file in the browser.
+  await expect(guide.getByRole('button', { name: 'Copy' })).toBeDisabled();
+  await guide.getByRole('textbox', { name: 'Wi-Fi name' }).fill('Our Wi-Fi');
+  await guide.getByLabel('Wi-Fi password', { exact: true }).fill('very secret');
+  await expect(guide.getByRole('button', { name: 'Copy' })).toBeEnabled();
+  const password = await guide.getByRole('textbox', { name: 'Device password' }).inputValue();
+  expect(password).toHaveLength(20);
+  await expect(yaml).toHaveValue(new RegExp(`wifi_ssid: "Our Wi-Fi"[\\s\\S]*stream_password: "${password}"`));
+  await expect(yaml).not.toHaveValue(/very secret/); // shown masked
+  await expect(yaml).not.toHaveValue(/\{\{/);
+  await expectNoClipping(page, '[data-testid=esp32-guide] .btn');
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'esp32-guide.png'), fullPage: true });
+
+  // The device answers (no board here: the check is answered for it) and becomes a sound sensor.
+  const sound = `http://visionstate:${password}@10.0.0.7:8081/audio.wav`;
+  await page.route('**/api/v1/esphome/check', (route) =>
+    route.fulfill({
+      json: {
+        addresses: { sound, picture: 'http://visionstate:x@10.0.0.7:8081/snapshot.jpg' },
+        sound: { ok: true, status: 200 },
+        picture: { ok: false, status: 401 },
+      },
+    }),
+  );
+  await guide.getByRole('textbox', { name: 'IP address' }).fill('10.0.0.7');
+  await press(guide.getByRole('button', { name: 'Check' }), info);
+  await expect(guide.getByTestId('esp32-check')).toContainText('Picture: Wrong password');
+  await press(guide.getByRole('button', { name: 'Make a sound sensor' }), info);
+  await expect(page.getByRole('heading', { name: 'Name it and pick a stream with sound' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Stream with sound' })).toHaveValue(sound);
+  await expect(page.getByLabel('Sensor name')).toHaveValue('Front door');
+  expect(page.url()).not.toContain(password); // the password never goes into the address bar
   errors.expectNone();
 });

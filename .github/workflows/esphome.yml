@@ -1,0 +1,45 @@
+name: ESPHome firmware
+
+# Compiles every configuration in esphome/tests: on a change to the firmware, and every week, so a
+# new ESPHome release that breaks the component is seen before users compile it.
+on:
+  push:
+    branches: [main, beta, esp32]
+    paths: ["esphome/**", ".github/workflows/esphome.yml"]
+    tags: ["esphome-v*"]
+  pull_request:
+    paths: ["esphome/**", ".github/workflows/esphome.yml"]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest ESPHome the packages accept (min_version in packages/common.yaml) and the newest.
+        esphome: ["2026.10.2", "latest"]
+        config: [devkit-microphone, esp32cam-camera, esp32cam-camera-microphone]
+    defaults:
+      run:
+        working-directory: esphome/tests
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install ESPHome
+        run: |
+          if [ "${{ matrix.esphome }}" = latest ]; then pip install esphome; else pip install "esphome==${{ matrix.esphome }}"; fi
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: ~/.platformio
+          key: platformio-${{ matrix.esphome }}-${{ matrix.config }}
+      - run: esphome config ${{ matrix.config }}.yaml > /dev/null
+      - run: esphome compile ${{ matrix.config }}.yaml

@@ -24,6 +24,7 @@ from ..settings import (
     BACKUP_PARTS,
     COUNTER_LIMIT,
     COUNTER_READERS,
+    ESPHOME,
     FACE_DEFAULTS,
     FACE_LIMITS,
     FACE_TUNABLE,
@@ -158,6 +159,7 @@ def ui_config() -> dict:
         "sound_limits": SOUND_LIMITS,
         "sound_levels": SOUND_LEVELS,
         "advice": ADVICE,
+        "esphome": {k: ESPHOME[k] for k in ("port", "username", "password_chars", "kinds", "boards")},
         "sound": {
             k: SOUND[k]
             for k in (
