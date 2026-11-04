@@ -280,6 +280,10 @@ class SoundLive:
     # History rows whose clip is not stored yet -> the best score to ask about once it is (None: no question).
     clip_pending: dict[int, float | None] = field(default_factory=dict)
     room_at: float = 0.0  # when a window of the room was last kept as "other" (own sounds)
+    # Per sound, a sound almost heard (SOUND["near_share"]): its track at that lower line, where it
+    # began (sample number), and whether the sound was heard meanwhile (then it was no near miss).
+    near: dict[str, dict] = field(default_factory=dict)
+    near_rows: set[int] = field(default_factory=set)  # history rows of near misses whose clip is on its way
     reported: bool = False  # "no sound" is in the log, until sound comes back
 
 

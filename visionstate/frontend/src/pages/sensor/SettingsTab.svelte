@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
+  import AdviceCard from '../../lib/components/AdviceCard.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import CounterDialsSwitch from '../../lib/components/CounterDialsSwitch.svelte';
   import DialsEditor from '../../lib/components/DialsEditor.svelte';
@@ -65,6 +66,19 @@
   let sound = $state<SoundSettings>({ ...app.config!.sound_defaults, ...initialSound });
   const thresholdsBefore = { ...(initialSound.thresholds ?? {}) };
   const hasVideo = $derived(sensor.sound?.stream ? !!sensor.sound.stream.video : null);
+
+  // A threshold set from the answers (AdviceCard) is saved at once: the form shows it too, so Save
+  // does not put the old one back; the faces card, which keeps its own copy, is drawn again.
+  let facesVersion = $state(0);
+  function adviceApplied(key: string, value: number) {
+    if (key === 'threshold') threshold = value;
+    else if (key.startsWith('sound:')) {
+      sound.thresholds = { ...sound.thresholds, [key.slice('sound:'.length)]: value };
+      thresholdsBefore[key.slice('sound:'.length)] = value;
+    } else if (key === 'teach:match_similarity') teachLimits = { ...teachLimits, match_similarity: value };
+    else if (key === 'faces:match_similarity') facesVersion++;
+    onchange();
+  }
 
   /** A sound sensor's settings: a threshold set back to the model's is sent as null (removed). */
   function soundUpdate() {
@@ -237,6 +251,7 @@
   </div>
 
   <div class="col" style="gap:var(--space-5)">
+    <AdviceCard {sensor} onapply={adviceApplied} />
     {#if readingSensor}
       <section class="card pad col">
         <h3>Reading</h3>
@@ -248,7 +263,7 @@
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <LabelPicker bind:selected={classes} {...objectPicker()} />
       </section>
-      <FacesCard {sensor} {onchange} />
+      {#key facesVersion}<FacesCard {sensor} {onchange} />{/key}
       {#if taughtSomething}
         <section class="card pad col">
           <h3>What you taught</h3>

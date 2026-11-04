@@ -602,12 +602,11 @@ is not — a cupboard door, a siren on TV — holds the built-in sound back when
 like that clip; the Live tab then shows *Held back*, and the card how often. It stays the same
 sensor in Home Assistant.
 
-**A threshold from your answers.** Every answer about a built-in sound is kept with the score it
-had. Once there are a few, its card on **Own sounds** shows how your "yes" and "no" fare at the
-threshold now, and suggests one that keeps more of the "yes" and fewer of the "no" heard: *Use*
-sets it. When no threshold tells them apart, teach it with clips instead.
+**Almost heard.** With clips on, a sound that almost reached its threshold, but was not heard,
+is asked about in Review too (*Almost heard*); a *yes* teaches its clip and tells the sensor its
+threshold may be too high (below).
 
-**Review.** With clips on, a sound that was only just heard is asked about in Review: listen (or
+**Review.** With clips on, a sound that was only just heard (or almost) is asked about in Review: listen (or
 watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer
 teaches the clip: *yes* as that sound (an own one or a built-in one), *no* as not it.
 
@@ -720,6 +719,16 @@ automations.
 |---|---|---|
 | Report unknown below | 70 % | Confidence needed to report a state |
 | Change after N matching results | 2 | Avoids flicker when someone walks past |
+
+**A threshold from your answers** — every kind of sensor. Each answer in Review is kept with the
+score of what was asked about: a state's confidence, a reading's, the similarity to an own label
+or a face, a sound's score. Once there are a few, **From your answers** at the top of the sensor's
+**Settings** shows how your right and wrong answers fare at each threshold it decides by, and
+suggests one that lets more of the right ones and fewer of the wrong ones through: right answers
+just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
+(nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
+— label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
+**Own sounds** too.
 
 ## History
 

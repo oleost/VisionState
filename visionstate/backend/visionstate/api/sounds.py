@@ -21,13 +21,13 @@ from ..engine.state import SoundRecording
 from ..settings import KIND_SOUND, SOUND, SOUND_LIMITS, UPLOAD_LIMITS, merge_sound
 from ..sources import SOUND_SOURCE_TYPES, SourceError, check_source, open_audio
 from ..storage import CLIP_SUFFIX, is_clip
+from .advice import sound_answers
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 
 router = APIRouter(prefix=API_PREFIX, tags=["sounds"])
 PREVIEW_S = 6.0  # how long a stream is listened to before a sound sensor is made
 CLIP_S = 4.0  # what is kept of an uploaded recording: its loudest seconds
 PEAKS_PER_S = 20  # the waveform of a recording from the stream, drawn to trim it
-ADVICE_ROWS = 2000  # history rows of a sensor looked at for the answers a threshold is suggested from
 
 
 class PreviewIn(BaseModel):
@@ -332,7 +332,7 @@ def taught_clips(sensor_id: int, request: Request) -> dict:
         own = settings["custom"]
         room = rt.sound_room.get(sensor_id)
         builtin = builtin_keys(settings)
-        answers = _answers(s, sensor_id, builtin)
+        answers = sound_answers(s, sensor_id, builtin)
         live = rt.live.get(sensor_id)
         tracks = live.sound.tracks if live is not None and live.sound is not None else {}
         lo_hi = SOUND_LIMITS["threshold"]
@@ -358,30 +358,6 @@ def taught_clips(sensor_id: int, request: Request) -> dict:
             "room": int(len(room)) if isinstance(room, np.ndarray) and room.size else 0,
             "trained": sensor_id in rt.sound_heads,
         }
-
-
-def _answers(s, sensor_id: int, keys: list[str]) -> dict[str, tuple[list[float], list[float]]]:  # noqa: ANN001 - a Session
-    """Per built-in sound: the best scores of the times it was heard and answered "yes", and of
-    those answered otherwise (no, one of the own sounds, a new one), the newest ADVICE_ROWS."""
-    rows = s.execute(
-        select(Prediction.state_key, Prediction.confidence, Prediction.probs)
-        .where(
-            Prediction.sensor_id == sensor_id,
-            Prediction.state_key.in_(keys),
-            Prediction.published_key == "on",
-            Prediction.confidence.is_not(None),
-        )
-        .order_by(Prediction.id.desc())
-        .limit(ADVICE_ROWS)
-    ).all()
-    out: dict[str, tuple[list[float], list[float]]] = {}
-    for key, confidence, probs in rows:
-        answer = (probs or {}).get("answer")
-        if answer is None or confidence is None:
-            continue
-        yes, no = out.setdefault(key, ([], []))
-        (yes if answer == "yes" else no).append(float(confidence))
-    return out
 
 
 @router.get("/sound-clips/{sample_id}")

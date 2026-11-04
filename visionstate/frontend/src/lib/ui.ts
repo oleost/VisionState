@@ -64,6 +64,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
   ask: { label: 'Is it yours?', tone: 'info', help: 'This may be one of your own labels, but the AI is not sure. Your answer is taught.' },
   unsure: { label: 'Was it this sound?', tone: 'info', help: 'The sound was heard, but only just. Listen to the clip; your answer is kept and can teach the sensor.' },
+  near: { label: 'Almost heard', tone: 'info', help: 'The sound was almost heard, not quite. Listen to the clip; a “yes” can suggest a lower threshold.' },
 };
 
 /**
@@ -325,6 +326,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   verified: 'Checked by hand',
   heard: 'Heard',
   quiet: 'No longer heard',
+  near: 'Almost heard',
 };
 
 /** What a sensor's History tab lists, per kind (the History page lists all of it). */

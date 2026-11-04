@@ -2126,6 +2126,25 @@ test('a built-in sound taught with a clip of what it is not, recorded from the s
   errors.expectNone();
 });
 
+test('thresholds from the answers: the card on Settings, for a state sensor and a sound sensor', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const ids = [await seededSensorId(request)];
+  if (await soundModelInstalled(request)) ids.push(await seededSoundSensorId(request));
+  for (const id of ids) {
+    const advice = (await (await request.get(`api/v1/sensors/${id}/advice`)).json()).items as { key: string; advice: { yes: number; no: number } }[];
+    expect(advice.length).toBeGreaterThan(0);
+    await page.goto(`#/sensors/${id}/settings`);
+    const card = page.getByTestId('advice-card');
+    await expect(card).toContainText('From your answers');
+    const answered = advice.filter((i) => i.advice.yes + i.advice.no > 0);
+    if (answered.length) await expect(card.getByTestId(`advice-${answered[0].key}`)).toBeVisible();
+    else await expect(card).toContainText('are counted here');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '[data-testid=advice-card] .btn');
+  }
+  errors.expectNone();
+});
+
 test('the threads per AI model are chosen with the models, applied without a restart', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   await page.goto('#/settings');

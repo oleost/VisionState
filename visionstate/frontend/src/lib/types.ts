@@ -163,6 +163,18 @@ export interface SoundTaught {
   }[];
 }
 
+/** One threshold a sensor decides by, the answers about it and a suggestion (GET sensors/{id}/advice): `key` is
+ * "threshold" (states, readings), "sound:<key>", "teach:match_similarity" or "faces:match_similarity". */
+export interface AdviceItem {
+  key: string;
+  name: string;
+  /** What passing the threshold means for it: "published", "accepted", "heard", "recognised". */
+  verb: string;
+  threshold: number;
+  limits: [number, number];
+  advice: ThresholdAdvice;
+}
+
 /** A threshold suggested from review answers (one way for every sensor kind): how many "yes" and "no" pass now, and
  * with the suggested threshold (none without enough answers or a better one); whether one threshold separates them. */
 export interface ThresholdAdvice {
@@ -810,7 +822,7 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | 'near' | null;
   reviewed: boolean;
   has_frame: boolean;
   /** Sound sensors: the seconds around a sound (with the camera's video when `clip_video`). */

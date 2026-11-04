@@ -277,6 +277,8 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body
                 raise HTTPException(400, "Not a question about an own label")
             sensor_id, score, taught = row.sensor_id, row.confidence, row.sample_id
             row.reviewed = True
+            if action != "skip":  # whether it was the one asked about (what a threshold is suggested from)
+                row.probs = {**(row.probs or {}), "answer": "yes" if action == "yes" else "no"}
             row.sample_id = None
             if taught is not None and is_face and (face := s.get(Face, taught)) is not None:
                 rt.db.after_commit(

@@ -4,6 +4,8 @@ the fewest "no" is suggested, and the user decides (docs/SCOPE.md)."""
 
 from __future__ import annotations
 
+import math
+
 from .settings import ADVICE
 
 
@@ -17,7 +19,7 @@ def threshold_advice(yes: list[float], no: list[float], current: float, limits: 
 
     def counts(t: float) -> dict:
         return {
-            "threshold": round(t, 2),
+            "threshold": round(t, 4),
             "yes_passed": sum(s >= t for s in yes),
             "no_passed": sum(s >= t for s in no),
         }
@@ -30,7 +32,9 @@ def threshold_advice(yes: list[float], no: list[float], current: float, limits: 
     if len(yes) + len(no) < ADVICE["min_answers"]:
         return out
     lo, hi = limits
-    candidates = [counts(lo + i / 100) for i in range(round((hi - lo) * 100) + 1)]
+    # Every whole hundredth within lo and hi, as shown (0.8 + 0.02 is 0.8200000000000001, which a
+    # score of 0.82 misses).
+    candidates = [counts(k / 100) for k in range(math.ceil(lo * 100 - 1e-9), math.floor(hi * 100 + 1e-9) + 1)]
     out["separable"] = any(c["yes_passed"] == len(yes) and not c["no_passed"] for c in candidates)
     best = min(candidates, key=lambda c: (cost(c), abs(c["threshold"] - current)))
     if cost(best) < cost(now) and abs(best["threshold"] - current) >= 0.02:

@@ -38,6 +38,7 @@ import type {
   SoundPreview,
   SoundSettings,
   SoundRecording,
+  AdviceItem,
   SoundTaught,
   Status,
   StorageInfo,
@@ -392,6 +393,11 @@ export const api = {
       body: form,
     });
   },
+  /** Each threshold the sensor decides by, with how the review answers fare and a suggested one. */
+  sensorAdvice: (id: number) => request<{ items: AdviceItem[] }>(`sensors/${id}/advice`),
+  /** Set one of them (an AdviceItem's key). */
+  applyAdvice: (id: number, key: string, threshold: number) =>
+    request<{ ok: boolean }>(`sensors/${id}/advice/${encodeURIComponent(key)}`, send('POST', { threshold })),
   /** Record an own sound from the sensor's stream: Start, Stop (answers once the seconds after Stop came), trim. */
   startSoundRecording: (id: number) =>
     request<{ id: string; max_s: number; after_s: number }>(`sensors/${id}/sounds/recording`, send('POST')),

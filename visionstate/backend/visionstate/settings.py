@@ -362,6 +362,10 @@ SOUND = {
     # there to 1, is asked about in the review queue ("Was this a siren?"), when its clip is kept and
     # the sensor's review rules allow (a siren at 0.3: below 0.65; an own sound at 0.8: below 0.9).
     "unsure_share": 0.5,
+    # A sound almost heard — its score passed this share of its threshold in on_windows of
+    # of_windows windows, and it was not heard — is asked about too, as the review rules allow and
+    # with its clip (a history row "near"): a "yes" there is what can suggest a lower threshold.
+    "near_share": 0.6,
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
     # A taught clip is learned from its loud windows, not only its loudest: every teach_hop_s, the
@@ -753,7 +757,7 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
     KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
-    KIND_SOUND: ("heard", "quiet"),  # a sound began to be heard; it was no longer heard
+    KIND_SOUND: ("heard", "quiet", "near"),  # a sound began to be heard; no longer; almost heard (asked about)
 }
 
 # --- Runtime ------------------------------------------------------------------

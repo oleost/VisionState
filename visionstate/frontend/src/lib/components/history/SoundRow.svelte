@@ -19,6 +19,7 @@
 
   let open = $state(false);
   const heard = $derived(p.published_key === 'on');
+  const near = $derived(p.published_key === 'near'); // almost heard: asked about, never published
   const answer = $derived((p.probs as Record<string, unknown>)?.answer as string | undefined);
   const muted = $derived(Number((p.probs as Record<string, unknown>)?.muted_s ?? 0));
 </script>
@@ -34,7 +35,7 @@
         <strong class="row" style="gap:8px">
           <span class="dot" style:background={heard ? soundColor(sensor, p.state_key) : 'var(--c-unknown)'}></span>
           {soundName(p.state_key, sensor)}
-          {heard ? 'heard' : 'no longer heard'}
+          {heard ? 'heard' : near ? 'almost heard' : 'no longer heard'}
         </strong>
         {#if p.confidence}<span class="mono small muted">{pct(p.confidence)}</span>{/if}
         {#if p.review_reason && !p.reviewed}

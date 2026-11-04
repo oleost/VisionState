@@ -60,7 +60,11 @@
   >
     {#snippet question()}
       <span>Was this <strong>{asked}</strong>?</span>
-      <span class="small muted">It scored {pct(item.confidence)} at most — only just enough to be heard.</span>
+      {#if item.review_reason === 'near'}
+        <span class="small muted">It scored {pct(item.confidence)} at most — almost, not quite enough to be heard.</span>
+      {:else}
+        <span class="small muted">It scored {pct(item.confidence)} at most — only just enough to be heard.</span>
+      {/if}
     {/snippet}
   </ReviewAnswers>
 </div>

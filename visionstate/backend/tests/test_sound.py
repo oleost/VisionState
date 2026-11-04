@@ -13,7 +13,7 @@ from visionstate import sounds
 from visionstate.engine import SoundTrack, hear
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages, entity_options, main_entities, muted_topics
-from visionstate.settings import KIND_SOUND, SOUND, merge_sound
+from visionstate.settings import ADVICE, KIND_SOUND, SOUND, merge_sound
 from visionstate.sources import AudioStream
 
 from .conftest import MODEL_DIR, requires_sound
@@ -271,7 +271,7 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
         assert all(s["group"] for s in config["sounds"]) and config["sound_popular"] == list(SPEC.popular)
         assert config["sound"]["max_sounds"] == SOUND["max_sounds"]
-        assert config["history_events"]["sound"] == ["heard", "quiet"]
+        assert config["history_events"]["sound"] == ["heard", "quiet", "near"]
     time.sleep(0)  # the stream's thread ends on its own (closed with the runtime)
 
 
@@ -480,6 +480,10 @@ def test_a_threshold_is_suggested_from_the_answers():
     assert advice.threshold_advice([0.6, 0.7], [0.3], 0.5, limits)["suggested"] is None  # already right
     mixed = advice.threshold_advice([0.4, 0.6], [0.5, 0.7], 0.3, limits)
     assert not mixed["separable"]
+    # Limits off the hundredths: never a threshold outside them (it could not be set).
+    odd = advice.threshold_advice([0.9, 0.95, 0.92], [], 0.97, (0.805, 0.995))
+    assert odd["suggested"] == {"threshold": 0.9, "yes_passed": 3, "no_passed": 0}
+    assert advice.threshold_advice([0.81], [0.2, 0.3], 0.85, (0.805, 0.995))["suggested"]["threshold"] == 0.81
 
 
 @requires_sound
@@ -563,6 +567,50 @@ def test_a_built_in_sound_learns_from_clips_and_answers_and_what_it_is_not(setti
             monkeypatch.setattr(rt, "clip_embeddings", forgetting)
             vectors, labels = rt._sound_vectors(sid, rt.sound_model)
             assert vectors and len(vectors) == len(labels)
+    finally:
+        server.close()
+
+
+@requires_sound
+def test_a_sound_almost_heard_is_asked_about_and_a_yes_suggests_a_lower_threshold(settings, quick, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(ADVICE, "min_answers", 1)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["siren"], "clips": True, "clear_after_s": 2, "thresholds": {"siren": 0.97}}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound, "review": {"cooldown_s": 0}}).json()[
+                "id"
+            ]
+
+            def waiting() -> list[dict]:
+                return client.get("/api/v1/review", params={"sensor": sid}).json()["items"]
+
+            def history(event: str) -> list[dict]:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": event}).json()["items"]
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            # The CC0 siren scores about 0.92: never heard at 0.97, but almost.
+            for _ in range(3):  # where the windows fall decides; once in a while it is not near enough
+                server.play(recording("siren"))
+                if wait_for(lambda: bool(waiting()), timeout=20):
+                    break
+            item = waiting()[0]
+            assert item["review_reason"] == "near" and item["state_key"] == "siren" and item["has_clip"]
+            assert 0.97 * SOUND["near_share"] <= item["confidence"] < 0.97
+            assert [r["id"] for r in history("near")] == [item["id"]] and not history("heard")
+            assert client.post(f"/api/v1/review/{item['id']}", json={"action": "yes"}).status_code == 200
+            # A yes below the threshold: lower it.
+            items = client.get(f"/api/v1/sensors/{sid}/advice").json()["items"]
+            found = next(i for i in items if i["key"] == "sound:siren")
+            assert found["advice"]["yes"] == 1 and found["advice"]["current"]["yes_passed"] == 0
+            lower = found["advice"]["suggested"]
+            assert lower is not None and lower["threshold"] < 0.97 and lower["yes_passed"] == 1
+            assert client.post(f"/api/v1/sensors/{sid}/advice/sound:siren", json=lower).status_code == 200
+            assert client.get(f"/api/v1/sensors/{sid}").json()["sound"]["thresholds"]["siren"] == lower["threshold"]
+            # And the yes taught the clip: the siren is heard now.
+            server.play(recording("siren"))
+            assert wait_for(lambda: bool(history("heard")), timeout=20)
     finally:
         server.close()
 

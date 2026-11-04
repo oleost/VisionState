@@ -95,7 +95,7 @@
 
   async function setThreshold(key: string, threshold: number) {
     try {
-      await api.updateSensor(sensor.id, { sound: { thresholds: { [key]: threshold } } });
+      await api.applyAdvice(sensor.id, `sound:${key}`, threshold);
       toast(`Heard from ${pct(threshold)}`);
       await load();
       onchange();

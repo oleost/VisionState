@@ -376,6 +376,11 @@ No question for the maintainer is open. Decided on 2026-10-29:
   (`sounds.loud_windows`: every `teach_hop_s`, within `teach_within_db` of the loudest, half a window
   of quiet added at either end); with 6 dB or without the quiet ends it still came through now and
   then, with both it was held back ten times in ten.
+- **Almost heard is asked about too** (2026-11-04, the maintainer: right answers just below the
+  threshold should suggest lowering it). A sound whose score passed `near_share` of its threshold
+  in two of three windows but was not heard keeps its clip in a history row "near" (never
+  published) and is asked about, as the review rules allow; a "yes" teaches the clip — which makes
+  that sound heard the next time — and counts below the threshold in the suggestion.
 
 ## 12. Pitfalls to avoid
 

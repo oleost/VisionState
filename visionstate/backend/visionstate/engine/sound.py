@@ -119,6 +119,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             for clip in heard.clips:  # cut by the old stream's sample numbers
                 heard.clip_pending.pop(clip["row"], None)
             heard.clips = []
+            heard.near.clear()
         try:
             model = await self.ensure_sound_model()
         except Exception:  # noqa: BLE001 - shown on the sensor; tried again after a while
@@ -133,6 +134,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
     async def _nothing_heard(self, cfg: SensorConfig, heard: SoundLive) -> None:
         """Paused: nothing is heard now, also a sound that was (no question about it: no clip comes)."""
+        heard.near.clear()
         for key, track in heard.tracks.items():
             track.recent.clear()  # those windows must not count towards the next time it listens
             if track.on:
@@ -234,13 +236,63 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             for key in keys:
                 track = heard.tracks.setdefault(key, SoundTrack())
                 track.held = key in held
-                if hear(track, scores[key], self.sound_threshold(cfg, key), when, cfg.sound["clear_after_s"]):
+                threshold = self.sound_threshold(cfg, key)
+                if hear(track, scores[key], threshold, when, cfg.sound["clear_after_s"]):
                     await self._sound_changed(cfg, stream, heard, key, track, levels[j], at)
+                await self._near(cfg, stream, heard, key, track, scores[key], threshold, when, at, levels[j])
         for key in [k for k in heard.tracks if k not in keys]:
             del heard.tracks[key]  # no longer listened for
         if loud and (custom or head is not None) and cfg.sound["learn_room"]:
             scores, embedding, _ = analysed[loud[-1]]
             self._keep_room(cfg, heard, embedding, scores)
+
+    async def _near(
+        self,
+        cfg: SensorConfig,
+        stream: AudioStream,
+        heard: SoundLive,
+        key: str,
+        track: SoundTrack,
+        score: float,
+        threshold: float,
+        when: float,
+        at: int,
+        level: float,
+    ) -> None:
+        """A sound almost heard: the same windows decided at SOUND["near_share"] of its threshold.
+        When that ends and the sound itself was not heard meanwhile, it is asked about (with its
+        clip: only with clips on, and as the review rules allow)."""
+        if not cfg.sound["clips"] or key == SOUND["speech_key"]:
+            return
+        near = heard.near.setdefault(key, {"track": SoundTrack(), "start": 0, "heard": False})
+        shadow: SoundTrack = near["track"]
+        if not hear(shadow, score, threshold * SOUND["near_share"], when, cfg.sound["clear_after_s"]):
+            near["heard"] = near["heard"] or track.on
+            return
+        if shadow.on:  # it began
+            near["start"], near["heard"] = at, track.on
+            return
+        if near["heard"] or track.on:
+            return
+        rules = self.review_rules(cfg)
+        live = self.live_state(cfg.id)
+        now = time.time()
+        if not rules["enabled"] or now - live.last_flag < rules["cooldown_s"]:
+            return
+        live.last_flag = now
+        best = shadow.best
+        row = await asyncio.to_thread(self._record_sound, cfg.id, key, False, best, level, "near")
+        onset = near["start"] - int(SOUND["window_s"] * stream.rate)
+        heard.clip_pending[row] = best
+        heard.near_rows.add(row)
+        heard.clips.append(
+            {
+                "row": row,
+                "key": key,
+                "start": max(0, onset - int(SOUND["clip_before_s"] * stream.rate)),
+                "end": near["start"] + int(SOUND["clip_after_s"] * stream.rate),
+            }
+        )
 
     def sound_threshold(self, cfg: SensorConfig, key: str) -> float:
         """The score a sound must reach: the sensor's own, else the model's (own sounds: SOUND)."""
@@ -303,23 +355,28 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             return
         await self._ask_sound(track.row, track.best)
 
-    async def _ask_sound(self, row_id: int | None, best: float) -> None:
-        await asyncio.to_thread(self._store_question, row_id, best)
+    async def _ask_sound(self, row_id: int | None, best: float, reason: str = "unsure") -> None:
+        await asyncio.to_thread(self._store_question, row_id, best, reason)
         await self.publish_review_count()
 
-    def _store_question(self, row_id: int | None, best: float) -> None:
-        """Only with its clip: a question is listened to, and its answer teaches the clip."""
+    def _store_question(self, row_id: int | None, best: float, reason: str) -> None:
+        """Only with its clip: a question is listened to, and its answer teaches the clip. ``reason``:
+        "unsure" (only just heard) or "near" (almost heard)."""
         with self.db.session() as s:
             row = s.get(Prediction, row_id) if row_id is not None else None
             if row is not None and is_clip(row.frame):
-                row.review_reason, row.reviewed, row.confidence = "unsure", False, round(best, 4)
+                row.review_reason, row.reviewed, row.confidence = reason, False, round(best, 4)
 
-    def _record_sound(self, sensor_id: int, key: str, on: bool, score: float, level: float) -> int:
+    def _record_sound(
+        self, sensor_id: int, key: str, on: bool, score: float, level: float, event: str | None = None
+    ) -> int:
+        """A history row: the sound began ("on") or stopped ("off") to be heard, or ``event``
+        ("near": almost heard, not published)."""
         with self.db.session() as s:
             row = Prediction(
                 sensor_id=sensor_id,
                 state_key=key,
-                published_key="on" if on else "off",
+                published_key=event or ("on" if on else "off"),
                 confidence=round(score, 4),
                 probs={"level_db": round(level, 1)},
                 is_change=True,
@@ -366,10 +423,13 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 with_video = None
             await asyncio.to_thread(self._store_clip, cfg.id, clip["row"], quiet, muted, stream.rate, with_video)
             asked = heard.clip_pending.pop(clip["row"], None)
+            near = clip["row"] in heard.near_rows
+            heard.near_rows.discard(clip["row"])
             if asked is not None:
-                await self._ask_sound(clip["row"], asked)
+                await self._ask_sound(clip["row"], asked, "near" if near else "unsure")
         except Exception:  # noqa: BLE001 - the sound was heard all the same; only its clip is lost
             heard.clip_pending.pop(clip["row"], None)
+            heard.near_rows.discard(clip["row"])
             log.exception("Sensor %s: could not keep a clip", cfg.slug)
 
     def _store_clip(

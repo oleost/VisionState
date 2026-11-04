@@ -649,8 +649,15 @@ finished file back. It measures speed and memory, not quality: that needs a righ
   *suggested*, never set by itself — the user taps *Use*. It also says when no threshold separates
   them: then taught examples have to (own labels, own sounds, a built-in sound's clips). Questions
   are asked only near the threshold, so the answers cover that band; the suggestion stays within it
-  in practice. Sound sensors have it (each built-in sound, on Own sounds); the other kinds are on
-  the roadmap (§14).
+  in practice. Every kind has it, at the top of its Settings (`api/advice.py`, `AdviceCard`): a
+  state sensor's threshold (a frame's confidence; asked about below it too), a reading sensor's (a
+  reading's confidence), an object sensor's "recognised" line for own labels and for faces (the
+  similarity; asked about between asking and that line, so it only ever suggests lower there), and
+  each sound's threshold. A suggestion needs answers on the side it moves to: a lower one needs
+  right answers below the threshold, so sounds are also asked about when *almost heard*
+  (`SOUND["near_share"]`, a history row "near"). Answers keep whether they were right — a sound's
+  and an object's question in `probs["answer"]`, a reading's in `read_ok`, a state's as the label
+  of the sample its answer added (a state row's `probs` are its states' probabilities).
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
@@ -1067,6 +1074,4 @@ four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
-sensors: stock ESPHome microphones, CLAP sounds described by a text; a threshold suggested from
-the answers (`advice.py`) for the other kinds too — a state sensor's confidence, a reading's, a
-face's or a taught box's similarity — on the same `ThresholdAdvice`.
+sensors: stock ESPHome microphones, CLAP sounds described by a text.
