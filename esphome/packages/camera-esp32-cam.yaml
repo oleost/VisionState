@@ -30,6 +30,9 @@ output:
   - platform: ledc
     id: vs_flash_output
     pin: GPIO4
+    # Not channel 0: the camera's clock (XCLK) runs on LEDC channel 0 and timer 0, and the flash
+    # there took it over, so the camera took no new pictures (only the one it had ready).
+    channel: 2
 
 light:
   - platform: monochromatic
