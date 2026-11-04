@@ -24,6 +24,8 @@
 - Answers in Review now teach too: *yes* adds the clip to the sound, *no* to what it is not.
 - **Almost heard:** with clips on, a sound that almost reached its threshold is asked about in
   Review too. A *yes* teaches the clip, and says the threshold may be too high.
+- Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
+  instead of only the loudest, so one recording teaches more.
 
 **A threshold suggested from your answers — on every kind of sensor.**
 
@@ -35,8 +37,8 @@
   Nothing changes by itself. When no threshold tells them apart, it says so: then teaching does.
 - Answers about own labels and faces given before this version were not kept as right or wrong,
   so those count from now on.
-- Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
-  instead of only the loudest, so one recording teaches more.
+- **Help wanted:** how does it work for you in daily use? Tell me in
+  [#74](https://github.com/oleost/VisionState/issues/74).
 
 ## 0.14.0b4
 
