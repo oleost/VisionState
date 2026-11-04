@@ -8,6 +8,8 @@ export const POLL = {
   sensor: 2_000,
   liveFrame: 2_000,
   thumbnail: 15_000,
+  /** The ESP32 guide looks for the new device in Home Assistant. */
+  esp32Devices: 5_000,
 };
 
 export const TOAST_MS = 5_000;

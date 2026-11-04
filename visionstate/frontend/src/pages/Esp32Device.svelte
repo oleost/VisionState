@@ -3,14 +3,15 @@
   // then check the device answers and make a sensor of it (docs/ESP32_PLAN.md, esphome/ in the
   // repository). The password and the API key are made up here and never leave the page until the
   // sensor is made with the address.
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import { prefill } from '../lib/prefill.svelte';
   import { go, href, paths } from '../lib/router.svelte';
   import type { EsphomeCheck, EsphomeConfiguration, EsphomeDevice } from '../lib/types';
-  import { INMP441_WIRING } from '../lib/ui';
+  import { pollWhileVisible } from '../lib/poll';
+  import { INMP441_WIRING, POLL } from '../lib/ui';
 
   const cfg = app.config!.esphome;
   const boardIds = Object.keys(cfg.boards);
@@ -84,21 +85,33 @@
 
   // Step 4: the device on the network.
   let devices = $state<EsphomeDevice[]>([]);
+  let waiting = $state<string[]>([]);
   let devicesError = $state('');
   let host = $state('');
   let checking = $state(false);
   let checked = $state<EsphomeCheck | null>(null);
+  let showKey = $state(false);
+
+  // This device, by its name: Home Assistant calls its IP address entity after the friendly name.
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const ours = $derived(devices.find((d) => d.entity_id === `sensor.${slug(friendly)}_ip_address`) ?? null);
+  const ourWaiting = $derived(made !== null && waiting.includes(made.name));
 
   async function findDevices() {
     try {
       const got = await api.esphomeDevices();
       devices = got.devices;
+      waiting = got.waiting;
       devicesError = got.error ?? '';
     } catch (err) {
       devicesError = (err as Error).message;
     }
   }
-  untrack(() => findDevices());
+  // Until it shows up: look again every few seconds while the page is open.
+  onDestroy(pollWhileVisible(POLL.esp32Devices, () => untrack(() => findDevices())));
+  $effect(() => {
+    if (ours && !host) host = ours.address; // the new device's address, as soon as Home Assistant has it
+  });
 
   async function check() {
     checking = true;
@@ -271,9 +284,40 @@
 
   <section class="card pad col">
     <h3>4. Check it and make the sensor</h3>
-    {#if devices.length}
+    {#if ours}
+      <p class="notice ok small" data-testid="esp32-found">
+        <Icon name="check" size={14} /> {ours.name} is in Home Assistant, at <span class="mono">{ours.address}</span>.
+      </p>
+    {:else if ourWaiting}
+      <div class="notice warn col tight" data-testid="esp32-waiting">
+        <strong class="small">Home Assistant has found {made?.name}: add it.</strong>
+        <span class="small">
+          Settings → Devices &amp; services: it is under <strong>Discovered</strong>. Press <strong>Add</strong>; it asks for
+          the device's encryption key:
+        </span>
+        <div class="row wrap">
+          <span class="mono xsmall key">{showKey ? apiKey : '•'.repeat(24)}</span>
+          <button class="btn sm" onclick={() => (showKey = !showKey)}><Icon name="eye" /> {showKey ? 'Hide' : 'Show'}</button>
+        </div>
+        <span class="xsmall muted">
+          It is in the downloaded file too (<span class="mono">api: encryption: key:</span>). Not the password for
+          VisionState: that one is for the sound and the pictures.
+        </span>
+        <a class="btn sm" style="align-self:flex-start" href="/config/integrations/dashboard" target="_top">
+          Open Devices &amp; services
+        </a>
+      </div>
+    {:else}
+      <p class="small muted">
+        {devicesError
+          ? `Could not ask Home Assistant: ${devicesError}.`
+          : 'Waiting for the device: once it is installed and on the Wi-Fi, Home Assistant finds it, and this page shows it.'}
+        You can also type its address (in ESPHome's log: <span class="mono">IP Address</span>).
+      </p>
+    {/if}
+    {#if devices.length && !ours}
       <div class="col tight">
-        <span class="small muted">Devices Home Assistant knows the address of:</span>
+        <span class="small muted">Other devices Home Assistant knows the address of:</span>
         <div class="row wrap">
           {#each devices as d (d.entity_id)}
             <button class="btn sm" class:primary={host === d.address} onclick={() => (host = d.address)}>
@@ -282,11 +326,6 @@
           {/each}
         </div>
       </div>
-    {:else}
-      <p class="small muted">
-        {devicesError ? `Could not ask Home Assistant: ${devicesError}.` : 'No device with an IP address in Home Assistant yet.'}
-        Type its address, or look again once it is added.
-      </p>
     {/if}
     <div class="row wrap">
       <label class="field">
@@ -299,7 +338,6 @@
       <button class="btn primary" disabled={!host.trim() || !password || checking} onclick={check}>
         <Icon name="play" /> {checking ? 'Asking the device…' : 'Check'}
       </button>
-      <button class="btn" onclick={findDevices}><Icon name="refresh" /> Look again</button>
     </div>
     {#if checked}
       <div class="col tight" data-testid="esp32-check">
@@ -350,6 +388,9 @@
   }
   .wiring {
     overflow-x: auto;
+  }
+  .key {
+    overflow-wrap: anywhere;
   }
   table {
     border-collapse: collapse;

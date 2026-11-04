@@ -399,8 +399,9 @@ export const api = {
   /** The ESP32 guide: the device's whole ESPHome file, with {{fields}} for the user's values (filled in the page). */
   esphomeConfiguration: (board: string, kind: string, name: string, mute: boolean) =>
     request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute })),
-  /** Devices whose IP address Home Assistant shows. */
-  esphomeDevices: () => request<{ devices: EsphomeDevice[]; error: string | null }>('esphome/devices'),
+  /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
+  esphomeDevices: () =>
+    request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
   /** Ask the device for its sound and its picture, as the sensor will. */
   esphomeCheck: (host: string, password: string, sound: boolean, picture: boolean) =>
     request<EsphomeCheck>('esphome/check', send('POST', { host, password, sound, picture })),

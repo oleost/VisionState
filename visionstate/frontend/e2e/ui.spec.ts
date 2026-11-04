@@ -2234,6 +2234,22 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await expectNoHorizontalOverflow(page);
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'esp32-guide.png'), fullPage: true });
 
+  // Home Assistant finds the device: first waiting under Discovered (with the key it asks for), then
+  // added, with its address filled in. No board here: Home Assistant's answers are made up.
+  let devices: unknown = { devices: [], waiting: ['front-door'], error: null };
+  await page.route('**/api/v1/esphome/devices', (route) => route.fulfill({ json: devices }));
+  const waiting = guide.getByTestId('esp32-waiting');
+  await expect(waiting).toContainText('Home Assistant has found front-door: add it.', { timeout: 15_000 });
+  await press(waiting.getByRole('button', { name: 'Show' }), info);
+  await expect(waiting.locator('.key')).toHaveText(/^[A-Za-z0-9+/]{43}=$/);
+  devices = {
+    devices: [{ entity_id: 'sensor.front_door_ip_address', name: 'Front door', address: '10.0.0.7' }],
+    waiting: [],
+    error: null,
+  };
+  await expect(guide.getByTestId('esp32-found')).toContainText('10.0.0.7', { timeout: 15_000 });
+  await expect(guide.getByRole('textbox', { name: 'IP address' })).toHaveValue('10.0.0.7');
+
   // The device answers (no board here: the check is answered for it) and becomes a sound sensor.
   const sound = `http://visionstate:${password}@10.0.0.7:8081/audio.wav`;
   await page.route('**/api/v1/esphome/check', (route) =>
@@ -2245,7 +2261,6 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
       },
     }),
   );
-  await guide.getByRole('textbox', { name: 'IP address' }).fill('10.0.0.7');
   await press(guide.getByRole('button', { name: 'Check' }), info);
   await expect(guide.getByTestId('esp32-check')).toContainText('Picture: Wrong password');
   await press(guide.getByRole('button', { name: 'Make a sound sensor' }), info);

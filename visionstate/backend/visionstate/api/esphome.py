@@ -45,13 +45,13 @@ def configuration(body: ConfigurationIn) -> dict:
 
 @router.get("/esphome/devices")
 async def devices(request: Request) -> dict:
-    """Devices whose IP address Home Assistant shows (ESPHome's *IP address* entity), newest first in
-    the list as Home Assistant gives them: a guess at which is the new one, the user picks."""
+    """Devices whose IP address Home Assistant shows (ESPHome's *IP address* entity), and the ESPHome
+    devices it has found but not been told to add yet (they have no entities until then)."""
     ha = runtime(request).ha
     try:
         entities = await ha.entities()
     except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: the address is typed instead
-        return {"devices": [], "error": redact(str(err)) or type(err).__name__}
+        return {"devices": [], "waiting": [], "error": redact(str(err)) or type(err).__name__}
     found = []
     for e in entities:
         if not (e["entity_id"].startswith("sensor.") and e["entity_id"].endswith("_ip_address")):
@@ -62,7 +62,11 @@ async def devices(request: Request) -> dict:
             continue
         name = str(e.get("name") or e["entity_id"]).removesuffix(" IP address").removesuffix(" IP Address")
         found.append({"entity_id": e["entity_id"], "name": name, "address": e["state"]})
-    return {"devices": found, "error": None}
+    try:
+        waiting = await ha.discovered("esphome")
+    except Exception:  # noqa: BLE001 - not allowed or not reachable: only the added devices are listed
+        waiting = []
+    return {"devices": found, "waiting": waiting, "error": None}
 
 
 async def _try(client: httpx.AsyncClient, url: str, magic: tuple[bytes, ...] | bytes, stream: bool) -> dict:

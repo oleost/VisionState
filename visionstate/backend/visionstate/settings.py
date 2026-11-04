@@ -396,6 +396,8 @@ ESPHOME = {
     "repository": "https://github.com/oleost/VisionState",
     # The branch the firmware is built on until it is released (then the tag esphome-v1, as esphome/examples has).
     "ref": "esp32",
+    # How often ESPHome fetches the firmware again: every build while it is a branch (then "1d").
+    "refresh": "0s",
     "port": 8081,  # visionstate_stream's port
     "username": "visionstate",
     "password_chars": 20,  # a password the guide makes up

@@ -17,7 +17,7 @@ from typing import cast
 import httpx
 import numpy as np
 
-from .ha_events import camera_stream, websocket_url
+from .ha_events import camera_stream, discovered, websocket_url
 from .redact import redact
 from .settings import RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
@@ -125,6 +125,12 @@ class HomeAssistant:
         except Exception as err:  # noqa: BLE001 - no stream (the camera cannot stream, is off, …)
             raise SourceError(f"{entity_id}: {redact(str(err)) or type(err).__name__}") from err
         return self.base.removesuffix("/api") + path, {"Authorization": f"Bearer {self._token}"}
+
+    async def discovered(self, domain: str) -> list[str]:
+        """Devices Home Assistant has found for an integration, waiting to be added."""
+        if not self.enabled or not self._ws_url:
+            return []
+        return await discovered(self._ws_url, self._token, domain)
 
     async def entities(self) -> list[dict]:
         """All entities (id, name, domain, state), for picking trigger entities."""

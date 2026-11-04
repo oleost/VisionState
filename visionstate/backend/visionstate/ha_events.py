@@ -103,6 +103,21 @@ async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
     await ws_commands(url, token, [{"type": update, "entity_id": e, "disabled_by": None} for e in entity_ids])
 
 
+async def discovered(url: str, token: str, domain: str) -> list[str]:
+    """The names of devices Home Assistant has found for an integration and not been told to add
+    (Settings → Devices & services → Discovered)."""
+    flows = (await ws_commands(url, token, [{"type": "config_entries/flow/progress"}]))[0] or []
+    names = []
+    for flow in flows:
+        if flow.get("handler") != domain:
+            continue
+        context = flow.get("context") or {}
+        name = (context.get("title_placeholders") or {}).get("name")
+        if name and context.get("source") != "user":
+            names.append(str(name))
+    return names
+
+
 async def camera_stream(url: str, token: str, entity_id: str) -> str:
     """The path of a camera's own stream in Home Assistant (HLS, with the camera's sound). It holds a
     token that is valid while the stream runs: asked for again each time the stream is opened."""

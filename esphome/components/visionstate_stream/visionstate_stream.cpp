@@ -252,6 +252,9 @@ void VisionStateStream::listener_task_(void *arg) {
 
 #ifdef USE_VISIONSTATE_CAMERA
 void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImage> &image) {
+  if (image->was_requested_by(camera::WEB_REQUESTER))
+    ESP_LOGD(TAG, "A picture for the snapshot: %u bytes%s", (unsigned) image->get_data_length(),
+             this->waiting_for_image_ ? "" : " (no longer waited for)");
   if (this->waiting_for_image_ && image->was_requested_by(camera::WEB_REQUESTER)) {
     this->image_ = image;
     this->waiting_for_image_ = false;
@@ -263,11 +266,14 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
   xSemaphoreTake(this->image_ready_, 0);  // a give left over from an earlier picture
   this->image_ = nullptr;
   this->waiting_for_image_ = true;
+  uint32_t asked = millis();
   this->camera_->request_image(camera::WEB_REQUESTER);
   if (xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     this->waiting_for_image_ = false;
+    ESP_LOGW(TAG, "The camera gave no picture in %" PRIu32 " ms", timeout_ms);
     return nullptr;
   }
+  ESP_LOGD(TAG, "Picture after %" PRIu32 " ms", millis() - asked);
   std::shared_ptr<camera::CameraImage> image;
   image.swap(this->image_);
   return image;

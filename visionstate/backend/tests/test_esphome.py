@@ -161,8 +161,33 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
                 {"entity_id": "sensor.temperature", "name": "Temperature", "state": "21"},
             ]
 
+        async def discovered(domain):
+            assert domain == "esphome"
+            return ["vs-garage"]
+
         rt.ha.entities = entities
+        rt.ha.discovered = discovered
         got = client.get("/api/v1/esphome/devices").json()
+        assert got["waiting"] == ["vs-garage"]  # found, not added yet
         assert got["devices"] == [
             {"entity_id": "sensor.front_door_ip_address", "name": "Front door", "address": "10.0.0.7"}
         ]
+
+
+def test_discovered_esphome_devices_are_read_from_home_assistants_flows(monkeypatch):
+    import asyncio
+
+    from visionstate import ha_events
+
+    async def commands(url, token, cmds):
+        assert cmds == [{"type": "config_entries/flow/progress"}]
+        return [
+            [
+                {"handler": "esphome", "context": {"source": "zeroconf", "title_placeholders": {"name": "vs-hall"}}},
+                {"handler": "hue", "context": {"source": "zeroconf", "title_placeholders": {"name": "Bridge"}}},
+                {"handler": "esphome", "context": {"source": "user"}},  # someone adding one by hand
+            ]
+        ]
+
+    monkeypatch.setattr(ha_events, "ws_commands", commands)
+    assert asyncio.run(ha_events.discovered("ws://ha", "t", "esphome")) == ["vs-hall"]
