@@ -203,7 +203,7 @@
   .strip {
     position: relative;
     height: 72px;
-    margin: 0 14px; /* room for the handles at either end */
+    margin: 18px 14px 0; /* room for the Stop mark's label above, and the handles at either end */
     border-radius: var(--radius-sm);
     background: var(--c-sunken);
     touch-action: pan-y;
