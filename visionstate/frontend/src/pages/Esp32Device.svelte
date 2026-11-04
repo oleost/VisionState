@@ -3,7 +3,7 @@
   // then check the device answers and make a sensor of it (docs/ESP32_PLAN.md, esphome/ in the
   // repository). The password and the API key are made up here and never leave the page until the
   // sensor is made with the address.
-  import { tick, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
@@ -61,32 +61,17 @@
   let wifiSsid = $state('');
   let wifiPassword = $state('');
   let showWifiPassword = $state(false);
-  let revealed = $state(false); // the file shown with the Wi-Fi password (to copy it by hand)
   const values = $derived({ wifi_ssid: wifiSsid, wifi_password: wifiPassword, stream_password: password, api_key: apiKey });
   const fill = (yaml: string, mask: boolean) =>
     yaml.replace(/\{\{(\w+)\}\}/g, (_, k: keyof typeof values) =>
       k === 'wifi_password' && mask && values[k] ? '"••••••••"' : JSON.stringify(values[k] ?? ''),
     );
   const filled = $derived(made ? fill(made.yaml, false) : '');
-  const shown = $derived(made ? fill(made.yaml, !revealed) : '');
+  const shown = $derived(made ? fill(made.yaml, true) : ''); // the Wi-Fi password masked
   const ready = $derived(wifiSsid.trim().length > 0 && wifiPassword.length > 0);
   // ESPHome reads ${...} in a value as a substitution.
   const dollar = $derived(wifiSsid.includes('$') || wifiPassword.includes('$'));
 
-  let yamlBox = $state<HTMLTextAreaElement>();
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(filled);
-      toast('Configuration copied');
-    } catch {
-      // Not allowed here (Home Assistant's frame): show it whole and select it, so a long press or Ctrl+C copies it.
-      revealed = true;
-      await tick();
-      yamlBox?.focus();
-      yamlBox?.select();
-      toast('Selected: copy it with a long press or Ctrl+C');
-    }
-  }
 
   function download() {
     const url = URL.createObjectURL(new Blob([filled], { type: 'text/yaml' }));
@@ -257,19 +242,23 @@
       <p class="notice danger">{madeError}</p>
     {:else if made}
       <ol class="small steps">
-        <li>
-          In the ESPHome app: <strong>New device</strong> → <strong>Advanced set up options</strong> →
-          <strong>Empty configuration</strong>, and name it <span class="mono">{made.name}</span>.
-        </li>
-        <li>Replace all that is in it with this file, and <strong>Save</strong>:</li>
+        <li>Download the device's file:</li>
       </ol>
-      <textarea class="input mono code" readonly rows={shown.split('\n').length} bind:this={yamlBox} value={shown}
-        aria-label="ESPHome configuration"></textarea>
       <div class="row wrap">
-        <button class="btn sm primary" disabled={!ready} onclick={copy}><Icon name="check" /> Copy</button>
-        <button class="btn sm" disabled={!ready} onclick={download}><Icon name="download" /> Download {made.name}.yaml</button>
+        <button class="btn primary" disabled={!ready} onclick={download}><Icon name="download" /> Download {made.name}.yaml</button>
         {#if !ready}<span class="xsmall muted">Fill in the Wi-Fi first.</span>{/if}
       </div>
+      <ol class="small steps" start="2">
+        <li>
+          In the ESPHome app: <strong>New device</strong> → <strong>Advanced set up options</strong> →
+          <strong>Import from file</strong>, and pick it (or drop it on the page).
+        </li>
+      </ol>
+      <details class="small">
+        <summary>What is in it</summary>
+        <textarea class="input mono code" readonly rows={shown.split('\n').length} value={shown}
+          aria-label="ESPHome configuration"></textarea>
+      </details>
       <ol class="small steps" start="3">
         <li>
           <strong>Install</strong>: the first time over USB (ESPHome offers its web page for that), then over Wi-Fi. The

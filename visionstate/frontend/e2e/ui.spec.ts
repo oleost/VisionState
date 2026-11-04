@@ -2203,7 +2203,7 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await press(page.getByTestId('esp32-link').getByRole('link', { name: 'Set one up with ESPHome' }), info);
   const guide = page.getByTestId('esp32-guide');
   await expect(guide.getByRole('heading', { name: 'An ESP32 microphone or camera of your own' })).toBeVisible();
-  const yaml = guide.getByRole('textbox', { name: 'ESPHome configuration' });
+  const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]'); // under "What is in it" (closed)
   await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
 
   // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
@@ -2216,14 +2216,19 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await expect(guide.locator('table')).toContainText('GPIO14');
   await expect(guide.locator('table')).toContainText('GPIO12 to GND');
   // The Wi-Fi and the device's password are fields of the page, filled into the file in the browser.
-  await expect(guide.getByRole('button', { name: 'Copy' })).toBeDisabled();
+  const download = guide.getByRole('button', { name: /^Download/ });
+  await expect(download).toBeDisabled();
   await guide.getByRole('textbox', { name: 'Wi-Fi name' }).fill('Our Wi-Fi');
   await guide.getByLabel('Wi-Fi password', { exact: true }).fill('very secret');
-  await expect(guide.getByRole('button', { name: 'Copy' })).toBeEnabled();
+  await expect(download).toBeEnabled();
   const password = await guide.getByRole('textbox', { name: 'Device password' }).inputValue();
   expect(password).toHaveLength(20);
   await expect(yaml).toHaveValue(new RegExp(`wifi_ssid: "Our Wi-Fi"[\\s\\S]*stream_password: "${password}"`));
   await expect(yaml).not.toHaveValue(/very secret/); // shown masked
+  const [file] = await Promise.all([page.waitForEvent('download'), press(download, info)]);
+  expect(file.suggestedFilename()).toBe('front-door.yaml');
+  const saved = await (await import('node:fs/promises')).readFile(await file.path(), 'utf8');
+  expect(saved).toContain('wifi_password: "very secret"'); // the file itself has it
   await expect(yaml).not.toHaveValue(/\{\{/);
   await expectNoClipping(page, '[data-testid=esp32-guide] .btn');
   await expectNoHorizontalOverflow(page);
