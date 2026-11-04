@@ -22,9 +22,19 @@
   something is clearly like that clip; the Live tab shows *Held back*. It stays the same sensor in
   Home Assistant.
 - Answers in Review now teach too: *yes* adds the clip to the sound, *no* to what it is not.
-- **A threshold from your answers:** once a sound has a few answers, its card shows how your "yes"
-  and "no" fare at its threshold, and suggests a better one — *Use* sets it. When no threshold
-  tells them apart, it says so: then clips do it.
+- **Almost heard:** with clips on, a sound that almost reached its threshold is asked about in
+  Review too. A *yes* teaches the clip, and says the threshold may be too high.
+
+**A threshold suggested from your answers — on every kind of sensor.**
+
+- **From your answers**, at the top of a sensor's **Settings**, shows how your right and wrong
+  answers in Review fare at each threshold the sensor decides by: a state sensor's, a reading
+  sensor's, an object sensor's line for your own labels and for faces, and each sound's.
+- It suggests one that lets more of the right ones and fewer of the wrong ones through — lower
+  when right answers fall just below, higher when wrong ones get through — and *Use* sets it.
+  Nothing changes by itself. When no threshold tells them apart, it says so: then teaching does.
+- Answers about own labels and faces given before this version were not kept as right or wrong,
+  so those count from now on.
 - Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
   instead of only the loudest, so one recording teaches more.
 
