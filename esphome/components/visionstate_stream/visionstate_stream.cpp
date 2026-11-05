@@ -22,9 +22,9 @@ static const size_t CHUNK_BYTES = 1024;                     // 32 ms
 static const uint32_t READ_WAIT_MS = 250;                   // a read that waits longer gives up for now
 static const uint32_t SILENT_GIVE_UP_MS = 10000;            // no sound from the microphone this long: close
 static const uint32_t IMAGE_TIMEOUT_MS = 5000;
-// The main loop is woken, and the picture asked for again, this often while it is waited for: the
-// first request after a picture was handed out is lost, so this is what a fresh snapshot waits
-// beyond the camera itself (50 ms made it 100: measured on an ESP32-CAM, 2026-11-05).
+// The main loop is woken, and the picture asked for again, this often while it is waited for (the
+// first request after a picture was handed out is lost). A fresh snapshot waits mostly for the
+// camera: its next picture comes no sooner than 1 / max_framerate after the last.
 static const uint32_t WAKE_EVERY_MS = 10;
 static const uint32_t LISTENER_TASK_STACK = 4096;
 // Sockets beside the listeners' (as __init__.py counts them): a snapshot, and an answer to a third
