@@ -1,8 +1,12 @@
 # The XIAO ESP32-S3 Sense's camera as a camera entity in Home Assistant and as /snapshot.jpg. The
 # board has no flash LED. On the S3 the camera has a peripheral of its own (not I2S), so the
 # microphone needs no port kept for it.
+packages:
+  camera_use: !include camera-use.yaml  # what it looks at: the picture size, quality and exposure
+
 substitutions:
-  camera_resolution: 800x600
+  # The largest picture it can give: what Camera use (camera-use.yaml) chooses from fits in it.
+  camera_resolution: 1600x1200
 
 esp32_camera:
   id: vs_camera
