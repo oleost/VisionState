@@ -647,7 +647,20 @@ TRIGGER_DEFAULTS = {
     # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
     # threw away only the stale one and the frame read was often dark.
     "light_delay_s": 2.0,
+    # How an ESP32 camera of ours (esphome/) is set up before this sensor's pictures: one of
+    # CAMERA_USES, or "" to choose by the sensor's kind (CAMERA_USE_BY_KIND). Only for a camera that
+    # answers as ours (an X-VisionState-Camera header); ignored for any other.
+    "camera_use": "",
 }
+# What an ESP32 camera of ours looks at (esphome/packages/camera-use.yaml): the key a snapshot asks
+# with, and its name, most demanding first: sensors on one camera share the most demanding of them,
+# so the camera is not switched back and forth between their pictures.
+CAMERA_USES = {
+    "meter": "Meters and displays",
+    "movement": "People, cars and animals",
+    "states": "States",
+}
+CAMERA_USE_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),

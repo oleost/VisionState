@@ -5,6 +5,7 @@ HTTP on a port of its own, behind a user name and password like a camera's.
     GET /snapshot.jpg  a picture taken after the request (one thrown away first, see fresh_snapshot)
 """
 
+from esphome import automation
 import esphome.codegen as cg
 from esphome.components import esp32_camera, microphone, sensor
 from esphome.components.esp32 import include_builtin_idf_component
@@ -20,6 +21,7 @@ CONF_MAX_LISTENERS = "max_listeners"
 CONF_BUFFER_DURATION = "buffer_duration"
 CONF_FRESH_SNAPSHOT = "fresh_snapshot"
 CONF_LISTENERS = "listeners"
+CONF_ON_CAMERA_USE = "on_camera_use"
 
 SAMPLE_RATE = 16000  # what VisionState's sound model takes
 
@@ -67,6 +69,8 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(CONF_FRESH_SNAPSHOT, default=True): cv.boolean,
             cv.Optional(CONF_LISTENERS): sensor.sensor_schema(accuracy_decimals=0, icon="mdi:ear-hearing"),
+            # The camera use changed (by Home Assistant, or a snapshot that asked for another), with its name.
+            cv.Optional(CONF_ON_CAMERA_USE): automation.validate_automation(single=True),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     _both_or_neither,
@@ -102,6 +106,10 @@ async def to_code(config):
         cg.add_define("USE_VISIONSTATE_CAMERA")
         cam = await cg.get_variable(config[CONF_CAMERA])
         cg.add(var.set_camera(cam))
+    if CONF_ON_CAMERA_USE in config:
+        await automation.build_automation(
+            var.get_camera_use_trigger(), [(cg.std_string, "x")], config[CONF_ON_CAMERA_USE]
+        )
     if CONF_LISTENERS in config:
         sens = await sensor.new_sensor(config[CONF_LISTENERS])
         cg.add(var.set_listeners_sensor(sens))

@@ -30,6 +30,8 @@ export interface Triggers {
   /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
   light_entity: string;
   light_delay_s: number;
+  /** How an ESP32 camera of ours is set up for this sensor (config camera_uses); '' = by its kind. */
+  camera_use: string;
 }
 
 export interface ReviewRules {
@@ -604,6 +606,19 @@ export interface Counts {
   unlabelled: number;
 }
 
+/** An ESP32 camera of ours behind a sensor's snapshot address (settings.CAMERA_USES keys). */
+export interface SensorCamera {
+  /** How the camera is set up now (its last picture said so). */
+  now: string | null;
+  /** What this sensor asks for: its own choice, or by its kind (`automatic`). */
+  wanted: string | null;
+  automatic: boolean;
+  /** What its kind asks for (Automatic). */
+  by_kind: string | null;
+  /** What the camera is asked for: the most demanding of the sensors on it. */
+  asked: string | null;
+}
+
 export interface Sensor {
   id: number;
   slug: string;
@@ -623,6 +638,8 @@ export interface Sensor {
   /** What can be chosen on its Home Assistant tab. */
   ha_entities: HaEntity[];
   triggers: Triggers;
+  /** Set when the source is an ESP32 camera of ours (esphome/): only then its set-up can be chosen. */
+  camera: SensorCamera | null;
   review: ReviewOverrides;
   review_effective: ReviewRules;
   entity_id: string;
@@ -741,6 +758,8 @@ export interface AppConfig {
   sound_levels: SoundLevel[];
   /** Thresholds suggested from review answers: from at least `min_answers` answers. */
   advice: { min_answers: number };
+  /** What an ESP32 camera of ours is set up as: key → name, most demanding first. */
+  camera_uses: Record<string, string>;
   /** The ESP32 guide (settings.ESPHOME). */
   esphome: {
     port: number;

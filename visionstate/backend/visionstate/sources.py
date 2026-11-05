@@ -19,7 +19,7 @@ import numpy as np
 
 from .ha_events import camera_stream, discovered, websocket_url
 from .redact import redact
-from .settings import RUNTIME, SOUND, SUPERVISOR_URL, Settings
+from .settings import CAMERA_USES, RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
 log = logging.getLogger(__name__)
 
@@ -237,6 +237,10 @@ class FrameGrabber:
         self._rtsp = ThreadPoolExecutor(max_workers=RUNTIME["rtsp_workers"], thread_name_prefix="rtsp")
         self._streams: dict[str, RtspStream] = {}  # streams kept open while frames come often
         self._last_grab: dict[str, float] = {}  # when each stream address was last grabbed
+        # ESP32 cameras of ours (esphome/): snapshot address -> how the camera is set up now, from
+        # the X-VisionState-Camera header of its last picture.
+        self.ours: dict[str, str] = {}
+        self._camera_wants: dict[int, tuple[str, str]] = {}  # sensor -> (its address, the use it wants)
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -277,11 +281,35 @@ class FrameGrabber:
         except httpx.HTTPError as err:
             raise SourceError(describe(err)) from err
 
+    def want_camera_use(self, sensor_id: int, source: str, use: str | None) -> None:
+        """What a sensor wants an ESP32 camera of ours set up as (settings.CAMERA_USES; None: nothing)."""
+        if use is None:
+            self._camera_wants.pop(sensor_id, None)
+        else:
+            self._camera_wants[sensor_id] = (source, use)
+
+    def camera_use(self, source: str) -> str | None:
+        """The use asked of a camera: the most demanding the sensors on it want (so pictures for
+        two sensors do not switch it back and forth), or None when none wants one."""
+        wanted = {use for address, use in self._camera_wants.values() if address == source}
+        return next((use for use in CAMERA_USES if use in wanted), None)
+
     async def _get_limited(self, url: str) -> bytes:
-        """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]."""
-        async with self._http.stream("GET", url) as resp:
+        """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]. A
+        camera of ours (one that answered with X-VisionState-Camera) is asked to be set up for its
+        sensors first (?use=...)."""
+        asked = url
+        use = self.camera_use(url) if url in self.ours else None
+        if use is not None:
+            asked = f"{url}{'&' if '?' in url else '?'}use={use}"
+        async with self._http.stream("GET", asked) as resp:
             if resp.status_code != 200:
                 raise SourceError(f"HTTP {resp.status_code}")
+            camera = resp.headers.get("x-visionstate-camera")
+            if camera is not None:
+                self.ours[url] = camera
+            else:
+                self.ours.pop(url, None)
             return await read_limited(resp)
 
 

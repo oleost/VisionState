@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from visionstate import esphome
 from visionstate.main import create_app
-from visionstate.settings import ESPHOME
+from visionstate.settings import CAMERA_USES, ESPHOME
 
 from .test_storage import settings  # noqa: F401 (fixture)
 
@@ -76,6 +76,14 @@ def test_the_camera_uses_are_the_devices_options():
     options = re.findall(r"^      - (.+)$", package.split("options:", 1)[1].split("initial_option", 1)[0], re.MULTILINE)
     assert options == list(ESPHOME["camera_uses"])
     assert substitutions(package)["camera_use"] == next(iter(ESPHOME["camera_uses"]))
+    # The firmware's keys (?use=) and names are the app's (settings.CAMERA_USES).
+    component = (ESPHOME_DIR / "components" / "visionstate_stream" / "visionstate_stream.cpp").read_text(
+        encoding="utf-8"
+    )
+    names = re.findall(r'"([^"]+)"', re.search(r"CAMERA_USE_NAMES\[CAMERA_USES\] = \{([^}]*)\}", component)[1])
+    keys = re.findall(r'"([^"]+)"', re.search(r"CAMERA_USE_KEYS\[CAMERA_USES\] = \{([^}]*)\}", component)[1])
+    assert dict(zip(keys, names, strict=True)) == {k: CAMERA_USES[k] for k in keys}
+    assert set(keys) == set(CAMERA_USES) and set(names) == set(ESPHOME["camera_uses"])
 
 
 def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():

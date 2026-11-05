@@ -12,6 +12,10 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
+#ifdef USE_VISIONSTATE_CAMERA
+#include <esp_camera.h>
+#endif
+
 namespace esphome::visionstate_stream {
 
 static const char *const TAG = "visionstate_stream";
@@ -27,6 +31,19 @@ static const uint32_t IMAGE_TIMEOUT_MS = 5000;
 // camera: its next picture comes no sooner than 1 / max_framerate after the last.
 static const uint32_t WAKE_EVERY_MS = 10;
 static const uint32_t LISTENER_TASK_STACK = 4096;
+#ifdef USE_VISIONSTATE_CAMERA
+// Camera use (packages/camera-use.yaml): the names Home Assistant shows, and the keys a snapshot
+// asks with (?use=...). VisionState asks for the one its sensor needs; it stays until changed.
+static const uint8_t CAMERA_USES = 3;
+static const char *const CAMERA_USE_NAMES[CAMERA_USES] = {"States", "Meters and displays", "People, cars and animals"};
+static const char *const CAMERA_USE_KEYS[CAMERA_USES] = {"states", "meter", "movement"};
+static const uint8_t USE_METER = 1;
+static const uint8_t USE_MOVEMENT = 2;
+// Pictures thrown away after a change, before the snapshot: the exposure is right in the next one,
+// a new picture size needs a few (measured on an ESP32-CAM, 2026-11-05).
+static const uint8_t SETTLE_PICTURES = 1;
+static const uint8_t SETTLE_PICTURES_RESIZED = 3;
+#endif
 // Sockets beside the listeners' (as __init__.py counts them): a snapshot, and an answer to a third
 // listener, at the same time.
 static const uint8_t SPARE_SOCKETS = 2;
@@ -135,6 +152,12 @@ void VisionStateStream::setup() {
 }
 
 void VisionStateStream::loop() {
+#ifdef USE_VISIONSTATE_CAMERA
+  if (this->camera_use_changed_ && this->camera_use_ < CAMERA_USES) {
+    this->camera_use_changed_ = false;
+    this->camera_use_trigger_.trigger(std::string(CAMERA_USE_NAMES[this->camera_use_]));
+  }
+#endif
   uint8_t count = this->listener_count_;
 #ifdef USE_VISIONSTATE_MICROPHONE
   // The microphone runs only while someone listens.
@@ -302,6 +325,48 @@ void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImag
   }
 }
 
+bool VisionStateStream::apply_camera_use_(uint8_t use) {
+  sensor_t *s = esp_camera_sensor_get();
+  if (s == nullptr || use >= CAMERA_USES)
+    return false;  // the camera has not started yet: set again at boot
+  bool resized = this->camera_use_ >= CAMERA_USES || (use == USE_METER) != (this->camera_use_ == USE_METER);
+  s->set_framesize(s, use == USE_METER ? FRAMESIZE_UXGA : FRAMESIZE_SVGA);
+  s->set_quality(s, use == USE_METER ? 8 : 10);
+  if (use == USE_MOVEMENT) {
+    // Short and fixed, so something moving stays sharp; the gain keeps it bright.
+    s->set_exposure_ctrl(s, 0);
+    s->set_aec_value(s, this->motion_exposure_);
+    s->set_gainceiling(s, GAINCEILING_16X);
+  } else {
+    s->set_exposure_ctrl(s, 1);
+    s->set_ae_level(s, 0);
+    s->set_gainceiling(s, GAINCEILING_4X);
+  }
+  s->set_gain_ctrl(s, 1);
+  this->camera_use_ = use;
+  this->camera_use_changed_ = true;
+  ESP_LOGI(TAG, "Camera use: %s", CAMERA_USE_NAMES[use]);
+  return resized;
+}
+
+void VisionStateStream::set_camera_use(const std::string &use) {
+  for (uint8_t i = 0; i < CAMERA_USES; i++) {
+    if (use == CAMERA_USE_NAMES[i]) {
+      if (i != this->camera_use_)
+        this->apply_camera_use_(i);
+      return;
+    }
+  }
+  ESP_LOGW(TAG, "Unknown camera use: %s", use.c_str());
+}
+
+void VisionStateStream::set_motion_exposure(int lines) {
+  this->motion_exposure_ = lines;
+  sensor_t *s = esp_camera_sensor_get();
+  if (s != nullptr && this->camera_use_ == USE_MOVEMENT)
+    s->set_aec_value(s, lines);
+}
+
 std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t timeout_ms) {
   xSemaphoreTake(this->image_ready_, 0);  // a give left over from an earlier picture
   this->image_ = nullptr;
@@ -339,6 +404,24 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
 #else
   if (this->camera_ == nullptr)
     return not_found(req, HTTPD_404_NOT_FOUND);
+  // ?use=states|meter|movement: the camera set up for that first (it stays so), and the pictures
+  // taken before it settled thrown away.
+  char query[48];
+  char value[16];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+      httpd_query_key_value(query, "use", value, sizeof(value)) == ESP_OK) {
+    for (uint8_t i = 0; i < CAMERA_USES; i++) {
+      if (strcmp(value, CAMERA_USE_KEYS[i]) == 0 && i != this->camera_use_) {
+        uint8_t settle = this->apply_camera_use_(i) ? SETTLE_PICTURES_RESIZED : SETTLE_PICTURES;
+        App.wake_loop_threadsafe();
+        for (uint8_t n = 0; n < settle; n++)
+          this->take_image_(IMAGE_TIMEOUT_MS);
+      }
+    }
+  }
+  // Says it is our firmware, and how the camera is set up (VisionState shows Camera use for it).
+  httpd_resp_set_hdr(req, "X-VisionState-Camera",
+                     this->camera_use_ < CAMERA_USES ? CAMERA_USE_KEYS[this->camera_use_] : "none");
   // The camera keeps a picture ready, taken right after the last one was fetched (up to its idle
   // interval ago, and before a light was switched on): with fresh_snapshot, that one is thrown away.
   std::shared_ptr<camera::CameraImage> image = this->take_image_(IMAGE_TIMEOUT_MS);

@@ -22,6 +22,7 @@ from ..settings import (
     ADVICE,
     BACKUP,
     BACKUP_PARTS,
+    CAMERA_USES,
     COUNTER_LIMIT,
     COUNTER_READERS,
     ESPHOME,
@@ -159,6 +160,7 @@ def ui_config() -> dict:
         "sound_limits": SOUND_LIMITS,
         "sound_levels": SOUND_LEVELS,
         "advice": ADVICE,
+        "camera_uses": CAMERA_USES,  # what an ESP32 camera of ours is set up as, most demanding first
         "esphome": {k: ESPHOME[k] for k in ("port", "username", "password_chars", "kinds", "camera_uses", "boards")},
         "sound": {
             k: SOUND[k]

@@ -1,10 +1,11 @@
 # What the camera looks at, as a choice in Home Assistant (camera-esp32-cam.yaml and
 # camera-xiao-esp32s3-sense.yaml include it): the picture size, its JPEG quality and how it is
-# exposed, set on the camera at start and when the choice changes, kept over restarts. The camera
-# starts at its largest size (camera_resolution), so each choice fits its buffers.
+# exposed, kept over restarts. VisionState asks a snapshot for what its sensor needs
+# (/snapshot.jpg?use=states|meter|movement): the camera is set up so first, stays so until something
+# asks otherwise, and this choice follows. The camera starts at its largest size
+# (camera_resolution), so each choice fits its buffers.
 #
-# - States: still things (a door, a gate) as before: 800x600, JPEG quality 10, exposure and gain
-#   automatic.
+# - States: still things (a door, a gate): 800x600, JPEG quality 10, exposure and gain automatic.
 # - Meters and displays: every pixel the sensor has (1600x1200) and less compression (8), for the
 #   digits; the subject stands still, and the flash lights it.
 # - People, cars and animals: 800x600 (the sensor bins pixels there: more light each, more pictures
@@ -19,7 +20,9 @@ esphome:
   on_boot:
     priority: -100  # after the camera started
     then:
-      - script.execute: vs_apply_camera_use
+      - lambda: |-
+          id(vs_stream).set_motion_exposure((int) id(vs_motion_exposure).state);
+          id(vs_stream).set_camera_use(id(vs_camera_use).current_option());
 
 select:
   - platform: template
@@ -35,7 +38,7 @@ select:
       - People, cars and animals
     initial_option: ${camera_use}
     on_value:
-      - script.execute: vs_apply_camera_use
+      - lambda: id(vs_stream).set_camera_use(x);
 
 number:
   - platform: template
@@ -50,39 +53,10 @@ number:
     restore_value: true
     initial_value: ${camera_motion_exposure}
     on_value:
-      - script.execute: vs_apply_camera_use
+      - lambda: id(vs_stream).set_motion_exposure((int) x);
 
-script:
-  - id: vs_apply_camera_use
-    mode: queued
-    then:
-      - lambda: |-
-          sensor_t *s = esp_camera_sensor_get();
-          if (s == nullptr) {
-            ESP_LOGW("visionstate", "No camera to set up");
-            return;
-          }
-          const std::string use = id(vs_camera_use).current_option();
-          if (use == "Meters and displays") {
-            s->set_framesize(s, FRAMESIZE_UXGA);
-            s->set_quality(s, 8);
-            s->set_exposure_ctrl(s, 1);
-            s->set_ae_level(s, 0);
-            s->set_gain_ctrl(s, 1);
-            s->set_gainceiling(s, GAINCEILING_4X);
-          } else if (use == "People, cars and animals") {
-            s->set_framesize(s, FRAMESIZE_SVGA);
-            s->set_quality(s, 10);
-            s->set_exposure_ctrl(s, 0);
-            s->set_aec_value(s, (int) id(vs_motion_exposure).state);
-            s->set_gain_ctrl(s, 1);
-            s->set_gainceiling(s, GAINCEILING_16X);
-          } else {
-            s->set_framesize(s, FRAMESIZE_SVGA);
-            s->set_quality(s, 10);
-            s->set_exposure_ctrl(s, 1);
-            s->set_ae_level(s, 0);
-            s->set_gain_ctrl(s, 1);
-            s->set_gainceiling(s, GAINCEILING_4X);
-          }
-          ESP_LOGI("visionstate", "Camera use: %s", use.c_str());
+visionstate_stream:
+  on_camera_use:
+    - lambda: |-
+        if (id(vs_camera_use).current_option() != x)
+          id(vs_camera_use).publish_state(x);

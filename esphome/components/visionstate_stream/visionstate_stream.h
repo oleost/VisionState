@@ -12,6 +12,7 @@
 #include "esphome/components/ring_buffer/ring_buffer.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
+#include "esphome/core/automation.h"
 #include "esphome/core/helpers.h"
 
 #ifdef USE_VISIONSTATE_MICROPHONE
@@ -63,6 +64,13 @@ class VisionStateStream final : public Component
 #ifdef USE_VISIONSTATE_CAMERA
   void set_camera(camera::Camera *camera) { this->camera_ = camera; }
   void on_camera_image(const std::shared_ptr<camera::CameraImage> &image) override;
+  /// What the camera looks at (packages/camera-use.yaml): "States", "Meters and displays" or
+  /// "People, cars and animals". A snapshot can ask for one too (?use=states|meter|movement).
+  void set_camera_use(const std::string &use);
+  /// The fixed exposure of "People, cars and animals" (the sensor's lines, 0-1200).
+  void set_motion_exposure(int lines);
+  /// Fired (in the main loop) when the camera use changed, with its name.
+  Trigger<std::string> *get_camera_use_trigger() { return &this->camera_use_trigger_; }
 #endif
 
   uint8_t listener_count() const { return this->listener_count_; }
@@ -98,6 +106,11 @@ class VisionStateStream final : public Component
   std::shared_ptr<camera::CameraImage> image_;
   volatile bool waiting_for_image_{false};
   std::shared_ptr<camera::CameraImage> take_image_(uint32_t timeout_ms);
+  bool apply_camera_use_(uint8_t use);
+  uint8_t camera_use_{255};  // none set yet
+  int motion_exposure_{250};
+  volatile bool camera_use_changed_{false};
+  Trigger<std::string> camera_use_trigger_;
 #endif
 };
 
