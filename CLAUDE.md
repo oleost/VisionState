@@ -137,7 +137,9 @@ itself (`__main__.py`).
   sensor stores them).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
-  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model comes with `python -m visionstate.backbones models --all`.
+  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). An ESP32 camera of
+  ours: `/esp32/snapshot.jpg` answers as the firmware does (the `X-VisionState-Camera` header,
+  `?use=` sets it up), `/esp32/state` says how it is set up. The sound model comes with `python -m visionstate.backbones models --all`.
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.

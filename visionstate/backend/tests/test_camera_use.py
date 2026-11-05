@@ -55,8 +55,9 @@ def test_the_most_demanding_kind_is_used_first():
     assert list(CAMERA_USES)[0] == "meter" and CAMERA_USE_BY_KIND["reading"] == "meter"
 
 
-def test_a_camera_of_ours_is_set_up_for_its_sensors_and_shared_by_the_most_demanding(settings, camera):  # noqa: F811
-    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+def test_a_camera_of_ours_is_set_up_for_its_sensors_and_shared_by_the_most_demanding(settings, camera, caplog):  # noqa: F811
+    caplog.set_level("INFO", logger="visionstate.sources")
+    url = f"http://visionstate:secret-pw@127.0.0.1:{camera.server_address[1]}/snapshot.jpg"  # as the guide writes it
     with TestClient(create_app(settings)) as client:
         base = {"source_type": "http", "source": url, "interval_s": 1}
         door = client.post(
@@ -87,6 +88,9 @@ def test_a_camera_of_ours_is_set_up_for_its_sensors_and_shared_by_the_most_deman
         assert not view(door)["camera"]["automatic"]
         bad = client.patch(f"/api/v1/sensors/{door}", json={"triggers": {**triggers, "camera_use": "fish"}})
         assert bad.status_code == 422
+    # Said in the log, to look into it later; never with the camera's password.
+    assert "is a VisionState ESP32" in caplog.text and "set up for Meters and displays" in caplog.text
+    assert "secret-pw" not in caplog.text
 
 
 def test_any_other_camera_is_asked_as_it_was(settings, camera):  # noqa: F811

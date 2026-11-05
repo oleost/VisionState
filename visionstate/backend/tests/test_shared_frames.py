@@ -17,7 +17,7 @@ from visionstate.engine.logic import aligned, next_check_at
 from visionstate.engine.state import LiveState, SensorConfig
 from visionstate.settings import RUNTIME, Settings
 from visionstate.shared_frames import SharedFrames
-from visionstate.sources import SourceError
+from visionstate.sources import CameraUses, SourceError
 
 from .test_triggers import config as trigger_config
 
@@ -57,6 +57,7 @@ def engine(camera):
     obj = object.__new__(ChecksMixin)
     obj.live = {}
     obj._camera_of = {}
+    obj.camera_uses = CameraUses()
     obj.benchmark_paused = False
     obj.grabber = camera
     obj.shared_frames = SharedFrames(camera.grab, camera.decode, 0.001)

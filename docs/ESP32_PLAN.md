@@ -31,9 +31,11 @@ The component `visionstate_stream` and the packages in `esphome/`: the microphon
 WAV over HTTP (16 kHz, mono, 16 bits), the camera's picture as a snapshot taken after the request,
 both behind HTTP Basic auth on one port; the *Microphone* switch, the gain, the mute pin, the
 listeners, the light while someone listens, the flash as a light, and *Camera use* (what the camera
-looks at: its picture size, quality and exposure; the guide asks, as VisionState knows what kind of
-sensor the camera is for — set per device, not per picture, since the sensor needs a few pictures
-to settle after a change, and one camera mostly looks at one thing). Compiled for both boards and all
+looks at: its picture size, quality and exposure). VisionState sets it before a sensor's pictures
+(`?use=` on the snapshot, decided with the maintainer 2026-11-05): by the sensor's kind or its own
+choice (`settings.TRIGGER_DEFAULTS["camera_use"]`), the most demanding of the sensors on one camera
+(`settings.CAMERA_USES`), so a camera shared by a meter and a door is not switched at every picture
+(a new size costs about 0.5 s). Compiled for both boards and all
 three kinds (CI: `.github/workflows/esphome.yml`). What has been tried on a board is in §5.
 
 In VisionState: the ESP32 guide (*Set one up with ESPHome*; the files are in

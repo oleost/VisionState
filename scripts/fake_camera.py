@@ -24,6 +24,9 @@ GET /camera.ts                   a camera with sound: H.264 video and the same s
 GET /play?sound=siren            plays a sound once in both: siren, dog_bark, smoke_alarm, speech (the CC0
                                  recordings of backend/tests/assets/sounds) or chime (a drawn doorbell);
                                  &gain=0.1 plays it quieter (a siren then scores about 0.6, not 0.9)
+GET /esp32/snapshot.jpg?use=meter   an ESP32 camera of ours (esphome/): the drawn garage door, with the
+                                 X-VisionState-Camera header saying how it is set up (?use=states|meter|movement
+                                 changes it, and it stays so); /esp32/state tells it as JSON
 """
 
 import io
@@ -82,6 +85,10 @@ def render() -> bytes:
     return buf.getvalue()
 
 
+# An ESP32 camera of ours (/esp32/...): how it is set up, as its firmware keeps it.
+ESP32_USES = ("states", "meter", "movement")
+ESP32 = {"use": "states"}
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # keep test output quiet
         pass
@@ -95,6 +102,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         url = urlparse(self.path)
+        if url.path in ("/esp32/snapshot.jpg", "/esp32/state"):
+            use = parse_qs(url.query).get("use", [""])[0]
+            if use in ESP32_USES:
+                ESP32["use"] = use
+            if url.path == "/esp32/state":
+                self._send(json.dumps(ESP32).encode(), "application/json")
+                return
+            body = render()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-VisionState-Camera", ESP32["use"])
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path in ("/sound.wav", "/camera.ts"):
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav" if url.path == "/sound.wav" else "video/mp2t")

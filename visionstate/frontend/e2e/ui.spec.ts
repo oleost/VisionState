@@ -2294,3 +2294,42 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   expect(page.url()).not.toContain(password); // the password never goes into the address bar
   errors.expectNone();
 });
+
+test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera follows', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // The fake camera's /esp32/ answers as our firmware does (an X-VisionState-Camera header).
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: `ESP32 door ${info.project.name}`,
+      source_type: 'http',
+      source: `${CAMERA_URL}/esp32/snapshot.jpg`,
+      interval_s: 2,
+      states: [{ name: 'Open' }, { name: 'Closed' }],
+    },
+  });
+  const id = (await made.json()).id as number;
+  const cameraUse = async () => (await (await request.get(`${CAMERA_URL}/esp32/state`)).json()).use as string;
+  try {
+    await expect
+      .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now, { timeout: 30_000 })
+      .toBe('states'); // a state sensor: still things
+    await page.goto(`#/sensors/${id}/settings`);
+    const setup = page.getByLabel('Camera set-up');
+    await expect(setup).toBeVisible();
+    await expect(setup.locator('option').first()).toHaveText('Automatic: States');
+    await setup.selectOption('meter');
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    await expect.poll(cameraUse, { timeout: 30_000 }).toBe('meter');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    // Any other camera has no such choice.
+    await page.goto(`#/sensors/${await seededSensorId(request)}/settings`);
+    await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+    await expect(page.getByLabel('Camera set-up')).toHaveCount(0);
+    errors.expectNone();
+  } finally {
+    await request.delete(`api/v1/sensors/${id}`);
+    await request.get(`${CAMERA_URL}/esp32/snapshot.jpg?use=states`); // as it was, for the next project
+  }
+});

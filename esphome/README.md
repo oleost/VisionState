@@ -26,8 +26,13 @@ In Home Assistant the device has: *Microphone* (on/off, kept over restarts), *Mi
 board's LED is on while someone listens or looks.
 
 **Camera use** says what the camera looks at, and sets its picture size, JPEG quality and exposure
-([`packages/camera-use.yaml`](packages/camera-use.yaml)); the guide asks, and it can be changed
-later:
+([`packages/camera-use.yaml`](packages/camera-use.yaml)). VisionState sets it itself: a snapshot can
+ask for one (`/snapshot.jpg?use=states`, `meter` or `movement`), the camera is set up so first
+(the pictures before it settled thrown away) and stays so, and every snapshot says how it is set
+up (an `X-VisionState-Camera` header, by which VisionState knows the camera is ours). Each sensor
+asks for what its kind needs, or what is chosen in its settings (*Camera set-up*); sensors on one
+camera share the most demanding, so it is not switched back and forth. The guide writes the use
+it starts with, and it can be changed in Home Assistant too:
 
 | Camera use | For | Picture |
 |---|---|---|
@@ -35,8 +40,7 @@ later:
 | *Meters and displays* | a water meter, a display: the digits | 1600×1200, less compression; the flash for the dark |
 | *People, cars and animals* | things that move | 800×600, a short fixed exposure (*Exposure for moving things*) with automatic gain: sharper, but darker in poor light |
 
-A camera for several sensors takes what the most demanding one needs: a meter, then things that
-move. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
+Switching takes a few pictures: a new picture size about 0.5 s, a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
 entity gives the picture the camera kept ready after the last fetch instead, as old as the time
 since then.
 

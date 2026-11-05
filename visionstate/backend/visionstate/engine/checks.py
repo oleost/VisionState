@@ -101,7 +101,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         # What an ESP32 camera of ours should be set up as for it (the grabber asks it, sources.py).
         wants = cfg.enabled and cfg.source_type == "http" and not cfg.is_sound
         use = cfg.triggers.get("camera_use") or CAMERA_USE_BY_KIND.get(cfg.kind) if wants else None
-        self.grabber.want_camera_use(cfg.id, cfg.source, use)
+        self.camera_uses.want(cfg.id, cfg.source, use)
         if cfg.enabled and not cfg.triggers["light_entity"]:
             self._camera_of[cfg.id] = key
         else:

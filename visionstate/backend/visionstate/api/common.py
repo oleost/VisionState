@@ -696,7 +696,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         paces.append(FACES["burst_interval_s"])
     pace = min(paces) if paces else None
     # An ESP32 camera of ours (esphome/): how it is set up now, and what this sensor asks of it.
-    ours = rt.grabber.ours.get(sensor.source) if sensor.source_type == "http" else None
+    ours = rt.camera_uses.ours.get(sensor.source) if sensor.source_type == "http" else None
     camera = None
     if ours is not None:
         wanted = merge_triggers(sensor.triggers)["camera_use"]
@@ -705,7 +705,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "wanted": wanted or CAMERA_USE_BY_KIND.get(sensor.kind),
             "automatic": not wanted,
             "by_kind": CAMERA_USE_BY_KIND.get(sensor.kind),
-            "asked": rt.grabber.camera_use(sensor.source),  # the most demanding of the sensors on it
+            "asked": rt.camera_uses.use_for(sensor.source),  # the most demanding of the sensors on it
         }
     return {
         "id": sensor.id,

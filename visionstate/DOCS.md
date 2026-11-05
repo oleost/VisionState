@@ -545,7 +545,10 @@ guide for an ESP32 DevKit with an INMP441 microphone, an ESP32-CAM with its came
 microphone too, if you like), or a Seeed Studio XIAO ESP32-S3 Sense, whose camera and microphone
 are on the board. For a camera it asks what it looks at — still things, a meter or display, or
 things that move — which sets the camera's picture size, compression and exposure (*Camera use*
-on the device in Home Assistant, to change later). It shows the wiring and gives the device's file to download (the
+on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
+pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
+still things — or as chosen under *Camera set-up* in the sensor's settings, shown only for such a
+camera; sensors on one camera share the most demanding. It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
