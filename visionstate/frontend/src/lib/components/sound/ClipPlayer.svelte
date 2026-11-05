@@ -1,9 +1,17 @@
 <script lang="ts">
   // A sound sensor's clip: a video with its sound when the camera had video, else the sound with a
   // player sized for a thumb. Nothing loads or plays until it is tapped (phones play sound only then).
+  // Once tapped, a new `src` plays at once in the same element: Review goes from one clip to the
+  // next without another tap (a phone lets an element it was allowed to play play again, never a
+  // new one). `loop`: it plays over and over until the next one, or until it is paused.
   import Icon from '../Icon.svelte';
 
-  let { src, video = false, label = 'Play the clip' }: { src: string; video?: boolean; label?: string } = $props();
+  let {
+    src,
+    video = false,
+    label = 'Play the clip',
+    loop = false,
+  }: { src: string; video?: boolean; label?: string; loop?: boolean } = $props();
 
   let started = $state(false);
 </script>
@@ -11,7 +19,7 @@
 {#if video}
   {#if started}
     <!-- svelte-ignore a11y_media_has_caption -->
-    <video class="clip" {src} controls autoplay playsinline preload="auto"></video>
+    <video class="clip" {src} {loop} controls autoplay playsinline preload="auto"></video>
   {:else}
     <button type="button" class="poster" onclick={() => (started = true)} aria-label={label}>
       <span class="play"><Icon name="play" size={22} /></span>
@@ -19,7 +27,7 @@
     </button>
   {/if}
 {:else if started}
-  <audio class="sound" {src} controls autoplay preload="auto"></audio>
+  <audio class="sound" {src} {loop} controls autoplay preload="auto"></audio>
 {:else}
   <button type="button" class="btn listen" onclick={() => (started = true)} aria-label={label}>
     <Icon name="sound" size={16} /> Listen

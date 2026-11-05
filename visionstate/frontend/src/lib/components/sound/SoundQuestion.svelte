@@ -45,9 +45,9 @@
 </script>
 
 <div class="col">
+  <!-- Not keyed: once a clip is played, the next question's plays at once, over and over (ClipPlayer). -->
+  <ClipPlayer src={api.historyClipUrl(item.id)} video={item.clip_video} loop />
   {#key item.id}
-    <ClipPlayer src={api.historyClipUrl(item.id)} video={item.clip_video} />
-  {/key}
   <ReviewAnswers
     {asked}
     choices={own}
@@ -67,4 +67,5 @@
       {/if}
     {/snippet}
   </ReviewAnswers>
+  {/key}
 </div>
