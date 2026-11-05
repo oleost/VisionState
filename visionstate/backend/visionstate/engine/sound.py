@@ -193,8 +193,9 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         keys = cfg.sound_keys
         custom = {c["key"] for c in cfg.sound["custom"]}
         head = self.sound_heads.get(cfg.id)
-        # hop -> its scores, embedding, and the built-in sounds held back by a clip that is not them
-        analysed: dict[int, tuple[dict[str, float], np.ndarray, set[str]]] = {}
+        # hop -> its scores, embedding, the built-in sounds held back by a clip that is not them, and
+        # the scores almost heard is decided by (the model's own)
+        analysed: dict[int, tuple[dict[str, float], np.ndarray, set[str], dict[str, float]]] = {}
         if loud:
             # The new samples and a window's length before them (fewer when the buffer has no more).
             audio = stream.segment(max(0, end - len(new) - size), end)
@@ -212,11 +213,15 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 when = time.time() - (end - ends[j]) / rate
                 scores = dict.fromkeys(keys, 0.0)
                 scores.update(model.sound_scores(raw[n], keys))
+                # Almost heard follows the model's own score: whether its threshold is too high. The
+                # household's clips decide whether a sound is heard, but a head trained on a few clips
+                # is unsure about the room's own noise, and that lifted unsureness is not "almost".
+                near = dict(scores)
                 probs = own[n] if own is not None else {}
                 held: set[str] = set()
                 for key in keys:
                     if key in custom:
-                        scores[key] = probs.get(key, 0.0)
+                        scores[key] = near[key] = probs.get(key, 0.0)
                     elif key in probs or sounds.not_label(key) in probs:  # taught with the household's clips
                         yes, no = probs.get(key), probs.get(sounds.not_label(key))
                         threshold = self.sound_threshold(cfg, key)
@@ -229,7 +234,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                             track.held_at = when
                             if not holding:  # once per sound, as it is heard once
                                 track.held_count += 1
-                analysed[j] = (scores, embeddings[n], held)
+                analysed[j] = (scores, embeddings[n], held, near)
         newest = len(ends) - 1
         heard.analysed = newest in analysed
         heard.scores = analysed[newest][0] if heard.analysed else {}
@@ -237,6 +242,7 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         for j, at in enumerate(ends):
             scores = analysed[j][0] if j in analysed else dict.fromkeys(keys, 0.0)
             held = analysed[j][2] if j in analysed else set()
+            near = analysed[j][3] if j in analysed else scores
             when = now - (end - at) / rate  # a hop that came in a burst: as long ago as it is in the stream
             for key in keys:
                 track = heard.tracks.setdefault(key, SoundTrack())
@@ -244,11 +250,11 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 threshold = self.sound_threshold(cfg, key)
                 if hear(track, scores[key], threshold, when, cfg.sound["clear_after_s"]):
                     await self._sound_changed(cfg, stream, heard, key, track, levels[j], at)
-                await self._near(cfg, stream, heard, key, track, scores[key], threshold, when, at, levels[j])
+                await self._near(cfg, stream, heard, key, track, near[key], threshold, when, at, levels[j])
         for key in [k for k in heard.tracks if k not in keys]:
             del heard.tracks[key]  # no longer listened for
         if loud and (custom or head is not None) and cfg.sound["learn_room"]:
-            scores, embedding, _ = analysed[loud[-1]]
+            scores, embedding, _, _ = analysed[loud[-1]]
             self._keep_room(cfg, heard, embedding, scores)
 
     async def _near(
@@ -284,6 +290,8 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         now = time.time()
         if not rules["enabled"] or now - live.last_flag < rules["cooldown_s"]:
             return
+        if await asyncio.to_thread(self._near_answered_no, cfg.id, key):
+            return
         live.last_flag = now
         best = shadow.best
         row = await asyncio.to_thread(self._record_sound, cfg.id, key, False, best, level, "near")
@@ -298,6 +306,22 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 "end": near["start"] + int(SOUND["clip_after_s"] * stream.rate),
             }
         )
+
+    def _near_answered_no(self, sensor_id: int, key: str) -> bool:
+        """Whether the last SOUND["near_quiet_after"] answers about ``key`` almost heard were all
+        that it was not this sound: then it is not asked about almost heard any more."""
+        wanted = SOUND["near_quiet_after"]
+        with self.db.session() as s:
+            rows = s.scalars(
+                select(Prediction)
+                .where(
+                    Prediction.sensor_id == sensor_id, Prediction.state_key == key, Prediction.published_key == "near"
+                )
+                .order_by(Prediction.id.desc())
+                .limit(SOUND["near_quiet_rows"])
+            )
+            answers = [a for r in rows if (a := (r.probs or {}).get("answer")) is not None][:wanted]
+        return len(answers) >= wanted and all(a != "yes" for a in answers)
 
     def sound_threshold(self, cfg: SensorConfig, key: str) -> float:
         """The score a sound must reach: the sensor's own, else the model's (own sounds: SOUND)."""

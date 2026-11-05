@@ -2016,8 +2016,22 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
   // answer yes to it, and it leaves the queue.
   const before = await waiting();
+  // Played once, the clip goes round until the next question, whose clip then plays by itself in
+  // the same player (a phone lets an element it played play again, never a new one).
+  await press(page.getByRole('button', { name: 'Play the clip' }), info);
+  const media = page.locator('section.main').locator('video, audio').first();
+  await expect(media).toHaveAttribute('loop', '');
+  const player = await media.elementHandle();
+  const firstSrc = await media.getAttribute('src');
   await press(page.getByRole('button', { name: /^Yes, / }), info);
   await expect.poll(waiting).toBe(before - 1);
+  if (before > 1 && (await page.getByText('Was this').count())) {
+    await expect.poll(() => media.getAttribute('src')).not.toBe(firstSrc);
+    // The same element, unless the next clip is of the other kind (sound only, or with video).
+    if (await player!.evaluate((el) => el.isConnected)) {
+      await expect.poll(() => player!.evaluate((el) => !(el as HTMLMediaElement).paused)).toBe(true);
+    }
+  }
   // The answer taught the clip to that built-in sound, which then hears it surely and asks no more:
   // forget it, so the next project is asked too.
   const taught = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();

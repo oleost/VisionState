@@ -1,102 +1,94 @@
 # Changelog
 
-## 0.14.0b5
+## 0.14.0
 
-**Record an own sound straight from the sensor's microphone.**
+**Teach sounds as your own microphone hears them, get a threshold suggested from your answers, and
+see how fast the AI is on your machine.**
 
-- On **Own sounds**, *Record* now sits beside *Add recordings*: tap it, make the sound (shut the
-  door, ring the bell), and tap *Stop*. No phone recording to make and upload first.
-- A stream comes a few seconds late, more so a camera heard through Home Assistant, so the
-  recording goes on for a few seconds after *Stop*. Then trim the clip: a waveform with a frame
-  around the part kept, at first what came between *Start* and *Stop*. Drag either end, or the
-  whole frame, with a finger or the mouse, play only the part kept, and *Teach* it.
-- As in every clip, seconds with someone talking are silenced before you hear or keep it.
+### New
 
-**Teach the built-in sounds with clips of your own.**
+- **Teach the built-in sounds with clips of your own.** Every built-in sound a sensor listens for
+  — a siren, a dog, a door — now has a card on **Own sounds** with *It is this* and *It is not
+  this*: record clips there, add recordings, or teach a clip from the History. Clips of it make it
+  hear the sound as your microphone hears it, also when the AI alone was not sure enough. A clip of
+  what it is not — a cupboard door, a siren on TV — holds the sound back when something is clearly
+  like that clip; the Live tab shows *Held back*. It stays the same sensor in Home Assistant.
+  - Answers in Review now teach too: *yes* adds the clip to the sound, *no* to what it is not.
+  - **Almost heard:** with clips on, a sound the AI itself almost heard is asked about in Review
+    too. A *yes* teaches the clip, and says the threshold may be too high. After five *no* in a
+    row about a sound almost heard, it is not asked about almost heard any more: just below the
+    threshold is then mostly the room's own noise.
+  - **Review plays one sound after the other:** tap a clip once, and it plays over and over until
+    you answer; the next question's clip then plays by itself (on a phone too).
+  - Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
+    instead of only the loudest, so one recording teaches more.
+- **Record an own sound straight from the sensor's microphone.** On **Own sounds**, *Record* sits
+  beside *Add recordings*: tap it, make the sound (shut the door, ring the bell), and tap *Stop*.
+  The recording goes on for a few seconds after *Stop*, since a stream comes a little late; then
+  trim the clip on its waveform (drag either end, or the whole frame, with a finger or the mouse),
+  play the part kept, and *Teach* it. As in every clip, seconds with someone talking are silenced
+  before you hear or keep it.
+- **A threshold suggested from your answers, on every kind of sensor.** **From your answers**, at
+  the top of a sensor's **Settings**, shows how your right and wrong answers in Review fare at each
+  threshold the sensor decides by: a state sensor's, a reading sensor's, an object sensor's line
+  for your own labels and for faces, and each sound's. It suggests one that lets more of the right
+  ones and fewer of the wrong ones through, and *Use* sets it. Nothing changes by itself. When no
+  threshold tells them apart, it says so: then teaching does. An answer counts while what it
+  taught is there: forget a clip, or delete a taught box or face, because it was wrong or is no
+  longer wanted, and its answer no longer counts either. How does it work for you in daily use?
+  Tell me in [#74](https://github.com/oleost/VisionState/issues/74).
+- **Sound sensors can listen to a camera in Home Assistant.** The sound source is picked like the
+  camera of the other sensors: your cameras in Home Assistant first, a stream URL (RTSP, go2rtc, an
+  ESP32 microphone) below. A camera picked there is heard through Home Assistant's own stream of
+  it, with no address or password to type, but several seconds later than its RTSP stream (about
+  10 on the doorbell it was tried on). When a sound must be known at once, or when the wizard hears
+  nothing (Home Assistant passes on only some kinds of sound), use the camera's RTSP stream.
+- **Speed test** (#71): **Settings → Speed test** measures AI models with the camera or microphone
+  of one of your sensors: the time of a whole check and its parts (camera, decoding, AI), the
+  memory each model takes, and whether it keeps up with the sensor's interval. Models you do not
+  have are downloaded for the test and deleted afterwards, unless you tick *Keep the downloaded
+  models*. All sensors pause while it runs and go on by themselves afterwards. *Download report*
+  gives the numbers as a text file to share, without names or addresses.
+- **Choose how many CPU threads the AI uses** (#71, thanks to @ecdlguy): **Settings → AI model →
+  Threads per AI model**. *Automatic* uses one per CPU core, as before. On a virtual machine or NAS
+  that shares its CPU with other work, fewer threads can be faster: on a NAS VM with 4 vCPUs and
+  one guaranteed core, a check took 1.7 s where 2 vCPUs took 1 s. The change applies at once, and
+  the speed test shows whether it helped.
 
-- Every built-in sound a sensor listens for — a siren, a dog, a door — now has a card on **Own
-  sounds** with *It is this* and *It is not this*: record clips there, add recordings, or teach a
-  clip from the History.
-- Clips of it make it hear the sound as your microphone hears it, also when the AI alone was not
-  sure enough. A clip of what it is not — a cupboard door, a siren on TV — holds the sound back when
-  something is clearly like that clip; the Live tab shows *Held back*. It stays the same sensor in
-  Home Assistant.
-- Answers in Review now teach too: *yes* adds the clip to the sound, *no* to what it is not.
-- **Almost heard:** with clips on, a sound that almost reached its threshold is asked about in
-  Review too. A *yes* teaches the clip, and says the threshold may be too high.
-- Every clip taught to a sound, your own sounds' too, is now learned from all its loud moments
-  instead of only the loudest, so one recording teaches more.
+### Changed
 
-**A threshold suggested from your answers — on every kind of sensor.**
+- **Sensors on the same camera share their pictures** (#63, thanks to @Docter77). Sensors on the
+  exact same camera or address take one picture together, and their regular checks fall on the
+  same moments (a sensor every 30 s and one every 60 s meet every minute). Each still checks its
+  own region with its own model. The camera gets far fewer requests: with four sensors on a
+  camera's RTSP stream, 6 connections a minute instead of 17. A check can come a little sooner
+  than its interval after a trigger, never later. The CPU has short, higher peaks and its average
+  use is a little higher; the memory is a little lower. A sensor with a light, or alone on its
+  camera, takes its pictures by itself as before.
+- **Clips with the camera's video, and all of their sound.** A clip's video now starts at the
+  camera's last key frame before the sound, so a camera that sends a key frame only every few
+  seconds no longer gives some clips sound only, and a clip with video keeps the sound from before
+  its first key frame. The video may be silent for a moment before the sound begins.
+- **The AI's threads still sleep while they wait for work** instead of keeping the CPU busy.
+  Measured again: keeping it busy was at most about 10 % faster, for up to three times the CPU, and
+  twice as slow when there were more threads than free cores.
 
-- **From your answers**, at the top of a sensor's **Settings**, shows how your right and wrong
-  answers in Review fare at each threshold the sensor decides by: a state sensor's, a reading
-  sensor's, an object sensor's line for your own labels and for faces, and each sound's.
-- It suggests one that lets more of the right ones and fewer of the wrong ones through — lower
-  when right answers fall just below, higher when wrong ones get through — and *Use* sets it.
-  Nothing changes by itself. When no threshold tells them apart, it says so: then teaching does.
+### Fixed
+
+- **No more telemetry to Microsoft.** ONNX Runtime, the library that runs the AI models, sends
+  telemetry to Microsoft by default (an ID for the install and details of the machine, not camera
+  pictures or sound), and VisionState had not switched that off. It is off now, and every release
+  is checked beforehand for any connection beyond your cameras, Home Assistant and MQTT. Thanks to
+  Immich, whose fix (immich-app/immich#32956) brought it to light.
+
+### After this update
+
 - Answers about own labels and faces given before this version were not kept as right or wrong,
-  so those count from now on.
-- **Help wanted:** how does it work for you in daily use? Tell me in
-  [#74](https://github.com/oleost/VisionState/issues/74).
+  so the suggested thresholds for those count from now on.
 
-## 0.14.0b4
+### Tested
 
-**Choose how many CPU threads the AI uses (#71, thanks to @ecdlguy).**
-
-- **Settings → AI model → Threads per AI model**: *Automatic* uses one per CPU core, as before. On a
-  virtual machine or NAS that shares its CPU with other work, fewer threads can be faster: on a NAS
-  VM with 4 vCPUs and one guaranteed core, a check took 1.7 s where 2 vCPUs took 1 s. The change
-  applies at once, without a restart, and the speed test shows whether it helped.
-- The speed test now shows the threads each model ran with and the CPU features that make AI faster
-  (such as AVX2, or ASIMD on ARM), also in the downloaded report, so results from different machines
-  compare.
-- The AI's threads still sleep while they wait for work instead of keeping the CPU busy. Measured
-  again: keeping it busy was at most about 10 % faster, for up to three times the CPU, and twice as
-  slow when there were more threads than free cores.
-
-## 0.14.0b3
-
-**Sound sensors can listen to a camera in Home Assistant.**
-
-- The sound source is now picked like the camera of the other sensors: your cameras in Home
-  Assistant first, a stream URL (RTSP, go2rtc, an ESP32 microphone) below. Cameras without a stream
-  in Home Assistant (snapshots only) are greyed out.
-- A camera picked there is heard through Home Assistant's own stream of it: no address or password
-  to type. It hears the same as the camera's RTSP stream, but several seconds later (about 10 on the
-  doorbell it was tried on), and it takes a little while to start. When a sound must be known at
-  once, or when the wizard hears nothing (Home Assistant passes on only some kinds of sound), use
-  the camera's RTSP stream.
-- RTSP from a real camera has now been tried too: a Reolink doorbell, with speech, a dog and a siren.
-
-## 0.14.0b2
-
-**Sensors on the same camera share their pictures (#63, thanks to @Docter77).**
-
-- Sensors on the exact same camera or address now take one picture together, and their regular
-  checks fall on the same moments (a sensor every 30 s and one every 60 s meet every minute). Each
-  still checks its own region with its own model.
-- The camera gets far fewer requests: with four sensors on a camera's RTSP stream, 6 connections a
-  minute instead of 17. A doorbell camera through Home Assistant no longer made checks wait up to
-  10 s for a picture, and checks take a steadier time.
-- A check can come a little sooner than its interval after a trigger, never later. The work of the
-  sensors on one camera now comes at the same moment, so the app's CPU has short, higher peaks and
-  its average use is a little higher; its memory is a little lower.
-- A sensor with a light, or alone on its camera, takes its pictures by itself as before.
-
-## 0.14.0b1
-
-**Speed test (#71): see how fast each AI model is on your own machine.**
-
-- **Settings → Speed test** measures AI models with the camera or microphone of one of your sensors:
-  the time of a whole check and its parts (camera, decoding, AI), the memory each model takes, and
-  whether it keeps up with the sensor's interval. Test the model in use, or all of them to compare.
-- Models you do not have are downloaded for the test and deleted again afterwards, unless you tick
-  *Keep the downloaded models*. Models you already had stay. A model that does not fit in the free
-  memory is skipped.
-- All sensors are paused while the test runs. They keep their last values in Home Assistant and go on
-  by themselves afterwards.
-- *Download report* gives the numbers as a text file to share, without names or addresses.
+- RTSP sound from a real camera: a Reolink doorbell, with speech, a dog and a siren.
 
 ## 0.13.1
 

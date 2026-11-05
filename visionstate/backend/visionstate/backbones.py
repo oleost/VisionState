@@ -233,6 +233,7 @@ def cpu_session(model_path: Path):
     """
     import onnxruntime as ort
 
+    ort.disable_telemetry_events()  # besides ORT_DISABLE_TELEMETRY (visionstate/__init__.py)
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
     options.add_session_config_entry("session.intra_op.allow_spinning", "0")

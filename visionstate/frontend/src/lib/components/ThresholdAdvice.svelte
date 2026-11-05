@@ -46,7 +46,10 @@
         </button>
       </div>
     {:else if !advice.separable && total >= 2 && advice.yes && advice.no}
-      <span class="xsmall muted">No threshold keeps every “yes” and no “no”.{hint ? ` ${hint}` : ''}</span>
+      <span class="xsmall muted">
+        {pct(advice.current.threshold)} is as good as a threshold gets for these answers, but none keeps every “yes” and no
+        “no”.{hint ? ` ${hint}` : ''}
+      </span>
     {:else}
       <span class="xsmall muted">The threshold suits your answers.</span>
     {/if}

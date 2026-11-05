@@ -561,13 +561,21 @@ class AudioStream:
     def _mux(self, template, samples: np.ndarray, begin: float, end: float) -> bytes | None:  # noqa: ANN001
         import av
 
-        key = next((p.time for p in self._packets if p.key and begin <= p.time < end - 1.0), None)
-        if key is None:
-            return None
+        # The last key frame before the sound, so all of it is in the clip (the video silent until it
+        # begins); else the first one after it began, and the sound from there.
+        before = [p.time for p in self._packets if p.key and begin - SOUND["video_lead_max_s"] <= p.time <= begin]
+        if before:
+            key = before[-1]
+            # Silence for the video's seconds before the sound (an AAC frame's start time is not kept).
+            sound = np.concatenate([np.zeros(int(round((begin - key) * self.rate)), np.float32), samples])
+        else:
+            key = next((p.time for p in self._packets if p.key and begin < p.time < end - 1.0), None)
+            if key is None:
+                return None
+            sound = samples[int((key - begin) * self.rate) :]
         chosen = sorted(
             (p for p in self._packets if key <= p.time <= end), key=lambda p: p.dts if p.dts is not None else p.pts
         )
-        sound = samples[int((key - begin) * self.rate) :]
         base = min(p.pts for p in chosen)
         buf = io.BytesIO()
         with av.open(

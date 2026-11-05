@@ -613,9 +613,13 @@ is not — a cupboard door, a siren on TV — holds the built-in sound back when
 like that clip; the Live tab then shows *Held back*, and the card how often. It stays the same
 sensor in Home Assistant.
 
-**Almost heard.** With clips on, a sound that almost reached its threshold, but was not heard,
-is asked about in Review too (*Almost heard*); a *yes* teaches its clip and tells the sensor its
-threshold may be too high (below).
+**Almost heard.** With clips on, a sound the AI itself almost heard — its own score nearly at the
+threshold — but that was not heard, is asked about in Review too (*Almost heard*). What clips you
+taught make of a sound does not count here: a few clips that sound like the room make it unsure
+about all of the room's noise, and that is not "almost"; a *yes* teaches its clip and tells the sensor its
+threshold may be too high (below). After five *no* in a row about a sound almost heard, it is not
+asked about almost heard any more: the threshold is not too high, and just below it is mostly the
+room's own noise. A *yes* (or forgetting a clip that taught a *no*) lets it ask again.
 
 **Review.** With clips on, a sound that was only just heard (or almost) is asked about in Review: listen (or
 watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer
@@ -739,7 +743,8 @@ suggests one that lets more of the right ones and fewer of the wrong ones throug
 just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
 (nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
 — label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
-**Own sounds** too.
+**Own sounds** too. An answer counts while what it taught is there: delete the frame, box, face
+or clip it taught (because it was wrong, or is no longer wanted) and the answer no longer counts.
 
 ## History
 

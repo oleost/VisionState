@@ -333,9 +333,13 @@ SOUND = {
     "background_percentile": 20,
     "floor_db": -70.0,
     "buffer_s": 30.0,  # audio kept in memory (the window, a clip's seconds before, the Live view)
-    # A camera's video kept for clips with video (undecoded packets: about 4 MB at 2 Mbit/s): a clip's
-    # seconds before and after, the window, and a key frame interval to spare.
-    "video_buffer_s": 15.0,
+    # A camera's video kept for clips with video (undecoded packets: about 6 MB at 2 Mbit/s): a clip's
+    # seconds before and after, the window, and video_lead_max_s before them.
+    "video_buffer_s": 25.0,
+    # A clip's video starts at the camera's last key frame before its sound (silent until the sound
+    # begins), at most this long before it; without one, at the first key frame after the sound
+    # began (the sound before it then left out). Cameras send a key frame every 1-10 s.
+    "video_lead_max_s": 10.0,
     "video_wait_s": 10.0,  # how long a clip waits for its video (else it is sound only)
     "video_jump_s": 2.0,  # video times going back this far: the camera started its clock again
     "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
@@ -369,6 +373,11 @@ SOUND = {
     # of_windows windows, and it was not heard — is asked about too, as the review rules allow and
     # with its clip (a history row "near"): a "yes" there is what can suggest a lower threshold.
     "near_share": 0.6,
+    # ...but no more once the last this many answers about it almost heard were all "no" (not
+    # this sound): the threshold is not too high, and below it is mostly the room's own noise. A
+    # "yes" there, or forgetting a clip that taught a "no", lets it ask again.
+    "near_quiet_after": 5,
+    "near_quiet_rows": 200,  # the newest "almost heard" rows of a sound those answers are looked for in
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
     # A taught clip is learned from its loud windows, not only its loudest: every teach_hop_s, the

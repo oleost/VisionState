@@ -547,6 +547,23 @@ def test_a_built_in_sound_learns_from_clips_and_answers_and_what_it_is_not(setti
             built = {b["key"]: b for b in taught()["builtin"]}
             assert (built["doorbell"]["clips"], built["doorbell"]["not_clips"]) == (6, 0)
             assert built["doorbell"]["advice"]["yes"] == 1 and built["doorbell"]["advice"]["no"] == 0
+            # Forgetting the clip an answer taught takes the answer back: it was wrong, or is no longer wanted.
+            newest = taught()["clips"][0]["id"]
+            assert client.delete(f"/api/v1/sound-clips/{newest}").status_code == 204
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["clips"] == 5 and built["doorbell"]["advice"]["yes"] == 0
+            # Taught from the History, the answer is linked to its clip too; and an answer whose clip
+            # went another way (deleted before answers were linked to clips) no longer counts either.
+            made = client.post(
+                f"/api/v1/sensors/{sid}/sounds/teach", json={"history_id": row["id"], "label": "doorbell"}
+            )
+            assert made.status_code == 201
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 1
+            with client.app.state.runtime.db.session() as s:
+                from visionstate.db import Sample as SampleRow
+
+                s.delete(s.get(SampleRow, made.json()["id"]))
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 0
 
             # A clip forgotten while it is embedded is left out, not a failed training.
             from visionstate.db import Embedding, Sample
@@ -616,8 +633,11 @@ def test_a_sound_almost_heard_is_asked_about_and_a_yes_suggests_a_lower_threshol
 
 
 @requires_sound
-def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
-    server = SoundServer(speed=1.0, video=True)
+# A key frame every 2 s, and every 9 s (some cameras; HA's stream of a camera): the clip has the
+# camera's video either way, with all of its sound.
+@pytest.mark.parametrize("key_every_s", [2.0, 9.0])
+def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick, key_every_s):  # noqa: F811
+    server = SoundServer(speed=1.0, video=True, key_every_s=key_every_s)
     try:
         with TestClient(create_app(settings)) as client:
             body = {"sounds": ["siren"], "clips": True, "clear_after_s": 2}
@@ -650,7 +670,12 @@ def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noq
                 kinds = sorted(s.type for s in container.streams)
                 frames = sum(1 for _ in container.decode(video=0))
             assert kinds == ["audio", "video"] and frames >= 10  # at least a second of the camera
-            assert 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= 6.0
+            # All of the clip's sound, from before the sound began to after it, in step with the
+            # video: as long as it (silent at first when the video starts at a key frame before it).
+            clip_s = SOUND["clip_before_s"] + SOUND["window_s"] + SOUND["clip_after_s"]
+            heard_s = len(sounds.decode_audio(clip.content, RATE)) / RATE
+            assert clip_s - 1.0 <= heard_s <= clip_s + SOUND["video_lead_max_s"]
+            assert abs(heard_s - frames / 10) <= 0.6  # the test camera sends 10 frames a second
             # Sound only, when asked: the next clip has no video.
             client.patch(f"/api/v1/sensors/{sid}", json={"sound": {**body, "video": False}})
             assert wait_for(lambda: not next(s for s in view()["sound"]["live"] if s["key"] == "siren")["on"])
@@ -1038,5 +1063,89 @@ def test_a_sound_in_the_middle_of_a_burst_is_heard(settings):  # noqa: F811
                     break
             sound = view()["sound"]
             assert found, (sound["line"], sound["stream"], [round(x) for x in sound["levels"]], view()["live"])
+    finally:
+        server.close()
+
+
+def test_almost_heard_is_not_asked_about_after_five_answers_that_it_was_not(settings):  # noqa: F811
+    from visionstate.db import Prediction as Row
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        body = {
+            "name": "Yard",
+            "kind": "sound",
+            "source_type": "rtsp",
+            "source": "rtsp://127.0.0.1:9/x",
+            "enabled": False,
+        }
+        sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["dog_bark"], "clips": True}}).json()[
+            "id"
+        ]
+
+        def answer(value: str | None, key: str = "dog_bark", kind: str = "near") -> None:
+            with rt.db.session() as s:
+                probs = {} if value is None else {"answer": value}
+                s.add(
+                    Row(sensor_id=sid, is_change=False, state_key=key, published_key=kind, confidence=0.1, probs=probs)
+                )
+
+        quiet = SOUND["near_quiet_after"]
+        for _ in range(quiet - 1):
+            answer("no")
+        assert not rt._near_answered_no(sid, "dog_bark")  # one "no" short
+        answer(None)  # not answered (yet): does not count either way
+        answer("no", kind="on")  # an answer about it heard, not almost
+        answer("no", key="siren")  # about another sound
+        assert not rt._near_answered_no(sid, "dog_bark")
+        answer("our_bell")  # it was one of the own sounds: not this one either
+        assert rt._near_answered_no(sid, "dog_bark")
+        answer("yes")  # a yes asks again
+        assert not rt._near_answered_no(sid, "dog_bark")
+
+
+@requires_sound
+def test_almost_heard_follows_the_model_not_a_head_unsure_about_the_room(settings, quick, monkeypatch):  # noqa: F811
+    # A head taught a few clips that sound like the room is unsure about the room's noise: 0.7
+    # for a dog, lifted to just below the dog's threshold. That is not "almost heard" (found on
+    # a real doorbell: the model said 0 % to every clip asked about, the head about 9 %).
+    monkeypatch.setitem(ADVICE, "min_answers", 1)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            rt = client.app.state.runtime
+
+            class Unsure:
+                def predict(self, vectors):  # noqa: ANN001, ANN202
+                    return [{"dog_bark": 0.7} for _ in vectors]
+
+            async def unsure_head(cfg):  # noqa: ANN001, ANN202
+                rt.sound_heads[cfg.id] = Unsure()
+
+            monkeypatch.setattr(rt, "_train_sound_head", unsure_head)
+            body = {"name": "Yard", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["dog_bark"], "clips": True, "clear_after_s": 2}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound, "review": {"cooldown_s": 0}}).json()[
+                "id"
+            ]
+
+            def dog() -> dict:
+                live = client.get(f"/api/v1/sensors/{sid}").json()["sound"]["live"]
+                return next(s for s in live if s["key"] == "dog_bark")
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            rt.sound_heads[sid] = Unsure()  # as if taught (a head is trained when clips are)
+            # Something loud enough to be analysed, that the model does not hear as a dog: the head's
+            # lifted score is what is shown, just below the threshold...
+            server.play(np.concatenate([chime(seed=i) for i in range(6)]))
+            assert wait_for(lambda: dog()["score"] > 0.6 * dog()["threshold"], timeout=20)
+            assert not dog()["on"]
+
+            # ...and it is not asked about, in the time a question and its clip would have taken.
+            def near() -> list:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": "near"}).json()["items"]
+
+            assert not wait_for(lambda: bool(near()), timeout=25)
+            assert client.get("/api/v1/review", params={"sensor": sid}).json()["total"] == 0
     finally:
         server.close()

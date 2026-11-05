@@ -318,16 +318,15 @@
         </div>
       {:else if current && isSound(current)}
         {@render header(current)}
-        {#key current.id}
-          <SoundQuestion
-            item={current}
-            given={current.id in given ? given[current.id] : undefined}
-            onanswer={(text, answer) => {
-              if (current) given[current.id] = answer;
-              answered(text);
-            }}
-          />
-        {/key}
+        <!-- One SoundQuestion for every sound in a row, so its player goes on to the next clip. -->
+        <SoundQuestion
+          item={current}
+          given={current.id in given ? given[current.id] : undefined}
+          onanswer={(text, answer) => {
+            if (current) given[current.id] = answer;
+            answered(text);
+          }}
+        />
       {:else if current && question(current)?.face}
         {@render header(current)}
         {#key current.id}

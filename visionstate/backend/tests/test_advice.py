@@ -104,7 +104,20 @@ def test_own_labels_are_told_from_the_answers_to_is_this_ours(settings):  # noqa
                 probs={"ask": ask, "answer": "yes"},
                 reviewed=True,
             )
+        # An answer whose taught box has been deleted since (wrong, or no longer wanted) no longer counts.
+        ask = {"label": "our_car", "similarity": 0.9, "box": [0, 0, 1, 1], "detected": "car"}
+        add(
+            rt,
+            sid,
+            state_key="our_car",
+            published_key="ask",
+            confidence=0.9,
+            probs={"ask": ask, "answer": "no"},
+            reviewed=True,
+            sample_id=987654,
+        )
         found = item(client, sid, "teach:match_similarity")
+        assert (found["advice"]["yes"], found["advice"]["no"]) == (3, 0)
         assert found["advice"]["current"]["yes_passed"] == 0  # asked about: below "recognised"
         suggested = found["advice"]["suggested"]
         assert suggested is not None and suggested["threshold"] == 0.82 and suggested["yes_passed"] == 3
