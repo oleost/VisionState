@@ -62,7 +62,7 @@ API as `request.app.state.runtime`.
 | `storage.py` | Image files on disk: training samples, history frames, sound clips, thumbnails; written whole or not at all |
 | `engine/` | The runtime — see below |
 | `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips, uploaded recordings and recordings from the sensor's stream: start, stop, trim, teach), `cameras.py` (camera and entity lists, the light, previews), `benchmark.py` (the speed test), `review.py` (review queue and answers), `advice.py` (every threshold of a sensor with a suggestion from the answers, and setting one), `imports.py` (import), `backup.py` (backup of everything, restore), `esphome.py` (the ESP32 guide: the device's file, the ESPHome devices Home Assistant has and has found, checking a device), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
-| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video; a Home Assistant camera's own stream through `HomeAssistant.stream_address`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
+| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video; a Home Assistant camera's own stream through `HomeAssistant.stream_address`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page); `CameraUses` (on the runtime): the ESP32 cameras of ours (known by the `X-VisionState-Camera` header of their snapshots) and what their sensors want them set up as (`triggers.camera_use`, or by kind: `settings.CAMERA_USE_BY_KIND`), which the grabber asks for with `?use=` — the most demanding of the sensors on one camera; the checks tell it each sensor's wish (`engine/checks.py` `_note_camera`) |
 | `shared_frames.py` | Sensors on the same camera asking at the same moment: one picture, taken after all of them asked, decoded once. Nothing kept afterwards; a sensor with a light or alone on its camera does not use it |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`), a camera's own stream (`camera_stream`), devices Home Assistant found and are not added yet (`discovered`: the ESP32 guide) |
@@ -224,6 +224,14 @@ label in `HISTORY_EVENTS` in `lib/ui.ts`.
 inputs), with its measured footprint (`ram_mb`, `time_ms`, `accuracy`; see `backbones.Footprint`).
 `tests/test_models.py` checks every entry against real inputs once it is downloaded
 (`python -m visionstate.backbones models --all`, as CI does).
+
+**A new camera use** (how an ESP32 camera of ours is set up): its key and name in the firmware
+(`CAMERA_USE_KEYS` / `CAMERA_USE_NAMES` and `apply_camera_use_` in
+`esphome/components/visionstate_stream/visionstate_stream.cpp`), the option in
+`esphome/packages/camera-use.yaml`, and in the app `settings.CAMERA_USES` (most demanding first),
+`settings.ESPHOME["camera_uses"]` (the guide) and, if a kind should pick it, `CAMERA_USE_BY_KIND`;
+`tests/test_esphome.py` fails until they agree. Measure on a board how long it takes to settle
+(`SETTLE_PICTURES*`).
 
 **A new page or tab**: the route in `router.svelte.ts` (tab: `TABS_BY_KIND` in `ui.ts`), the page
 in `pages/`, and an e2e test in `e2e/ui.spec.ts` on all three devices.
