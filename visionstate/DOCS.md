@@ -602,8 +602,10 @@ is not — a cupboard door, a siren on TV — holds the built-in sound back when
 like that clip; the Live tab then shows *Held back*, and the card how often. It stays the same
 sensor in Home Assistant.
 
-**Almost heard.** With clips on, a sound that almost reached its threshold, but was not heard,
-is asked about in Review too (*Almost heard*); a *yes* teaches its clip and tells the sensor its
+**Almost heard.** With clips on, a sound the AI itself almost heard — its own score nearly at the
+threshold — but that was not heard, is asked about in Review too (*Almost heard*). What clips you
+taught make of a sound does not count here: a few clips that sound like the room make it unsure
+about all of the room's noise, and that is not "almost"; a *yes* teaches its clip and tells the sensor its
 threshold may be too high (below). After five *no* in a row about a sound almost heard, it is not
 asked about almost heard any more: the threshold is not too high, and just below it is mostly the
 room's own noise. A *yes* (or forgetting a clip that taught a *no*) lets it ask again.

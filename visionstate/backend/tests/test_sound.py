@@ -1077,3 +1077,50 @@ def test_almost_heard_is_not_asked_about_after_five_answers_that_it_was_not(sett
         assert rt._near_answered_no(sid, "dog_bark")
         answer("yes")  # a yes asks again
         assert not rt._near_answered_no(sid, "dog_bark")
+
+
+@requires_sound
+def test_almost_heard_follows_the_model_not_a_head_unsure_about_the_room(settings, quick, monkeypatch):  # noqa: F811
+    # A head taught a few clips that sound like the room is unsure about the room's noise: 0.7
+    # for a dog, lifted to just below the dog's threshold. That is not "almost heard" (found on
+    # a real doorbell: the model said 0 % to every clip asked about, the head about 9 %).
+    monkeypatch.setitem(ADVICE, "min_answers", 1)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            rt = client.app.state.runtime
+
+            class Unsure:
+                def predict(self, vectors):  # noqa: ANN001, ANN202
+                    return [{"dog_bark": 0.7} for _ in vectors]
+
+            async def unsure_head(cfg):  # noqa: ANN001, ANN202
+                rt.sound_heads[cfg.id] = Unsure()
+
+            monkeypatch.setattr(rt, "_train_sound_head", unsure_head)
+            body = {"name": "Yard", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["dog_bark"], "clips": True, "clear_after_s": 2}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound, "review": {"cooldown_s": 0}}).json()[
+                "id"
+            ]
+
+            def dog() -> dict:
+                live = client.get(f"/api/v1/sensors/{sid}").json()["sound"]["live"]
+                return next(s for s in live if s["key"] == "dog_bark")
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            rt.sound_heads[sid] = Unsure()  # as if taught (a head is trained when clips are)
+            # Something loud enough to be analysed, that the model does not hear as a dog: the head's
+            # lifted score is what is shown, just below the threshold...
+            server.play(np.concatenate([chime(seed=i) for i in range(6)]))
+            assert wait_for(lambda: dog()["score"] > 0.6 * dog()["threshold"], timeout=20)
+            assert not dog()["on"]
+
+            # ...and it is not asked about, in the time a question and its clip would have taken.
+            def near() -> list:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": "near"}).json()["items"]
+
+            assert not wait_for(lambda: bool(near()), timeout=25)
+            assert client.get("/api/v1/review", params={"sensor": sid}).json()["total"] == 0
+    finally:
+        server.close()
