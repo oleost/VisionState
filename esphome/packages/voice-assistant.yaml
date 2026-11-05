@@ -1,0 +1,57 @@
+# VisionState's stream added to an ESPHome voice assistant (voice-pe.yaml, atom-voices3r.yaml include
+# it), sharing the device's microphone with its wake word. Only VisionState listens (one listener,
+# behind the password). While the assistant hears a command and answers, the stream carries silence
+# (the switch turns that off): what is said to it is not VisionState's business. The device's own
+# mute mutes the stream too.
+substitutions:
+  stream_port: "8081"
+  stream_username: visionstate
+
+visionstate_stream:
+  id: vs_stream
+  port: ${stream_port}
+  username: ${stream_username}
+  password: ${stream_password}
+  max_listeners: 1
+  listeners:
+    name: VisionState listening
+    entity_category: diagnostic
+
+switch:
+  - platform: template
+    id: vs_pause_for_assistant
+    name: VisionState pauses for the assistant
+    icon: mdi:microphone-message-off
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_off:
+      - lambda: id(vs_stream).set_paused(false);
+
+number:
+  - platform: template
+    id: vs_microphone_gain
+    name: VisionState microphone gain
+    icon: mdi:microphone-plus
+    entity_category: config
+    min_value: 1
+    max_value: 64
+    step: 1
+    optimistic: true
+    restore_value: true
+    initial_value: ${vs_mic_gain}
+    on_value:
+      - lambda: id(vs_stream).set_gain_factor((int32_t) x);
+
+# Added after the device's own actions for these.
+voice_assistant:
+  on_start:
+    - lambda: if (id(vs_pause_for_assistant).state) id(vs_stream).set_paused(true);
+  on_end:
+    - wait_until:
+        condition:
+          not: voice_assistant.is_running
+        timeout: 60s
+    - lambda: id(vs_stream).set_paused(false);
+  on_error:
+    - lambda: id(vs_stream).set_paused(false);

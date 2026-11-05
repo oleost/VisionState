@@ -55,6 +55,10 @@ class VisionStateStream final : public Component
   void set_microphone_source(microphone::MicrophoneSource *source) { this->microphone_source_ = source; }
   /// The gain the microphone's sound is multiplied by (1–64), e.g. from a number entity.
   void set_gain_factor(int32_t gain) { this->microphone_source_->set_gain_factor(gain); }
+  /// Paused, the stream carries silence without the microphone being muted (which would mute it for
+  /// everything else on the device too, such as a voice assistant).
+  void set_paused(bool paused) { this->paused_ = paused; }
+  bool is_paused() const { return this->paused_; }
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   void set_camera(camera::Camera *camera) { this->camera_ = camera; }
@@ -86,6 +90,7 @@ class VisionStateStream final : public Component
 
 #ifdef USE_VISIONSTATE_MICROPHONE
   microphone::MicrophoneSource *microphone_source_{nullptr};
+  volatile bool paused_{false};
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   camera::Camera *camera_{nullptr};

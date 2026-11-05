@@ -123,7 +123,7 @@ Only when the maintainer says the beta is tested, after the checks above.
 the packages and the component from GitHub at that tag, so a tag is never moved or deleted once
 released; a change that breaks existing devices' files gets the next N.
 
-- CI (`.github/workflows/esphome.yml`) compiles every configuration in `esphome/tests` with the
+- CI (`.github/workflows/esphome.yml`) compiles the configurations in `esphome/tests` it lists with the
   oldest ESPHome the packages accept and the newest: on a change under `esphome/`, on an
   `esphome-v*` tag, and weekly (a new ESPHome that breaks the component is seen before users
   compile it).

@@ -1,0 +1,14 @@
+# VisionState's stream on an M5Stack Atom VoiceS3R, added to M5Stack's voice assistant configuration
+# (common/atom-voices3r-satellite-base.yaml in m5stack/esphome-yaml) after it is taken control of in
+# ESPHome. Its microphone is mono at 16 kHz, with the echo of its own speaker cancelled. Not tried on
+# a device.
+packages:
+  voice_assistant: !include voice-assistant.yaml
+
+substitutions:
+  vs_mic_gain: "1"  # its sound is at speaking level already (the codec's gain and the AEC's)
+
+visionstate_stream:
+  microphone:
+    microphone: voice_mic
+    gain_factor: ${vs_mic_gain}

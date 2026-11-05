@@ -62,7 +62,14 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
 - **The ESPHome camera entity for image sensors** needs nothing new; the direct snapshot is there
   for speed and for a fresh picture (`fresh_snapshot`). Whether it is faster is a measurement (§5).
 - **A voice assistant that also listens for VisionState** (the maintainer's idea, 2026-11-04: an
-  ESP32-S3-BOX that is a voice assistant and hears smoke alarms too). ESPHome lets several parts
+  ESP32-S3-BOX that is a voice assistant and hears smoke alarms too). Built for the Home Assistant
+  Voice PE and the M5Stack Atom VoiceS3R (the maintainer, 2026-11-05: ready for someone who has one
+  to try; [`esphome/README.md`](../esphome/README.md)), as below: one listener, silence while the
+  assistant listens (a switch), the stream on the device's own microphone. On the Voice PE that is
+  XMOS channel 1, which `voice_kit` sets to echo cancelled, interference cancelled and noise
+  suppressed (its default `channel_1_stage`), without automatic gain; the firmware can also give
+  the raw microphone or echo cancellation alone, but the wake word hears the same channel, so it is
+  left as it is. What follows is how it was proposed. ESPHome lets several parts
   share one microphone: the I2S microphone counts who has started it (micro_wake_word,
   voice_assistant and sound_level already share it), so `visionstate_stream` can be one more,
   running alongside the wake word instead of switching over. Proposed: an add-on package for an
@@ -119,6 +126,10 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       until VisionState hears a sound (against a camera's RTSP and its Home Assistant stream), gaps
       over 24 hours, and on the ESP32-CAM gaps in the sound while a picture is sent.
 - [ ] Listening in Home Assistant (§3).
+- [ ] The Voice PE and the Atom VoiceS3R with VisionState's stream: the configuration is valid
+      next to their own (Voice PE 26.9.0, M5Stack's file at one commit), but not built or tried:
+      memory and CPU next to the wake word, the gain, whether a smoke alarm comes through the noise
+      suppression, and the pause while the assistant listens.
 - [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
       microphone's channel (left is assumed) and the gain it needs, its LED, and how warm it runs
       with the camera on.

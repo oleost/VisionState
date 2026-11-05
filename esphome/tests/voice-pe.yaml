@@ -1,0 +1,23 @@
+# CI: VisionState's stream added to the Home Assistant Voice's own configuration, at a release of it.
+substitutions:
+  name: vs-test-voice-pe
+  friendly_name: Test Voice PE
+  stream_password: !secret vs_stream_password
+
+packages:
+  voice_pe: github://esphome/home-assistant-voice-pe/home-assistant-voice.yaml@26.9.0
+  visionstate: !include ../packages/voice-pe.yaml
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password

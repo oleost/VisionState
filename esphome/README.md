@@ -64,6 +64,11 @@ Example: [`examples/xiao-esp32s3-sense-camera-microphone.yaml`](examples/xiao-es
 want one, goes from D0 (GPIO1) to GND. It runs warm with the camera on. Not yet tried on a board
 ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
+**A voice assistant that also listens for VisionState**: a Home Assistant Voice (Preview
+Edition) or an M5Stack Atom VoiceS3R keeps its own firmware, and VisionState's stream is added to
+it, sharing the microphone with the wake word. See [below](#on-a-voice-assistant). Not yet tried on
+a device.
+
 ## Install it
 
 **With VisionState's guide** (*Set one up with ESPHome*, under a new sensor's sound or image
@@ -96,6 +101,54 @@ source):
 5. In VisionState, a sound sensor with the stream address above as its *RTSP or stream* source, or
    an image sensor with the snapshot address as its *HTTP snapshot URL*.
 
+## On a voice assistant
+
+For a **Home Assistant Voice (Preview Edition)** or an **M5Stack Atom VoiceS3R**, already set up as
+a voice assistant:
+
+1. In the ESPHome app, *Take control* of the device. ESPHome writes a file that pulls in the
+   device's own configuration (`packages:`), with its name, Wi-Fi and API key.
+2. Add to that file (and `vs_stream_password: <a password>` to ESPHome's secrets):
+
+   ```yaml
+   substitutions:
+     stream_password: !secret vs_stream_password
+
+   external_components:
+     - source: github://oleost/VisionState@esp32  # esphome-v1 once released
+
+   packages:
+     # … the device's own package stays first …
+     visionstate:
+       url: https://github.com/oleost/VisionState
+       ref: esp32
+       files:
+         - esphome/packages/voice-pe.yaml  # an Atom VoiceS3R: esphome/packages/atom-voices3r.yaml
+   ```
+
+   If `substitutions:` or `packages:` are in the file already, add the lines to them.
+3. *Install*. The stream is then at the address above (`/audio.wav`), for a sound sensor in
+   VisionState.
+
+What it does on the device:
+
+- **One listener**, VisionState, behind the password (a second one gets *409*).
+- **Silence while the assistant hears a command and answers** (from the wake word until it is
+  done): what is said to it is not VisionState's business. *VisionState pauses for the assistant*
+  turns that off. The wake word itself is still heard. The device's own *Mute* mutes the stream
+  too (VisionState shows *Pure silence*).
+- *VisionState microphone gain*, and *VisionState listening* (0 or 1).
+- On the **Voice PE** it takes channel 1 of the XMOS chip, the one the wake word hears: the echo of
+  its own speaker cancelled and noise suppressed, without automatic gain (channel 0 has that, which
+  would hide how loud a sound is). Noise suppression may soften a steady tone: whether a smoke
+  alarm still comes through is not checked.
+- On the **Atom VoiceS3R** it takes the microphone the assistant uses, with the echo of its own
+  speaker cancelled.
+
+Not checked on a device: that it builds next to the device's firmware (the configuration is
+valid), memory and CPU next to the wake word, the gain, and how alarms sound through the
+processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
+
 ## When something is wrong
 
 | What you see | Why |
@@ -120,7 +173,11 @@ source):
 | [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light |
 | [`packages/camera-xiao-esp32s3-sense.yaml`](packages/camera-xiao-esp32s3-sense.yaml) | the XIAO's camera and `/snapshot.jpg` (it has no flash) |
 | [`packages/esp32-cam-microphone.yaml`](packages/esp32-cam-microphone.yaml) | camera and microphone on a plain ESP32: keeps the camera's I2S port free |
+| [`packages/voice-pe.yaml`](packages/voice-pe.yaml), [`packages/atom-voices3r.yaml`](packages/atom-voices3r.yaml) | the stream added to a voice assistant's own configuration, on its microphone |
+| [`packages/voice-assistant.yaml`](packages/voice-assistant.yaml) | what both include: one listener, silence while the assistant listens, the gain |
 | [`components/visionstate_stream`](components/visionstate_stream) | the server: the stream, the snapshot and the login |
 
 [`tests/`](tests) holds the configurations CI compiles (`.github/workflows/esphome.yml`), built from the
-packages in this folder.
+packages in this folder. `tests/voice-pe.yaml` and `tests/atom-voices3r.yaml` pull in the devices'
+own configurations from their repositories; they are checked with `esphome config`, not yet
+compiled in CI.

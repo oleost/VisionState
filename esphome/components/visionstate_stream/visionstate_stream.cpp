@@ -82,9 +82,20 @@ void VisionStateStream::setup() {
 #endif
 #ifdef USE_VISIONSTATE_MICROPHONE
   this->microphone_source_->add_data_callback([this](const std::vector<uint8_t> &data) {
+    static const uint8_t SILENCE[256] = {};
     LockGuard guard(this->lock_);
-    for (auto *listener : this->listeners_)
-      listener->buffer->write(data.data(), data.size());  // a full buffer drops its oldest sound
+    for (auto *listener : this->listeners_) {
+      if (!this->paused_) {
+        listener->buffer->write(data.data(), data.size());  // a full buffer drops its oldest sound
+        continue;
+      }
+      // Paused: as much silence instead, so the stream keeps its pace and the listener stays.
+      for (size_t left = data.size(); left > 0;) {
+        size_t n = std::min(left, sizeof(SILENCE));
+        listener->buffer->write(SILENCE, n);
+        left -= n;
+      }
+    }
   });
 #endif
 
