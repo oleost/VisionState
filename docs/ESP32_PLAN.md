@@ -104,9 +104,12 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
 - [x] `/snapshot.jpg` on the ESP32-CAM: the picture comes, fresh, also with no one else looking
       (2026-11-04; at first it did not: ESPHome's camera forgets a request made while it hands out
       the last picture, so the component asks again until one comes). An image sensor (objects) on
-      it in VisionState works, the flash as its light. A snapshot takes about 180 ms (median of 15;
-      at most 300), Home Assistant's camera entity about 80 ms, but that is the picture ESPHome
-      kept ready, taken after the last fetch.
+      it in VisionState works, the flash as its light. Home Assistant's camera entity answers faster (55-110 ms), but
+      with the picture ESPHome kept ready, taken right after the last fetch: switched on 1.5 s
+      before, the flash was dark in it every time, and light in the snapshot (2026-11-05; as old as
+      the time since the last check, so a water meter checked every minute is read a minute late).
+      A snapshot took 200-230 ms, 100 of them waiting for the camera's next picture at ESPHome's
+      default 10 fps; at max_framerate 25 fps it takes 137-159 ms (the fresh picture after 42-59 ms).
 - [x] Clients that keep their connection open (HTTP keep-alive) do not lock the device out
       (2026-11-04). They did: the Cast speaker's attempt, and VisionState's own snapshots, held the
       one spare socket, and no new connection was taken until a restart, while the open streams

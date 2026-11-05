@@ -19,6 +19,9 @@ esp32_camera:
   pixel_clock_pin: GPIO13
   resolution: ${camera_resolution}
   jpeg_quality: 10
+  # A fresh snapshot waits for the camera's next picture, at most 1 / max_framerate after the last
+  # (as on the ESP32-CAM, camera-esp32-cam.yaml). Idle, idle_framerate applies.
+  max_framerate: 25 fps
   # Two buffers: a picture asked for is the newest the camera has (CAMERA_GRAB_LATEST).
   frame_buffer_count: 2
   idle_framerate: 0.1 fps
