@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.0b7
+
+**Forgetting a clip takes its answer back.**
+
+- A clip is forgotten because it was wrong, or because you no longer want it: now the answer
+  that taught it no longer counts towards the threshold suggested **From your answers** either.
+  The same goes for a taught box or face you delete on an object sensor.
+- *It is this* and *It is not this* on a sound in the History are now tied to the clip they teach,
+  as answers in Review already were. Answers given from the History before this version are not
+  tied to a clip, so they still count after the clip is gone.
+- When no threshold tells your answers apart, the card now says the threshold is as good as it
+  gets, instead of reading like a complaint right after *Use*.
+
 ## 0.14.0b6
 
 **VisionState no longer lets ONNX Runtime send telemetry to Microsoft.**
