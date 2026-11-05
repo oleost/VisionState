@@ -53,6 +53,7 @@
             {@const s = sound.live.find((x) => x.key === key)}
             {#if s?.own}<span class="chip muted">own</span>{/if}
             {#if s?.on}<span class="chip ok">Heard</span>{/if}
+            {#if s?.held}<span class="chip warn">Held back: like a clip it is not</span>{/if}
           {/snippet}
         </ProbBars>
       {:else}

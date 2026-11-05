@@ -11,6 +11,8 @@ import type {
   FaceStatus,
   ImportResult,
   ModelKind,
+  SpeedTestInfo,
+  SpeedTestRun,
   People,
   PhotoResult,
   Camera,
@@ -35,6 +37,8 @@ import type {
   SettingsInfo,
   SoundPreview,
   SoundSettings,
+  SoundRecording,
+  AdviceItem,
   SoundTaught,
   Status,
   StorageInfo,
@@ -146,7 +150,20 @@ export const api = {
   config: () => request<AppConfig>('config'),
   status: () => request<Status>('status'),
   settings: () => request<SettingsInfo>('settings'),
-  saveSettings: (body: { backbone: string; detector?: string; reader?: string; face_model?: string }) =>
+  speedTest: () => request<SpeedTestInfo>('benchmark'),
+  speedTestRun: () => request<{ run: SpeedTestRun | null }>('benchmark/run'),
+  startSpeedTest: (sensorId: number, models: { role: string; id: string }[], keep: boolean) =>
+    request<{ run: SpeedTestRun }>('benchmark', send('POST', { sensor_id: sensorId, models, keep })),
+  cancelSpeedTest: () => request<{ run: SpeedTestRun | null }>('benchmark/cancel', send('POST')),
+  /** The last results as a text file (copying is not allowed everywhere). */
+  speedTestReportUrl: `${BASE}benchmark/report`,
+  saveSettings: (body: {
+    backbone: string;
+    detector?: string;
+    reader?: string;
+    face_model?: string;
+    inference_threads?: number;
+  }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
   storage: () => request<StorageInfo>('storage'),
   saveStorage: (body: { history_days: number; history_max_gb: number }) =>
@@ -356,7 +373,8 @@ export const api = {
   },
 
   /** Sound sensors: listen to a stream for a few seconds (the wizard). */
-  soundPreview: (source: string) => request<SoundPreview>('sounds/preview', send('POST', { source })),
+  soundPreview: (sourceType: string, source: string) =>
+    request<SoundPreview>('sounds/preview', send('POST', { source_type: sourceType, source })),
   soundTaught: (id: number) => request<SoundTaught>(`sensors/${id}/sounds/taught`),
   /** Teach a history clip as an own sound (`label`), a new one (`newName`) or another sound ('other'). */
   teachSoundClip: (id: number, historyId: number, label: string | null, newName?: string) =>
@@ -375,6 +393,25 @@ export const api = {
       body: form,
     });
   },
+  /** Each threshold the sensor decides by, with how the review answers fare and a suggested one. */
+  sensorAdvice: (id: number) => request<{ items: AdviceItem[] }>(`sensors/${id}/advice`),
+  /** Set one of them (an AdviceItem's key). */
+  applyAdvice: (id: number, key: string, threshold: number) =>
+    request<{ ok: boolean }>(`sensors/${id}/advice/${encodeURIComponent(key)}`, send('POST', { threshold })),
+  /** Record an own sound from the sensor's stream: Start, Stop (answers once the seconds after Stop came), trim. */
+  startSoundRecording: (id: number) =>
+    request<{ id: string; max_s: number; after_s: number }>(`sensors/${id}/sounds/recording`, send('POST')),
+  stopSoundRecording: (id: number, recordingId: string) =>
+    request<SoundRecording>(`sensors/${id}/sounds/recording/${recordingId}/stop`, send('POST')),
+  soundRecordingUrl: (id: number, recordingId: string) => `${BASE}sensors/${id}/sounds/recording/${recordingId}/audio`,
+  /** Teach the trimmed part (seconds from Start) as an own sound, a new one (`newName`) or another sound. */
+  teachSoundRecording: (id: number, recordingId: string, startS: number, endS: number, label: string | null, newName?: string) =>
+    request<{ id: number; label: string; made: boolean }>(
+      `sensors/${id}/sounds/recording/${recordingId}/teach`,
+      send('POST', { start_s: startS, end_s: endS, label: newName ? null : label, new_name: newName || null }),
+    ),
+  discardSoundRecording: (id: number, recordingId: string) =>
+    request<void>(`sensors/${id}/sounds/recording/${recordingId}`, send('DELETE')),
   soundClipUrl: (sampleId: number) => `${BASE}sound-clips/${sampleId}`,
   forgetSoundClip: (sampleId: number) => request<void>(`sound-clips/${sampleId}`, send('DELETE')),
   forgetSound: (id: number, key: string) => request<void>(`sensors/${id}/sounds/${encodeURIComponent(key)}`, send('DELETE')),

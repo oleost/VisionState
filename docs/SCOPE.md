@@ -102,6 +102,18 @@ so retraining only runs the backbone on new or changed samples.
   about 6 % more time per check. The footprints of the detectors were measured again this way.
   ONNX Runtime's threads do not spin while they wait for work (`backbones.cpu_session`): by
   default they keep cores busy between runs, CPU taken from Home Assistant on the same machine.
+  Measured again (2026-11-03, D-FINE N/S/M and DINOv2 small, spinning on against off): with no more
+  threads than free cores spinning was 0–11 % faster for up to 250 % more CPU (a 12-core desktop, a
+  2-vCPU VM); with more threads than cores, 75–127 % slower (the VM with 4 threads); a user's
+  Ryzen V1500B NAS VM was sometimes faster, sometimes slower, and unstable with 8 threads. Shared
+  and virtual CPUs are where most installations run, so spinning stays off and is not an option.
+- **Threads per model run** (`backbones.inference_threads`): one per physical core unless the user
+  chooses a number (Settings → AI model; it reloads the models, no restart). Not capped by
+  default: on the desktop the light models were fastest at 4–8 threads, but D-FINE M kept gaining
+  up to all 12 cores (321 ms at 4, 193 ms at 12). The choice is for shared CPUs: a user's NAS VM
+  with 4 vCPUs (so 4 threads) and one guaranteed core was slower than with 2 vCPUs (D-FINE N 1.7 s
+  against 0.97 s).
+  The speed test shows the threads and the CPU features (AVX2, ASIMD…) so reports compare.
 - DINOv2 base, evaluated (2026-10-11) with the crops of the 14 objects in the CC0 test photos, each
   also changed in light, framing, blur, JPEG quality and night colours: the gap between the same
   object changed (5th percentile) and other objects of its kind (90th percentile) was 0.12 for base
@@ -468,9 +480,11 @@ results: [`tools/wheelreader/README.md`](../tools/wheelreader/README.md); how it
 **Sound sensors** (`sounds.py`, `engine/sound.py`, `api/sounds.py`; registry
 `backend/visionstate/sounds.json`; the research, measurements and decisions in
 [`SOUND_PLAN.md`](SOUND_PLAN.md)) listen all the time instead of checking frames. The stream
-(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream to 16 kHz
-mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
-each hop's level (dBFS) and analyses the newest window only when it is loud enough: above the
+(`sources.AudioStream`, a thread of its own) decodes the audio of an RTSP or HTTP stream, or of a
+Home Assistant camera's own stream (HLS; its address is asked of Home Assistant each time it is
+opened), to 16 kHz mono and keeps the last seconds; the sensor's loop takes what is new every `SOUND["hop_s"]`, keeps
+each hop's level (dBFS) and analyses the window that ends with each hop (a Home Assistant camera's
+stream delivers several seconds at once) only when it is loud enough: above the
 background it learns (a low percentile of the recent levels, not learned while a sound is heard,
 so a long siren never becomes the background) by `above_db`, or above a fixed level. The model is
 **CED-Tiny** (Apache-2.0; trained on AudioSet, accepted 2026-10-29) with an embedding output added
@@ -513,6 +527,24 @@ Video upload: one frame every *N* seconds (default 5), near-duplicates skipped b
 hash, then the current model suggests a label for each frame. Upload and ZIP sizes are capped
 (`UPLOAD_LIMITS`). A single camera can feed multiple sensors, each with its own ROI.
 
+Sensors on one camera share their pictures (`shared_frames.py`, issue #63, by @Docter77): requests
+within `RUNTIME["shared_frame_window_s"]` get one picture, taken after all of them asked (a batch
+closes before the camera is asked), so even a trigger never gets a frame from before it. No cache:
+it could not do this without pictures older than the sensors expect. That alone saves little:
+measured on a test Home Assistant (four sensors on one HTTP camera at 3, 3, 6 and 6 s), 60 requests
+a minute became 29 right after a restart, 50 ten minutes later, and 60 again once one check moved a
+sensor, since each counted from its own last check. So their regular checks and probes fall on
+moments the camera's sensors have in common (`engine.logic.aligned`): 20 a minute, whatever happened.
+On real cameras (four object sensors at 10, 10, 20 and 30 s on a doorbell through Home Assistant and
+four on a phone's RTSP stream, 15 minutes each): 17 RTSP connections a minute became 6; checks of the
+doorbell no longer waited up to 10 s for a picture (four at once were too many for it), and the
+phone's checks took a steady 2 s instead of 0.5–4 s. The gain is the camera's, not the CPU's:
+inference still runs per sensor, and as the sensors now check at the same moment it comes in bursts
+(the app's CPU 95th percentile about 87 % instead of 75 %, its average a few points higher, its
+memory a little lower as each picture is decoded once). A sensor with a light does not share:
+warm-up frames must be real, and a lit frame is no baseline. One alone on its camera changes in
+nothing.
+
 A sound sensor's address is checked when it is saved and again by its stream, since FFmpeg would open a local file too. Before a frame is fetched the address is checked (`sources.check_source`): a snapshot URL must be
 `http(s)://`, a stream a network address (FFmpeg would also open local files and its own
 pseudo-protocols), a camera an entity ID. A snapshot (a URL's or a Home Assistant camera's) is read
@@ -528,11 +560,23 @@ after it asked) — about 30 ms a frame, for 4–6 % of one core while it is ope
 nobody asked for that long, so a check at the regular interval still connects for one frame and
 nothing decodes in between.
 
+**Speed test** (discussion #71; `engine.benchmark`, tunables `settings.BENCHMARK`). The numbers in the
+model registries are of one desktop CPU, which says little about a NAS or a Raspberry Pi, and a
+machine's speed depends on its own camera too. So the test uses a sensor's own source and every model
+that sensor could use, and does the work of a check, not only a model run. Everything is paused
+(sensors, and their models out of memory): simple, and the memory of a model can be read from the
+process, which is why it is only measured where `/proc` says so. Models are tested one at a time, as
+two large ones at once would not fit on a small machine (a model that does not fit in the free memory
+times `memory_room` is skipped). Results stay in memory, nothing goes in a backup. What is downloaded for
+it is noted before the download (a file in the models folder), so even a crash leaves nothing behind
+after the next start; a stopped download ends before anything is deleted, or its thread would put the
+finished file back. It measures speed and memory, not quality: that needs a right answer per picture.
+
 ## 7. When and how a sensor decides
 
 - **Triggers** (per sensor, `sensor.triggers`, defaults in `settings.TRIGGER_DEFAULTS`):
   - Regular interval (default 10 s) — the safety net, counted from the last check whatever
-    caused it. `regular: false` switches it off: the sensor then checks only when triggered and
+    caused it (on a camera with other sensors: to the moment they have in common before that). `regular: false` switches it off: the sensor then checks only when triggered and
     once after start-up.
   - State changes of chosen HA entities (WebSocket `subscribe_trigger`, attribute-only changes
     and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state
@@ -599,6 +643,21 @@ nothing decodes in between.
   An answer for a state sensor adds the frame as a `review` sample; `prediction.sample_id` links the
   two, so answering again (an answered frame clicked in the Review page's list, or the History tab)
   relabels that sample, or deletes it on *Skip*, instead of adding the frame twice.
+  **A threshold from the answers** (`advice.threshold_advice`, one way for every kind; the UI's
+  `ThresholdAdvice`): each answer is the score of what was asked about and whether it was right; the
+  threshold that lets the most "yes" and the fewest "no" pass (a "yes" held back counting twice) is
+  *suggested*, never set by itself — the user taps *Use*. It also says when no threshold separates
+  them: then taught examples have to (own labels, own sounds, a built-in sound's clips). Questions
+  are asked only near the threshold, so the answers cover that band; the suggestion stays within it
+  in practice. Every kind has it, at the top of its Settings (`api/advice.py`, `AdviceCard`): a
+  state sensor's threshold (a frame's confidence; asked about below it too), a reading sensor's (a
+  reading's confidence), an object sensor's "recognised" line for own labels and for faces (the
+  similarity; asked about between asking and that line, so it only ever suggests lower there), and
+  each sound's threshold. A suggestion needs answers on the side it moves to: a lower one needs
+  right answers below the threshold, so sounds are also asked about when *almost heard*
+  (`SOUND["near_share"]`, a history row "near"). Answers keep whether they were right — a sound's
+  and an object's question in `probs["answer"]`, a reading's in `read_ok`, a state's as the label
+  of the sample its answer added (a state row's `probs` are its states' probabilities).
 
 ## 8. Home Assistant integration (MQTT Discovery)
 
@@ -995,13 +1054,21 @@ is part of backups and needs no restart.
 | **Straightened reading regions** ✅ | A reading sensor's region read upright: four corners with a marked top, any angle and perspective in one step (issue #58; tests read a counter turned 125° and seen at an angle). | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
 | **Pointer dials** ✅ | A water meter's pointer dials placed on its straightened face and read together with the wheels (issue #59; tests read a drawn meter with four dials turned and at an angle, and a real meter with pale, drop-shaped needles). Left: more real meters, at night, and placing dials by hand on a phone — status per step in [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md) | 0.13.0 (betas 0.12.0b1–0.13.0b10) |
 | **What a sensor has in Home Assistant** ✅ | A Home Assistant tab per sensor (send values, don't send, not in Home Assistant, and which entities), and a snapshot entity per object, with its shape and a new picture when it moves (discussion #62) | 0.13.0 (betas 0.12.0b6–0.13.0b6) |
+| **Speed test** ✅ | Settings → Speed test: AI models measured on the user's own machine with a sensor's camera or microphone, models downloaded for it and deleted again, a report to share, and the threads per AI model to choose (discussion #71) | 0.14.0 (betas 0.14.0b1, b4) |
+| **Sensors on one camera share pictures** ✅ | One picture for every sensor on a camera asking at the same moment, their checks on the moments they have in common (issue #63, with @Docter77) | 0.14.0 (beta 0.14.0b2) |
+| **Teaching sounds, thresholds from answers** ✅ | Sound sensors hear a camera through Home Assistant; built-in sounds taught with the household's clips (and what they are not), own sounds recorded from the sensor's microphone, sounds almost heard asked about (by the AI's own score, quiet after five no); a threshold suggested from the Review answers on every kind of sensor, an answer counting while what it taught is there; clips with the camera's video and all their sound | 0.14.0 (betas 0.14.0b3, b5, b7, b8) |
+| **Nothing phones home, checked** ✅ | ONNX Runtime's telemetry to Microsoft switched off, and CI fails when the image reaches anything beyond its broker and camera | 0.14.0 (beta 0.14.0b6) |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a
 summary per hour or day, "seen in the frame" as a filter, saved filters, bulk actions); merge
 import of a backup;
-less camera traffic (reuse the engine's latest frame in the UI);
+less camera traffic (reuse the engine's latest frame in the UI); shared pictures for sensors with a
+light (only with the same camera *and* light: on the same moments, the longest light delay of them,
+the warm-up frames and the checked one shared — today each warms up and checks on its own time, the
+light itself already held together by `lights.py`); burst checks of sensors on one camera on shared
+moments too (today they share when they happen to coincide);
 video de-duplication on the ROI instead of the full frame; light theme following Home
 Assistant; mechanical counters beyond [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) and
 [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md): gauges; several readings per sensor (a sign with
@@ -1009,5 +1076,4 @@ four prices); per-sensor model
 choice with unloading of idle models (DINOv2 stays loaded: object sensors that were taught use
 it); zones and line crossing for object sensors; classes outside COCO (an open-vocabulary
 detector) — until then, a state sensor covers many of them ("parcel on the doorstep"); for sound
-sensors: a Home Assistant camera's own sound, stock ESPHome microphones, telling a built-in sound
-it was wrong (a veto from "no" answers), CLAP sounds described by a text.
+sensors: stock ESPHome microphones, CLAP sounds described by a text.

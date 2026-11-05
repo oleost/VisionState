@@ -379,7 +379,14 @@ most:
   changed", `SCOPE.md` §5).
 - **Learning per sensor** from checked readings (nearest neighbours on an embedding output): the
   data so far shows a meter's own frames from another period help little. It waits until shared
-  data says otherwise.
+  data says otherwise, or until one general model can no longer take in a new meter without
+  another getting worse. A small model trained on one meter's own crops has been shown to fix
+  what a general one does not, glare on the glass above all
+  ([AI-on-the-edge-device #4173](https://github.com/jomjol/AI-on-the-edge-device/discussions/4173)).
+  If it comes: a fine-tune on top of the base model, never instead of it (§2.1); labels only
+  from Review answers and sequence intervals, never the sensor's own readings (§2.3); the
+  newest days held out, and switched on only when it beats the base model there on the
+  benchmark's counts (no more too-high values); one click back to the base model.
 - **Refuse a frame that is too dark or flat** before reading it, instead of stretching noise into
   digits.
 - Pointer dials are built: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md). The last wheel's

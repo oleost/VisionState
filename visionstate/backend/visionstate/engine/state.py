@@ -235,6 +235,19 @@ class FaceBurst:
 
 
 @dataclass
+class SoundRecording:
+    """An own sound being recorded from a sound sensor's stream (Start, Stop), then trimmed."""
+
+    id: str
+    stream: AudioStream  # sample numbers belong to this stream: one opened again ends the recording
+    start: int  # the stream's sample number at Start
+    started: float = field(default_factory=time.monotonic)
+    stop_s: float | None = None  # seconds from Start to Stop, once stopped
+    samples: np.ndarray | None = None  # Start to record_after_s after Stop, speech silenced
+    muted_s: int = 0  # seconds of it silenced as speech
+
+
+@dataclass
 class SoundTrack:
     """What a sound sensor publishes for one sound, and the windows that decide it (logic.hear)."""
 
@@ -244,6 +257,9 @@ class SoundTrack:
     score: float = 0.0  # the last window's score
     best: float = 0.0  # the best score since it was heard (for the history)
     row: int | None = None  # the history row of the time it began to be heard
+    held: bool = False  # the last window: the model held back by a clip that is not this sound (sounds.correct)
+    held_count: int = 0  # times it was held back since the app started (once per sound, through its pauses)
+    held_at: float = 0.0  # when a window last held it back (it stays held back through pauses)
 
 
 @dataclass
@@ -257,19 +273,24 @@ class SoundLive:
         default_factory=lambda: deque(maxlen=int(SOUND["background_s"] / SOUND["hop_s"]))
     )  # levels the background is learned from
     line: float | None = None  # the level a window must reach to be analysed
-    analysed: bool = False  # the newest window was loud enough and analysed
+    analysed: bool = False  # the newest hop's window was loud enough and analysed
     scores: dict[str, float] = field(default_factory=dict)  # the last analysed window's, per sound
     tracks: dict[str, SoundTrack] = field(default_factory=dict)
     clips: list[dict] = field(default_factory=list)  # {"row", "start", "end", "key"}: cut once received
     # History rows whose clip is not stored yet -> the best score to ask about once it is (None: no question).
     clip_pending: dict[int, float | None] = field(default_factory=dict)
     room_at: float = 0.0  # when a window of the room was last kept as "other" (own sounds)
+    # Per sound, a sound almost heard (SOUND["near_share"]): its track at that lower line, where it
+    # began (sample number), and whether the sound was heard meanwhile (then it was no near miss).
+    near: dict[str, dict] = field(default_factory=dict)
+    near_rows: set[int] = field(default_factory=set)  # history rows of near misses whose clip is on its way
     reported: bool = False  # "no sound" is in the log, until sound comes back
 
 
 @dataclass
 class LiveState:
     frames: deque = field(default_factory=lambda: deque(maxlen=RUNTIME["frame_cache_size"]))
+    shares_camera: bool = False  # another sensor uses this camera now (ChecksMixin._note_camera)
     debouncer: Debouncer = field(default_factory=Debouncer)
     probs: dict[str, float] = field(default_factory=dict)
     top: str | None = None

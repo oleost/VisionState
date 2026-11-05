@@ -40,6 +40,7 @@ EVENT_ROWS: dict[str, ColumnElement[bool]] = {
     "verified": Prediction.read_ok.is_not(None),
     "heard": Prediction.published_key == "on",
     "quiet": Prediction.published_key == "off",
+    "near": Prediction.published_key == "near",
 }
 _MAX_VALUES = HISTORY["max_filter_values"]
 

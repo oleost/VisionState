@@ -94,7 +94,8 @@ discovery, export/import and backup with the others.
      seconds before it from the ring buffer.
    - *Faint sounds that matter* (a beep two rooms away) can stay below the line; the Live tab is
      where the user checks it.
-4. **Classify** the newest window (about two seconds, every half second; CED takes any length).
+4. **Classify** the newest window (about two seconds, every half second; CED takes any length) —
+   the window of every half second when a stream delivers several seconds at once (HLS).
    When the CPU falls behind, windows are dropped, never queued: sound is live. For own sounds the
    window's embedding goes to the sensor's own small head (§5).
 5. **Decide with two thresholds per sound** (hysteresis): *on* when the score passed the upper
@@ -254,7 +255,7 @@ default). A head for own sounds needs examples of what is *not* one of them. A p
 | **0. Spike** (local, `/VisionStateLocal/`) | Audio from common cameras: codecs (AAC, G.711, Opus), sample rates, whether PyAV gets a usable track, how many connections a camera allows. CED-Tiny on a Raspberry Pi 4: time per second of audio, and so how many sound sensors a Pi 4 carries beside its image sensors (the limit DOCS.md states). Clean speech; false alarms over a day of a household's background and TV; own sounds recorded at home. *Done in the cloud* (§5): per-class scores and thresholds on CC0 recordings, CED-Tiny against YAMNet, telephone-band audio, the embedding for own sounds. ESP32: which firmware to recommend, what ESPHome offers (§10). Read the weights' and data's terms. | A model and thresholds chosen with numbers, the number of sound sensors a Pi 4 carries, a verdict on licences. Or "not good enough", a valid outcome. |
 | **1. Listening** | The `sound` kind; RTSP and HTTP audio streams (an ESP32 among them, §10); pretrained classes from a curated list (§2) → a binary sensor per sound; level line and live scores in the Live tab; clips around events (opt-in, speech silenced) with playback in the history. | A real CC0 siren and smoke alarm turn their sensors on in a backend test; wizard, Live tab and a clip played after a tap pass e2e on desktop, Android and iPhone. |
 | **2. Review** | Review questions for uncertain sounds ("Was this the doorbell?"), history filters per sound. | e2e on every device. |
-| **3. Own sounds** | Teach a sound from a clip in the history or an uploaded file; the small head (§5), its ask band and Quality tab (clips per sound, look-alikes); export/import. | Own sounds taught from five clips each are told apart in a backend test and on the spike data. |
+| **3. Own sounds** | Teach a sound from a clip in the history, an uploaded file, or a recording from the sensor's stream trimmed by hand (speech silenced as in every clip); the small head (§5), its ask band and Quality tab (clips per sound, look-alikes); export/import. | Own sounds taught from five clips each are told apart in a backend test and on the spike data. |
 | **4. Later** | A Home Assistant *event* entity per sound; uploads of audio and video for teaching; stock ESPHome microphones (§10); CLAP sounds described by a text; a sound level entity (rounded, only on a real change). | — |
 
 ## 8. Where it would go in the code
@@ -306,10 +307,20 @@ As for images: CC0 / public domain, or drawn by our own code.
   cameras allow only a few connections at once, and a sound sensor holds one all day: a go2rtc
   restream (the go2rtc app's RTSP server) shares one camera connection — Frigate recommends the
   same for its audio.
-- **A Home Assistant camera's own sound** (picking `camera.front_door` as image sensors do) is the
-  easiest for users and wanted, but not known to be possible: Home Assistant gives apps snapshots,
-  not sound, and the stream it has inside (HLS, often seconds behind) may not be reachable from an
-  app. Looked into first when testing with real microphones and Home Assistant; until then, RTSP.
+- **A Home Assistant camera's own sound** (picking `camera.front_door` as image sensors do): the
+  WebSocket command `camera/stream` gives the address of the camera's HLS stream in Home Assistant,
+  with its sound (a Reolink doorbell: AAC 16 kHz, as over RTSP), and the app reads it through the
+  Supervisor with its own token. The address holds a token that ends with the stream (a restart of
+  Home Assistant, the stream stopped), so it is asked for again each time the stream is opened, never
+  stored. Only cameras with a stream (`CameraEntityFeature.STREAM`) can be picked. It opens slowly
+  (10–13 s: Home Assistant answers the playlist once the stream's first segment exists), and is read
+  from the newest segment (`live_start_index`) to be as little behind as HLS allows. FFmpeg reads
+  whole segments, so the sound comes a segment at a time (as long as the camera's key frame
+  interval): on the Reolink doorbell the sound came 7–8 s after its RTSP stream's, in bursts of about
+  8 s, and a siren was heard 10–12 s later than over RTSP, with the same scores and clips with video
+  — every window of a burst is analysed (a siren in its middle was missed when only the newest was). Home
+  Assistant passes on only some audio codecs: a camera whose sound does not come through is
+  listened to over RTSP.
 - **ESP32 microphones.** A cheap ESP32 with an I2S microphone (such as an INMP441) in each room is a
   strong case: camera audio is often poor (§12), and a room without a camera can still listen. 16 kHz
   16-bit mono is about 256 kbit/s, easy over Wi-Fi.
@@ -343,13 +354,33 @@ No question for the maintainer is open. Decided on 2026-10-29:
 - Every sound of the model a home could want is offered, the poorly recognised ones too (glass, a
   doorbell, a door, a microwave): no promises; thresholds are a best guess that users tune (§2).
 - Phase 1 listens to RTSP and HTTP streams, go2rtc restreams and ESP32 microphones among them; no
-  push (§10). A Home Assistant camera's own sound is wanted and looked into when testing with real
-  microphones and Home Assistant; voice satellites are left out for now.
+  push (§10). A Home Assistant camera's own sound came after (§10); voice satellites are left out for now.
 - The smoke alarm's threshold is 0.4 (2026-10-31): on a real Home Assistant a CC0 siren reached 0.31,
   and so turned a *smoke* entity on, while one real alarm through a phone scored 0.64–0.88 and a CC0
   recording 0.90. Two alarms are little to go on: looked at again with more real ones.
 - The name stays VisionState; the README, the store text and the app's description say it hears
   too.
+- **A built-in sound is taught with the household's clips** (2026-11-04, the maintainer: "yes"
+  and "no" must both do something, as a layer that can overrule the built-in answer, and a
+  threshold suggested from the answers). Clips of it (label its key) and of what it is not (label
+  `not:<key>`) are classes of the sensor's head, as own sounds are; `sounds.correct` decides each
+  window: heard when the model or its own clips are sure enough (the head's probability put on the
+  sound's scale, `sounds.lift`), held back when the window is clearly like a "not" clip (at least
+  `own_threshold`, and more than like its own clips). Held back, it stays so while windows are half
+  that like it and for `clear_after_s` (as a sound stays heard): the windows at the edges of a CC0
+  siren, half siren and half quiet, let it through before. Review answers teach these clips; the
+  threshold is suggested, never changed by itself (`docs/SCOPE.md` §7). Same entity, same IDs.
+  Measured on the CC0 siren taught once as "not siren": a taught clip gave the head one window, its
+  loudest, and the siren's start (quieter, and half quiet in the window that hears it begin) came
+  through. Every taught clip — own sounds' too — is now learned from its loud windows
+  (`sounds.loud_windows`: every `teach_hop_s`, within `teach_within_db` of the loudest, half a window
+  of quiet added at either end); with 6 dB or without the quiet ends it still came through now and
+  then, with both it was held back ten times in ten.
+- **Almost heard is asked about too** (2026-11-04, the maintainer: right answers just below the
+  threshold should suggest lowering it). A sound whose score passed `near_share` of its threshold
+  in two of three windows but was not heard keeps its clip in a history row "near" (never
+  published) and is asked about, as the review rules allow; a "yes" teaches the clip — which makes
+  that sound heard the next time — and counts below the threshold in the suggestion.
 
 ## 12. Pitfalls to avoid
 
@@ -383,21 +414,20 @@ RTMP to a test relay, turned its entity on within about a second, peaking at 0.8
 
 **What is left:**
 
-1. **RTSP from a real camera:** not tested, for lack of a camera with sound (the iPhone app used
-   sends sound over RTMP only). Which cameras send sound, which codecs (G.711 at 8 kHz, AAC, Opus),
-   whether PyAV gets the track; a camera that allows few connections (go2rtc restream).
+1. **Other RTSP cameras:** RTSP works with a real camera sending AAC; other codecs (G.711 at
+   8 kHz, Opus) and a camera that allows few connections (go2rtc restream) are not tested.
 2. **By hand:** own sounds recorded on a phone. iOS: does an AAC `.m4a` and an fMP4 video clip play
    in the Home Assistant app?
 3. **A Raspberry Pi 4** (or the CI's aarch64 image): time per second of audio, memory with the
    sound model loaded, how many sound sensors it carries beside the image sensors — then the
    number in DOCS.md, and the model's `ram_mb`/`time_ms` in `sounds.json`.
-4. **A Home Assistant camera's own sound** (§10: wanted, not known to be possible).
-5. **An ESP32 with an I2S microphone** sending WAV over HTTP: firmware to recommend in DOCS.md.
-6. **A day of a household's background and TV:** false alarms per day, the thresholds in
+4. **An ESP32 with an I2S microphone** sending WAV over HTTP: firmware to recommend in DOCS.md.
+5. **A day of a household's background and TV:** false alarms per day, the thresholds in
    `sounds.json` adjusted (they are from CC0 recordings, §5); clean speech for *Someone talking*.
-7. **Own sounds recorded at home** (a doorbell, an appliance beep): clips needed, `own_threshold`.
+6. **Own sounds recorded at home** (a doorbell, an appliance beep): clips needed, `own_threshold`.
 
-**Known limits to keep in mind**: a built-in sound that is wrong again and again (the TV's siren)
-cannot be told so — "no" answers only teach own sounds (an open idea: a veto from them); the
+**Known limits to keep in mind**: a built-in sound held back by its "not this" clips (§11) is
+held back only where a window is clearly like one of them: a TV that plays many different sirens
+needs a clip of each kind; the
 level line ignores sounds below it by design; clips of an H.265 stream may not play in every
 browser (the Live tab warns).

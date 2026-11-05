@@ -25,6 +25,8 @@
     tag: 'M2 2.5v5l6.5 6.5 5-5L7 2.5zM5 5h.01',
     sound: 'M2.5 6h2.5l3-2.5v9L5 10H2.5zM10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.5 6.5 0 0 1 0 9',
     mic: 'M8 2a2 2 0 0 0-2 2v4a2 2 0 0 0 4 0V4a2 2 0 0 0-2-2M4 7.5a4 4 0 0 0 8 0M8 11.5v2.5',
+    record: 'M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+    stop: 'M4.5 4.5h7v7h-7z',
   } as const;
   export type IconName = keyof typeof ICONS;
 </script>

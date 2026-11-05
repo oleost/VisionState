@@ -143,6 +143,18 @@ READING_LIMITS = {
 # reading allows more change, but only time the counter was not seen: down, or read unsure.
 # Readings that were read with confidence but went over the limit hold that time still, so a
 # misread that repeats can never wait its way through.
+# The speed test (engine/benchmark.py). Rounds of one model, the first ones not counted (its first
+# run is slower); a slow model stops after max_model_s, with min_rounds at least.
+BENCHMARK = {
+    "rounds": 10,
+    "warmup_rounds": 1,
+    "min_rounds": 3,
+    "max_model_s": 120.0,
+    "wait_quiet_s": 60.0,  # how long checks and training that were running get to end
+    "sound_wait_s": 30.0,  # how long a stream gets to deliver a window of sound (at least SOUND["ha_open_s"])
+    "memory_sample_s": 0.02,
+    "memory_room": 1.3,  # a model is not loaded without this many times its footprint free
+}
 COUNTER_LIMIT = {
     # "auto": the largest rise over this window per day, and the day's total rise, of the last
     # learn_days days; the second largest of them (one misread that slipped through does not
@@ -308,7 +320,7 @@ SOUND_LIMITS = {
 SOUND = {
     "rate": 16_000,  # samples per second the model takes (mono)
     "window_s": 2.0,  # what one analysis hears
-    "hop_s": 0.5,  # how often the newest window is analysed (when it is loud enough)
+    "hop_s": 0.5,  # a window is analysed for every hop of this much sound (when it is loud enough)
     # A sound is "heard" when its score passed its threshold in on_windows of the last of_windows
     # windows; it stays heard while it scores above off_share of its threshold (hysteresis), and
     # for clear_after_s after that.
@@ -321,9 +333,13 @@ SOUND = {
     "background_percentile": 20,
     "floor_db": -70.0,
     "buffer_s": 30.0,  # audio kept in memory (the window, a clip's seconds before, the Live view)
-    # A camera's video kept for clips with video (undecoded packets: about 4 MB at 2 Mbit/s): a clip's
-    # seconds before and after, the window, and a key frame interval to spare.
-    "video_buffer_s": 15.0,
+    # A camera's video kept for clips with video (undecoded packets: about 6 MB at 2 Mbit/s): a clip's
+    # seconds before and after, the window, and video_lead_max_s before them.
+    "video_buffer_s": 25.0,
+    # A clip's video starts at the camera's last key frame before its sound (silent until the sound
+    # begins), at most this long before it; without one, at the first key frame after the sound
+    # began (the sound before it then left out). Cameras send a key frame every 1-10 s.
+    "video_lead_max_s": 10.0,
     "video_wait_s": 10.0,  # how long a clip waits for its video (else it is sound only)
     "video_jump_s": 2.0,  # video times going back this far: the camera started its clock again
     "clip_before_s": 3.0,  # a clip: this long before the sound was heard, and this long after
@@ -333,6 +349,10 @@ SOUND = {
     # lower than the "speech" sound's threshold, so speech is rather silenced once too often.
     "speech_mute": 0.2,
     "speech_key": "speech",  # the model's sound for "someone is talking": never keeps a clip
+    "open_s": 10.0,  # a stream address must open, and then send something, within this
+    # A Home Assistant camera's sound comes through Home Assistant's own stream (HLS), which takes
+    # longer to open: Home Assistant starts it and waits for its first segments.
+    "ha_open_s": 30.0,
     "reconnect_min_s": 2.0,  # a stream that failed is opened again after this, doubling up to the max
     "reconnect_max_s": 60.0,
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
@@ -346,8 +366,36 @@ SOUND = {
     # there to 1, is asked about in the review queue ("Was this a siren?"), when its clip is kept and
     # the sensor's review rules allow (a siren at 0.3: below 0.65; an own sound at 0.8: below 0.9).
     "unsure_share": 0.5,
+    # A sound almost heard — its score passed this share of its threshold in on_windows of
+    # of_windows windows, and it was not heard — is asked about too, as the review rules allow and
+    # with its clip (a history row "near"): a "yes" there is what can suggest a lower threshold.
+    "near_share": 0.6,
+    # ...but no more once the last this many answers about it almost heard were all "no" (not
+    # this sound): the threshold is not too high, and below it is mostly the room's own noise. A
+    # "yes" there, or forgetting a clip that taught a "no", lets it ask again.
+    "near_quiet_after": 5,
+    "near_quiet_rows": 200,  # the newest "almost heard" rows of a sound those answers are looked for in
     "room_kept": 200,  # windows of the room kept as "other" per sensor (the newest replace the oldest)
     "room_every_s": 30.0,  # at most one room window per this many seconds (spread over the day)
+    # A taught clip is learned from its loud windows, not only its loudest: every teach_hop_s, the
+    # windows within teach_within_db of the loudest, at most teach_windows (the loudest of them).
+    # One window of a siren held back only that part of it; its start, half siren, came through.
+    "teach_hop_s": 1.0,
+    "teach_within_db": 12.0,
+    "teach_windows": 8,
+    # Recording an own sound from the sensor's stream (Start, Stop): stopped by itself after
+    # record_max_s, and it goes on for record_after_s after Stop, as a stream comes some seconds late,
+    # to trim the clip into. Both fit in buffer_s. A recording not taught is forgotten after
+    # record_keep_s; a clip trimmed from it is at least record_min_s long.
+    "record_max_s": 20.0,
+    "record_after_s": 8.0,
+    "record_keep_s": 600.0,
+    "record_min_s": 0.5,
+}
+
+# A threshold suggested from review answers (advice.py): from at least this many answers.
+ADVICE = {
+    "min_answers": 3,
 }
 
 DETECTION = {
@@ -718,7 +766,7 @@ HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
     KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
-    KIND_SOUND: ("heard", "quiet"),  # a sound began to be heard; it was no longer heard
+    KIND_SOUND: ("heard", "quiet", "near"),  # a sound began to be heard; no longer; almost heard (asked about)
 }
 
 # --- Runtime ------------------------------------------------------------------
@@ -743,8 +791,16 @@ HA_ENTITIES_NOT_BY_DEFAULT = frozenset({"raw", "problem", "accepted", "rate", "r
 
 RUNTIME = {
     "max_concurrent_inferences": 2,
-    "inference_threads": 0,  # threads per model run (backbones.cpu_session); 0: one per physical core
+    # Threads per model run (backbones.inference_threads) until the user chooses (Settings → AI model);
+    # 0: one per core (backbones.cpu_cores).
+    "inference_threads": 0,
+    # CPU features shown with the speed test's results (backbones.cpu_flags), as /proc/cpuinfo names them.
+    "cpu_flags": ("avx", "avx2", "fma", "avx512f", "avx512_vnni", "avx_vnni", "asimd", "asimddp"),
     "frame_cache_size": 5,  # recent frames kept per sensor so a label hits the frame the user saw
+    # Sensors on the same camera: requests this close together share one picture (shared_frames.py),
+    # and their checks fall on the same moments, with room for a late wake-up (engine.logic.aligned).
+    "shared_frame_window_s": 0.1,
+    "shared_frame_slack_s": 0.5,
     "retrain_delay_s": 1.0,  # coalesce rapid label clicks into one retrain
     "cleanup_interval_s": 600,  # history clean-up (age and size limits)
     "http_timeout_s": 15.0,

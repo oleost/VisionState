@@ -20,6 +20,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import os
+os.environ["ORT_DISABLE_TELEMETRY"] = "1"  # ONNX Runtime sends telemetry unless told not to
+
 import numpy as np
 import onnx
 import onnxruntime as ort

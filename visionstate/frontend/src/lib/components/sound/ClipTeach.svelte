@@ -1,24 +1,41 @@
 <script lang="ts">
   // Teach a clip of the history: as one of the sensor's own sounds, a new one, or "another sound"
-  // (what the own sounds are not). Own sounds are recognised from the clips taught to them.
+  // (what the own sounds are not); a clip heard as a built-in sound (`soundKey`) also as that sound,
+  // or as not that sound. Sounds are recognised from the clips taught to them.
   import { api } from '../../api';
   import { toast, toastError } from '../../app.svelte';
+  import { notLabel, soundName } from '../../sound';
   import type { Sensor } from '../../types';
   import Icon from '../Icon.svelte';
 
-  let { sensor, historyId, onchange = () => {} }: { sensor: Sensor; historyId: number; onchange?: () => void } = $props();
+  let {
+    sensor,
+    historyId,
+    soundKey = null,
+    onchange = () => {},
+  }: { sensor: Sensor; historyId: number; soundKey?: string | null; onchange?: () => void } = $props();
 
   let name = $state('');
   let naming = $state(false);
   let busy = $state(false);
   let taught = $state<string | null>(null);
   const own = $derived(sensor.sound?.custom ?? []);
+  // The built-in sound it was heard as, while the sensor listens for it.
+  const builtin = $derived(
+    soundKey && !own.some((c) => c.key === soundKey) && sensor.sound?.sounds.includes(soundKey) ? soundKey : null,
+  );
+  const names = $derived<Record<string, string>>(
+    builtin ? { [builtin]: soundName(builtin, sensor), [notLabel(builtin)]: `not ${soundName(builtin, sensor)}` } : {},
+  );
 
   async function teach(label: string | null, newName?: string) {
     busy = true;
     try {
       const result = await api.teachSoundClip(sensor.id, historyId, label, newName);
-      taught = result.label === 'other' ? 'another sound' : (newName ?? own.find((c) => c.key === result.label)?.name ?? result.label);
+      taught =
+        result.label === 'other'
+          ? 'another sound'
+          : (newName ?? names[result.label] ?? own.find((c) => c.key === result.label)?.name ?? result.label);
       toast(result.made ? `New own sound: ${newName}` : `Taught as ${taught}`);
       name = '';
       onchange();
@@ -50,6 +67,10 @@
       </form>
     {:else}
       <div class="row wrap" style="gap:var(--space-2)">
+        {#if builtin}
+          <button type="button" class="btn sm" disabled={busy} onclick={() => teach(builtin)}>{names[builtin]}</button>
+          <button type="button" class="btn sm" disabled={busy} onclick={() => teach(notLabel(builtin))}>Not {names[builtin]}</button>
+        {/if}
         {#each own as c (c.key)}
           <button type="button" class="btn sm" disabled={busy} onclick={() => teach(c.key)}>{c.name}</button>
         {/each}

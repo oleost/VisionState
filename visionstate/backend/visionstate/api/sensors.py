@@ -39,7 +39,7 @@ from ..settings import (
     merge_objects,
     merge_teach,
 )
-from ..sources import SOURCE_TYPES, SourceError, check_source
+from ..sources import SOUND_SOURCE_TYPES, SOURCE_TYPES, SourceError, check_source
 from .common import (
     API_PREFIX,
     ObjectsIn,
@@ -102,8 +102,8 @@ class SensorIn(BaseModel):
             raise HTTPException(400, "Only reading sensors have reading settings")
         if self.kind != KIND_SOUND and self.sound is not None:
             raise HTTPException(400, "Only sound sensors have sound settings")
-        if self.kind == KIND_SOUND and self.source_type != "rtsp":
-            raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
+        if self.kind == KIND_SOUND and self.source_type not in SOUND_SOURCE_TYPES:
+            raise HTTPException(400, SOUND_SOURCE_MESSAGE)
         if self.kind == KIND_OBJECTS:
             self.objects = self.objects or ObjectsIn()
             defaults = OBJECT_SENSOR_DEFAULTS
@@ -170,6 +170,9 @@ class SensorPatch(BaseModel):
     objects: ObjectsIn | None = None
     reading: ReadingIn | None = None
     sound: SoundIn | None = None
+
+
+SOUND_SOURCE_MESSAGE = "A sound sensor listens to a stream (a Home Assistant camera, RTSP or an HTTP audio stream)"
 
 
 def _check_source_type(source_type: str | None) -> None:
@@ -300,14 +303,14 @@ async def update_sensor(sensor_id: int, body: SensorPatch, request: Request) -> 
                 raise HTTPException(400, "Only reading sensors have reading settings")
             if sensor.kind != KIND_SOUND and body.sound is not None:
                 raise HTTPException(400, "Only sound sensors have sound settings")
-            if sensor.kind == KIND_SOUND and body.source_type not in (None, "rtsp"):
-                raise HTTPException(400, "A sound sensor listens to a stream (RTSP or an HTTP audio stream)")
+            if sensor.kind == KIND_SOUND and body.source_type not in (None, *SOUND_SOURCE_TYPES):
+                raise HTTPException(400, SOUND_SOURCE_MESSAGE)
             old_roi, old_keys, old_source = sensor.roi, [st.key for st in sensor.states], sensor.source
             for field in ("name", "source_type", "source", "interval_s", "threshold", "debounce", "enabled", "publish"):
                 value = getattr(body, field)
                 if value is not None:
                     setattr(sensor, field, value)
-            if sensor.kind == KIND_SOUND and body.source is not None:
+            if sensor.kind == KIND_SOUND and (body.source is not None or body.source_type is not None):
                 _check_address(sensor.source_type, sensor.source)
             if body.in_ha is not None:
                 sensor.in_ha = body.in_ha

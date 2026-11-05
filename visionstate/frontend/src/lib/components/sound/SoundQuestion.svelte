@@ -1,7 +1,7 @@
 <script lang="ts">
   // "Was this a siren?" — a sound that was only just heard. Listen to its clip (watch it, on a
   // camera) and answer: yes, no, it was one of the sensor's own sounds, or a new one. The answer is
-  // kept, and teaches the clip where it can (an own sound, or "other" for the own sounds).
+  // kept, and teaches the clip: as the sound (an own or a built-in one), or as not it.
   import { api } from '../../api';
   import { toastError } from '../../app.svelte';
   import { pct } from '../../format';
@@ -45,22 +45,27 @@
 </script>
 
 <div class="col">
+  <!-- Not keyed: once a clip is played, the next question's plays at once, over and over (ClipPlayer). -->
+  <ClipPlayer src={api.historyClipUrl(item.id)} video={item.clip_video} loop />
   {#key item.id}
-    <ClipPlayer src={api.historyClipUrl(item.id)} video={item.clip_video} />
-  {/key}
   <ReviewAnswers
     {asked}
     choices={own}
     noun="sound"
     noLabel="No, something else"
-    footnote="Your answer is kept. An own sound learns from it; the built-in sounds do not change."
+    footnote="Your answer teaches the sound with this clip: yes, it was; no, it was not (see Own sounds)."
     {given}
     {busy}
     onanswer={answer}
   >
     {#snippet question()}
       <span>Was this <strong>{asked}</strong>?</span>
-      <span class="small muted">It scored {pct(item.confidence)} at most — only just enough to be heard.</span>
+      {#if item.review_reason === 'near'}
+        <span class="small muted">It scored {pct(item.confidence)} at most — almost, not quite enough to be heard.</span>
+      {:else}
+        <span class="small muted">It scored {pct(item.confidence)} at most — only just enough to be heard.</span>
+      {/if}
     {/snippet}
   </ReviewAnswers>
+  {/key}
 </div>

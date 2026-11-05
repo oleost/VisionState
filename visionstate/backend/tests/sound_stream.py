@@ -55,12 +55,15 @@ def chime(seconds: float = 3.0, gain: float = 0.3, seed: int = 0) -> np.ndarray:
 class SoundSource:
     """Endless sound: ``background`` (looped), with ``play``-ed sounds mixed in once each, sent as
     WAV (``send_wav``) or as a camera's MPEG-TS (``send_camera``: H.264 video — a bar moving across, a
-    key frame every two seconds — with the sound as AAC). ``speed`` above 1 sends faster than real
-    time (tests that need not wait)."""
+    key frame every ``key_every_s`` seconds — with the sound as AAC). ``speed`` above 1 sends faster than real
+    time (tests that need not wait). With ``burst_s``, that many seconds are sent at once, then
+    nothing until they would have been sent (as an HLS stream delivers its segments)."""
 
-    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0):
+    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0, burst_s: float = 0.0):
         self.background = noise(5.0) if background is None else background
         self.speed = speed
+        self.burst_s = burst_s
+        self.key_every_s = 2.0
         # Each stream sent has its own queue, so a sound plays in every one of them; one played while
         # none is sent waits for the next.
         self._queues: list[list[np.ndarray]] = []
@@ -80,6 +83,7 @@ class SoundSource:
             queue, self._waiting = self._waiting, []
             self._queues.append(queue)
         try:
+            sent = 0
             while True:
                 with self._lock:
                     if not len(playing) and queue:
@@ -91,7 +95,11 @@ class SoundSource:
                     part[: len(extra)] += extra
                     playing = playing[chunk:]
                 yield np.clip(part, -1, 1).astype(np.float32)
-                time.sleep(chunk / RATE / self.speed)
+                sent += 1
+                if not self.burst_s:
+                    time.sleep(chunk / RATE / self.speed)
+                elif sent % round(self.burst_s * RATE / chunk) == 0:
+                    time.sleep(self.burst_s / self.speed)
         finally:
             with self._lock:  # by identity: empty queues are equal, and list.remove would take another one
                 self._queues = [q for q in self._queues if q is not queue]
@@ -108,7 +116,7 @@ class SoundSource:
         with av.open(out, mode="w", format="mpegts") as container:
             video = container.add_stream("libx264", rate=10)
             video.width, video.height, video.pix_fmt = 320, 180, "yuv420p"
-            video.options = {"g": "20", "preset": "ultrafast", "tune": "zerolatency"}
+            video.options = {"g": str(round(10 * self.key_every_s)), "preset": "ultrafast", "tune": "zerolatency"}
             audio = container.add_stream("aac", rate=RATE, layout="mono")
             for n, part in enumerate(self._chunks()):
                 picture = np.zeros((180, 320, 3), dtype=np.uint8)
@@ -128,15 +136,25 @@ class SoundServer(SoundSource):
     """A SoundSource on an HTTP server of its own: ``url`` is ``/sound.wav``, or with ``video`` a
     camera, ``/camera.ts``."""
 
-    def __init__(self, background: np.ndarray | None = None, speed: float = 1.0, video: bool = False):
-        super().__init__(background, speed)
+    def __init__(
+        self,
+        background: np.ndarray | None = None,
+        speed: float = 1.0,
+        video: bool = False,
+        burst_s: float = 0.0,
+        key_every_s: float = 2.0,
+    ):
+        super().__init__(background, speed, burst_s)
+        self.key_every_s = key_every_s  # the camera's key frame interval
         source = self
+        self.headers: list[dict[str, str]] = []  # the headers of each request
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args) -> None:  # noqa: ANN002
                 pass
 
             def do_GET(self) -> None:  # noqa: N802
+                source.headers.append(dict(self.headers))
                 camera = self.path.endswith(".ts")
                 self.send_response(200)
                 self.send_header("Content-Type", "video/mp2t" if camera else "audio/wav")

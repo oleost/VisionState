@@ -37,7 +37,9 @@ On every push to `main`/`beta`, every PR and every tag (`.github/workflows/ci.ym
 `scripts/check_options.py`, `pip-audit`), frontend (`svelte-check`, build, `npm audit`), e2e on
 desktop, Android and iPhone (WebKit), then both images built on native runners and tested: a smoke
 test against a real MQTT broker (start, discovery, the memory peak with all three models under
-`MEMORY_LIMIT`, a clean `docker stop`), `scripts/cpu_probe.py` under an emulated old CPU (amd64
+`MEMORY_LIMIT`, a clean `docker stop`), `scripts/network_watch.sh` (with a sensor of each kind at
+work, any DNS question or connection beyond the broker and the camera fails it: nothing phones
+home), `scripts/cpu_probe.py` under an emulated old CPU (amd64
 `kvm64`, aarch64 `cortex-a53`) and `scripts/upgrade_test.sh` (from the last stable release and
 back). The audits only warn on betas and block stable releases. Only a version tag publishes the
 images; a beta tag then also creates the pre-release from the changelog entry and fast-forwards

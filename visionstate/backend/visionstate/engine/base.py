@@ -15,15 +15,16 @@ from typing import Any
 import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, readers, sounds, teach
+from .. import backbones, classifier, detectors, faces, imaging, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
 from ..mqtt import MqttBridge
 from ..settings import RUNTIME, Settings, merge_review, merge_teach
+from ..shared_frames import SharedFrames
 from ..sources import FrameGrabber, HomeAssistant
 from ..storage import Storage
-from .state import LiveState, SensorConfig
+from .state import LiveState, SensorConfig, SoundRecording
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,16 @@ class RuntimeBase:
         self.ha = HomeAssistant(settings)
         self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
         self.grabber = FrameGrabber(self.ha)
+        self.shared_frames = SharedFrames(
+            lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
+        )
+        self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
+        # The speed test (engine/benchmark.py): the last one, and while it runs no sensor checks.
+        self.benchmark = None
+        self.benchmark_paused = False
+        self._benchmark_task: asyncio.Task | None = None
+        self._steps_running = 0
+        self._retrain_after_benchmark: set[int] = set()
         self._entity_index: dict[str, set[int]] = {}  # trigger entity -> sensor ids
         # unique ID -> entity ID of our entities in Home Assistant's entity registry (empty outside HA)
         self.ha_entity_ids: dict[str, str] = {}
@@ -88,6 +99,7 @@ class RuntimeBase:
         self._sound_lock = asyncio.Lock()
         self.sound_heads: dict[int, sounds.SoundHead] = {}
         self.sound_room: dict[int, np.ndarray] = {}
+        self.sound_recordings: dict[int, SoundRecording] = {}  # an own sound being recorded, per sensor
         self.heads: dict[int, classifier.Head] = {}
         self.taught: dict[int, teach.TaughtIndex] = {}  # object sensors; built on use, dropped on change
         self._taught_generation: dict[int, int] = {}  # counts changes to each sensor's taught boxes

@@ -13,7 +13,9 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from . import backup
+from .api import advice as advice_api
 from .api import backup as backup_api
+from .api import benchmark as benchmark_api
 from .api import cameras, faces, history, imports, review, samples, sensors, system, teach
 from .api import sounds as sounds_api
 from .api.common import API_PREFIX
@@ -84,8 +86,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await call_next(request)
 
     app.include_router(system.router)
+    app.include_router(benchmark_api.router)
     app.include_router(cameras.router)
     app.include_router(review.router)
+    app.include_router(advice_api.router)
     app.include_router(history.router)
     app.include_router(imports.router)
     app.include_router(backup_api.router)

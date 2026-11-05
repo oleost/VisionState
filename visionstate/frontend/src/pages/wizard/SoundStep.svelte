@@ -11,7 +11,12 @@
   import HaPreview from './HaPreview.svelte';
   import TestCard from './TestCard.svelte';
 
-  let { source, name: sensorName, sound = $bindable() }: { source: string; name: string; sound: SoundSettings } = $props();
+  let {
+    sourceType,
+    source,
+    name: sensorName,
+    sound = $bindable(),
+  }: { sourceType: string; source: string; name: string; sound: SoundSettings } = $props();
 
   let preview = $state<SoundPreview | null>(null);
   let listening = $state(false);
@@ -21,7 +26,7 @@
     listening = true;
     error = '';
     try {
-      preview = await api.soundPreview(source);
+      preview = await api.soundPreview(sourceType, source);
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -30,6 +35,7 @@
   }
 
   $effect(() => {
+    void sourceType;
     void source;
     untrack(() => listen());
   });
@@ -47,12 +53,12 @@
   <TestCard busy={listening} onretest={listen}>
     {#snippet status()}
       {#if listening && !preview}
-        Listening for a few seconds…
+        {sourceType === 'ha_camera' ? 'Starting the camera’s stream in Home Assistant and listening…' : 'Listening for a few seconds…'}
       {:else if error}
         <span class="danger-text">{error}</span>
       {:else if preview && !preview.ok}
         <span class="danger-text" data-testid="sound-test-error"
-          >{preview.error}. Check the address, and that the camera's microphone (its audio) is switched on.</span
+          >{preview.error}. Check the {sourceType === 'ha_camera' ? 'camera' : 'address'}, and that the camera's microphone (its audio) is switched on.</span
         >
       {:else if preview}
         {preview.stream?.codec}, {(preview.stream?.sample_rate ?? 0) / 1000} kHz

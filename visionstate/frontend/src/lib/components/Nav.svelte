@@ -5,7 +5,11 @@
   import Logo from './Logo.svelte';
 
   const section = $derived(
-    ['review', 'history', 'people', 'settings'].includes(route.parts[0]) ? route.parts[0] : 'sensors',
+    ['review', 'history', 'people', 'settings'].includes(route.parts[0])
+      ? route.parts[0]
+      : route.parts[0] === 'speed-test'
+        ? 'settings'
+        : 'sensors',
   );
   // People: only once there are people, or a sensor that recognises faces.
   const faces = $derived(app.status?.faces);

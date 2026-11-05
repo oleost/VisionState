@@ -4,9 +4,10 @@ to check next, and when a sound is heard."""
 from __future__ import annotations
 
 import math
+import zlib
 
 from .. import detectors, imaging, readers, teach
-from ..settings import DETECTION, FACES, SOUND
+from ..settings import DETECTION, FACES, RUNTIME, SOUND
 from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig, SoundTrack
 
 
@@ -148,6 +149,17 @@ def entity_triggers(triggers: dict, entity_id: str, new: str | None) -> bool:
     return not wanted or (new or "").strip().lower() == wanted.strip().lower()
 
 
+def aligned(after: float, every: float, source: str) -> float:
+    """``after + every`` moved back to the moment sensors on the camera ``source`` have in common at
+    this pace: multiples of it from a point of its own, so that 30 s and 60 s meet and cameras do not
+    all fall together. Never later than the pace asks for (plus the slack of a late wake-up), never
+    at or before ``after``: a sensor checked in between just comes round a little sooner."""
+    offset = zlib.crc32(source.encode()) % 3600
+    slack = min(RUNTIME["shared_frame_slack_s"], every / 4)
+    moment = offset + math.floor((after + every + slack - offset) / every) * every
+    return moment if moment > after else moment + every
+
+
 def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float, str]:
     """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
     if live.last_run is None:
@@ -158,12 +170,15 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
     elif cfg.triggers["regular"]:
         # Counted from the last check, whatever caused it: frequent triggers postpone it.
         full_at = live.last_run + cfg.interval_s
+        if live.shares_camera:
+            full_at = aligned(live.last_run, cfg.interval_s, cfg.source)
     else:
         full_at = math.inf  # only triggers
     if live.recheck_at and live.recheck_at < full_at:
         full_at = live.recheck_at  # an object went missing: look again soon (DETECTION["recheck_s"])
     if cfg.triggers["change_detection"]:
-        probe_at = max(live.last_run, live.last_probe) + cfg.triggers["change_interval_s"]
+        every, since = cfg.triggers["change_interval_s"], max(live.last_run, live.last_probe)
+        probe_at = aligned(since, every, cfg.source) if live.shares_camera else since + every
         if probe_at < full_at:
             return probe_at, "probe"
     return full_at, "full"

@@ -3,6 +3,7 @@ discovery and the whole flow over the API (docs/SOUND_PLAN.md)."""
 
 import re
 import time
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -12,7 +13,7 @@ from visionstate import sounds
 from visionstate.engine import SoundTrack, hear
 from visionstate.main import create_app
 from visionstate.mqtt import SensorDescriptor, discovery_messages, entity_options, main_entities, muted_topics
-from visionstate.settings import KIND_SOUND, SOUND, merge_sound
+from visionstate.settings import ADVICE, KIND_SOUND, SOUND, merge_sound
 from visionstate.sources import AudioStream
 
 from .conftest import MODEL_DIR, requires_sound
@@ -270,7 +271,7 @@ def test_a_sound_sensor_listens_to_a_stream_only(settings):  # noqa: F811
         assert "sound" in config["sensor_kinds"] and {s["key"] for s in config["sounds"]} == set(SPEC.sounds)
         assert all(s["group"] for s in config["sounds"]) and config["sound_popular"] == list(SPEC.popular)
         assert config["sound"]["max_sounds"] == SOUND["max_sounds"]
-        assert config["history_events"]["sound"] == ["heard", "quiet"]
+        assert config["history_events"]["sound"] == ["heard", "quiet", "near"]
     time.sleep(0)  # the stream's thread ends on its own (closed with the runtime)
 
 
@@ -362,9 +363,281 @@ def test_own_sounds_are_taught_and_heard_and_review_asks(settings, quick, monkey
         server.close()
 
 
+def test_a_recording_is_drawn_and_played_back_as_it_was():
+    samples = np.concatenate([np.zeros(RATE // 2), 0.5 * np.ones(RATE // 4), np.zeros(RATE // 4)]).astype(np.float32)
+    drawn = sounds.peaks(samples, RATE, 20)
+    assert len(drawn) == 20 and max(drawn) == 1.0 and drawn[0] == 0.0 and drawn[11] == 1.0
+    assert sounds.peaks(np.zeros(0, np.float32), RATE, 20) == []
+    back = sounds.decode_audio(sounds.encode_wav(samples, RATE), RATE)
+    assert len(back) == len(samples) and abs(float(back[RATE // 2 + 10]) - 0.5) < 0.01
+    # The longest recording and the seconds after Stop fit in what the stream keeps.
+    assert SOUND["record_max_s"] + SOUND["record_after_s"] < SOUND["buffer_s"]
+
+
 @requires_sound
-def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
-    server = SoundServer(speed=1.0, video=True)
+def test_an_own_sound_is_recorded_from_the_stream_and_trimmed(settings, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(SOUND, "record_after_s", 1.0)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+            base = f"/api/v1/sensors/{sid}/sounds/recording"
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            started = client.post(base)
+            assert started.status_code == 201, started.text
+            rec = started.json()
+            assert rec["after_s"] == 1.0 and rec["max_s"] == SOUND["record_max_s"]
+            server.play(chime(seed=3))
+            time.sleep(1.0)
+            stopped = client.post(f"{base}/{rec['id']}/stop")
+            assert stopped.status_code == 200, stopped.text
+            made = stopped.json()
+            assert made["stop_s"] >= 1.0 and made["seconds"] >= made["stop_s"] + 0.9  # and a second after Stop
+            assert abs(len(made["peaks"]) - made["seconds"] * made["peaks_per_s"]) <= 1 and max(made["peaks"]) == 1.0
+            audio = client.get(f"{base}/{rec['id']}/audio")
+            assert audio.status_code == 200 and audio.headers["content-type"] == "audio/wav"
+            assert abs(len(sounds.decode_audio(audio.content, RATE)) / RATE - made["seconds"]) < 0.05
+            assert client.post(f"{base}/{rec['id']}/teach", json={"start_s": 1.0, "end_s": 1.2}).status_code == 400
+            taught = client.post(
+                f"{base}/{rec['id']}/teach", json={"start_s": 0.0, "end_s": made["seconds"], "new_name": "Bell"}
+            )
+            assert taught.status_code == 201, taught.text
+            assert taught.json()["label"] == "bell" and taught.json()["made"]
+            clips = client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()["clips"]
+            assert [(c["label"], c["origin"]) for c in clips] == [("bell", "recording")]
+            clip = client.get(f"/api/v1/sound-clips/{clips[0]['id']}")
+            assert abs(len(sounds.decode_audio(clip.content, RATE)) / RATE - made["seconds"]) < 0.2
+            # Taught once: the recording is gone.
+            assert client.get(f"{base}/{rec['id']}/audio").status_code == 404
+            # Stopped at once: too short. Paused: nothing to record from.
+            again = client.post(base).json()
+            assert client.post(f"{base}/{again['id']}/stop").status_code == 409
+            assert client.patch(f"/api/v1/sensors/{sid}", json={"enabled": False}).status_code == 200
+            assert wait_for(lambda: client.post(base).status_code == 409)
+            assert client.post(f"/api/v1/sensors/{sid + 1}/sounds/recording").status_code == 404
+    finally:
+        server.close()
+
+
+@requires_sound
+def test_a_recording_lasts_as_long_as_it_was_held_on_a_stream_that_sends_seconds_at_once(settings, monkeypatch):  # noqa: F811
+    # A Home Assistant camera's stream sends a segment of seconds at a time: between Start and Stop
+    # nothing may arrive, and the recording is still as long as Start to Stop was.
+    monkeypatch.setitem(SOUND, "record_after_s", 4.0)
+    server = SoundServer(burst_s=3.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+            base = f"/api/v1/sensors/{sid}/sounds/recording"
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            rec = client.post(base).json()
+            time.sleep(1.5)
+            stopped = client.post(f"{base}/{rec['id']}/stop")
+            assert stopped.status_code == 200, stopped.text
+            made = stopped.json()
+            assert 1.4 <= made["stop_s"] <= 2.5 and made["seconds"] >= made["stop_s"] + 3.9
+    finally:
+        server.close()
+
+
+def test_a_built_in_sound_is_corrected_by_the_households_clips():
+    threshold = 0.3
+    assert sounds.lift(SOUND["own_threshold"], threshold) == pytest.approx(threshold)
+    assert sounds.lift(0.0, threshold) == 0.0 and sounds.lift(1.0, threshold) == pytest.approx(1.0)
+    assert sounds.correct(0.6, None, None, threshold) == (0.6, False)  # the model alone: as it was
+    assert sounds.correct(0.05, 0.95, None, threshold)[0] > threshold  # its own clips hear it
+    score, held = sounds.correct(0.6, 0.1, 0.9, threshold)  # clearly like a clip that is not it
+    assert score < threshold and held
+    assert sounds.correct(0.6, 0.1, 0.6, threshold)[1] is False  # half like it: not at first…
+    assert sounds.correct(0.6, 0.1, 0.6, threshold, holding=True)[1]  # …but once held back, it stays
+    assert sounds.correct(0.6, 0.1, 0.5, threshold) == (0.6, False)  # not clearly like one: the model stands
+    assert sounds.correct(0.6, 0.95, 0.85, threshold)[1] is False  # more like its own clips
+
+
+def test_a_taught_clip_is_learned_from_its_loud_windows():
+    quiet, loud = noise(1.0) * 0.01, recording("siren")
+    clip = np.concatenate([quiet, loud, quiet])
+    found = sounds.loud_windows(clip, RATE)
+    size = int(SOUND["window_s"] * RATE)
+    assert 1 < len(found) <= SOUND["teach_windows"] and found.shape[1] == size
+    levels = [sounds.level_db(w) for w in found]
+    assert (
+        min(levels) >= sounds.level_db(sounds.loudest_window(clip, RATE, SOUND["window_s"])) - SOUND["teach_within_db"]
+    )
+    assert sounds.loud_windows(loud[: RATE // 2], RATE).shape == (1, size)  # shorter than a window: padded
+
+
+def test_a_threshold_is_suggested_from_the_answers():
+    from visionstate import advice
+
+    limits = (0.01, 0.99)
+    assert advice.threshold_advice([0.5], [0.3], 0.25, limits)["suggested"] is None  # too few answers
+    found = advice.threshold_advice([0.6, 0.7, 0.55], [0.3, 0.35, 0.4], 0.25, limits)
+    assert found["current"] == {"threshold": 0.25, "yes_passed": 3, "no_passed": 3} and found["separable"]
+    assert found["suggested"] == {"threshold": 0.41, "yes_passed": 3, "no_passed": 0}  # the nearest that does it
+    assert advice.threshold_advice([0.6, 0.7], [0.3], 0.5, limits)["suggested"] is None  # already right
+    mixed = advice.threshold_advice([0.4, 0.6], [0.5, 0.7], 0.3, limits)
+    assert not mixed["separable"]
+    # Limits off the hundredths: never a threshold outside them (it could not be set).
+    odd = advice.threshold_advice([0.9, 0.95, 0.92], [], 0.97, (0.805, 0.995))
+    assert odd["suggested"] == {"threshold": 0.9, "yes_passed": 3, "no_passed": 0}
+    assert advice.threshold_advice([0.81], [0.2, 0.3], 0.85, (0.805, 0.995))["suggested"]["threshold"] == 0.81
+
+
+@requires_sound
+def test_a_built_in_sound_learns_from_clips_and_answers_and_what_it_is_not(settings, quick, monkeypatch):  # noqa: F811
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["doorbell", "siren"], "clips": True, "clear_after_s": 2}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound}).json()["id"]
+            upload = f"/api/v1/sensors/{sid}/sounds/upload"
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            def live(key: str) -> dict:
+                return next(s for s in view()["sound"]["live"] if s["key"] == key)
+
+            def taught() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}/sounds/taught").json()
+
+            # The drawn chime taught as the built-in doorbell, and the siren as what the siren is not
+            # (a siren on TV, say): one clip of it, as one recording of the TV would be.
+            chimes = [
+                ("files", (f"bell{i}.m4a", sounds.encode_clip(chime(gain=0.2 + 0.05 * i, seed=i), RATE), "audio/mp4"))
+                for i in range(5)
+            ]
+            assert client.post(upload, files=chimes, data={"label": "doorbell"}).status_code == 201
+            siren = recording("siren")
+            tv = [("files", ("tv.m4a", sounds.encode_clip(siren, RATE), "audio/mp4"))]
+            assert client.post(upload, files=tv, data={"label": "not:siren"}).status_code == 201
+            assert client.post(upload, files=chimes[:1], data={"label": "not:dog_bark"}).status_code == 400
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["clips"] == 5 and built["siren"]["not_clips"] == 1
+            assert taught()["trained"] and taught()["sounds"] == []  # no own sound made
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            for _ in range(4):
+                server.play(chime(seed=9))
+                if wait_for(lambda: live("doorbell")["on"], timeout=10):
+                    break
+            assert live("doorbell")["on"]
+            # The siren is held back: never heard, and counted.
+            server.play(siren)
+            assert wait_for(lambda: taught()["builtin"][1]["held"] >= 1, timeout=20)
+            time.sleep(len(siren) / RATE / 2)  # all of it sent (at twice the speed)
+            heard = client.get("/api/v1/history", params={"sensor": sid, "event": "heard"}).json()["items"]
+            assert all(item["state_key"] != "siren" for item in heard) and not live("siren")["on"]
+
+            # Answers about the built-in doorbell teach its clip, and are what a threshold is suggested from.
+            def rows() -> list[dict]:
+                items = client.get("/api/v1/history", params={"sensor": sid, "event": "heard"}).json()["items"]
+                return [i for i in items if i["state_key"] == "doorbell" and i["has_clip"]]
+
+            assert wait_for(lambda: bool(rows()), timeout=20)
+            row = rows()[0]
+            assert client.post(f"/api/v1/review/{row['id']}", json={"action": "no"}).status_code == 200
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["not_clips"] == 1 and built["doorbell"]["advice"]["no"] == 1
+            assert client.post(f"/api/v1/review/{row['id']}", json={"action": "yes"}).status_code == 200
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert (built["doorbell"]["clips"], built["doorbell"]["not_clips"]) == (6, 0)
+            assert built["doorbell"]["advice"]["yes"] == 1 and built["doorbell"]["advice"]["no"] == 0
+            # Forgetting the clip an answer taught takes the answer back: it was wrong, or is no longer wanted.
+            newest = taught()["clips"][0]["id"]
+            assert client.delete(f"/api/v1/sound-clips/{newest}").status_code == 204
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["clips"] == 5 and built["doorbell"]["advice"]["yes"] == 0
+            # Taught from the History, the answer is linked to its clip too; and an answer whose clip
+            # went another way (deleted before answers were linked to clips) no longer counts either.
+            made = client.post(
+                f"/api/v1/sensors/{sid}/sounds/teach", json={"history_id": row["id"], "label": "doorbell"}
+            )
+            assert made.status_code == 201
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 1
+            with client.app.state.runtime.db.session() as s:
+                from visionstate.db import Sample as SampleRow
+
+                s.delete(s.get(SampleRow, made.json()["id"]))
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 0
+
+            # A clip forgotten while it is embedded is left out, not a failed training.
+            from visionstate.db import Embedding, Sample
+
+            rt = client.app.state.runtime
+            with rt.db.session() as s:
+                s.query(Embedding).delete()
+            first = taught()["clips"][0]["id"]
+            real = rt.clip_embeddings
+
+            def forgetting(model, data):  # noqa: ANN001, ANN202
+                with rt.db.session() as s:
+                    sample = s.get(Sample, first)
+                    if sample is not None:
+                        s.delete(sample)
+                return real(model, data)
+
+            monkeypatch.setattr(rt, "clip_embeddings", forgetting)
+            vectors, labels = rt._sound_vectors(sid, rt.sound_model)
+            assert vectors and len(vectors) == len(labels)
+    finally:
+        server.close()
+
+
+@requires_sound
+def test_a_sound_almost_heard_is_asked_about_and_a_yes_suggests_a_lower_threshold(settings, quick, monkeypatch):  # noqa: F811
+    monkeypatch.setitem(ADVICE, "min_answers", 1)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Hall", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["siren"], "clips": True, "clear_after_s": 2, "thresholds": {"siren": 0.97}}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound, "review": {"cooldown_s": 0}}).json()[
+                "id"
+            ]
+
+            def waiting() -> list[dict]:
+                return client.get("/api/v1/review", params={"sensor": sid}).json()["items"]
+
+            def history(event: str) -> list[dict]:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": event}).json()["items"]
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            # The CC0 siren scores about 0.92: never heard at 0.97, but almost.
+            for _ in range(3):  # where the windows fall decides; once in a while it is not near enough
+                server.play(recording("siren"))
+                if wait_for(lambda: bool(waiting()), timeout=20):
+                    break
+            item = waiting()[0]
+            assert item["review_reason"] == "near" and item["state_key"] == "siren" and item["has_clip"]
+            assert 0.97 * SOUND["near_share"] <= item["confidence"] < 0.97
+            assert [r["id"] for r in history("near")] == [item["id"]] and not history("heard")
+            assert client.post(f"/api/v1/review/{item['id']}", json={"action": "yes"}).status_code == 200
+            # A yes below the threshold: lower it.
+            items = client.get(f"/api/v1/sensors/{sid}/advice").json()["items"]
+            found = next(i for i in items if i["key"] == "sound:siren")
+            assert found["advice"]["yes"] == 1 and found["advice"]["current"]["yes_passed"] == 0
+            lower = found["advice"]["suggested"]
+            assert lower is not None and lower["threshold"] < 0.97 and lower["yes_passed"] == 1
+            assert client.post(f"/api/v1/sensors/{sid}/advice/sound:siren", json=lower).status_code == 200
+            assert client.get(f"/api/v1/sensors/{sid}").json()["sound"]["thresholds"]["siren"] == lower["threshold"]
+            # And the yes taught the clip: the siren is heard now.
+            server.play(recording("siren"))
+            assert wait_for(lambda: bool(history("heard")), timeout=20)
+    finally:
+        server.close()
+
+
+@requires_sound
+# A key frame every 2 s, and every 9 s (some cameras; HA's stream of a camera): the clip has the
+# camera's video either way, with all of its sound.
+@pytest.mark.parametrize("key_every_s", [2.0, 9.0])
+def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick, key_every_s):  # noqa: F811
+    server = SoundServer(speed=1.0, video=True, key_every_s=key_every_s)
     try:
         with TestClient(create_app(settings)) as client:
             body = {"sounds": ["siren"], "clips": True, "clear_after_s": 2}
@@ -397,7 +670,12 @@ def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noq
                 kinds = sorted(s.type for s in container.streams)
                 frames = sum(1 for _ in container.decode(video=0))
             assert kinds == ["audio", "video"] and frames >= 10  # at least a second of the camera
-            assert 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= 6.0
+            # All of the clip's sound, from before the sound began to after it, in step with the
+            # video: as long as it (silent at first when the video starts at a key frame before it).
+            clip_s = SOUND["clip_before_s"] + SOUND["window_s"] + SOUND["clip_after_s"]
+            heard_s = len(sounds.decode_audio(clip.content, RATE)) / RATE
+            assert clip_s - 1.0 <= heard_s <= clip_s + SOUND["video_lead_max_s"]
+            assert abs(heard_s - frames / 10) <= 0.6  # the test camera sends 10 frames a second
             # Sound only, when asked: the next clip has no video.
             client.patch(f"/api/v1/sensors/{sid}", json={"sound": {**body, "video": False}})
             assert wait_for(lambda: not next(s for s in view()["sound"]["live"] if s["key"] == "siren")["on"])
@@ -610,3 +888,242 @@ def test_a_sensor_needs_something_to_listen_for(settings):  # noqa: F811
         assert client.post("/api/v1/sensors", json={**body, "sound": {"sounds": []}}).status_code == 400
         sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
         assert client.patch(f"/api/v1/sensors/{sid}", json={"sound": {"sounds": []}}).status_code == 400
+
+
+# --- a Home Assistant camera's own sound --------------------------------------------------------------
+
+
+def test_a_home_assistant_camera_gives_its_stream_address(settings):  # noqa: F811
+    """camera/stream over the WebSocket API: the address of its HLS stream, asked with the token."""
+    import asyncio
+    import json
+
+    from websockets.asyncio.server import serve
+
+    from visionstate.sources import HomeAssistant, SourceError
+
+    async def handler(ws):  # noqa: ANN001
+        await ws.send(json.dumps({"type": "auth_required"}))
+        assert json.loads(await ws.recv())["access_token"] == "token"
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        request = json.loads(await ws.recv())
+        assert request["type"] == "camera/stream" and request["format"] == "hls"
+        if request["entity_id"] == "camera.snapshots":
+            error = {"code": "home_assistant_error", "message": "camera.snapshots does not support play stream service"}
+            await ws.send(json.dumps({"id": request["id"], "type": "result", "success": False, "error": error}))
+            return
+        result = {"url": "/api/hls/abc123/master_playlist.m3u8"}
+        await ws.send(json.dumps({"id": request["id"], "type": "result", "success": True, "result": result}))
+
+    async def scenario() -> None:
+        async with serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            ha = HomeAssistant(replace(settings, ha_url=f"http://127.0.0.1:{port}", ha_token="token"))
+            try:
+                url, headers = await ha.stream_address("camera.front_door")
+                assert url == f"http://127.0.0.1:{port}/api/hls/abc123/master_playlist.m3u8"
+                assert headers == {"Authorization": "Bearer token"}
+                with pytest.raises(SourceError, match="does not support play stream"):
+                    await ha.stream_address("camera.snapshots")
+            finally:
+                await ha.close()
+
+    asyncio.run(scenario())
+
+
+def test_cameras_say_whether_they_stream(settings):  # noqa: F811
+    """Only a camera with a stream in Home Assistant has sound to listen to (CameraEntityFeature.STREAM)."""
+    import asyncio
+
+    import httpx
+
+    from visionstate.sources import HomeAssistant
+
+    states = [
+        {"entity_id": "camera.door", "state": "idle", "attributes": {"friendly_name": "Door", "supported_features": 2}},
+        {"entity_id": "camera.snap", "state": "idle", "attributes": {"friendly_name": "Snap", "supported_features": 0}},
+        {"entity_id": "camera.old", "state": "idle", "attributes": {"friendly_name": "Old"}},
+        {"entity_id": "light.hall", "state": "on", "attributes": {}},
+    ]
+
+    async def scenario() -> list[dict]:
+        ha = HomeAssistant(replace(settings, ha_url="http://ha", ha_token="token"))
+        ha._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=states)))
+        try:
+            return await ha.cameras()
+        finally:
+            await ha.close()
+
+    assert {c["entity_id"]: c["stream"] for c in asyncio.run(scenario())} == {
+        "camera.door": True,
+        "camera.snap": False,
+        "camera.old": False,
+    }
+
+
+def test_a_camera_stream_is_asked_for_each_time_it_is_opened(monkeypatch):
+    """The address holds a token that ends with Home Assistant's stream: asked for again at every
+    reconnect (a failure is shown and tried again), and opened with the headers it came with."""
+    import asyncio
+
+    from visionstate.sources import SourceError, open_audio
+
+    monkeypatch.setitem(SOUND, "reconnect_min_s", 0.1)
+    server = SoundServer()
+    asked: list[str] = []
+
+    class FakeHa:
+        async def stream_address(self, entity_id: str) -> tuple[str, dict[str, str]]:
+            asked.append(entity_id)
+            if len(asked) == 1:
+                raise SourceError(f"{entity_id}: the camera is starting")
+            return server.url, {"Authorization": "Bearer token"}
+
+    async def scenario() -> None:
+        stream = open_audio(FakeHa(), "ha_camera", "camera.front_door")  # type: ignore[arg-type]
+        try:
+            for _ in range(200):
+                if stream.total:
+                    break
+                await asyncio.sleep(0.05)
+            assert stream.total and stream.info["codec"] == "pcm_s16le"
+        finally:
+            stream.close()
+
+    try:
+        asyncio.run(scenario())
+        assert asked[:2] == ["camera.front_door", "camera.front_door"]
+        assert server.headers and server.headers[0]["Authorization"] == "Bearer token"
+    finally:
+        server.close()
+
+
+def test_a_sound_sensor_can_listen_to_a_home_assistant_camera(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        body = {"name": "Door", "kind": "sound", "source_type": "ha_camera", "sound": {"sounds": ["siren"]}}
+        assert client.post("/api/v1/sensors", json={**body, "source": "not an entity"}).status_code == 400
+        made = client.post("/api/v1/sensors", json={**body, "source": "camera.front_door"})
+        assert made.status_code == 201, made.text
+        sid = made.json()["id"]
+        # No Home Assistant here: said on the sensor, as any stream that does not open.
+        assert wait_for(lambda: "not configured" in client.get(f"/api/v1/sensors/{sid}").json()["live"]["error"])
+        moved = client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "rtsp", "source": "rtsp://cam/live"})
+        assert moved.status_code == 200 and moved.json()["source_type"] == "rtsp"
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "ha_camera"}).status_code == 400
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"source_type": "http"}).status_code == 400
+        preview = {"source_type": "http", "source": "http://cam/snap.jpg"}
+        assert client.post("/api/v1/sounds/preview", json=preview).status_code == 400
+
+
+@requires_sound
+def test_a_sound_in_the_middle_of_a_burst_is_heard(settings):  # noqa: F811
+    """A Home Assistant camera's stream (HLS) delivers seconds of sound at once: every window in it
+    is analysed, not only the newest (a siren in the middle of a segment was missed)."""
+    server = SoundServer(burst_s=8.0, speed=2.0)
+    siren = recording("siren")[: 3 * RATE]  # shorter than a burst
+    try:
+        with TestClient(create_app(settings)) as client:
+            body = {"name": "Door", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["siren"]}}).json()["id"]
+
+            def view() -> dict:
+                return client.get(f"/api/v1/sensors/{sid}").json()
+
+            assert wait_for(lambda: view()["sound"]["line"] is not None)
+            heard = {"sensor": sid, "event": "heard"}
+            # Played while the server waits between bursts, it begins the next one and is followed by
+            # quiet: the burst's newest window never has it. A sound is now and then not heard at all
+            # (one run in CI): played again, up to three times.
+            for _ in range(3):
+                server.play(np.concatenate([siren, np.zeros(4 * RATE, dtype=np.float32)]))
+                found = wait_for(lambda: client.get("/api/v1/history", params=heard).json()["items"], timeout=15)
+                if found:
+                    break
+            sound = view()["sound"]
+            assert found, (sound["line"], sound["stream"], [round(x) for x in sound["levels"]], view()["live"])
+    finally:
+        server.close()
+
+
+def test_almost_heard_is_not_asked_about_after_five_answers_that_it_was_not(settings):  # noqa: F811
+    from visionstate.db import Prediction as Row
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        body = {
+            "name": "Yard",
+            "kind": "sound",
+            "source_type": "rtsp",
+            "source": "rtsp://127.0.0.1:9/x",
+            "enabled": False,
+        }
+        sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["dog_bark"], "clips": True}}).json()[
+            "id"
+        ]
+
+        def answer(value: str | None, key: str = "dog_bark", kind: str = "near") -> None:
+            with rt.db.session() as s:
+                probs = {} if value is None else {"answer": value}
+                s.add(
+                    Row(sensor_id=sid, is_change=False, state_key=key, published_key=kind, confidence=0.1, probs=probs)
+                )
+
+        quiet = SOUND["near_quiet_after"]
+        for _ in range(quiet - 1):
+            answer("no")
+        assert not rt._near_answered_no(sid, "dog_bark")  # one "no" short
+        answer(None)  # not answered (yet): does not count either way
+        answer("no", kind="on")  # an answer about it heard, not almost
+        answer("no", key="siren")  # about another sound
+        assert not rt._near_answered_no(sid, "dog_bark")
+        answer("our_bell")  # it was one of the own sounds: not this one either
+        assert rt._near_answered_no(sid, "dog_bark")
+        answer("yes")  # a yes asks again
+        assert not rt._near_answered_no(sid, "dog_bark")
+
+
+@requires_sound
+def test_almost_heard_follows_the_model_not_a_head_unsure_about_the_room(settings, quick, monkeypatch):  # noqa: F811
+    # A head taught a few clips that sound like the room is unsure about the room's noise: 0.7
+    # for a dog, lifted to just below the dog's threshold. That is not "almost heard" (found on
+    # a real doorbell: the model said 0 % to every clip asked about, the head about 9 %).
+    monkeypatch.setitem(ADVICE, "min_answers", 1)
+    server = SoundServer(speed=2.0)
+    try:
+        with TestClient(create_app(settings)) as client:
+            rt = client.app.state.runtime
+
+            class Unsure:
+                def predict(self, vectors):  # noqa: ANN001, ANN202
+                    return [{"dog_bark": 0.7} for _ in vectors]
+
+            async def unsure_head(cfg):  # noqa: ANN001, ANN202
+                rt.sound_heads[cfg.id] = Unsure()
+
+            monkeypatch.setattr(rt, "_train_sound_head", unsure_head)
+            body = {"name": "Yard", "kind": "sound", "source_type": "rtsp", "source": server.url}
+            sound = {"sounds": ["dog_bark"], "clips": True, "clear_after_s": 2}
+            sid = client.post("/api/v1/sensors", json={**body, "sound": sound, "review": {"cooldown_s": 0}}).json()[
+                "id"
+            ]
+
+            def dog() -> dict:
+                live = client.get(f"/api/v1/sensors/{sid}").json()["sound"]["live"]
+                return next(s for s in live if s["key"] == "dog_bark")
+
+            assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["sound"]["line"] is not None)
+            rt.sound_heads[sid] = Unsure()  # as if taught (a head is trained when clips are)
+            # Something loud enough to be analysed, that the model does not hear as a dog: the head's
+            # lifted score is what is shown, just below the threshold...
+            server.play(np.concatenate([chime(seed=i) for i in range(6)]))
+            assert wait_for(lambda: dog()["score"] > 0.6 * dog()["threshold"], timeout=20)
+            assert not dog()["on"]
+
+            # ...and it is not asked about, in the time a question and its clip would have taken.
+            def near() -> list:
+                return client.get("/api/v1/history", params={"sensor": sid, "event": "near"}).json()["items"]
+
+            assert not wait_for(lambda: bool(near()), timeout=25)
+            assert client.get("/api/v1/review", params={"sensor": sid}).json()["total"] == 0
+    finally:
+        server.close()

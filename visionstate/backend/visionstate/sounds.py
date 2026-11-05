@@ -210,6 +210,30 @@ def encode_clip(samples: np.ndarray, rate: int) -> bytes:
     return buf.getvalue()
 
 
+def encode_wav(samples: np.ndarray, rate: int) -> bytes:
+    """Sound as a 16-bit WAV file: every sample where it was (a recording trimmed in the browser)."""
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes((np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+    return buf.getvalue()
+
+
+def peaks(samples: np.ndarray, rate: int, per_s: int) -> list[float]:
+    """The loudest sample of each 1/``per_s`` second, 0…1 of the loudest of all (a waveform to draw)."""
+    step = max(1, rate // per_s)
+    count = -(-len(samples) // step)
+    if not count:
+        return []
+    padded = np.abs(np.pad(samples, (0, count * step - len(samples))).reshape(count, step)).max(axis=1)
+    top = float(padded.max())
+    return [round(float(p) / top, 3) for p in padded] if top > 0 else [0.0] * count
+
+
 def decode_audio(data: bytes, rate: int) -> np.ndarray:
     """The sound of a clip or an uploaded file (any format FFmpeg reads) as ``rate`` Hz mono, -1…1."""
     import av
@@ -223,6 +247,27 @@ def decode_audio(data: bytes, rate: int) -> np.ndarray:
             chunks += [f.to_ndarray().reshape(-1) for f in resampler.resample(frame)]
         chunks += [f.to_ndarray().reshape(-1) for f in resampler.resample(None)]
     return np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(0, np.float32)
+
+
+def loud_windows(samples: np.ndarray, rate: int) -> np.ndarray:
+    """The windows of a taught clip it is learned from: every SOUND["teach_hop_s"], those within
+    SOUND["teach_within_db"] of the loudest, at most SOUND["teach_windows"] (the loudest first, then
+    in time order), half a window of quiet added at either end; a clip shorter than a window is one
+    window, padded."""
+    size = int(SOUND["window_s"] * rate)
+    if len(samples) <= size:
+        return loudest_window(samples, rate, SOUND["window_s"])[None, :]
+    # Half a window of quiet on either side: a window that hears the sound begin or end is learned too.
+    samples = np.pad(samples, (size // 2, size // 2))
+    step = int(SOUND["teach_hop_s"] * rate)
+    starts = list(range(0, len(samples) - size + 1, step))
+    if starts[-1] != len(samples) - size:
+        starts.append(len(samples) - size)  # the end too
+    windows = np.stack([samples[i : i + size] for i in starts]).astype(np.float32)
+    levels = np.array([level_db(w) for w in windows])
+    keep = np.flatnonzero(levels >= levels.max() - SOUND["teach_within_db"])
+    keep = np.sort(keep[np.argsort(-levels[keep], kind="stable")][: SOUND["teach_windows"]])
+    return windows[keep]
 
 
 def loudest_window(samples: np.ndarray, rate: int, window_s: float) -> np.ndarray:
@@ -240,6 +285,38 @@ def loudest_window(samples: np.ndarray, rate: int, window_s: float) -> np.ndarra
 # --- Own sounds -----------------------------------------------------------------------------------
 
 OTHER = "other"  # the head's class for everything that is none of the own sounds
+# A built-in sound taught with the household's own clips: its own clips are labelled with its key,
+# the clips that are not it ("No" answers) with this prefix and its key. Both are classes of the head.
+NOT_PREFIX = "not:"
+
+
+def not_label(key: str) -> str:
+    return NOT_PREFIX + key
+
+
+def lift(p: float, threshold: float) -> float:
+    """A head's probability on a built-in sound's scale: SOUND["own_threshold"] lands on the
+    sound's threshold, 0 and 1 stay where they are (so one score bar shows both)."""
+    own = SOUND["own_threshold"]
+    if p <= own:
+        return p / own * threshold
+    return threshold + (p - own) / (1.0 - own) * (1.0 - threshold)
+
+
+def correct(
+    score: float, yes: float | None, no: float | None, threshold: float, holding: bool = False
+) -> tuple[float, bool]:
+    """A built-in sound's score with the household's clips: heard when the model is sure enough or
+    its own clips are (``yes``, the head's probability), and the model held back when the window is
+    clearly like a clip that is not it (``no`` at least SOUND["own_threshold"] and above ``yes``).
+    Like a sound that is heard, a sound held back (``holding``: a moment ago) stays held back while
+    ``no`` is above SOUND["off_share"] of that, so the windows at its edges, half of it, do not let
+    it through. Returns the score, and whether the model was held back."""
+    mine = lift(yes, threshold) if yes is not None else 0.0
+    line = SOUND["own_threshold"] * (SOUND["off_share"] if holding else 1.0)
+    if no is not None and no >= line and no > (yes or 0.0) and score > mine:
+        return mine, True
+    return max(score, mine), False
 
 
 @dataclass

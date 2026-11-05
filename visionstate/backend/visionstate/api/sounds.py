@@ -1,5 +1,5 @@
 """Sound sensors: trying a stream before a sensor is made, and teaching own sounds from clips (a
-clip in the history, or an uploaded recording)."""
+clip in the history, an uploaded recording, or one recorded from the sensor's stream and trimmed)."""
 
 from __future__ import annotations
 
@@ -13,20 +13,25 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import sounds
+from .. import advice, sounds
 from ..db import Prediction, Sample, Sensor
 from ..engine import Runtime
-from ..settings import KIND_SOUND, SOUND, UPLOAD_LIMITS, merge_sound
-from ..sources import AudioStream, SourceError, check_source
+from ..engine.sound import RecordingError
+from ..engine.state import SoundRecording
+from ..settings import KIND_SOUND, SOUND, SOUND_LIMITS, UPLOAD_LIMITS, merge_sound
+from ..sources import SOUND_SOURCE_TYPES, SourceError, check_source, open_audio
 from ..storage import CLIP_SUFFIX, is_clip
+from .advice import sound_answers
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 
 router = APIRouter(prefix=API_PREFIX, tags=["sounds"])
 PREVIEW_S = 6.0  # how long a stream is listened to before a sound sensor is made
 CLIP_S = 4.0  # what is kept of an uploaded recording: its loudest seconds
+PEAKS_PER_S = 20  # the waveform of a recording from the stream, drawn to trim it
 
 
 class PreviewIn(BaseModel):
+    source_type: str = "rtsp"  # sources.SOUND_SOURCE_TYPES
     source: str = Field(min_length=1, max_length=1024)
 
 
@@ -35,13 +40,16 @@ async def preview(body: PreviewIn, request: Request) -> dict:
     """Listen to a stream for a few seconds (the wizard): whether it has sound, what kind (codec,
     sample rate), its level, and the model's sounds that scored best."""
     rt = runtime(request)
+    if body.source_type not in SOUND_SOURCE_TYPES:
+        raise HTTPException(400, "Unknown source type")
     try:
-        check_source("rtsp", body.source)
+        check_source(body.source_type, body.source)
     except SourceError as err:
         raise HTTPException(400, str(err)) from err
-    stream = AudioStream(body.source)
+    stream = open_audio(rt.ha, body.source_type, body.source)
     try:
-        deadline = time.monotonic() + PREVIEW_S
+        # A Home Assistant camera's stream takes longer to open.
+        deadline = time.monotonic() + PREVIEW_S + (SOUND["ha_open_s"] if body.source_type == "ha_camera" else 0)
         while time.monotonic() < deadline and stream.total < PREVIEW_S * stream.rate * 0.6:
             await asyncio.sleep(0.25)
             if stream.error and not stream.total:
@@ -76,7 +84,8 @@ async def preview(body: PreviewIn, request: Request) -> dict:
 
 class TeachClipIn(BaseModel):
     """A clip in the history taught as one of the sensor's own sounds (``label``), as a new own
-    sound (``new_name``), or as "not any of them" (``label``: sounds.OTHER)."""
+    sound (``new_name``), as "not any of them" (``label``: sounds.OTHER), or as one of the built-in
+    sounds it listens for, or not that one (``label``: its key, or sounds.not_label of it)."""
 
     history_id: int
     label: str | None = Field(default=None, max_length=64)
@@ -98,16 +107,28 @@ def own_sound(sound: dict, name: str) -> dict:
     return {"key": key, "name": name}
 
 
+def builtin_keys(sound: dict) -> list[str]:
+    """The built-in sounds a sensor listens for that can be taught with clips (not speech: it never
+    keeps a clip)."""
+    return [k for k in sound["sounds"] if k in sounds.SOUNDS and k != SOUND["speech_key"]]
+
+
 def _label(sensor: Sensor, label: str | None, new_name: str | None) -> tuple[str, bool]:
-    """The label to teach (an own sound's key or OTHER), and whether a new own sound was made."""
+    """The label to teach (an own sound's key, OTHER, or a built-in sound's key or "not" it), and
+    whether a new own sound was made."""
     sound = merge_sound(sensor.sound)
     if new_name:
         made = own_sound(sound, new_name)
         sensor.sound = {**(sensor.sound or {}), "custom": [*sound["custom"], made]}
         return made["key"], True
-    if label is not None and (label == sounds.OTHER or label in {c["key"] for c in sound["custom"]}):
+    builtin = builtin_keys(sound)
+    allowed = {sounds.OTHER, *(c["key"] for c in sound["custom"]), *builtin, *map(sounds.not_label, builtin)}
+    if label is not None and label in allowed:
         return label, False
-    raise HTTPException(400, "Teach a clip as one of the sensor's own sounds, a new one, or as another sound")
+    raise HTTPException(
+        400,
+        "Teach a clip as one of the sensor's sounds (its own or a built-in one it listens for), a new one, or another",
+    )
 
 
 def _add_clip(rt: Runtime, sensor_id: int, data: bytes, label: str | None, new_name: str | None, origin: str) -> dict:
@@ -116,7 +137,7 @@ def _add_clip(rt: Runtime, sensor_id: int, data: bytes, label: str | None, new_n
         key, made = _label(sensor, label, new_name)
         taught = s.scalars(select(Sample.id).where(Sample.sensor_id == sensor_id, Sample.object_label == key)).all()
         if key != sounds.OTHER and len(taught) >= SOUND["max_taught"]:
-            raise HTTPException(400, f"An own sound can have at most {SOUND['max_taught']} clips")
+            raise HTTPException(400, f"A sound can have at most {SOUND['max_taught']} clips of each kind")
         filename = rt.storage.save_sample_clip(sensor_id, data)
         sample = Sample(sensor_id=sensor_id, filename=filename, origin=origin, object_label=key)
         s.add(sample)
@@ -144,6 +165,10 @@ async def teach_history_clip(rt: Runtime, sensor_id: int, body: TeachClipIn) -> 
             if row is None or row.sensor_id != sensor_id or not is_clip(row.frame):
                 raise HTTPException(404, "No clip in this history row")
             path = rt.storage.history_path(sensor_id, row.frame or "")
+            # Taught as the built-in sound it was heard as, or as not that one: an answer about it,
+            # as in Review (what the threshold advice counts).
+            if row.state_key in sounds.SOUNDS and body.label in (row.state_key, sounds.not_label(row.state_key)):
+                row.probs = {**(row.probs or {}), "answer": "yes" if body.label == row.state_key else "no"}
         try:
             data = path.read_bytes()
         except OSError as err:
@@ -156,6 +181,14 @@ async def teach_history_clip(rt: Runtime, sensor_id: int, body: TeachClipIn) -> 
 
     data = await asyncio.to_thread(clip)
     result = await asyncio.to_thread(_add_clip, rt, sensor_id, data, body.label, body.new_name, "history")
+
+    def link() -> None:  # the answer counts while its clip is there (api/advice.py)
+        with rt.db.session() as s:
+            row = s.get(Prediction, body.history_id)
+            if row is not None and (row.probs or {}).get("answer") is not None:
+                row.sample_id = result["id"]
+
+    await asyncio.to_thread(link)
     await _taught(rt, sensor_id)
     return result
 
@@ -194,6 +227,101 @@ async def upload_clips(
     return {"added": added}
 
 
+# --- recording from the sensor's stream ------------------------------------------------------------
+
+
+class TrimIn(BaseModel):
+    """The part of a recording taught (seconds from Start), as an own sound, a new one or OTHER."""
+
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    label: str | None = Field(default=None, max_length=64)
+    new_name: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+def _recording(rt: Runtime, sensor_id: int, recording_id: str) -> SoundRecording:
+    recording = rt.get_recording(sensor_id, recording_id)
+    if recording is None:
+        raise HTTPException(404, "This recording is gone: record it again")
+    return recording
+
+
+def _is_sound_sensor(rt: Runtime, sensor_id: int) -> None:
+    with rt.db.session() as s:
+        get_sensor(s, sensor_id, KIND_SOUND)
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording", status_code=201)
+async def start_recording(sensor_id: int, request: Request) -> dict:
+    """Start recording an own sound from the sensor's stream (it must be listening)."""
+    rt = runtime(request)
+    await asyncio.to_thread(_is_sound_sensor, rt, sensor_id)
+    try:
+        recording = rt.start_recording(sensor_id)
+    except RecordingError as err:
+        raise HTTPException(409, str(err)) from err
+    return {"id": recording.id, "max_s": SOUND["record_max_s"], "after_s": SOUND["record_after_s"]}
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording/{recording_id}/stop")
+async def stop_recording(sensor_id: int, recording_id: str, request: Request) -> dict:
+    """Stop: answers once the seconds after Stop arrived (SOUND["record_after_s"]), with the
+    recording's length, where Stop was, and its waveform."""
+    rt = runtime(request)
+    try:
+        recording = await rt.stop_recording(_recording(rt, sensor_id, recording_id))
+    except RecordingError as err:
+        raise HTTPException(409, str(err)) from err
+    samples = recording.samples
+    assert samples is not None
+    rate = recording.stream.rate
+    return {
+        "id": recording.id,
+        "seconds": round(len(samples) / rate, 2),
+        "stop_s": recording.stop_s,
+        "muted_s": recording.muted_s,
+        "peaks": await asyncio.to_thread(sounds.peaks, samples, rate, PEAKS_PER_S),
+        "peaks_per_s": PEAKS_PER_S,
+    }
+
+
+@router.get("/sensors/{sensor_id}/sounds/recording/{recording_id}/audio")
+async def recording_audio(sensor_id: int, recording_id: str, request: Request) -> Response:
+    """A stopped recording as WAV (speech silenced), to listen to while trimming."""
+    rt = runtime(request)
+    recording = _recording(rt, sensor_id, recording_id)
+    if recording.samples is None:
+        raise HTTPException(409, "Still recording")
+    data = await asyncio.to_thread(sounds.encode_wav, recording.samples, recording.stream.rate)
+    return Response(data, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/sensors/{sensor_id}/sounds/recording/{recording_id}/teach", status_code=201)
+async def teach_recording(sensor_id: int, recording_id: str, body: TrimIn, request: Request) -> dict:
+    """Teach the trimmed part of a stopped recording; the recording is then forgotten."""
+    rt = runtime(request)
+    recording = _recording(rt, sensor_id, recording_id)
+    if recording.samples is None:
+        raise HTTPException(409, "Still recording")
+    rate = recording.stream.rate
+    part = recording.samples[int(body.start_s * rate) : int(body.end_s * rate)]
+    if len(part) < SOUND["record_min_s"] * rate:
+        raise HTTPException(400, f"Keep at least {SOUND['record_min_s']:g} s of the recording")
+    encoded = await asyncio.to_thread(sounds.encode_clip, part, rate)
+    result = await asyncio.to_thread(_add_clip, rt, sensor_id, encoded, body.label, body.new_name, "recording")
+    rt.sound_recordings.pop(sensor_id, None)
+    await _taught(rt, sensor_id)
+    return result
+
+
+@router.delete("/sensors/{sensor_id}/sounds/recording/{recording_id}", status_code=204)
+async def discard_recording(sensor_id: int, recording_id: str, request: Request) -> Response:
+    rt = runtime(request)
+    if rt.get_recording(sensor_id, recording_id) is not None:
+        rt.sound_recordings.pop(sensor_id, None)
+    return Response(status_code=204)
+
+
 @router.get("/sensors/{sensor_id}/sounds/taught")
 def taught_clips(sensor_id: int, request: Request) -> dict:
     """The clips taught to a sound sensor, newest first, and how many per own sound."""
@@ -208,14 +336,33 @@ def taught_clips(sensor_id: int, request: Request) -> dict:
         counts: dict[str, int] = {}
         for row in rows:
             counts[row.object_label or ""] = counts.get(row.object_label or "", 0) + 1
-        own = merge_sound(sensor.sound)["custom"]
+        settings = merge_sound(sensor.sound)
+        own = settings["custom"]
         room = rt.sound_room.get(sensor_id)
+        builtin = builtin_keys(settings)
+        answers = sound_answers(s, sensor_id, builtin)
+        live = rt.live.get(sensor_id)
+        tracks = live.sound.tracks if live is not None and live.sound is not None else {}
+        lo_hi = SOUND_LIMITS["threshold"]
         return {
             "clips": [
                 {"id": x.id, "label": x.object_label, "origin": x.origin, "created_at": iso(x.created_at)} for x in rows
             ],
             "counts": counts,
             "sounds": [{**c, "clips": counts.get(c["key"], 0)} for c in own],
+            "builtin": [
+                {
+                    "key": key,
+                    "name": sounds.SOUNDS[key].name,
+                    "clips": counts.get(key, 0),
+                    "not_clips": counts.get(sounds.not_label(key), 0),
+                    "held": tracks[key].held_count if key in tracks else 0,
+                    "threshold": (threshold := settings["thresholds"].get(key, sounds.SOUNDS[key].threshold)),
+                    "model_threshold": sounds.SOUNDS[key].threshold,
+                    "advice": advice.threshold_advice(*answers.get(key, ([], [])), threshold, lo_hi),
+                }
+                for key in builtin
+            ],
             "room": int(len(room)) if isinstance(room, np.ndarray) and room.size else 0,
             "trained": sensor_id in rt.sound_heads,
         }
@@ -245,6 +392,13 @@ async def forget_clip(sample_id: int, request: Request) -> Response:
             if sample is None or not sample.filename.endswith(CLIP_SUFFIX):
                 raise HTTPException(404, "Clip not found")
             sensor_id = sample.sensor_id
+            # The answer that taught it goes with it: a clip is forgotten because it was wrong or
+            # is no longer wanted, so it no longer counts towards a suggested threshold either.
+            for row in s.scalars(
+                select(Prediction).where(Prediction.sensor_id == sensor_id, Prediction.sample_id == sample.id)
+            ):
+                row.probs = {k: v for k, v in (row.probs or {}).items() if k != "answer"}
+                row.sample_id = None
             rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, sample.id, sample.filename))
             s.delete(sample)
             return sensor_id

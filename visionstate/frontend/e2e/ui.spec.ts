@@ -9,6 +9,7 @@ import {
   METER_REGION,
   METER_URL,
   PHOTO_URL,
+  PLAY_URL,
   READING_SENSOR_NAME,
   SOUND_WAV_URL,
   TURNED_COUNTER_REGION,
@@ -2014,8 +2015,34 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
   // answer yes to it, and it leaves the queue.
   const before = await waiting();
+  // Played once, the clip goes round until the next question, whose clip then plays by itself in
+  // the same player (a phone lets an element it played play again, never a new one).
+  await press(page.getByRole('button', { name: 'Play the clip' }), info);
+  const media = page.locator('section.main').locator('video, audio').first();
+  await expect(media).toHaveAttribute('loop', '');
+  const player = await media.elementHandle();
+  const firstSrc = await media.getAttribute('src');
   await press(page.getByRole('button', { name: /^Yes, / }), info);
   await expect.poll(waiting).toBe(before - 1);
+  if (before > 1 && (await page.getByText('Was this').count())) {
+    await expect.poll(() => media.getAttribute('src')).not.toBe(firstSrc);
+    // The same element, unless the next clip is of the other kind (sound only, or with video).
+    if (await player!.evaluate((el) => el.isConnected)) {
+      await expect.poll(() => player!.evaluate((el) => !(el as HTMLMediaElement).paused)).toBe(true);
+    }
+  }
+  // The answer taught the clip to that built-in sound, which then hears it surely and asks no more:
+  // forget it, so the next project is asked too.
+  const taught = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+  const builtin = new Set((taught.builtin as { key: string }[]).map((b) => b.key));
+  await expect.poll(async () => {
+    const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+    return (now.clips as { label: string }[]).filter((c) => builtin.has(c.label)).length;
+  }).toBeGreaterThan(0);
+  const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
+  for (const c of now.clips as { id: number; label: string }[]) {
+    if (builtin.has(c.label)) await request.delete(`api/v1/sound-clips/${c.id}`);
+  }
   errors.expectNone();
 });
 
@@ -2038,5 +2065,145 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   await press(forget, info);
   await press(card.getByRole('button', { name: /Tap again/ }), info);
   await expect(card).toHaveCount(0);
+  errors.expectNone();
+});
+
+test('own sounds: recorded from the stream, trimmed by its ends, taught and forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(90_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  const name = `Chime ${info.project.name}`;
+  await page.getByLabel('Name of the new own sound').fill(name);
+  await press(page.getByTestId('record-new'), info);
+  const recorder = page.getByTestId('sound-recorder');
+  const stop = recorder.getByTestId('record-stop');
+  await expect(stop).toBeEnabled();
+  await expect(recorder.getByTestId('record-clock')).not.toHaveText('0:00'); // the clock runs
+  await request.get(PLAY_URL('chime'));
+  await page.waitForTimeout(1500);
+  await press(stop, info);
+  await expect(recorder.getByText(/Listening \d+ s more/)).toBeVisible();
+  // Then the trimmer: from Start to Stop kept, the seconds after there to take in.
+  const range = recorder.getByTestId('trim-range');
+  await expect(range).toBeVisible({ timeout: 30_000 });
+  await expect(recorder.getByTestId('clip-trimmer').getByText('Stop', { exact: true })).toBeVisible(); // where Stop was
+  const before = await range.textContent();
+  const end = recorder.getByRole('slider', { name: 'End of the clip' });
+  const from = await center(end);
+  await drag(page, info, from, { x: from.x + 60, y: from.y });
+  await expect(range).not.toHaveText(before ?? '');
+  const startHandle = recorder.getByRole('slider', { name: 'Start of the clip' });
+  const at = await center(startHandle);
+  await drag(page, info, at, { x: at.x + 20, y: at.y });
+  await expect(range).not.toHaveText(/^0\.0–/);
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=sound-recorder] .btn');
+  await press(recorder.getByTestId('trim-play'), info);
+  await press(recorder.getByTestId('record-teach'), info);
+  const card = page.getByTestId(`own-sound-chime_${info.project.name}`);
+  await expect(card).toContainText('1 clip');
+  await expect(card).toContainText('Recorded from the stream');
+  await expect(recorder).toHaveCount(0);
+  await press(card.getByRole('button', { name: /Forget/ }).first(), info);
+  await press(card.getByRole('button', { name: /Tap again/ }), info);
+  await expect(card).toHaveCount(0);
+  errors.expectNone();
+});
+
+test('a built-in sound taught with a clip of what it is not, recorded from the stream, then forgotten', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  test.setTimeout(90_000);
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  await page.goto(`#/sensors/${id}/quality`);
+  // Not the siren: the other tests need it heard.
+  const card = page.getByTestId('builtin-sound-dog_bark');
+  await expect(card).toContainText('built-in');
+  await expect(page.getByTestId('builtin-sound-siren')).toBeVisible();
+  await press(card.getByTestId('record-not:dog_bark'), info);
+  const recorder = card.getByTestId('sound-recorder');
+  await expect(recorder.getByTestId('record-stop')).toBeEnabled();
+  await request.get(PLAY_URL('chime'));
+  await page.waitForTimeout(1500);
+  await press(recorder.getByTestId('record-stop'), info);
+  await expect(recorder.getByTestId('trim-range')).toBeVisible({ timeout: 30_000 });
+  await expect(recorder.getByTestId('record-teach')).toHaveText(/Teach as not Dog/);
+  await press(recorder.getByTestId('record-teach'), info);
+  await expect(card.getByText('It is not this 1')).toBeVisible();
+  await expect(card).toContainText('Recorded from the stream');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid^=builtin-sound] .btn');
+  await press(card.getByRole('button', { name: 'Forget this clip' }), info);
+  await expect(card.getByText('It is not this 0')).toBeVisible();
+  errors.expectNone();
+});
+
+test('thresholds from the answers: the card on Settings, for a state sensor and a sound sensor', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const ids = [await seededSensorId(request)];
+  if (await soundModelInstalled(request)) ids.push(await seededSoundSensorId(request));
+  for (const id of ids) {
+    const advice = (await (await request.get(`api/v1/sensors/${id}/advice`)).json()).items as { key: string; advice: { yes: number; no: number } }[];
+    expect(advice.length).toBeGreaterThan(0);
+    await page.goto(`#/sensors/${id}/settings`);
+    const card = page.getByTestId('advice-card');
+    await expect(card).toContainText('From your answers');
+    const answered = advice.filter((i) => i.advice.yes + i.advice.no > 0);
+    if (answered.length) await expect(card.getByTestId(`advice-${answered[0].key}`)).toBeVisible();
+    else await expect(card).toContainText('are counted here');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '[data-testid=advice-card] .btn');
+  }
+  errors.expectNone();
+});
+
+test('the threads per AI model are chosen with the models, applied without a restart', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/settings');
+  const field = page.getByTestId('inference-threads');
+  const select = field.getByRole('combobox', { name: 'Threads per AI model' });
+  await expect(select).toHaveValue('0');
+  await expect(select.locator('option').first()).toHaveText(/^Automatic( \(\d+\))?$/); // no number on Windows: ONNX Runtime counts
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.card');
+  try {
+    await select.selectOption('1');
+    await press(page.getByRole('button', { name: 'Apply' }), info);
+    await expect.poll(async () => (await (await request.get('api/v1/settings')).json()).inference_threads).toBe(1);
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled(); // saved: nothing left to apply
+  } finally {
+    const now = await (await request.get('api/v1/settings')).json();
+    await request.put('api/v1/settings', { data: { backbone: now.backbone, inference_threads: 0 } });
+  }
+  errors.expectNone();
+});
+
+test('the speed test: a model measured on a sensor, the sensors paused meanwhile', async ({ page, request }, info) => {
+  test.setTimeout(120_000);
+  const errors = watchErrors(page);
+  const sensorId = await seededSensorId(request);
+  await page.goto('#/settings');
+  await press(page.getByTestId('speed-test-link').getByRole('link', { name: 'Open the speed test' }), info);
+  const form = page.getByTestId('speed-test');
+  await form.getByRole('combobox', { name: 'Sensor to test with' }).selectOption(String(sensorId));
+  await expect(form.getByRole('checkbox', { checked: true })).toHaveCount(1); // the model in use, ready to test
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=speed-test] .btn, [data-testid=speed-test] .chip');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test.png'), fullPage: true });
+  await press(form.getByRole('button', { name: 'Test 1 model' }), info);
+  const results = page.getByTestId('speed-test-result');
+  await expect(results).toHaveCount(1, { timeout: 90_000 });
+  await expect(results.first()).toContainText('Whole check');
+  await expect(results.first()).toContainText('In use');
+  await expect(page.getByTestId('speed-test-results')).toContainText('threads per model (automatic)');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '[data-testid=speed-test-results] .btn, [data-testid=speed-test-results] .chip');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'speed-test-results.png'), fullPage: true });
+  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Download report' }).click()]);
+  expect(file.suggestedFilename()).toBe('visionstate-speed-test.txt');
+  // Over: the sensors go on.
+  await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
   errors.expectNone();
 });

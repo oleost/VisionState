@@ -517,16 +517,22 @@ objects the region stays a border.
 
 ## Sound sensors
 
-*What it has been tried on.* RTSP has not been tried with a real camera yet, nor a Raspberry Pi 4, an ESP32
-microphone or clips in the Home Assistant app on iOS; it has been tried on live HTTP streams and one
-real smoke alarm. If you try a camera, please report its model and how it went.
+*What it has been tried on.* It has not been tried on a Raspberry Pi 4, an ESP32 microphone or
+clips in the Home Assistant app on iOS yet. If you try a camera, please report its model and how it
+went.
 
 A sound sensor listens to a stream's sound all the time and tells Home Assistant what it hears:
 each sound is an on/off sensor (`binary_sensor`), on while the sound is heard and for a few
 seconds after (*A sound stays heard for*). In the wizard, choose **Listen** first.
 
-**Where the sound comes from** (*Stream with sound*):
+**Where the sound comes from** (*Sound source*):
 
+- a camera in Home Assistant, picked as for the other sensors: VisionState listens to the camera's
+  own stream in Home Assistant. Only cameras with a stream can be picked (a camera that gives only
+  snapshots is greyed out). It hears what the camera's RTSP stream hears, but later: several
+  seconds behind the camera (about 10 on the doorbell it was tried on). It takes a while to start, and Home Assistant passes on only some
+  kinds of sound (AAC is one): when the wizard hears nothing, or when a sound must be known at
+  once, use the camera's RTSP stream instead;
 - a camera's RTSP stream — switch its microphone (its audio) on in the camera first. A camera's
   sub stream is enough: the sound is the same;
 - a go2rtc restream (`rtsp://homeassistant.local:8554/<name>` with the go2rtc app): one connection
@@ -554,8 +560,13 @@ teach yours as an own sound. A sound on TV is a real sound to the sensor.
 
 **Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
 door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
-(with clips on: *Teach this clip as*), or from recordings made with a phone (*Add an own sound*,
-or *Add recordings* on a sound: any sound or video file; its loudest four seconds are kept). A
+(with clips on: *Teach this clip as*), recorded from the sensor's own stream (*Record*: tap it,
+make the sound, tap *Stop*), or from recordings made with a phone (*Add recordings*: any sound or
+video file; its loudest four seconds are kept). A recording from the stream goes on for a few
+seconds after *Stop*, because a stream comes a little late (a Home Assistant camera's most):
+drag the ends of the clip to keep only the sound — at first it keeps what came between *Start* and
+*Stop* — play it to check, and *Teach* it. As in every clip, seconds with someone talking are
+silenced. It records only while the sensor listens (not paused). A
 doorbell, a door or a microwave is out of the box too, but heard much better as an own sound: it
 learns *your* doorbell from its own clips. About five clips is a good start. Each own sound is an
 on/off sensor in Home Assistant too. To tell them apart from everything else, the sensor starts
@@ -583,9 +594,25 @@ camera's H.264 sub stream. Clips are kept in the app's own storage (not the medi
 every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
 part of the history in a backup.
 
-**Review.** With clips on, a sound that was only just heard is asked about in Review: listen (or
-watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer is
-kept; an own sound learns from it, the built-in sounds do not change.
+**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the **Own
+sounds** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
+from the History, *Teach this clip as*). From clips of it, it also hears the sound when the AI
+alone was not sure enough — your own door, as it sounds through your microphone. A clip of what it
+is not — a cupboard door, a siren on TV — holds the built-in sound back when something is clearly
+like that clip; the Live tab then shows *Held back*, and the card how often. It stays the same
+sensor in Home Assistant.
+
+**Almost heard.** With clips on, a sound the AI itself almost heard — its own score nearly at the
+threshold — but that was not heard, is asked about in Review too (*Almost heard*). What clips you
+taught make of a sound does not count here: a few clips that sound like the room make it unsure
+about all of the room's noise, and that is not "almost"; a *yes* teaches its clip and tells the sensor its
+threshold may be too high (below). After five *no* in a row about a sound almost heard, it is not
+asked about almost heard any more: the threshold is not too high, and just below it is mostly the
+room's own noise. A *yes* (or forgetting a clip that taught a *no*) lets it ask again.
+
+**Review.** With clips on, a sound that was only just heard (or almost) is asked about in Review: listen (or
+watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer
+teaches the clip: *yes* as that sound (an own one or a built-in one), *no* as not it.
 
 **Privacy.** A sensor that listens hears what kind of sound it is, **never what is said**: there
 is no speech recognition. *Someone talking* only says that someone is. Before a clip is kept,
@@ -653,6 +680,12 @@ Set up per sensor under **Settings → When to check**:
 | Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
 | After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
+Sensors on the exact same camera or address take their pictures together: their regular checks
+fall on the same moments (a sensor every 30 s and one every 60 s meet every minute), and they share
+one fresh picture, each checking its own region with its own model. A check can therefore come a
+little sooner than its interval after a trigger, never later. A sensor with a light, or alone on its
+camera, takes its pictures by itself.
+
 A typical garage setup: regular check every 300 s, the garage motion sensor and the opener as
 trigger entities, and change detection on for cameras without a motion sensor.
 
@@ -691,6 +724,17 @@ automations.
 | Report unknown below | 70 % | Confidence needed to report a state |
 | Change after N matching results | 2 | Avoids flicker when someone walks past |
 
+**A threshold from your answers** — every kind of sensor. Each answer in Review is kept with the
+score of what was asked about: a state's confidence, a reading's, the similarity to an own label
+or a face, a sound's score. Once there are a few, **From your answers** at the top of the sensor's
+**Settings** shows how your right and wrong answers fare at each threshold it decides by, and
+suggests one that lets more of the right ones and fewer of the wrong ones through: right answers
+just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
+(nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
+— label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
+**Own sounds** too. An answer counts while what it taught is there: delete the frame, box, face
+or clip it taught (because it was wrong, or is no longer wanted) and the answer no longer counts.
+
 ## History
 
 **History** at the top lists what every sensor recorded: state changes, objects that appeared,
@@ -712,6 +756,24 @@ number next to a choice is how many entries choosing it would find:
 The filter is part of the page address, so a reload keeps it and a bookmark opens it again.
 New entries do not push the list down while you read it: **Show N new** appears instead.
 How long history is kept is set under **Settings → Storage** (below).
+
+## Speed test
+
+**Settings → Speed test** measures AI models on your own machine, with the camera or microphone of one
+of your sensors, so you can see what your hardware can do before you choose. Pick a sensor and the
+models to test (all of them if you like), and start. For each model you get the time of a whole check
+and its parts (camera, decoding, AI), how much memory it takes, and whether it fits the sensor's
+interval. The results also show the machine: its CPUs and memory, the threads each model ran
+with, and the CPU features that make AI faster (such as AVX2 or, on ARM, ASIMD). *Download report*
+gives the numbers as a text file to share, without names or addresses.
+
+- **All sensors are paused while it runs**, also the ones on other cameras, so the numbers are of one
+  model alone. They keep their last values in Home Assistant and go on by themselves afterwards.
+- Models you do not have are downloaded for the test and **deleted afterwards**, unless you tick
+  *Keep the downloaded models*. A model that does not fit in the free memory is skipped.
+- It measures speed and memory, not how good a model is at your picture. Testing only shows the numbers:
+  to use another model, choose it under *AI model*.
+- Memory is only measured on Linux, so on Home Assistant, not when running it on a Windows PC.
 
 ## Backup, export and import
 
@@ -831,6 +893,12 @@ others and whether it is included, downloaded or still to download. A downloaded
 not in use can be deleted there to free the disk (it is downloaded again when chosen); a face
 model only while no sensor recognises faces with it. A choice you made stays when a later
 version recommends another model.
+
+**Threads per AI model** (under the choices): how many CPU cores one check may use. *Automatic*
+uses one per core, which is fastest on a machine of its own. On a virtual machine or a NAS that
+shares its CPU with other work, fewer threads can be faster: when the threads wait for cores
+that are busy elsewhere, a check can take twice as long. Try a number and run the **Speed test**
+again to see; the change applies at once, without a restart.
 
 ## App options
 

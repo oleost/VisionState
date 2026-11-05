@@ -277,6 +277,8 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body
                 raise HTTPException(400, "Not a question about an own label")
             sensor_id, score, taught = row.sensor_id, row.confidence, row.sample_id
             row.reviewed = True
+            if action != "skip":  # whether it was the one asked about (what a threshold is suggested from)
+                row.probs = {**(row.probs or {}), "answer": "yes" if action == "yes" else "no"}
             row.sample_id = None
             if taught is not None and is_face and (face := s.get(Face, taught)) is not None:
                 rt.db.after_commit(
@@ -337,10 +339,11 @@ def _sound_names(sensor: Sensor) -> list[dict]:
 
 async def _answer_sound(rt: Runtime, prediction_id: int, body: ReviewIn) -> dict:
     """ "Was this a siren?" — the answer is kept with the row (``probs["answer"]``), and teaches its
-    clip where it can: yes about an own sound adds the clip to it; sound / new teach it as one of
-    the own sounds or a new one; no teaches it as another sound (``sounds.OTHER``) when the sensor
-    has own sounds. The model's own sounds are not changed by an answer. Answering again replaces
-    the clip the first answer taught."""
+    clip: yes adds it to the sound (an own one, or a built-in one: heard from such clips too); no
+    teaches it as not that sound (a built-in one: held back when a window is clearly like it) or,
+    about an own sound, as another sound (``sounds.OTHER``); sound / new teach it as one of the own
+    sounds or a new one. A built-in sound's clips are kept up to SOUND["max_taught"]; the answer
+    stands when there is no room. Answering again replaces the clip the first answer taught."""
     from .sounds import TeachClipIn, teach_history_clip
 
     if body.action not in ("yes", "no", "sound", "new", "skip"):
@@ -366,9 +369,12 @@ async def _answer_sound(rt: Runtime, prediction_id: int, body: ReviewIn) -> dict
 
     sensor_id, key, settings, taught = await asyncio.to_thread(take_out)
     own = {c["key"] for c in settings["custom"]}
+    builtin = key in sounds.SOUNDS and key in settings["sounds"]
     teach: TeachClipIn | None = None
-    if body.action == "yes" and key in own:
+    if body.action == "yes" and (key in own or builtin):
         teach = TeachClipIn(history_id=prediction_id, label=key)
+    elif body.action == "no" and builtin:
+        teach = TeachClipIn(history_id=prediction_id, label=sounds.not_label(key))
     elif body.action == "sound":
         if body.state_key not in own:
             raise HTTPException(400, "Name one of the sensor's own sounds")
@@ -384,9 +390,10 @@ async def _answer_sound(rt: Runtime, prediction_id: int, body: ReviewIn) -> dict
         try:
             result = await teach_history_clip(rt, sensor_id, teach)
         except HTTPException as err:
-            if err.status_code != 404:
+            # The clip is gone (the history's limits), or a built-in sound has all the clips it can
+            # keep: the answer stands, there is nothing to teach.
+            if err.status_code != 404 and not (builtin and err.status_code == 400):
                 raise
-            # The clip is gone (the history's limits): the answer stands, there is nothing to teach.
     if result is not None:
         await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
     elif taught is not None:

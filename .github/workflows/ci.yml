@@ -217,6 +217,11 @@ jobs:
           code=$(docker inspect -f '{{.State.ExitCode}}' app)
           if [ "$code" != "0" ]; then echo "::error::exit code $code after docker stop"; docker logs app | tail -20; exit 1; fi
           echo "smoke test passed"
+      - name: Nothing phones home (every name and address the app reaches, with its models at work)
+        # See scripts/network_watch.sh: any DNS question or connection outside the app's own
+        # network fails it (ONNX Runtime's telemetry to Microsoft went unnoticed until 0.14.0b6).
+        timeout-minutes: 20
+        run: bash scripts/network_watch.sh visionstate-test:ci ${{ matrix.platform }}
       - name: Old CPU check (the image works on the oldest CPUs we support)
         # amd64: virtual machines often present a generic CPU (kvm64 / qemu64: SSE3 at most, no
         # x86-64-v2). aarch64: the runners are ARMv9 servers, but a Raspberry Pi 3/4 and Home

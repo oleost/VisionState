@@ -52,6 +52,7 @@ export const TONE_COLOR: Record<Tone, string> = {
 export const SENSOR_STATUS: Record<SensorStatus, { label: string; tone: Tone }> = {
   ok: { label: 'Good', tone: 'ok' },
   untrained: { label: 'Needs training', tone: 'warn' },
+  speed_test: { label: 'Paused: speed test', tone: 'warn' },
   unavailable: { label: 'Camera unavailable', tone: 'danger' },
   disabled: { label: 'Paused', tone: 'muted' },
 };
@@ -63,6 +64,7 @@ export const REVIEW_REASONS: Record<string, { label: string; tone: Tone; help: s
   rejected: { label: 'Rejected reading', tone: 'warn', help: 'The reading did not pass the checks; the last value was kept.' },
   ask: { label: 'Is it yours?', tone: 'info', help: 'This may be one of your own labels, but the AI is not sure. Your answer is taught.' },
   unsure: { label: 'Was it this sound?', tone: 'info', help: 'The sound was heard, but only just. Listen to the clip; your answer is kept and can teach the sensor.' },
+  near: { label: 'Almost heard', tone: 'info', help: 'The sound was almost heard, not quite. Listen to the clip; a “yes” can suggest a lower threshold.' },
 };
 
 /**
@@ -174,6 +176,7 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   review: 'Review',
   import: 'Import',
   history: 'History',
+  recording: 'Recorded from the stream',
 };
 
 export const SENSOR_TABS = [
@@ -323,6 +326,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   verified: 'Checked by hand',
   heard: 'Heard',
   quiet: 'No longer heard',
+  near: 'Almost heard',
 };
 
 /** What a sensor's History tab lists, per kind (the History page lists all of it). */
@@ -335,3 +339,14 @@ export const HISTORY_INTRO: Record<SensorKind, string> = {
 
 export const TIMELINE_HOURS = 24;
 export const DATASET_PAGE_SIZE = 120;
+
+/** The speed test: how often the page asks how it goes, and the kinds of model it tests. */
+export const SPEED_TEST_POLL_MS = 1_000;
+export const SPEED_TEST_ROLES: Record<string, string> = {
+  backbones: 'State models',
+  detectors: 'Object detectors',
+  face_models: 'Face recognition (for each person seen)',
+  readers: 'Text and number readers',
+  wheel_readers: 'Wheel readers',
+  sound_models: 'Sound models',
+};

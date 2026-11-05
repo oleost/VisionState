@@ -69,7 +69,7 @@ export interface TriggerInfo {
   at: number;
 }
 
-export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled';
+export type SensorStatus = 'ok' | 'untrained' | 'unavailable' | 'disabled' | 'speed_test';
 
 /**
  * 'single_state' learns the user's own states; 'objects' finds common objects; 'reading' reads a
@@ -114,6 +114,8 @@ export interface SoundLive {
   on: boolean;
   /** The last analysed window's score (0 while quiet). */
   score: number;
+  /** The last window: the model held back by a clip that is not this sound (a built-in one taught with clips). */
+  held: boolean;
 }
 
 export interface SensorSound extends SoundSettings {
@@ -147,6 +149,40 @@ export interface SoundTaught {
   /** Windows of the room kept as "other". */
   room: number;
   trained: boolean;
+  /** The built-in sounds it listens for: taught with clips of theirs (`clips`, label = key) and of what they are
+   * not (`not_clips`, label = `not:key`), held back how often since the app started, and a threshold from the answers. */
+  builtin: {
+    key: string;
+    name: string;
+    clips: number;
+    not_clips: number;
+    held: number;
+    threshold: number;
+    model_threshold: number;
+    advice: ThresholdAdvice;
+  }[];
+}
+
+/** One threshold a sensor decides by, the answers about it and a suggestion (GET sensors/{id}/advice): `key` is
+ * "threshold" (states, readings), "sound:<key>", "teach:match_similarity" or "faces:match_similarity". */
+export interface AdviceItem {
+  key: string;
+  name: string;
+  /** What passing the threshold means for it: "published", "accepted", "heard", "recognised". */
+  verb: string;
+  threshold: number;
+  limits: [number, number];
+  advice: ThresholdAdvice;
+}
+
+/** A threshold suggested from review answers (one way for every sensor kind): how many "yes" and "no" pass now, and
+ * with the suggested threshold (none without enough answers or a better one); whether one threshold separates them. */
+export interface ThresholdAdvice {
+  yes: number;
+  no: number;
+  current: { threshold: number; yes_passed: number; no_passed: number };
+  suggested: { threshold: number; yes_passed: number; no_passed: number } | null;
+  separable: boolean;
 }
 
 export type ReadingMode = 'counter' | 'value' | 'time_left';
@@ -701,6 +737,8 @@ export interface AppConfig {
   sound_defaults: SoundSettings;
   sound_limits: Record<'above_db' | 'fixed_db' | 'clear_after_s' | 'threshold', [number, number]>;
   sound_levels: SoundLevel[];
+  /** Thresholds suggested from review answers: from at least `min_answers` answers. */
+  advice: { min_answers: number };
   sound: {
     hop_s: number;
     window_s: number;
@@ -710,6 +748,9 @@ export interface AppConfig {
     max_taught: number;
     own_threshold: number;
     floor_db: number;
+    record_max_s: number;
+    record_after_s: number;
+    record_min_s: number;
   };
   /** The model's sounds a sensor can listen for. */
   sounds: { key: string; name: string; group: string; threshold: number; device_class: string; icon: string }[];
@@ -719,6 +760,7 @@ export interface AppConfig {
 
 export interface Status {
   version: string;
+  benchmark_running: boolean;
   sensors: number;
   review_count: number;
   backbone: string | null;
@@ -757,6 +799,8 @@ export interface Camera {
   entity_id: string;
   name: string;
   state: string;
+  /** It has a stream in Home Assistant: a sound sensor can listen to it. */
+  stream: boolean;
 }
 
 export interface SampleItem {
@@ -778,7 +822,7 @@ export interface Prediction {
   confidence: number;
   probs: Record<string, number>;
   is_change: boolean;
-  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | null;
+  review_reason: 'low_confidence' | 'flip' | 'spot_check' | 'rejected' | 'ask' | 'unsure' | 'near' | null;
   reviewed: boolean;
   has_frame: boolean;
   /** Sound sensors: the seconds around a sound (with the camera's video when `clip_video`). */
@@ -930,6 +974,11 @@ export interface SettingsInfo {
   /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
   face_model: string;
   face_models: FaceModelInfo[];
+  /** Threads per model run: the user's choice, 0 = automatic (one per core, `threads_auto`); at most `threads_max`. */
+  inference_threads: number;
+  /** Null where the app cannot count the cores (a PC running it for development): ONNX Runtime does. */
+  threads_auto: number | null;
+  threads_max: number;
   options: Record<string, string | number>;
 }
 
@@ -938,4 +987,99 @@ export interface LightHold {
   on: boolean;
   wait_s: number | null;
   error: string;
+}
+
+/** The speed test (GET /benchmark). */
+export interface SpeedTestModel {
+  role: string;
+  id: string;
+  name: string;
+  description: string;
+  installed: boolean;
+  download_size: number;
+  available: boolean;
+  current: boolean;
+  ram_mb: number;
+  time_ms: number;
+  accuracy: number;
+}
+
+export interface SpeedTestInfo {
+  sensors: {
+    id: number;
+    name: string;
+    kind: SensorKind;
+    source_type: string;
+    interval_s: number;
+    models: SpeedTestModel[];
+  }[];
+  rounds: number;
+  run: SpeedTestRun | null;
+}
+
+export interface SpeedTestTiming {
+  median: number;
+  p95: number;
+}
+
+export interface SpeedTestResult {
+  role: string;
+  id: string;
+  name: string;
+  status: 'done' | 'skipped' | 'failed' | 'cancelled';
+  error: string;
+  current: boolean;
+  download_s?: number | null;
+  load_ms?: number;
+  rounds?: number;
+  camera?: SpeedTestTiming | null;
+  decode?: SpeedTestTiming | null;
+  ai?: SpeedTestTiming | null;
+  total?: SpeedTestTiming | null;
+  picture?: string | null;
+  picture_kb?: number;
+  memory_loaded_mb?: number;
+  memory_peak_mb?: number;
+  window_s?: number;
+  hop_s?: number;
+  sound_ready_ms?: number;
+}
+
+export interface SpeedTestRun {
+  state: 'running' | 'finished' | 'cancelled' | 'failed';
+  step: string;
+  index: number;
+  total: number;
+  round: number;
+  rounds: number;
+  downloaded_mb: number;
+  error: string;
+  sensor: { id: number; name: string; kind: SensorKind; source_type: string; interval_s: number };
+  results: SpeedTestResult[];
+  started_at: number;
+  finished_at: number | null;
+  deleted: string[];
+  kept: boolean;
+  machine: {
+    version: string;
+    cpus: number | null;
+    memory_mb: number | null;
+    arch: string | null;
+    /** 0: counted by ONNX Runtime (off Linux). */
+    threads: number;
+    threads_auto: boolean;
+    cpu_flags: string[];
+  };
+}
+
+/** An own sound recorded from a sound sensor's stream, stopped: what the trimmer shows. */
+export interface SoundRecording {
+  id: string;
+  seconds: number;
+  /** Where Stop was pressed (seconds from Start); the rest came after, for the stream's delay. */
+  stop_s: number;
+  muted_s: number;
+  /** The loudest sample of each 1/peaks_per_s second, 0…1. */
+  peaks: number[];
+  peaks_per_s: number;
 }
