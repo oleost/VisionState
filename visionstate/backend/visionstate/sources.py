@@ -555,13 +555,20 @@ class AudioStream:
     def _mux(self, template, samples: np.ndarray, begin: float, end: float) -> bytes | None:  # noqa: ANN001
         import av
 
-        key = next((p.time for p in self._packets if p.key and begin <= p.time < end - 1.0), None)
-        if key is None:
-            return None
+        # The last key frame before the sound, so all of it is in the clip (the video silent until it
+        # begins); else the first one after it began, and the sound from there.
+        before = [p.time for p in self._packets if p.key and begin - SOUND["video_lead_max_s"] <= p.time <= begin]
+        if before:
+            key = before[-1]
+            sound, lead = samples, int(round((begin - key) * self.rate))
+        else:
+            key = next((p.time for p in self._packets if p.key and begin < p.time < end - 1.0), None)
+            if key is None:
+                return None
+            sound, lead = samples[int((key - begin) * self.rate) :], 0
         chosen = sorted(
             (p for p in self._packets if key <= p.time <= end), key=lambda p: p.dts if p.dts is not None else p.pts
         )
-        sound = samples[int((key - begin) * self.rate) :]
         base = min(p.pts for p in chosen)
         buf = io.BytesIO()
         with av.open(
@@ -585,7 +592,7 @@ class AudioStream:
             frame = av.AudioFrame.from_ndarray(
                 np.clip(sound, -1, 1).astype(np.float32)[None, :], format="flt", layout="mono"
             )
-            frame.sample_rate, frame.pts = self.rate, 0
+            frame.sample_rate, frame.pts = self.rate, lead  # the sound begins where it did in the stream
             for packet in audio.encode(frame):
                 out.mux(packet)
             for packet in audio.encode(None):

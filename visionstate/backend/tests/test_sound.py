@@ -633,8 +633,11 @@ def test_a_sound_almost_heard_is_asked_about_and_a_yes_suggests_a_lower_threshol
 
 
 @requires_sound
-def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noqa: F811
-    server = SoundServer(speed=1.0, video=True)
+# A key frame every 2 s, and every 9 s (some cameras; HA's stream of a camera): the clip has the
+# camera's video either way, with all of its sound.
+@pytest.mark.parametrize("key_every_s", [2.0, 9.0])
+def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick, key_every_s):  # noqa: F811
+    server = SoundServer(speed=1.0, video=True, key_every_s=key_every_s)
     try:
         with TestClient(create_app(settings)) as client:
             body = {"sounds": ["siren"], "clips": True, "clear_after_s": 2}
@@ -667,7 +670,9 @@ def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick):  # noq
                 kinds = sorted(s.type for s in container.streams)
                 frames = sum(1 for _ in container.decode(video=0))
             assert kinds == ["audio", "video"] and frames >= 10  # at least a second of the camera
-            assert 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= 6.0
+            # All of the clip's sound: from before the sound began to after it.
+            clip_s = SOUND["clip_before_s"] + SOUND["window_s"] + SOUND["clip_after_s"]
+            assert clip_s - 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= clip_s + 1.0
             # Sound only, when asked: the next clip has no video.
             client.patch(f"/api/v1/sensors/{sid}", json={"sound": {**body, "video": False}})
             assert wait_for(lambda: not next(s for s in view()["sound"]["live"] if s["key"] == "siren")["on"])
@@ -1035,3 +1040,40 @@ def test_a_sound_in_the_middle_of_a_burst_is_heard(settings):  # noqa: F811
             assert found, (sound["line"], sound["stream"], [round(x) for x in sound["levels"]], view()["live"])
     finally:
         server.close()
+
+
+def test_almost_heard_is_not_asked_about_after_five_answers_that_it_was_not(settings):  # noqa: F811
+    from visionstate.db import Prediction as Row
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        body = {
+            "name": "Yard",
+            "kind": "sound",
+            "source_type": "rtsp",
+            "source": "rtsp://127.0.0.1:9/x",
+            "enabled": False,
+        }
+        sid = client.post("/api/v1/sensors", json={**body, "sound": {"sounds": ["dog_bark"], "clips": True}}).json()[
+            "id"
+        ]
+
+        def answer(value: str | None, key: str = "dog_bark", kind: str = "near") -> None:
+            with rt.db.session() as s:
+                probs = {} if value is None else {"answer": value}
+                s.add(
+                    Row(sensor_id=sid, is_change=False, state_key=key, published_key=kind, confidence=0.1, probs=probs)
+                )
+
+        quiet = SOUND["near_quiet_after"]
+        for _ in range(quiet - 1):
+            answer("no")
+        assert not rt._near_answered_no(sid, "dog_bark")  # one "no" short
+        answer(None)  # not answered (yet): does not count either way
+        answer("no", kind="on")  # an answer about it heard, not almost
+        answer("no", key="siren")  # about another sound
+        assert not rt._near_answered_no(sid, "dog_bark")
+        answer("our_bell")  # it was one of the own sounds: not this one either
+        assert rt._near_answered_no(sid, "dog_bark")
+        answer("yes")  # a yes asks again
+        assert not rt._near_answered_no(sid, "dog_bark")

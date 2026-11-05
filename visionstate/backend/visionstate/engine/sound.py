@@ -279,6 +279,8 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         now = time.time()
         if not rules["enabled"] or now - live.last_flag < rules["cooldown_s"]:
             return
+        if await asyncio.to_thread(self._near_answered_no, cfg.id, key):
+            return
         live.last_flag = now
         best = shadow.best
         row = await asyncio.to_thread(self._record_sound, cfg.id, key, False, best, level, "near")
@@ -293,6 +295,22 @@ class SoundMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 "end": near["start"] + int(SOUND["clip_after_s"] * stream.rate),
             }
         )
+
+    def _near_answered_no(self, sensor_id: int, key: str) -> bool:
+        """Whether the last SOUND["near_quiet_after"] answers about ``key`` almost heard were all
+        that it was not this sound: then it is not asked about almost heard any more."""
+        wanted = SOUND["near_quiet_after"]
+        with self.db.session() as s:
+            rows = s.scalars(
+                select(Prediction)
+                .where(
+                    Prediction.sensor_id == sensor_id, Prediction.state_key == key, Prediction.published_key == "near"
+                )
+                .order_by(Prediction.id.desc())
+                .limit(SOUND["near_quiet_rows"])
+            )
+            answers = [a for r in rows if (a := (r.probs or {}).get("answer")) is not None][:wanted]
+        return len(answers) >= wanted and all(a != "yes" for a in answers)
 
     def sound_threshold(self, cfg: SensorConfig, key: str) -> float:
         """The score a sound must reach: the sensor's own, else the model's (own sounds: SOUND)."""

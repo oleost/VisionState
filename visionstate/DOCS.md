@@ -604,7 +604,9 @@ sensor in Home Assistant.
 
 **Almost heard.** With clips on, a sound that almost reached its threshold, but was not heard,
 is asked about in Review too (*Almost heard*); a *yes* teaches its clip and tells the sensor its
-threshold may be too high (below).
+threshold may be too high (below). After five *no* in a row about a sound almost heard, it is not
+asked about almost heard any more: the threshold is not too high, and just below it is mostly the
+room's own noise. A *yes* (or forgetting a clip that taught a *no*) lets it ask again.
 
 **Review.** With clips on, a sound that was only just heard (or almost) is asked about in Review: listen (or
 watch) and answer *yes*, *no*, that it was one of your own sounds, or a new one. The answer
