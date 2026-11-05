@@ -48,7 +48,9 @@ Every fact has **one** home; other files link to it instead of repeating it.
 - **No telemetry, nothing "phones home".** Download counts on GHCR are the only usage signal.
   Libraries count too: ONNX Runtime's official builds sent telemetry to Microsoft from every
   install until 0.14.0b6 switched it off (`ORT_DISABLE_TELEMETRY` in `backend/visionstate/__init__.py`
-  and the Dockerfile; `tests/test_no_telemetry.py`). Check a new or bumped library's privacy notes.
+  and the Dockerfile; `tests/test_no_telemetry.py`), and CI's `scripts/network_watch.sh` fails on
+  any connection the image makes beyond its broker and camera. Check a new or bumped library's
+  privacy notes.
 - **Only reachable through Home Assistant Ingress** (requests from other addresses are refused);
   outside Home Assistant the app has no login — documented, keep it that way.
 - **Camera credentials never leak:** `redact.py` masks them in logs, errors and exports (a full

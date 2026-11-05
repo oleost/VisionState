@@ -13,7 +13,7 @@ visionstate/            the Home Assistant app: config.yaml, Dockerfile, DOCS.md
   frontend/             Svelte app, Playwright tests in e2e/ (and promo.mjs: the README screenshots)
 scripts/                channel.py (stable/beta config), fake_camera.py (test camera), seed_demo.py
                         (the demo sensors), CI helpers:
-                        check_options.py, cpu_probe.py, upgrade_test.sh, discovery_ids.py
+                        check_options.py, cpu_probe.py, upgrade_test.sh, network_watch.sh, discovery_ids.py
 tools/wheelreader/      training code of the wheel reader model (not part of the app image)
 tools/soundmodel/       how the sound model and its everyday "other" sounds are made (not part of the app image)
 docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md,
