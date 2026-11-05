@@ -24,7 +24,15 @@ jobs:
       matrix:
         # The oldest ESPHome the packages accept (min_version in packages/common.yaml) and the newest.
         esphome: ["2026.10.2", "latest"]
-        config: [devkit-microphone, esp32cam-camera, esp32cam-camera-microphone, xiao-camera-microphone]
+        config:
+          - devkit-microphone
+          - esp32cam-camera
+          - esp32cam-camera-microphone
+          - xiao-camera-microphone
+          # Our add-on next to the devices' own firmware, pinned (tests/*.yaml): a release of the
+          # Voice PE's, a commit of M5Stack's.
+          - voice-pe
+          - atom-voices3r
     defaults:
       run:
         working-directory: esphome/tests

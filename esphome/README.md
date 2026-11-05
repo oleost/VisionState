@@ -179,5 +179,4 @@ processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
 [`tests/`](tests) holds the configurations CI compiles (`.github/workflows/esphome.yml`), built from the
 packages in this folder. `tests/voice-pe.yaml` and `tests/atom-voices3r.yaml` pull in the devices'
-own configurations from their repositories; they were compiled by hand (2026-11-05), not yet
-in CI.
+own configurations from their repositories, pinned to a release and a commit.
