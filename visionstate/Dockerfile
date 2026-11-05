@@ -12,7 +12,9 @@ RUN npm run build
 FROM python:3.14-slim-bookworm
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# ORT_DISABLE_TELEMETRY: ONNX Runtime sends telemetry to Microsoft unless it is set (see
+# backend/visionstate/__init__.py).
+ENV PYTHONDONTWRITEBYTECODE=1     ORT_DISABLE_TELEMETRY=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
