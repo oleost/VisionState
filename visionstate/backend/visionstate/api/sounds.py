@@ -181,6 +181,14 @@ async def teach_history_clip(rt: Runtime, sensor_id: int, body: TeachClipIn) -> 
 
     data = await asyncio.to_thread(clip)
     result = await asyncio.to_thread(_add_clip, rt, sensor_id, data, body.label, body.new_name, "history")
+
+    def link() -> None:  # the answer counts while its clip is there (api/advice.py)
+        with rt.db.session() as s:
+            row = s.get(Prediction, body.history_id)
+            if row is not None and (row.probs or {}).get("answer") is not None:
+                row.sample_id = result["id"]
+
+    await asyncio.to_thread(link)
     await _taught(rt, sensor_id)
     return result
 
@@ -384,6 +392,13 @@ async def forget_clip(sample_id: int, request: Request) -> Response:
             if sample is None or not sample.filename.endswith(CLIP_SUFFIX):
                 raise HTTPException(404, "Clip not found")
             sensor_id = sample.sensor_id
+            # The answer that taught it goes with it: a clip is forgotten because it was wrong or
+            # is no longer wanted, so it no longer counts towards a suggested threshold either.
+            for row in s.scalars(
+                select(Prediction).where(Prediction.sensor_id == sensor_id, Prediction.sample_id == sample.id)
+            ):
+                row.probs = {k: v for k, v in (row.probs or {}).items() if k != "answer"}
+                row.sample_id = None
             rt.db.after_commit(s, partial(rt.storage.delete_sample, sensor_id, sample.id, sample.filename))
             s.delete(sample)
             return sensor_id

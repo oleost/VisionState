@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import advice, faces, sounds
-from ..db import Prediction, SampleLabel, Sensor, State
+from ..db import Face, Prediction, Sample, SampleLabel, Sensor, State
 from ..engine import Runtime
 from ..settings import (
     FACE_LIMITS,
@@ -62,6 +62,18 @@ def _answered(s: Session, sensor_id: int, *where) -> list:  # noqa: ANN002 - SQL
     )
 
 
+def _taught_gone(s: Session, rows: list, face: bool = False) -> set[int]:
+    """The rows whose answer taught something (a clip, a box, a face: ``sample_id``) that has been
+    deleted since: such an answer no longer counts. Deleting a clip or a box is how a wrong one, or
+    one no longer wanted, is taken back."""
+    ids = {r.sample_id for r in rows if r.sample_id is not None}
+    if not ids:
+        return set()
+    table = Face if face else Sample
+    kept = set(s.scalars(select(table.id).where(table.id.in_(ids))))
+    return {r.id for r in rows if r.sample_id is not None and r.sample_id not in kept}
+
+
 def _split(pairs: list[tuple[float | None, bool | None]]) -> tuple[list[float], list[float]]:
     yes = [float(score) for score, right in pairs if score is not None and right is True]
     no = [float(score) for score, right in pairs if score is not None and right is False]
@@ -90,7 +102,11 @@ def _asked_answers(s: Session, sensor_id: int, face: bool) -> tuple[list[float],
     """An object sensor's answered "Is this Our car?" (or, ``face``, "Is this Kari?") questions:
     the similarity asked about, and the answer."""
     pairs = []
-    for row in _answered(s, sensor_id, Prediction.published_key == "ask"):
+    rows = _answered(s, sensor_id, Prediction.published_key == "ask")
+    gone = _taught_gone(s, rows, face)
+    for row in rows:
+        if row.id in gone:
+            continue
         probs = row.probs or {}
         ask = probs.get("ask") or {}
         if bool(ask.get("face")) == face and probs.get("answer") in ("yes", "no"):
@@ -103,9 +119,10 @@ def sound_answers(s: Session, sensor_id: int, keys: list[str]) -> dict[str, tupl
     those answered otherwise (no, one of the own sounds, a new one)."""
     out: dict[str, tuple[list[float], list[float]]] = {}
     rows = _answered(s, sensor_id, Prediction.state_key.in_(keys), Prediction.published_key.in_(("on", "near")))
+    gone = _taught_gone(s, rows)
     for row in rows:
         answer = (row.probs or {}).get("answer")
-        if answer is None or row.confidence is None:
+        if answer is None or row.confidence is None or row.id in gone:
             continue
         yes, no = out.setdefault(row.state_key or "", ([], []))
         (yes if answer == "yes" else no).append(float(row.confidence))

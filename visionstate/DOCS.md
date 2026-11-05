@@ -728,7 +728,8 @@ suggests one that lets more of the right ones and fewer of the wrong ones throug
 just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
 (nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
 — label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
-**Own sounds** too.
+**Own sounds** too. An answer counts while what it taught is there: delete the frame, box, face
+or clip it taught (because it was wrong, or is no longer wanted) and the answer no longer counts.
 
 ## History
 

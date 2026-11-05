@@ -547,6 +547,23 @@ def test_a_built_in_sound_learns_from_clips_and_answers_and_what_it_is_not(setti
             built = {b["key"]: b for b in taught()["builtin"]}
             assert (built["doorbell"]["clips"], built["doorbell"]["not_clips"]) == (6, 0)
             assert built["doorbell"]["advice"]["yes"] == 1 and built["doorbell"]["advice"]["no"] == 0
+            # Forgetting the clip an answer taught takes the answer back: it was wrong, or is no longer wanted.
+            newest = taught()["clips"][0]["id"]
+            assert client.delete(f"/api/v1/sound-clips/{newest}").status_code == 204
+            built = {b["key"]: b for b in taught()["builtin"]}
+            assert built["doorbell"]["clips"] == 5 and built["doorbell"]["advice"]["yes"] == 0
+            # Taught from the History, the answer is linked to its clip too; and an answer whose clip
+            # went another way (deleted before answers were linked to clips) no longer counts either.
+            made = client.post(
+                f"/api/v1/sensors/{sid}/sounds/teach", json={"history_id": row["id"], "label": "doorbell"}
+            )
+            assert made.status_code == 201
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 1
+            with client.app.state.runtime.db.session() as s:
+                from visionstate.db import Sample as SampleRow
+
+                s.delete(s.get(SampleRow, made.json()["id"]))
+            assert {b["key"]: b for b in taught()["builtin"]}["doorbell"]["advice"]["yes"] == 0
 
             # A clip forgotten while it is embedded is left out, not a failed training.
             from visionstate.db import Embedding, Sample
