@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.14.0b6
+
+**VisionState no longer lets ONNX Runtime send telemetry to Microsoft.**
+
+- I am sorry: VisionState promises no telemetry, and every version until now broke that promise
+  without my knowing. Thanks to Immich, whose fix (immich-app/immich#32956) brought it to light.
+- ONNX Runtime, the library that runs VisionState's AI models, sends telemetry to Microsoft by
+  default in its official builds, on Linux too since its version 1.29. VisionState did not switch
+  that off, so every version until now sent it while a model was loaded. Measured on a test
+  install of 0.14.0b5: about 16 connections to Microsoft's telemetry service and 40 kB sent in
+  under three minutes.
+- What it sends is, according to ONNX Runtime's privacy notes, an ID for the install and details
+  of the machine (operating system, CPU, memory), not camera pictures or sound.
+- Now switched off for every part of the app, whatever the environment says; with it off the
+  same test install sent nothing.
+- **So it does not happen again:** every build is now run with a sensor of each kind at work
+  while every connection it makes is recorded, and the build fails if VisionState reaches anything
+  beyond your cameras, Home Assistant and MQTT. Run against 0.14.0b5, this check caught the
+  telemetry at once. A library that starts sending something after an update is stopped before it
+  is released, and a test keeps the setting that switches ONNX Runtime's telemetry off.
+
 ## 0.14.0b5
 
 **Record an own sound straight from the sensor's microphone.**
