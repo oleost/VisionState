@@ -1,6 +1,6 @@
 # CI: VisionState's stream added to M5Stack's Atom VoiceS3R configuration, at a commit of it.
 substitutions:
-  name: vs-test-atom-voices3r
+  name: vs-test-atom
   friendly_name: Test Atom VoiceS3R
   stream_password: !secret vs_stream_password
 

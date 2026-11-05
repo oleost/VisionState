@@ -145,8 +145,8 @@ What it does on the device:
 - On the **Atom VoiceS3R** it takes the microphone the assistant uses, with the echo of its own
   speaker cancelled.
 
-Not checked on a device: that it builds next to the device's firmware (the configuration is
-valid), memory and CPU next to the wake word, the gain, and how alarms sound through the
+It builds next to both devices' own firmware (2026-11-05). Not checked on a device: memory and CPU
+next to the wake word, the gain, and how alarms sound through the
 processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
 ## When something is wrong
@@ -179,5 +179,5 @@ processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
 [`tests/`](tests) holds the configurations CI compiles (`.github/workflows/esphome.yml`), built from the
 packages in this folder. `tests/voice-pe.yaml` and `tests/atom-voices3r.yaml` pull in the devices'
-own configurations from their repositories; they are checked with `esphome config`, not yet
-compiled in CI.
+own configurations from their repositories; they were compiled by hand (2026-11-05), not yet
+in CI.

@@ -126,8 +126,9 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       until VisionState hears a sound (against a camera's RTSP and its Home Assistant stream), gaps
       over 24 hours, and on the ESP32-CAM gaps in the sound while a picture is sent.
 - [ ] Listening in Home Assistant (§3).
-- [ ] The Voice PE and the Atom VoiceS3R with VisionState's stream: the configuration is valid
-      next to their own (Voice PE 26.9.0, M5Stack's file at one commit), but not built or tried:
+- [ ] The Voice PE and the Atom VoiceS3R with VisionState's stream: it builds next to their own
+      firmware (2026-11-05, Voice PE 26.9.0 with RAM 44 % and flash 36 %, M5Stack's file at one
+      commit with RAM 41 % and flash 55 %), but is not tried on a device:
       memory and CPU next to the wake word, the gain, whether a smoke alarm comes through the noise
       suppression, and the pause while the assistant listens.
 - [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
