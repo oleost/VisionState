@@ -560,12 +560,13 @@ class AudioStream:
         before = [p.time for p in self._packets if p.key and begin - SOUND["video_lead_max_s"] <= p.time <= begin]
         if before:
             key = before[-1]
-            sound, lead = samples, int(round((begin - key) * self.rate))
+            # Silence for the video's seconds before the sound (an AAC frame's start time is not kept).
+            sound = np.concatenate([np.zeros(int(round((begin - key) * self.rate)), np.float32), samples])
         else:
             key = next((p.time for p in self._packets if p.key and begin < p.time < end - 1.0), None)
             if key is None:
                 return None
-            sound, lead = samples[int((key - begin) * self.rate) :], 0
+            sound = samples[int((key - begin) * self.rate) :]
         chosen = sorted(
             (p for p in self._packets if key <= p.time <= end), key=lambda p: p.dts if p.dts is not None else p.pts
         )
@@ -592,7 +593,7 @@ class AudioStream:
             frame = av.AudioFrame.from_ndarray(
                 np.clip(sound, -1, 1).astype(np.float32)[None, :], format="flt", layout="mono"
             )
-            frame.sample_rate, frame.pts = self.rate, lead  # the sound begins where it did in the stream
+            frame.sample_rate, frame.pts = self.rate, 0
             for packet in audio.encode(frame):
                 out.mux(packet)
             for packet in audio.encode(None):

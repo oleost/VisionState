@@ -670,9 +670,12 @@ def test_a_camera_with_sound_keeps_clips_with_its_video(settings, quick, key_eve
                 kinds = sorted(s.type for s in container.streams)
                 frames = sum(1 for _ in container.decode(video=0))
             assert kinds == ["audio", "video"] and frames >= 10  # at least a second of the camera
-            # All of the clip's sound: from before the sound began to after it.
+            # All of the clip's sound, from before the sound began to after it, in step with the
+            # video: as long as it (silent at first when the video starts at a key frame before it).
             clip_s = SOUND["clip_before_s"] + SOUND["window_s"] + SOUND["clip_after_s"]
-            assert clip_s - 1.0 <= len(sounds.decode_audio(clip.content, RATE)) / RATE <= clip_s + 1.0
+            heard_s = len(sounds.decode_audio(clip.content, RATE)) / RATE
+            assert clip_s - 1.0 <= heard_s <= clip_s + SOUND["video_lead_max_s"]
+            assert abs(heard_s - frames / 10) <= 0.6  # the test camera sends 10 frames a second
             # Sound only, when asked: the next clip has no video.
             client.patch(f"/api/v1/sensors/{sid}", json={"sound": {**body, "video": False}})
             assert wait_for(lambda: not next(s for s in view()["sound"]["live"] if s["key"] == "siren")["on"])
