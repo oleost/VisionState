@@ -23,6 +23,7 @@ EXAMPLES = {
     ("esp32-devkit", "microphone"): "esp32-devkit-microphone.yaml",
     ("esp32-cam", "camera"): "esp32-cam-camera.yaml",
     ("esp32-cam", "camera_microphone"): "esp32-cam-camera-microphone.yaml",
+    ("xiao-esp32s3-sense", "camera_microphone"): "xiao-esp32s3-sense-camera-microphone.yaml",
 }
 
 
@@ -77,6 +78,11 @@ def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
         esphome.configuration("esp32-s9", "microphone", "Hall", mute=False)
     with pytest.raises(esphome.ESPHomeError):
         esphome.configuration("esp32-cam", "camera", 'Say "hi"', mute=False)
+    # The XIAO's microphone is on the board: no wiring to write, and no I2S port kept for its camera.
+    xiao = esphome.configuration("xiao-esp32s3-sense", "microphone", "Hall", mute=False)["yaml"]
+    assert "microphone-pdm.yaml" in xiao and "mic_" not in xiao and "The wiring" not in xiao
+    both = files_of(esphome.configuration("xiao-esp32s3-sense", "camera_microphone", "Hall", mute=True)["yaml"])
+    assert not any(f.endswith("-microphone.yaml") for f in both)
     assert esphome.device_name("  Garasje / Bod 2 ") == "garasje-bod-2"
     assert esphome.device_name("???") == "visionstate"
 

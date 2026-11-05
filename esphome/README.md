@@ -52,7 +52,17 @@ with an INMP441 on the SD card's pins (no SD card then): [`examples/esp32-cam-ca
 | *mute switch (optional)* | GPIO12 to GND |
 
 The pins can be changed under `substitutions` in your own file. An ESP32-CAM wants a 5 V supply
-that gives at least 1 A; a weak one makes it restart when the camera or Wi-Fi draws current.
+that gives at least 1 A; a weak one makes it restart when the camera or Wi-Fi draws current. The
+microphone takes header pins that the ESP32-CAM-MB USB board also sits on: to power the board
+over USB as well, give it 5 V and GND from a USB lead or socket of its own, or use stacking
+headers so the microphone's wires can stay on.
+
+**Seeed Studio XIAO ESP32-S3 Sense**: camera, microphone or both, with nothing to wire, since
+the camera and a PDM microphone are on its camera board. It powers and installs over its own USB-C.
+Example: [`examples/xiao-esp32s3-sense-camera-microphone.yaml`](examples/xiao-esp32s3-sense-camera-microphone.yaml)
+(for one of the two, leave out the camera's or the microphone's package). A mute switch, if you
+want one, goes from D0 (GPIO1) to GND. It runs warm with the camera on. Not yet tried on a board
+([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
 ## Install it
 
@@ -92,7 +102,7 @@ source):
 |---|---|
 | *401* in the guide's check, or the sensor gets no sound | The password is not the one in the device's file (`stream_password`). |
 | *409* | Two listeners are on already (VisionState and someone else): close one. |
-| *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
+| *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND; on a XIAO, that the camera board is on), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
 | Very quiet sound | Raise *Microphone gain* in Home Assistant. |
 | The ESP32-CAM restarts, or the picture fails | A weak 5 V supply (see above). |
 | Home Assistant does not ask to add the device | It is not on the Wi-Fi yet (ESPHome's log shows it), or Home Assistant is on another network. |
@@ -102,10 +112,13 @@ source):
 | Package | What |
 |---|---|
 | [`packages/common.yaml`](packages/common.yaml) | every device: Wi-Fi (power save off: it leaves gaps in the sound), the API, updates, the stream's server and login, the light, diagnostics |
-| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml) | the board and its default pins |
-| [`packages/microphone.yaml`](packages/microphone.yaml) | the INMP441 and `/audio.wav`, the *Microphone* switch and the gain |
+| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml) | the board and its default pins |
+| [`packages/microphone.yaml`](packages/microphone.yaml) | an INMP441 (I2S) as `/audio.wav` |
+| [`packages/microphone-pdm.yaml`](packages/microphone-pdm.yaml) | the XIAO ESP32-S3 Sense's PDM microphone as `/audio.wav` |
+| [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch and the gain |
 | [`packages/mute-pin.yaml`](packages/mute-pin.yaml) | a mute switch on a pin: unwired, the microphone is on |
 | [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light |
+| [`packages/camera-xiao-esp32s3-sense.yaml`](packages/camera-xiao-esp32s3-sense.yaml) | the XIAO's camera and `/snapshot.jpg` (it has no flash) |
 | [`packages/esp32-cam-microphone.yaml`](packages/esp32-cam-microphone.yaml) | camera and microphone on a plain ESP32: keeps the camera's I2S port free |
 | [`components/visionstate_stream`](components/visionstate_stream) | the server: the stream, the snapshot and the login |
 

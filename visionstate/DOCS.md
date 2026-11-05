@@ -541,8 +541,9 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
   as an HTTP stream of WAV, for a room without a camera.
 
 **An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
-guide for an ESP32 DevKit with an INMP441 microphone, or an ESP32-CAM with its camera (and a
-microphone too, if you like). It shows the wiring and gives the device's file to download (the
+guide for an ESP32 DevKit with an INMP441 microphone, an ESP32-CAM with its camera (and a
+microphone too, if you like), or a Seeed Studio XIAO ESP32-S3 Sense, whose camera and microphone
+are on the board. It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:

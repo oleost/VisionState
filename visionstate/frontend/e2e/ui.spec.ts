@@ -2206,6 +2206,12 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]'); // under "What is in it" (closed)
   await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
 
+  // A XIAO ESP32-S3 Sense: its own microphone (PDM), nothing to wire.
+  await press(guide.getByText('XIAO ESP32-S3 Sense', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await expect(yaml).toHaveValue(/camera-xiao-esp32s3-sense\.yaml[\s\S]*microphone-pdm\.yaml/);
+  await expect(guide.getByText('Nothing to wire: the camera and the microphone are on the board.')).toBeVisible();
+
   // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
   await press(guide.getByText('ESP32-CAM', { exact: true }), info);
   await press(guide.getByText('Camera and microphone', { exact: true }), info);

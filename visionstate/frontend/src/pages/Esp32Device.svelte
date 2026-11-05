@@ -192,7 +192,12 @@
 
   <section class="card pad col">
     <h3>2. Wire it</h3>
-    {#if microphone}
+    {#if microphone && spec.microphone === 'built_in'}
+      <p class="small">Nothing to wire: the {camera ? 'camera and the microphone are' : 'microphone is'} on the board.</p>
+      {#if mute}
+        <p class="small">The mute switch: from <span class="mono">{spec.pins.mute_pin}</span> to GND.</p>
+      {/if}
+    {:else if microphone}
       <p class="small">An INMP441 microphone, with short wires:</p>
       <div class="wiring">
         <table class="small">

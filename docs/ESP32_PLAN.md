@@ -13,6 +13,9 @@ Assistant or a test before anything is built on them).
 
 - **Three kinds of device**: microphone, camera, camera and microphone — through **ESPHome**.
 - **Cheap generic boards**: an ESP32 DevKit (ESP32-WROOM-32) and an ESP32-CAM (AI-Thinker layout).
+- **The Seeed Studio XIAO ESP32-S3 Sense as well** (2026-11-05), for a user who has one: camera and
+  microphone (PDM) on the board, nothing to solder. A user had found that a microphone on the
+  ESP32-CAM's pins leaves no room for its USB board.
 - **The sound must be in Home Assistant**, so it can be **listened to** there, and **also have a
   direct address**, because that is fastest for VisionState.
 - **A user name and password**, as cameras have, not a token or pairing.
@@ -116,3 +119,6 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       until VisionState hears a sound (against a camera's RTSP and its Home Assistant stream), gaps
       over 24 hours, and on the ESP32-CAM gaps in the sound while a picture is sent.
 - [ ] Listening in Home Assistant (§3).
+- [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
+      microphone's channel (left is assumed) and the gain it needs, its LED, and how warm it runs
+      with the camera on.

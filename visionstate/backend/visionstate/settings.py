@@ -424,6 +424,16 @@ ESPHOME = {
             "kinds": ["camera", "camera_microphone"],
             "light": "The small red LED on the back",
             "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
+            # Its camera driver takes the first I2S port: esp32-cam-microphone.yaml keeps it.
+            "camera_i2s": True,
+        },
+        "xiao-esp32s3-sense": {
+            "name": "XIAO ESP32-S3 Sense",
+            "description": "Seeed Studio; the camera and the microphone are on its camera board, nothing to wire",
+            "kinds": ["microphone", "camera", "camera_microphone"],
+            "light": "The orange LED",
+            "pins": {"mute_pin": "GPIO1"},
+            "microphone": "built_in",  # a PDM microphone (microphone-pdm.yaml), not an INMP441
         },
     },
 }

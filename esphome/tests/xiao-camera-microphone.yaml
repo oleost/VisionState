@@ -1,0 +1,19 @@
+# CI: a XIAO ESP32-S3 Sense with its camera, its built-in microphone and a mute switch.
+substitutions:
+  name: vs-test-xiao
+  friendly_name: Test XIAO
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+packages:
+  board: !include ../packages/board-xiao-esp32s3-sense.yaml
+  common: !include ../packages/common.yaml
+  camera: !include ../packages/camera-xiao-esp32s3-sense.yaml
+  microphone: !include ../packages/microphone-pdm.yaml
+  mute_pin: !include ../packages/mute-pin.yaml

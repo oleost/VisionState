@@ -1,0 +1,19 @@
+# A PDM microphone (the one on the XIAO ESP32-S3 Sense's camera board) as /audio.wav, 16 kHz mono.
+# Its pins come from the board package; its switch and gain from microphone-controls.yaml.
+packages:
+  controls: !include microphone-controls.yaml
+
+i2s_audio:
+  - id: vs_i2s_microphone
+    i2s_lrclk_pin: ${mic_clk}  # PDM: the clock is on the WS line
+
+microphone:
+  - platform: i2s_audio
+    id: vs_microphone
+    i2s_audio_id: vs_i2s_microphone
+    i2s_din_pin: ${mic_data}
+    adc_type: external
+    pdm: true
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: left

@@ -30,13 +30,14 @@ def device_name(friendly_name: str) -> str:
 def packages(board: str, kind: str, mute: bool) -> list[str]:
     """The package files, in the order they must be merged (the I2S port kept for the camera before
     the microphone)."""
+    spec = ESPHOME["boards"][board]
     files = [f"board-{board}.yaml", "common.yaml"]
     if kind in ("camera", "camera_microphone"):
         files.append(f"camera-{board}.yaml")
-    if kind == "camera_microphone":
+    if kind == "camera_microphone" and spec.get("camera_i2s"):
         files.append(f"{board}-microphone.yaml")
     if kind in ("microphone", "camera_microphone"):
-        files.append("microphone.yaml")
+        files.append("microphone-pdm.yaml" if spec.get("microphone") == "built_in" else "microphone.yaml")
         if mute:
             files.append("mute-pin.yaml")
     return [f"esphome/packages/{f}" for f in files]
@@ -55,7 +56,7 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict
     name = device_name(friendly)
     microphone = kind in ("microphone", "camera_microphone")
     lines = [
-        f"# A {ESPHOME['kinds'][kind].lower()} for VisionState on an {spec['name']} (made by VisionState's ESP32 guide).",
+        f"# A {ESPHOME['kinds'][kind].lower()} for VisionState on a board: {spec['name']} (made by VisionState's ESP32 guide).",
         "substitutions:",
         f"  name: {name}",
         f'  friendly_name: "{friendly}"',
@@ -67,8 +68,9 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict
         pins = [k for k in ("mic_sck", "mic_ws", "mic_sd") if k in spec["pins"]]
         if mute:
             pins.append("mute_pin")
-        lines.append("  # The wiring; change a pin here if you wired it differently.")
-        lines += [f"  {k}: {spec['pins'][k]}" for k in pins]
+        if pins:
+            lines.append("  # The wiring; change a pin here if you wired it differently.")
+            lines += [f"  {k}: {spec['pins'][k]}" for k in pins]
     lines += [
         "",
         "external_components:",

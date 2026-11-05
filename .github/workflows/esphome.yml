@@ -24,7 +24,7 @@ jobs:
       matrix:
         # The oldest ESPHome the packages accept (min_version in packages/common.yaml) and the newest.
         esphome: ["2026.10.2", "latest"]
-        config: [devkit-microphone, esp32cam-camera, esp32cam-camera-microphone]
+        config: [devkit-microphone, esp32cam-camera, esp32cam-camera-microphone, xiao-camera-microphone]
     defaults:
       run:
         working-directory: esphome/tests

@@ -1101,6 +1101,10 @@ export interface EsphomeBoard {
   kinds: string[];
   light: string;
   pins: Record<string, string>;
+  /** Its camera takes the first I2S port (an ESP32-CAM). */
+  camera_i2s?: boolean;
+  /** 'built_in': a microphone on the board (nothing to wire); otherwise an INMP441 is wired to it. */
+  microphone?: string;
 }
 
 export interface EsphomeConfiguration {
