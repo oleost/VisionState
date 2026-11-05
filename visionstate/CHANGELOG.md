@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.14.0b8
+
+**Far fewer "almost heard" questions about the room's own noise.**
+
+- *Almost heard* now follows the AI's own score only. A built-in sound taught with a few clips
+  that sound much like the room — a faint dog, say — made the sensor unsure about all of the
+  room's noise, and that unsureness landed just below the threshold: on a real doorbell camera,
+  every clip asked about as a dog at 9–11 % had an AI score of 0 %. Your clips still decide
+  whether a sound is heard.
+- After five *no* in a row about a sound almost heard, it is not asked about almost heard any
+  more: just below the threshold is then mostly the room's noise. A *yes*, or forgetting a clip
+  that taught a *no*, lets it ask again.
+
+**Clips with the camera's video, and all of their sound.**
+
+- A clip's video now starts at the camera's last key frame before the sound, so a camera that sends
+  a key frame only every few seconds no longer gives some clips sound only. A clip with video no
+  longer loses the sound before its first key frame either; the video may be silent for a moment
+  before the sound begins.
+
+**Review plays one sound after the other.**
+
+- Tap a clip once: it plays over and over until you answer, and the next question's clip then
+  plays by itself (on a phone too, in the same player).
+
 ## 0.14.0b7
 
 **Forgetting a clip takes its answer back.**
