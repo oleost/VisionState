@@ -21,8 +21,24 @@ exports, like a camera's. Two listeners at a time (VisionState and someone liste
 a third gets *409*.
 
 In Home Assistant the device has: *Microphone* (on/off, kept over restarts), *Microphone gain*,
-*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *IP address*,
-*Wi-Fi signal*, *Uptime* and *Restart*. The board's LED is on while someone listens or looks.
+*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Camera use* and
+*Exposure for moving things* (a camera), *IP address*, *Wi-Fi signal*, *Uptime* and *Restart*. The
+board's LED is on while someone listens or looks.
+
+**Camera use** says what the camera looks at, and sets its picture size, JPEG quality and exposure
+([`packages/camera-use.yaml`](packages/camera-use.yaml)); the guide asks, and it can be changed
+later:
+
+| Camera use | For | Picture |
+|---|---|---|
+| *States* | still things: a door, a gate, a light | 800×600, exposure automatic |
+| *Meters and displays* | a water meter, a display: the digits | 1600×1200, less compression; the flash for the dark |
+| *People, cars and animals* | things that move | 800×600, a short fixed exposure (*Exposure for moving things*) with automatic gain: sharper, but darker in poor light |
+
+A camera for several sensors takes what the most demanding one needs: a meter, then things that
+move. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
+entity gives the picture the camera kept ready after the last fetch instead, as old as the time
+since then.
 
 ## Boards and wiring
 

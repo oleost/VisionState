@@ -69,6 +69,15 @@ def test_the_boards_pins_are_the_packages_defaults(board):
         assert defaults[key] == pin, (board, key)
 
 
+@in_repo
+def test_the_camera_uses_are_the_devices_options():
+    # What the guide offers is what Camera use (esphome/packages/camera-use.yaml) can be set to.
+    package = (ESPHOME_DIR / "packages" / "camera-use.yaml").read_text(encoding="utf-8")
+    options = re.findall(r"^      - (.+)$", package.split("options:", 1)[1].split("initial_option", 1)[0], re.MULTILINE)
+    assert options == list(ESPHOME["camera_uses"])
+    assert substitutions(package)["camera_use"] == next(iter(ESPHOME["camera_uses"]))
+
+
 def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
     assert "mute-pin.yaml" not in esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False)["yaml"]
     assert "mute_pin: GPIO32" in esphome.configuration("esp32-devkit", "microphone", "Hall", mute=True)["yaml"]
@@ -83,6 +92,13 @@ def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
     assert "microphone-pdm.yaml" in xiao and "mic_" not in xiao and "The wiring" not in xiao
     both = files_of(esphome.configuration("xiao-esp32s3-sense", "camera_microphone", "Hall", mute=True)["yaml"])
     assert not any(f.endswith("-microphone.yaml") for f in both)
+    # A camera says what it looks at (Camera use on the device); a microphone has none.
+    assert 'camera_use: "States"' in esphome.configuration("esp32-cam", "camera", "Hall", mute=False)["yaml"]
+    meter = esphome.configuration("esp32-cam", "camera", "Hall", mute=False, camera_use="Meters and displays")
+    assert 'camera_use: "Meters and displays"' in meter["yaml"]
+    assert "camera_use" not in esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False)["yaml"]
+    with pytest.raises(esphome.ESPHomeError):
+        esphome.configuration("esp32-cam", "camera", "Hall", mute=False, camera_use="Fish")
     assert esphome.device_name("  Garasje / Bod 2 ") == "garasje-bod-2"
     assert esphome.device_name("???") == "visionstate"
 

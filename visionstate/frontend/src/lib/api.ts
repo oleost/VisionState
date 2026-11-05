@@ -397,8 +397,8 @@ export const api = {
     });
   },
   /** The ESP32 guide: the device's whole ESPHome file, with {{fields}} for the user's values (filled in the page). */
-  esphomeConfiguration: (board: string, kind: string, name: string, mute: boolean) =>
-    request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute })),
+  esphomeConfiguration: (board: string, kind: string, name: string, mute: boolean, cameraUse: string | null) =>
+    request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute, camera_use: cameraUse })),
   /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
   esphomeDevices: () =>
     request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),

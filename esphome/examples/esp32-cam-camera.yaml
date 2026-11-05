@@ -9,7 +9,7 @@ substitutions:
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   stream_password: !secret vs_stream_password
-  # camera_resolution: 800x600
+  camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
 
 external_components:
   - source: github://oleost/VisionState@esphome-v1

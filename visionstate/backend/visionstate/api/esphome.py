@@ -26,6 +26,7 @@ class ConfigurationIn(BaseModel):
     kind: str
     name: str = Field(max_length=60)
     mute: bool = False
+    camera_use: str | None = None  # settings.ESPHOME["camera_uses"]; None: the first
 
 
 class CheckIn(BaseModel):
@@ -38,7 +39,7 @@ class CheckIn(BaseModel):
 @router.post("/esphome/configuration")
 def configuration(body: ConfigurationIn) -> dict:
     try:
-        return esphome.configuration(body.board, body.kind, body.name, body.mute)
+        return esphome.configuration(body.board, body.kind, body.name, body.mute, body.camera_use)
     except esphome.ESPHomeError as err:
         raise HTTPException(400, str(err)) from err
 

@@ -2232,6 +2232,10 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await guide.getByRole('textbox', { name: 'Device name' }).fill('Front door');
   await press(guide.getByText(/A mute switch on a pin/), info);
   await expect(yaml).toHaveValue(/esp32-cam-microphone\.yaml[\s\S]*microphone\.yaml[\s\S]*mute-pin\.yaml/);
+  // What the camera looks at: written for the device's Camera use.
+  await expect(yaml).toHaveValue(/camera_use: "States"/);
+  await press(guide.getByText('Meters and displays', { exact: true }), info);
+  await expect(yaml).toHaveValue(/camera_use: "Meters and displays"/);
   await expect(yaml).toHaveValue(/name: front-door/);
   await expect(guide.locator('table')).toContainText('GPIO14');
   await expect(guide.locator('table')).toContainText('GPIO12 to GND');

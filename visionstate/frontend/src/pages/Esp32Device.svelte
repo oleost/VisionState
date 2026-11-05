@@ -20,6 +20,8 @@
   let kind = $state(cfg.boards[boardIds[0]].kinds[0]);
   let name = $state('');
   let mute = $state(false);
+  const useIds = Object.keys(cfg.camera_uses);
+  let cameraUse = $state(useIds[0]);
   let made = $state<EsphomeConfiguration | null>(null);
   let madeError = $state('');
 
@@ -43,13 +45,13 @@
   // The configuration follows every choice; the last answer counts.
   let loadCount = 0;
   $effect(() => {
-    const args = [board, kind, friendly, microphone && mute] as const;
+    const args = [board, kind, friendly, microphone && mute, camera ? cameraUse : null] as const;
     untrack(() => load(...args));
   });
-  async function load(b: string, k: string, n: string, m: boolean) {
+  async function load(b: string, k: string, n: string, m: boolean, u: string | null) {
     const mine = ++loadCount;
     try {
-      const got = await api.esphomeConfiguration(b, k, n, m);
+      const got = await api.esphomeConfiguration(b, k, n, m, u);
       if (mine !== loadCount) return;
       made = got;
       madeError = '';
@@ -182,6 +184,21 @@
       Device name
       <input class="input" bind:value={name} placeholder="Hallway" aria-label="Device name" />
     </label>
+    {#if camera}
+      <div class="col tight" role="radiogroup" aria-label="What the camera looks at">
+        <span class="small">What the camera looks at</span>
+        {#each useIds as id (id)}
+          <label class="check">
+            <input type="radio" name="camera-use" checked={cameraUse === id} onchange={() => (cameraUse = id)} />
+            <span><strong>{id}</strong> <span class="muted small">{cfg.camera_uses[id]}</span></span>
+          </label>
+        {/each}
+        <span class="xsmall muted">
+          One camera for several sensors: pick what the most demanding one needs (a meter, then things that move).
+          It can be changed later on the device in Home Assistant (Camera use).
+        </span>
+      </div>
+    {/if}
     {#if microphone}
       <label class="check">
         <input type="checkbox" bind:checked={mute} />

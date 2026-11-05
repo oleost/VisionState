@@ -159,7 +159,7 @@ def ui_config() -> dict:
         "sound_limits": SOUND_LIMITS,
         "sound_levels": SOUND_LEVELS,
         "advice": ADVICE,
-        "esphome": {k: ESPHOME[k] for k in ("port", "username", "password_chars", "kinds", "boards")},
+        "esphome": {k: ESPHOME[k] for k in ("port", "username", "password_chars", "kinds", "camera_uses", "boards")},
         "sound": {
             k: SOUND[k]
             for k in (

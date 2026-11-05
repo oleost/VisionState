@@ -419,6 +419,13 @@ ESPHOME = {
         "camera": "Camera",
         "camera_microphone": "Camera and microphone",
     },
+    # What a camera looks at: Camera use in esphome/packages/camera-use.yaml (its option, written
+    # as camera_use), which sets the picture size, quality and exposure. The first is the default.
+    "camera_uses": {
+        "States": "Still things: a door, a gate, a light (states)",
+        "Meters and displays": "A meter or a display: every pixel, less compression (readings)",
+        "People, cars and animals": "Things that move: a short exposure, so they stay sharp (objects)",
+    },
     "boards": {
         "esp32-devkit": {
             "name": "ESP32 DevKit",

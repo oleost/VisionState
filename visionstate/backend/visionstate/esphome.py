@@ -43,7 +43,7 @@ def packages(board: str, kind: str, mute: bool) -> list[str]:
     return [f"esphome/packages/{f}" for f in files]
 
 
-def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict:
+def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_use: str | None = None) -> dict:
     """The device's whole file for ESPHome, with the user's values as fields (FIELDS)."""
     spec = ESPHOME["boards"].get(board)
     if spec is None:
@@ -55,6 +55,10 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict
         raise ESPHomeError("The name cannot hold quotes or backslashes")
     name = device_name(friendly)
     microphone = kind in ("microphone", "camera_microphone")
+    camera = kind in ("camera", "camera_microphone")
+    uses = ESPHOME["camera_uses"]
+    if camera_use is not None and camera_use not in uses:
+        raise ESPHomeError(f"Unknown camera use {camera_use!r}")
     lines = [
         f"# A {ESPHOME['kinds'][kind].lower()} for VisionState on a board: {spec['name']} (made by VisionState's ESP32 guide).",
         "substitutions:",
@@ -64,6 +68,9 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict
         f"  wifi_password: {field('wifi_password')}",
         f"  stream_password: {field('stream_password')}",
     ]
+    if camera:
+        lines.append("  # What it looks at (Camera use in Home Assistant, which can change it later).")
+        lines.append(f'  camera_use: "{camera_use or next(iter(uses))}"')
     if microphone:
         pins = [k for k in ("mic_sck", "mic_ws", "mic_sd") if k in spec["pins"]]
         if mute:
@@ -98,7 +105,7 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool) -> dict
         "port": ESPHOME["port"],
         "username": ESPHOME["username"],
         "sound": microphone,
-        "picture": kind in ("camera", "camera_microphone"),
+        "picture": camera,
     }
 
 

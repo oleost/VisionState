@@ -30,7 +30,10 @@ Assistant or a test before anything is built on them).
 The component `visionstate_stream` and the packages in `esphome/`: the microphone as an endless
 WAV over HTTP (16 kHz, mono, 16 bits), the camera's picture as a snapshot taken after the request,
 both behind HTTP Basic auth on one port; the *Microphone* switch, the gain, the mute pin, the
-listeners, the light while someone listens, the flash as a light. Compiled for both boards and all
+listeners, the light while someone listens, the flash as a light, and *Camera use* (what the camera
+looks at: its picture size, quality and exposure; the guide asks, as VisionState knows what kind of
+sensor the camera is for — set per device, not per picture, since the sensor needs a few pictures
+to settle after a change, and one camera mostly looks at one thing). Compiled for both boards and all
 three kinds (CI: `.github/workflows/esphome.yml`). What has been tried on a board is in §5.
 
 In VisionState: the ESP32 guide (*Set one up with ESPHome*; the files are in
@@ -123,6 +126,11 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
 - [x] The ESP32-CAM with the camera and the microphone's I2S running together (the empty I2S port
       in `esp32-cam-microphone.yaml`): the camera works (2026-11-04, no microphone wired yet). The
       flash must stay off the camera's LEDC channel 0 (`camera-esp32-cam.yaml` uses channel 2).
+- [x] Camera use on the ESP32-CAM (2026-11-05): each choice sets its size at once and keeps it over
+      restarts. States 800x600, 12-15 kB, 138-145 ms; Meters and displays 1600x1200, 53-57 kB,
+      266-285 ms; People, cars and animals 800x600 with exposure 250, 11-14 kB, 125-133 ms, and
+      darker (52 against 90 with the flash on a wall). Not checked: how sharp something moving is
+      at that exposure, how a meter's digits read at 1600x1200 against 800x600, and the XIAO.
 - [ ] The mute pin: GPIO12 on the ESP32-CAM is a strapping pin — does the board still start with
       the switch closed and open?
 - [ ] With the INMP441: the level of a smoke alarm at a few metres and the gain it needs, how long

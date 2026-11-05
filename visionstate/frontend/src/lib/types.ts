@@ -747,6 +747,8 @@ export interface AppConfig {
     username: string;
     password_chars: number;
     kinds: Record<string, string>;
+    /** What a camera looks at (Camera use on the device): its option, and what it is for. */
+    camera_uses: Record<string, string>;
     boards: Record<string, EsphomeBoard>;
   };
   sound: {
