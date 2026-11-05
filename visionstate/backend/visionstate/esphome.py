@@ -50,6 +50,8 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
         raise ESPHomeError(f"Unknown board {board!r}")
     if kind not in spec["kinds"]:
         raise ESPHomeError(f"A {spec['name']} cannot be a {ESPHOME['kinds'].get(kind, kind).lower()}")
+    if mute and "mute_pin" not in spec["pins"]:
+        raise ESPHomeError(f"A {spec['name']} has no pin for a mute switch")
     friendly = " ".join(friendly_name.split()) or "VisionState device"
     if any(c in friendly for c in '"\\\n'):
         raise ESPHomeError("The name cannot hold quotes or backslashes")

@@ -84,6 +84,38 @@ Example: [`examples/xiao-esp32s3-sense-camera-microphone.yaml`](examples/xiao-es
 want one, goes from D0 (GPIO1) to GND. It runs warm with the camera on. Not yet tried on a board
 ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 
+**ESP32-S3 DevKit (ESP32-S3-DevKitC-1 and its clones) + INMP441** — [`examples/esp32s3-devkit-microphone.yaml`](examples/esp32s3-devkit-microphone.yaml)
+
+| INMP441 | ESP32-S3 DevKit |
+|---|---|
+| VDD | 3V3 |
+| GND | GND |
+| SCK | GPIO4 |
+| WS | GPIO5 |
+| SD | GPIO6 |
+| L/R | GND |
+| *mute switch (optional)* | GPIO7 to GND |
+
+Its RGB LED lights red while someone listens: GPIO48 on a DevKitC-1 v1.0, GPIO38 on v1.1
+(`rgb_pin`). Compiled, not yet tried on a board.
+
+**Waveshare ESP32-S3-Touch-LCD-2 + INMP441** — [`examples/waveshare-esp32s3-lcd2-microphone.yaml`](examples/waveshare-esp32s3-lcd2-microphone.yaml),
+the wiring a user worked out on the V1 board ([hruba202/Waveshare-ESP32-S3-Touch-LCD-2-INMP441](https://github.com/hruba202/Waveshare-ESP32-S3-Touch-LCD-2-INMP441))
+
+| INMP441 | ESP32-S3-Touch-LCD-2 |
+|---|---|
+| VDD | 3V3 (P2 header, pin 1) |
+| GND | GND (P2 header, pin 2) |
+| SCK | GPIO43, TX (P2 header, pin 3) |
+| WS | GPIO44, RX (P2 header, pin 4) |
+| SD | GPIO12 (P2 header, pin 10); with a camera in the socket GPIO18 (P1 header, pin 6) |
+| L/R | GND |
+
+GPIO12 is one of the camera's pins: with a camera in the socket, SD goes to GPIO18 and `mic_sd:
+GPIO18` in your file. The log goes over USB, since the UART's pins are the microphone's; take off
+any USB-to-serial adapter on them. The display stays dark, the board has no LED to light while
+someone listens, and no mute switch. Compiled, not yet tried on a board.
+
 **A voice assistant that also listens for VisionState**: a Home Assistant Voice (Preview
 Edition) or an M5Stack Atom VoiceS3R keeps its own firmware, and VisionState's stream is added to
 it, sharing the microphone with the wake word. See [below](#on-a-voice-assistant). Not yet tried on
@@ -185,7 +217,7 @@ processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 | Package | What |
 |---|---|
 | [`packages/common.yaml`](packages/common.yaml) | every device: Wi-Fi (power save off: it leaves gaps in the sound), the API, updates, the stream's server and login, the light, diagnostics |
-| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml) | the board and its default pins |
+| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml), [`packages/board-esp32s3-devkit.yaml`](packages/board-esp32s3-devkit.yaml), [`packages/board-waveshare-esp32s3-lcd2.yaml`](packages/board-waveshare-esp32s3-lcd2.yaml) | the board, its default pins and the light that shows someone listens (`vs_light`: an LED, or nothing) |
 | [`packages/microphone.yaml`](packages/microphone.yaml) | an INMP441 (I2S) as `/audio.wav` |
 | [`packages/microphone-pdm.yaml`](packages/microphone-pdm.yaml) | the XIAO ESP32-S3 Sense's PDM microphone as `/audio.wav` |
 | [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch and the gain |

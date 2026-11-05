@@ -1,0 +1,45 @@
+# A generic ESP32-S3 DevKit (ESP32-S3-DevKitC-1 and its clones, any flash and PSRAM size). The pins
+# are the defaults the docs wire; change them under substitutions in your own file.
+substitutions:
+  rgb_pin: GPIO48         # the RGB LED (WS2812); GPIO38 on a DevKitC-1 v1.1
+  mic_sck: GPIO4          # INMP441 SCK
+  mic_ws: GPIO5           # INMP441 WS
+  mic_sd: GPIO6           # INMP441 SD
+  mute_pin: GPIO7         # a switch to GND, if you wire one (packages/mute-pin.yaml)
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+
+# The light that is on while someone listens or looks (packages/common.yaml switches it): the RGB
+# LED, dimmed red.
+output:
+  - platform: template
+    id: vs_light
+    type: binary
+    write_action:
+      - if:
+          condition:
+            lambda: return state;
+          then:
+            - light.turn_on:
+                id: vs_rgb
+                brightness: 30%
+                red: 100%
+                green: 0%
+                blue: 0%
+          else:
+            - light.turn_off: vs_rgb
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: vs_rgb
+    internal: true
+    pin: ${rgb_pin}
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF

@@ -1120,8 +1120,12 @@ export interface EsphomeBoard {
   name: string;
   description: string;
   kinds: string[];
-  light: string;
+  /** What lights while VisionState listens or looks; null on a board without an LED. */
+  light: string | null;
+  /** The board's pins; a board without mute_pin takes no mute switch. */
   pins: Record<string, string>;
+  /** About the wiring, below its table. */
+  wiring_note?: string;
   /** Its camera takes the first I2S port (an ESP32-CAM). */
   camera_i2s?: boolean;
   /** 'built_in': a microphone on the board (nothing to wire); otherwise an INMP441 is wired to it. */

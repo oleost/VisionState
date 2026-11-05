@@ -27,6 +27,7 @@
 
   const spec = $derived(cfg.boards[board]);
   const microphone = $derived(kind === 'microphone' || kind === 'camera_microphone');
+  const canMute = $derived(microphone && 'mute_pin' in spec.pins);
   const camera = $derived(kind === 'camera' || kind === 'camera_microphone');
   const friendly = $derived(name.trim() || 'Hallway');
 
@@ -45,7 +46,7 @@
   // The configuration follows every choice; the last answer counts.
   let loadCount = 0;
   $effect(() => {
-    const args = [board, kind, friendly, microphone && mute, camera ? cameraUse : null] as const;
+    const args = [board, kind, friendly, canMute && mute, camera ? cameraUse : null] as const;
     untrack(() => load(...args));
   });
   async function load(b: string, k: string, n: string, m: boolean, u: string | null) {
@@ -199,7 +200,7 @@
         </span>
       </div>
     {/if}
-    {#if microphone}
+    {#if canMute}
       <label class="check">
         <input type="checkbox" bind:checked={mute} />
         <span>A mute switch on a pin (unwired, the microphone is on; closed, it is muted)</span>
@@ -211,7 +212,7 @@
     <h3>2. Wire it</h3>
     {#if microphone && spec.microphone === 'built_in'}
       <p class="small">Nothing to wire: the {camera ? 'camera and the microphone are' : 'microphone is'} on the board.</p>
-      {#if mute}
+      {#if canMute && mute}
         <p class="small">The mute switch: from <span class="mono">{spec.pins.mute_pin}</span> to GND.</p>
       {/if}
     {:else if microphone}
@@ -223,7 +224,7 @@
             {#each INMP441_WIRING as row (row.mic)}
               <tr><td class="mono">{row.mic}</td><td class="mono">{row.pin ? spec.pins[row.pin] : row.board}</td></tr>
             {/each}
-            {#if mute}
+            {#if canMute && mute}
               <tr><td>mute switch</td><td class="mono">{spec.pins.mute_pin} to GND</td></tr>
             {/if}
           </tbody>
@@ -231,6 +232,9 @@
       </div>
       {#if camera}
         <p class="xsmall muted">On the SD card's pins: leave the SD card out.</p>
+      {/if}
+      {#if spec.wiring_note}
+        <p class="xsmall muted">{spec.wiring_note}</p>
       {/if}
     {:else}
       <p class="small">Nothing to wire: the camera is on the board.</p>
@@ -241,7 +245,11 @@
         current. To install the first time it needs a USB adapter (an ESP32-CAM-MB, or a USB-to-serial adapter).
       </p>
     {/if}
-    <p class="xsmall muted">{spec.light} lights while VisionState listens or looks.</p>
+    {#if spec.light}
+      <p class="xsmall muted">{spec.light} lights while VisionState listens or looks.</p>
+    {:else}
+      <p class="xsmall muted">It has no LED to show when VisionState listens or looks.</p>
+    {/if}
   </section>
 
   <section class="card pad col">

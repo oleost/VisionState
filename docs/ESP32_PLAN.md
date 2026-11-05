@@ -16,6 +16,9 @@ Assistant or a test before anything is built on them).
 - **The Seeed Studio XIAO ESP32-S3 Sense as well** (2026-11-05), for a user who has one: camera and
   microphone (PDM) on the board, nothing to solder. A user had found that a microphone on the
   ESP32-CAM's pins leaves no room for its USB board.
+- **An ESP32-S3 DevKit and the Waveshare ESP32-S3-Touch-LCD-2 as well** (2026-11-05), microphone
+  only, for a user (#75) who had wired an INMP441 to the Waveshare with firmware of their own: our
+  firmware on it, with their wiring.
 - **The sound must be in Home Assistant**, so it can be **listened to** there, and **also have a
   direct address**, because that is fastest for VisionState.
 - **A user name and password**, as cameras have, not a token or pairing.
@@ -144,6 +147,9 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       commit with RAM 41 % and flash 55 %), but is not tried on a device:
       memory and CPU next to the wake word, the gain, whether a smoke alarm comes through the noise
       suppression, and the pause while the assistant listens.
+- [ ] The ESP32-S3 DevKit and the Waveshare ESP32-S3-Touch-LCD-2 (compiled, not tried on a board):
+      the INMP441 on an S3, the DevKit's RGB LED, and on the Waveshare the microphone on the
+      UART's pins with the log on USB, and SD on GPIO18 with a camera in the socket.
 - [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
       microphone's channel (left is assumed) and the gain it needs, its LED, and how warm it runs
       with the camera on.

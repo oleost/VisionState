@@ -1,5 +1,6 @@
 # Every VisionState device: Wi-Fi, the Home Assistant API, updates over the air, the stream's
-# server with its login, and a light that is on while someone listens or looks.
+# server with its login, and a light that is on while someone listens or looks (the output vs_light,
+# which each board package gives: an LED, or nothing on a board without one).
 substitutions:
   stream_port: "8081"
   stream_username: visionstate
@@ -44,13 +45,6 @@ visionstate_stream:
             - output.turn_on: vs_light
           else:
             - output.turn_off: vs_light
-
-output:
-  - platform: gpio
-    id: vs_light
-    pin:
-      number: ${light_pin}
-      inverted: ${light_inverted}
 
 sensor:
   - platform: wifi_signal

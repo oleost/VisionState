@@ -24,6 +24,8 @@ EXAMPLES = {
     ("esp32-cam", "camera"): "esp32-cam-camera.yaml",
     ("esp32-cam", "camera_microphone"): "esp32-cam-camera-microphone.yaml",
     ("xiao-esp32s3-sense", "camera_microphone"): "xiao-esp32s3-sense-camera-microphone.yaml",
+    ("esp32s3-devkit", "microphone"): "esp32s3-devkit-microphone.yaml",
+    ("waveshare-esp32s3-lcd2", "microphone"): "waveshare-esp32s3-lcd2-microphone.yaml",
 }
 
 
@@ -47,7 +49,8 @@ def substitutions(yaml_text: str) -> dict[str, str]:
 @pytest.mark.parametrize(("board", "kind"), list(EXAMPLES))
 def test_the_guide_writes_what_the_examples_use(board, kind):
     example = (ESPHOME_DIR / "examples" / EXAMPLES[(board, kind)]).read_text(encoding="utf-8")
-    made = esphome.configuration(board, kind, "Front door", mute=True)
+    mute = "mute_pin" in ESPHOME["boards"][board]["pins"]
+    made = esphome.configuration(board, kind, "Front door", mute=mute)
     assert files_of(made["yaml"]) == files_of(example)
     for f in files_of(made["yaml"]):  # every package it names exists
         assert (ESPHOME_DIR.parent / f).is_file(), f
@@ -107,6 +110,12 @@ def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
     assert "camera_use" not in esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False)["yaml"]
     with pytest.raises(esphome.ESPHomeError):
         esphome.configuration("esp32-cam", "camera", "Hall", mute=False, camera_use="Fish")
+    # A board with no pin for a mute switch takes none; its wiring is the user's (an INMP441 on its headers).
+    with pytest.raises(esphome.ESPHomeError):
+        esphome.configuration("waveshare-esp32s3-lcd2", "microphone", "Hall", mute=True)
+    waveshare = esphome.configuration("waveshare-esp32s3-lcd2", "microphone", "Hall", mute=False)["yaml"]
+    assert "mic_sck: GPIO43" in waveshare and "mute" not in waveshare
+    assert "mute_pin: GPIO7" in esphome.configuration("esp32s3-devkit", "microphone", "Hall", mute=True)["yaml"]
     assert esphome.device_name("  Garasje / Bod 2 ") == "garasje-bod-2"
     assert esphome.device_name("???") == "visionstate"
 

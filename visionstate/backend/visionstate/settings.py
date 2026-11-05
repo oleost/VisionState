@@ -451,6 +451,23 @@ ESPHOME = {
             "pins": {"mute_pin": "GPIO1"},
             "microphone": "built_in",  # a PDM microphone (microphone-pdm.yaml), not an INMP441
         },
+        "esp32s3-devkit": {
+            "name": "ESP32-S3 DevKit",
+            "description": "ESP32-S3-DevKitC-1 and its clones",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "pins": {"mic_sck": "GPIO4", "mic_ws": "GPIO5", "mic_sd": "GPIO6", "mute_pin": "GPIO7"},
+        },
+        "waveshare-esp32s3-lcd2": {
+            "name": "Waveshare ESP32-S3-Touch-LCD-2",
+            "description": "The microphone on its headers; the display stays dark",
+            "kinds": ["microphone"],
+            # No LED of its own, and no pin known to be free for a mute switch.
+            "light": None,
+            "pins": {"mic_sck": "GPIO43", "mic_ws": "GPIO44", "mic_sd": "GPIO12"},
+            "wiring_note": "SCK and WS on the P2 header's TX and RX, SD on its pin 10. With a camera in the "
+            "socket, SD goes to GPIO18 (P1 header, pin 6) instead: change mic_sd in the file.",
+        },
     },
 }
 

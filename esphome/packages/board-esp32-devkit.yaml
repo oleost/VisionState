@@ -12,3 +12,11 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
+
+# The light that is on while someone listens or looks (packages/common.yaml switches it).
+output:
+  - platform: gpio
+    id: vs_light
+    pin:
+      number: ${light_pin}
+      inverted: ${light_inverted}
