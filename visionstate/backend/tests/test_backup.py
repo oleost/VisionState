@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from visionstate import backup
 from visionstate.db import SCHEMA_VERSION, Base, Database, Face, Prediction, Sample, Sensor
+from visionstate.engine.history import HistoryMixin
 from visionstate.main import create_app
 from visionstate.mqtt import MqttBridge
 from visionstate.settings import BACKUP, BACKUP_LEFT_OUT, BACKUP_PARTS, Settings
@@ -612,7 +613,10 @@ def test_a_backup_of_this_version_is_kept():
 
 
 @pytest.mark.parametrize("path", KEPT, ids=[p.name for p in KEPT])
-def test_every_kept_backup_restores(tmp_path, path, removed):
+def test_every_kept_backup_restores(tmp_path, path, removed, monkeypatch):
+    # The kept backups age, and their history is older than the history_days they hold: the
+    # clean-up would remove it, depending on when the test runs. This test is about the format.
+    monkeypatch.setattr(HistoryMixin, "cleanup_history", lambda self: None)
     manifest = json.loads(zipfile.ZipFile(path).read("backup.json"))
     settings = make_settings(tmp_path)
     with TestClient(create_app(settings)) as client:
