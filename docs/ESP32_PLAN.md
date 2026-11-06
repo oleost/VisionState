@@ -161,3 +161,25 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
 - [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
       microphone's channel (left is assumed) and the gain it needs, its LED, and how warm it runs
       with the camera on.
+
+## 6. Into beta: the steps (the maintainer, 2026-11-06)
+
+No alpha channel: a device's file names the branch its firmware comes from, so devices set up from
+an alpha would keep following that branch after the app moved on to beta or stable. The work goes
+from `esp32` straight into `beta`. Looked through for existing users: Camera use only asks cameras
+that answered with `X-VisionState-Camera`; no new database version; the new `camera_use` in a
+sensor's triggers is empty by default and ignored by older versions (exports and backups both
+ways); the guide does nothing until opened.
+
+- [ ] Fix `test_every_kept_backup_restores[backup-format1-schema15.zip]` on `beta` (not from this
+      work): the kept backup's history is older than `history_days`, so the app deletes it at
+      start and the test fails by today's date (it passed CI on 2026-11-05). It would stop the next
+      beta tag.
+- [ ] *Pure silence* is new for every sound sensor, not only ESP32s: 60 s of exact digital zeros
+      (`SOUND["dead_silence_s"]`) gives a log warning and the chip on the dashboard. A camera that
+      sends true zeros in a quiet room (a noise gate) would show it every night. Check on the
+      maintainer's own sound sensors on the test Home Assistant before the beta.
+- [ ] Merge `esp32` into `beta`; tag `esphome-v1` and set `settings.ESPHOME["ref"]` to the tag and
+      `refresh` to `1d` in the same beta (`docs/RELEASING.md`), so beta users' devices stay on a
+      fixed firmware. A later fix that needs a change in users' files gets `esphome-v2`.
+- [ ] The usual checks, the changelog entry shown to the maintainer, and their "go".
