@@ -19,6 +19,11 @@ Assistant or a test before anything is built on them).
 - **An ESP32-S3 DevKit and the Waveshare ESP32-S3-Touch-LCD-2 as well** (2026-11-05), microphone
   only, for a user (#75) who had wired an INMP441 to the Waveshare with firmware of their own: our
   firmware on it, with their wiring.
+- **The Waveshare ESP32-C5-WIFI6-KIT as well** (2026-11-06), microphone only, with the wiring the
+  same user found. From their own firmware (#75) we took the idea of showing on the LCD-2's display
+  that someone listens; not its token in the address (we have a password), its fixed WAV length,
+  or its level sensors every second (VisionState measures the level itself, and Home Assistant
+  would store each one).
 - **The sound must be in Home Assistant**, so it can be **listened to** there, and **also have a
   direct address**, because that is fastest for VisionState.
 - **A user name and password**, as cameras have, not a token or pairing.
@@ -149,7 +154,10 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       suppression, and the pause while the assistant listens.
 - [ ] The ESP32-S3 DevKit and the Waveshare ESP32-S3-Touch-LCD-2 (compiled, not tried on a board):
       the INMP441 on an S3, the DevKit's RGB LED, and on the Waveshare the microphone on the
-      UART's pins with the log on USB, and SD on GPIO18 with a camera in the socket.
+      UART's pins with the log on USB, SD on GPIO18 with a camera in the socket, and its display as
+      the light (that the dot is red, not blue: the colour order is taken from the user's firmware).
+- [ ] The Waveshare ESP32-C5-WIFI6-KIT (compiled, not tried on a board): the INMP441, its RGB LED,
+      and Wi-Fi on 5 GHz.
 - [ ] The XIAO ESP32-S3 Sense (compiled, not tried on a board): the camera's picture, the PDM
       microphone's channel (left is assumed) and the gain it needs, its LED, and how warm it runs
       with the camera on.

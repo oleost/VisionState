@@ -278,7 +278,7 @@
       </button>
     </div>
     <p class="xsmall muted">
-      The Wi-Fi is the 2.4 GHz network the device joins. Only VisionState knows the device's password (it asks for the
+      The Wi-Fi is the {spec.wifi} network the device joins. Only VisionState knows the device's password (it asks for the
       sound and the pictures with it); it is made up here, change it if you like. These stay in your browser: they go into
       the file below, not to VisionState.
     </p>

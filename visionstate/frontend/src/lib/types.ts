@@ -1130,6 +1130,8 @@ export interface EsphomeBoard {
   camera_i2s?: boolean;
   /** 'built_in': a microphone on the board (nothing to wire); otherwise an INMP441 is wired to it. */
   microphone?: string;
+  /** The Wi-Fi bands it joins (its radio), as the guide says them. */
+  wifi: string;
 }
 
 export interface EsphomeConfiguration {

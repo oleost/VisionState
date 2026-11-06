@@ -26,6 +26,7 @@ EXAMPLES = {
     ("xiao-esp32s3-sense", "camera_microphone"): "xiao-esp32s3-sense-camera-microphone.yaml",
     ("esp32s3-devkit", "microphone"): "esp32s3-devkit-microphone.yaml",
     ("waveshare-esp32s3-lcd2", "microphone"): "waveshare-esp32s3-lcd2-microphone.yaml",
+    ("waveshare-esp32c5-kit", "microphone"): "waveshare-esp32c5-kit-microphone.yaml",
 }
 
 

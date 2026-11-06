@@ -31,6 +31,7 @@ jobs:
           - xiao-camera-microphone
           - esp32s3-devkit-microphone
           - waveshare-lcd2-microphone
+          - waveshare-c5-microphone
           # Our add-on next to the devices' own firmware, pinned (tests/*.yaml): a release of the
           # Voice PE's, a commit of M5Stack's.
           - voice-pe

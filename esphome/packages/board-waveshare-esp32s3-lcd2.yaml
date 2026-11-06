@@ -1,8 +1,7 @@
 # A Waveshare ESP32-S3-Touch-LCD-2: an ESP32-S3R8 (8 MB octal PSRAM) with 16 MB flash, a 2" display
-# (left dark: not used) and a camera socket. An INMP441 on its headers, as a user wired it: SCK and
-# WS on the UART pins (GPIO43, GPIO44), so the log goes over USB; SD on GPIO12, one of the camera's
-# pins, so with a camera in the socket SD goes to GPIO18 instead. It has no LED of its own to light
-# while someone listens, and no mute switch (no pin left that is known to be free).
+# and a camera socket. An INMP441 on its headers, as a user wired it: SCK and WS on the UART pins
+# (GPIO43, GPIO44), so the log goes over USB; SD on GPIO12, one of the camera's pins, so with a camera
+# in the socket SD goes to GPIO18 instead. No mute switch (no pin left that is known to be free).
 substitutions:
   mic_sck: GPIO43         # INMP441 SCK: TX on the P2 header
   mic_ws: GPIO44          # INMP441 WS: RX on the P2 header
@@ -22,10 +21,46 @@ psram:
 logger:
   hardware_uart: USB_SERIAL_JTAG  # not UART0: its pins are the microphone's
 
-# The light that is on while someone listens or looks (packages/common.yaml switches it): this board
-# has none, so nothing lights.
+# The light that is on while someone listens or looks (packages/common.yaml switches it): the board
+# has no LED, so its display is the light: a red dot on black, drawn when it turns on, and its
+# backlight off (dark) otherwise. The display (ST7789V, 240x320) on the board's own SPI pins.
 output:
+  - platform: gpio
+    id: vs_backlight
+    pin: GPIO1
   - platform: template
     id: vs_light
     type: binary
-    write_action: []
+    write_action:
+      - if:
+          condition:
+            lambda: return state;
+          then:
+            - component.update: vs_display
+            - output.turn_on: vs_backlight
+          else:
+            - output.turn_off: vs_backlight
+
+spi:
+  id: vs_display_spi
+  clk_pin: GPIO39
+  mosi_pin: GPIO38
+  miso_pin: GPIO40
+
+display:
+  - platform: mipi_spi
+    id: vs_display
+    spi_id: vs_display_spi
+    model: ST7789V
+    cs_pin:
+      number: GPIO45  # a strapping pin (flash voltage), wired so by Waveshare
+      ignore_strapping_warning: true
+    dc_pin: GPIO42
+    invert_colors: true
+    color_order: bgr
+    data_rate: 40MHz
+    update_interval: never
+    auto_clear_enabled: false
+    lambda: |-
+      it.fill(Color::BLACK);
+      it.filled_circle(it.get_width() / 2, it.get_height() / 2, 60, Color(255, 0, 0));

@@ -2226,14 +2226,21 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await expect(yaml).toHaveValue(/camera-xiao-esp32s3-sense\.yaml[\s\S]*microphone-pdm\.yaml/);
   await expect(guide.getByText('Nothing to wire: the camera and the microphone are on the board.')).toBeVisible();
 
-  // A Waveshare ESP32-S3-Touch-LCD-2: a microphone only, wired to its headers, with no mute pin and no LED.
+  // A Waveshare ESP32-S3-Touch-LCD-2: a microphone only, wired to its headers, with no mute pin; its display is the light.
   await press(guide.getByText('Waveshare ESP32-S3-Touch-LCD-2', { exact: true }), info);
   await expect(yaml).toHaveValue(/board-waveshare-esp32s3-lcd2\.yaml[\s\S]*microphone\.yaml/);
   await expect(yaml).not.toHaveValue(/mute/);
   await expect(guide.getByText(/A mute switch on a pin/)).toHaveCount(0);
   await expect(guide.locator('table')).toContainText('GPIO43');
   await expect(guide.getByText(/With a camera in the socket, SD goes to GPIO18/)).toBeVisible();
-  await expect(guide.getByText('It has no LED to show when VisionState listens or looks.')).toBeVisible();
+  await expect(guide.getByText('Its display (a red dot) lights while VisionState listens or looks.')).toBeVisible();
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 GHz network/)).toBeVisible();
+
+  // A Waveshare ESP32-C5-WIFI6-KIT: a microphone with a mute switch, and Wi-Fi on 5 GHz too.
+  await press(guide.getByText('Waveshare ESP32-C5-WIFI6-KIT', { exact: true }), info);
+  await expect(yaml).toHaveValue(/board-waveshare-esp32c5-kit\.yaml[\s\S]*microphone\.yaml/);
+  await expect(guide.locator('table')).toContainText('GPIO10');
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 or 5 GHz network/)).toBeVisible();
 
   // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
   await press(guide.getByText('ESP32-CAM', { exact: true }), info);

@@ -430,6 +430,7 @@ ESPHOME = {
         "esp32-devkit": {
             "name": "ESP32 DevKit",
             "description": "ESP32-WROOM-32, 30 or 38 pins",
+            "wifi": "2.4 GHz",
             "kinds": ["microphone"],
             "light": "The blue LED",
             "pins": {"mic_sck": "GPIO26", "mic_ws": "GPIO25", "mic_sd": "GPIO33", "mute_pin": "GPIO32"},
@@ -437,6 +438,7 @@ ESPHOME = {
         "esp32-cam": {
             "name": "ESP32-CAM",
             "description": "AI-Thinker layout and its clones; the microphone on the SD card's pins",
+            "wifi": "2.4 GHz",
             "kinds": ["camera", "camera_microphone"],
             "light": "The small red LED on the back",
             "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
@@ -446,6 +448,7 @@ ESPHOME = {
         "xiao-esp32s3-sense": {
             "name": "XIAO ESP32-S3 Sense",
             "description": "Seeed Studio; the camera and the microphone are on its camera board, nothing to wire",
+            "wifi": "2.4 GHz",
             "kinds": ["microphone", "camera", "camera_microphone"],
             "light": "The orange LED",
             "pins": {"mute_pin": "GPIO1"},
@@ -454,19 +457,29 @@ ESPHOME = {
         "esp32s3-devkit": {
             "name": "ESP32-S3 DevKit",
             "description": "ESP32-S3-DevKitC-1 and its clones",
+            "wifi": "2.4 GHz",
             "kinds": ["microphone"],
             "light": "The RGB LED",
             "pins": {"mic_sck": "GPIO4", "mic_ws": "GPIO5", "mic_sd": "GPIO6", "mute_pin": "GPIO7"},
         },
         "waveshare-esp32s3-lcd2": {
             "name": "Waveshare ESP32-S3-Touch-LCD-2",
-            "description": "The microphone on its headers; the display stays dark",
+            "description": "The microphone on its headers",
+            "wifi": "2.4 GHz",
             "kinds": ["microphone"],
-            # No LED of its own, and no pin known to be free for a mute switch.
-            "light": None,
+            # No LED of its own: its display shows a red dot instead. No pin known to be free for a mute switch.
+            "light": "Its display (a red dot)",
             "pins": {"mic_sck": "GPIO43", "mic_ws": "GPIO44", "mic_sd": "GPIO12"},
             "wiring_note": "SCK and WS on the P2 header's TX and RX, SD on its pin 10. With a camera in the "
             "socket, SD goes to GPIO18 (P1 header, pin 6) instead: change mic_sd in the file.",
+        },
+        "waveshare-esp32c5-kit": {
+            "name": "Waveshare ESP32-C5-WIFI6-KIT",
+            "description": "ESP32-C5: Wi-Fi on 2.4 and 5 GHz",
+            "wifi": "2.4 or 5 GHz",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "pins": {"mic_sck": "GPIO8", "mic_ws": "GPIO9", "mic_sd": "GPIO10", "mute_pin": "GPIO4"},
         },
     },
 }

@@ -113,8 +113,25 @@ the wiring a user worked out on the V1 board ([hruba202/Waveshare-ESP32-S3-Touch
 
 GPIO12 is one of the camera's pins: with a camera in the socket, SD goes to GPIO18 and `mic_sd:
 GPIO18` in your file. The log goes over USB, since the UART's pins are the microphone's; take off
-any USB-to-serial adapter on them. The display stays dark, the board has no LED to light while
-someone listens, and no mute switch. Compiled, not yet tried on a board.
+any USB-to-serial adapter on them. The board has no LED, so its display is the light: a red dot
+while someone listens, dark otherwise. No mute switch. Compiled, not yet tried on a board.
+
+**Waveshare ESP32-C5-WIFI6-KIT + INMP441** (Wi-Fi on 2.4 and 5 GHz) — [`examples/waveshare-esp32c5-kit-microphone.yaml`](examples/waveshare-esp32c5-kit-microphone.yaml),
+the wiring a user worked out
+
+| INMP441 | ESP32-C5-WIFI6-KIT |
+|---|---|
+| VDD | 3V3 |
+| GND | GND |
+| SCK | GPIO8 |
+| WS | GPIO9 |
+| SD | GPIO10 |
+| L/R | GND |
+| *mute switch (optional)* | GPIO4 to GND |
+
+Go by the GPIO labels on the board. Its RGB LED lights red while someone listens. It has a
+socket for a battery, but a microphone that streams all the time wants a USB supply. Compiled,
+not yet tried on a board.
 
 **A voice assistant that also listens for VisionState**: a Home Assistant Voice (Preview
 Edition) or an M5Stack Atom VoiceS3R keeps its own firmware, and VisionState's stream is added to
@@ -217,7 +234,7 @@ processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
 | Package | What |
 |---|---|
 | [`packages/common.yaml`](packages/common.yaml) | every device: Wi-Fi (power save off: it leaves gaps in the sound), the API, updates, the stream's server and login, the light, diagnostics |
-| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml), [`packages/board-esp32s3-devkit.yaml`](packages/board-esp32s3-devkit.yaml), [`packages/board-waveshare-esp32s3-lcd2.yaml`](packages/board-waveshare-esp32s3-lcd2.yaml) | the board, its default pins and the light that shows someone listens (`vs_light`: an LED, or nothing) |
+| [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml), [`packages/board-esp32s3-devkit.yaml`](packages/board-esp32s3-devkit.yaml), [`packages/board-waveshare-esp32s3-lcd2.yaml`](packages/board-waveshare-esp32s3-lcd2.yaml), [`packages/board-waveshare-esp32c5-kit.yaml`](packages/board-waveshare-esp32c5-kit.yaml) | the board, its default pins and the light that shows someone listens (`vs_light`: an LED, or a display) |
 | [`packages/microphone.yaml`](packages/microphone.yaml) | an INMP441 (I2S) as `/audio.wav` |
 | [`packages/microphone-pdm.yaml`](packages/microphone-pdm.yaml) | the XIAO ESP32-S3 Sense's PDM microphone as `/audio.wav` |
 | [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch and the gain |

@@ -543,7 +543,7 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
 **An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
 guide for an ESP32 or ESP32-S3 DevKit with an INMP441 microphone, an ESP32-CAM with its camera
 (and a microphone too, if you like), a Seeed Studio XIAO ESP32-S3 Sense, whose camera and
-microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or
+microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or
 things that move — which sets the camera's picture size, compression and exposure (*Camera use*
 on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
 pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
