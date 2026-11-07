@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from PIL import Image
 from sqlalchemy import func, select
 
-from .. import detectors, imaging, teach
+from .. import detectors, imaging, teach, timing
 from ..db import Person, Prediction, Sensor
 from ..mqtt import object_topics, topics
 from ..redact import redact
@@ -37,7 +37,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         # Once a box the detector missed was taught, its unsure boxes are looked at too.
         floor = min(cfg.threshold, self.teach_limits(cfg)["rescue_floor"]) if rescue else cfg.threshold
         try:
-            found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
+            with timing.step("detect"):
+                found = await self.detect_objects(image, cfg.roi, cfg.objects, floor, all_classes=rescue)
         except Exception as err:  # noqa: BLE001 - detector missing or failed to load
             live.error = f"Object detector unavailable: {redact(str(err))}"
             live.frame_id, live.detections = frame_id, []
@@ -47,9 +48,11 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             candidates = [d for d in found if d["score"] < cfg.threshold]
             found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
         if index is not None:
-            found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
+            with timing.step("taught"):
+                found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
         if cfg.faces_on:
-            found = await self.apply_faces(cfg, image, found, live.detections)
+            with timing.step("faces"):
+                found = await self.apply_faces(cfg, image, found, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.frame_id, live.detections = frame_id, found  # together: the boxes belong to that frame
@@ -87,14 +90,16 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         names[FACE_UNKNOWN_KEY] = "Unknown person"
         drawn = [{**d, "key": d.get("label") or d["key"]} for d in counted]
 
+        captured_at = timing.captured_at()
+
         def picture() -> bytes:
             box = imaging.region_box(cfg.roi)
-            return imaging.encode_jpeg(
-                imaging.crop_box(imaging.draw_detections(image, drawn, names, OBJECT_BOX_COLOR), box), 80
-            )
+            drawn_on = imaging.draw_detections(image, drawn, names, OBJECT_BOX_COLOR)
+            return imaging.encode_jpeg(imaging.crop_box(drawn_on, box), 80, imaging.frame_exif(captured_at, box))
 
         shows = tuple((key, live.tracks[key].on, live.tracks[key].count) for key in keys)
         await self._send_on_change(cfg, topics(cfg.slug)["image"], shows, picture)
+        timing.lap("publish")
         for key in changed:
             track = live.tracks[key]
             published = "on" if track.on else "off"
@@ -103,6 +108,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         if cfg.faces_on:
             await self._record_face(cfg, image, found, now)
         await self._ask_unsure(cfg, image, found, now)
+        timing.lap("history")
 
     async def _record_face(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
         """Keep a frame in the history when a usable face nobody is named for is seen, so the user

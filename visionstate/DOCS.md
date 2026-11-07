@@ -158,6 +158,14 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
         filename: "/media/driveway/car_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
   ```
 
+  A picture reaches Home Assistant a while after its frame was taken (the time the check needs:
+  seconds on a small CPU). Every picture VisionState sends — snapshots and each sensor's
+  `last_frame` — says in its EXIF when the camera was asked for the frame: `DateTimeOriginal` with
+  `SubSecTimeOriginal` (milliseconds), in UTC (`OffsetTimeOriginal` `+00:00`). Its `UserComment`
+  holds `{"crop":[left,top,right,bottom]}`, the part of the camera frame it shows, from 0 to 1 like
+  `boxes`. `image.snapshot` keeps both, so a saved picture can be matched with a camera's own
+  recording to the second.
+
   Plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence,
   the boxes and when it was last seen; they follow at once when the object comes or goes or its
@@ -904,7 +912,7 @@ again to see; the change applies at once, without a restart.
 
 | Option | Description |
 |---|---|
-| `log_level` | Amount of logging. |
+| `log_level` | Amount of logging. At `debug`, every check also logs how long it took and where the time went, e.g. `Sensor driveway: check 3.10 s (grab 0.35, decode 0.07, detect 0.90, taught 1.20, faces 0.25, publish 0.08, history 0.10; waited 0.15)`; *waited* is time spent waiting while other sensors used the AI models. |
 | `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
 

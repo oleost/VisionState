@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
-from .. import imaging, teach
+from .. import imaging, teach, timing
 from ..db import Embedding, Sample
 from ..settings import TEACH
 from .base import RuntimeBase
@@ -119,7 +119,7 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         embedder = self.embedder
         if not crops or embedder is None:
             return found
-        async with self._sem:
+        async with timing.slot(self._sem):
             vectors = await asyncio.to_thread(teach.embed, embedder, crops)
         n = len(checked)
         return teach.apply(

@@ -72,10 +72,11 @@ API as `request.app.state.runtime`.
 | `advice.py` | A threshold suggested from review answers, one way for every sensor kind (`threshold_advice`); what each kind's answers are, and setting one: `api/advice.py` |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes, what a picture sent to Home Assistant tells about itself (`frame_exif`) |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
+| `timing.py` | One check's clock, in a context variable: when its frame was asked for (the time in the EXIF of every picture sent: `imaging.frame_exif`), how long each part took and how long it waited for a model run (`step`, `lap`, `slot`; logged at debug level at the end of `run_once`) |
 
 ### `engine/`
 
@@ -127,9 +128,13 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   sound sensor (instead of all of the above, every hop): sound._listen  what the stream received →
       levels → loud enough? → model (sounds + embedding → own sounds' head) → logic.hear → clips
         │
-        ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image
+        ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image (its EXIF:
+        │                                        when the frame was asked for, the part it shows)
         └─ history: a Prediction row + frame, when the value changed or the frame goes to review
 ```
+
+Each part of a check is timed (`timing.step`; a wait for a model run apart: `timing.slot`); a new
+part or a new wait for a model run uses them, so the debug line stays complete.
 
 A camera problem makes the sensor *unavailable* (its availability topic `offline`); any other
 error is kept in `LiveState.error` and shown in the UI.

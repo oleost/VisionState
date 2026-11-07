@@ -10,7 +10,7 @@ import time
 
 from PIL import Image
 
-from .. import backbones, imaging
+from .. import backbones, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
@@ -195,6 +195,10 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
 
     async def probe(self, cfg: SensorConfig) -> None:
         """Cheap check: compare the region with the last classified frame; classify only if it changed."""
+        with timing.checking():  # a check it starts counts from the frame it asked for
+            await self._probe(cfg)
+
+    async def _probe(self, cfg: SensorConfig) -> None:
         live = self.live_state(cfg.id)
         live.last_probe = time.time()
         entity = cfg.triggers["light_entity"]
@@ -205,7 +209,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         try:
             frame_id, data, _ = await self._grab_for_check(cfg)
             # Only for the signature: decoded small (a check that follows decodes it whole).
-            small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
+            with timing.step("decode"):
+                small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
@@ -234,7 +239,9 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
                 await self.run_once(cfg, data=data, frame_id=frame_id)
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
-        data = await self.grabber.grab(cfg.source_type, cfg.source)
+        timing.captured()
+        with timing.step("grab"):
+            data = await self.grabber.grab(cfg.source_type, cfg.source)
         return self.live_state(cfg.id).remember(data), data
 
     async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
@@ -242,7 +249,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         live = self.live_state(cfg.id)
         if not live.shares_camera:
             return *(await self.grab(cfg)), None
-        frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+        with timing.step("grab"):
+            frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+        check = timing.current()
+        if check is not None:
+            check.captured_at = frame.taken_at
         return live.remember(frame.data), frame.data, frame
 
     async def run_once(
@@ -255,8 +266,18 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         """One check: take a frame (or use the one given), then hand it to the sensor's kind.
 
         A frame the camera could not deliver makes the sensor unavailable in Home Assistant.
-        Without a light, the frame also becomes the baseline of change detection.
+        Without a light, the frame also becomes the baseline of change detection. At debug level
+        it logs how long the check took, part by part (timing.py).
         """
+        with timing.checking() as check:
+            done = await self._run_once(cfg, data, image, frame_id)
+            if done and log.isEnabledFor(logging.DEBUG):
+                log.debug("Sensor %s: check %s", cfg.slug, check.summary())
+
+    async def _run_once(
+        self, cfg: SensorConfig, data: bytes | None, image: Image.Image | None, frame_id: str | None
+    ) -> bool:
+        """run_once; False when the camera gave no frame."""
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
@@ -274,13 +295,14 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
                 finally:
                     self._light_after(cfg)
             if image is None:
-                image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
+                with timing.step("decode"):
+                    image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
             live.available, live.error = False, redact(str(err))
             await self._send(cfg, t["availability"], "offline", retain=True)
-            return
+            return False
         live.available, live.error = True, ""
         # Change detection compares frames without the light (probe), so a frame taken in the
         # light is no baseline for it: every probe would look like a change.
@@ -295,12 +317,13 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # The frame on screen changes together with its boxes, once they are found (the UI
             # draws the boxes of live.detections on live.frame_id).
             await self._run_objects(cfg, image, frame_id)
-            return
+            return True
         live.frame_id = frame_id
         if cfg.is_reading:
             await self._run_reading(cfg, image, lit)
-            return
+            return True
         await self._run_states(cfg, image)
+        return True
 
     async def _run_states(self, cfg: SensorConfig, image: Image.Image) -> None:
         """One check of a state sensor: classify the region, debounce, publish, keep history."""
@@ -310,7 +333,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # Its first model is being trained, or a head of an older format retrained after an
             # update: "unknown" until then would be wrong. The training checks again when done.
             return
-        probs = await self.classify_image(cfg, image)
+        with timing.step("classify"):
+            probs = await self.classify_image(cfg, image)
         if probs:
             top, confidence = max(probs.items(), key=lambda kv: kv[1])
         else:
@@ -338,7 +362,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             },
             retain=True,
         )
-        await self._send_on_change(cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80))
+        exif = imaging.frame_exif(timing.captured_at(), imaging.region_box(cfg.roi))
+        await self._send_on_change(
+            cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80, exif)
+        )
+        timing.lap("publish")
 
         reason = None
         if probs:
@@ -361,6 +389,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             )
             if reason:
                 await self.publish_review_count()
+        timing.lap("history")
 
     def _record_prediction(
         self,
@@ -395,6 +424,6 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if head is None or self.embedder is None or head.backbone != self.embedder.spec.id:
             return {}
         crop = imaging.crop(image, cfg.roi)
-        async with self._sem:
+        async with timing.slot(self._sem):
             vector = await asyncio.to_thread(self.embedder.embed, [crop])
         return head.predict(vector, cfg.state_keys)[0]

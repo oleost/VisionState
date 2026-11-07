@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image
 from sqlalchemy import select
 
-from .. import backbones, detectors, imaging, readers
+from .. import backbones, detectors, imaging, readers, timing
 from ..db import Sensor
 from ..dials import read_needles
 from ..readers import uses_wheels, wheel_reader_of
@@ -187,7 +187,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
             if straightened:
                 image = await asyncio.to_thread(imaging.region_image, image, roi, True)
             box = None if straightened else imaging.pixel_box(image, imaging.region_box(roi))
-            async with self._sem:
+            async with timing.slot(self._sem):
                 text, used = await asyncio.to_thread(
                     wheels.read_counter,
                     image,
@@ -198,7 +198,7 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
             return replace(text, details={"reader": wheels.spec.id, **(text.details or {})}), used
         region = await asyncio.to_thread(imaging.region_image, image, roi, straightened)
         reader = await self.ensure_reader()
-        async with self._sem:
+        async with timing.slot(self._sem):
             text, used = await asyncio.to_thread(
                 reader.read_display, region, reading["display"], int(reading["digits"])
             )
@@ -215,6 +215,6 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         detector = await self.ensure_detector()
         analysed = imaging.region_box(roi, DETECTION["context_margin"])
         region = imaging.crop_box(image, analysed)
-        async with self._sem:
+        async with timing.slot(self._sem):
             found = await asyncio.to_thread(detector.detect, region, threshold)
         return filter_detections(found, analysed, roi, objects, all_classes)

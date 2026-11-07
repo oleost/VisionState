@@ -3,11 +3,16 @@ objects' snapshots, and how a sensor from before the tab decides once."""
 
 import asyncio
 import io
+import json
+import logging
+import re
 import sqlite3
+import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import ExifTags, Image
 
 from visionstate import imaging
 from visionstate.db import Database, Sensor
@@ -168,7 +173,18 @@ class OrderedMqtt(RecordingMqtt):
         await super().publish(topic, payload, retain)
 
 
-def test_a_snapshot_follows_the_count_and_comes_before_the_state(tmp_path):
+def exif_of(jpeg: bytes) -> tuple[float, list[float]]:
+    """When a picture's frame was asked for (epoch seconds) and its crop, from its EXIF."""
+    exif = Image.open(io.BytesIO(jpeg)).getexif().get_ifd(ExifTags.IFD.Exif)
+    assert exif[ExifTags.Base.OffsetTimeOriginal] == "+00:00"
+    at = datetime.strptime(exif[ExifTags.Base.DateTimeOriginal], "%Y:%m:%d %H:%M:%S").replace(tzinfo=UTC)
+    comment = exif[ExifTags.Base.UserComment]
+    assert comment[:8] == b"ASCII" + bytes(3)
+    return at.timestamp() + int(exif[ExifTags.Base.SubsecTimeOriginal]) / 1000, json.loads(comment[8:])["crop"]
+
+
+def test_a_snapshot_follows_the_count_and_comes_before_the_state(tmp_path, caplog):
+    caplog.set_level(logging.DEBUG, logger="visionstate.engine.checks")
     settings = settings_in(tmp_path)
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime
@@ -209,9 +225,22 @@ def test_a_snapshot_follows_the_count_and_comes_before_the_state(tmp_path):
             assert wait_for(lambda: mqtt.sent.get(count) == str(n), timeout=10)
             return mqtt.order[before:]
 
+        asked = time.time()
         first = check(1)
         assert mqtt.sent[topic][:2] == b"\xff\xd8"
         assert first.index(topic) < first.index(state)  # an automation it starts finds this picture
+        # Each picture tells when its frame was asked for, and which part of the frame it shows.
+        taken, crop = exif_of(mqtt.sent[topic])
+        assert asked - 0.01 <= taken <= time.time()
+        width, height = Image.open(io.BytesIO(mqtt.sent[topic])).size
+        assert crop[0] <= 0.1 and crop[1] <= 0.1 and crop[2] >= 0.2 and crop[3] >= 0.5
+        assert (round((crop[2] - crop[0]) * 800), round((crop[3] - crop[1]) * 600)) == (width, height)
+        assert exif_of(mqtt.sent["visionstate/drive/image"]) == (taken, [0, 0, 1, 1])
+        # At debug level, how long the check took and where the time went.
+        timed = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Sensor drive: check ")]
+        assert timed and re.fullmatch(
+            r"Sensor drive: check [\d.]+ s \(grab [\d.]+, decode [\d.]+, detect .*\)", timed[0]
+        )
         assert Image.open(io.BytesIO(mqtt.sent[topic])).size == (
             PUBLISH["snapshot_min_px"],
             max(PUBLISH["snapshot_min_px"], 288),

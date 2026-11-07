@@ -767,6 +767,23 @@ the broker holds no pictures nobody asked for.
   each is a Home Assistant row, which is why it is a limit and the snapshot stays opt-in. Saving
   pictures to files is left to an automation (Home Assistant's `image.snapshot`): keeping them is
   an NVR's job, not decided here.
+- *When a picture's frame was taken* (discussion #83, `imaging.frame_exif`, `timing.py`): a picture
+  reaches Home Assistant seconds after its frame on a small CPU, and by how much varies with the
+  check, so a saved picture could not be matched with a camera's recording. Every picture sent (the
+  snapshots and *Last frame*, every kind) carries in its EXIF when the camera was asked for its
+  frame, in UTC (the container's time zone is not always set), and the part of the frame it shows
+  (`UserComment`, JSON). In the picture, not an attribute: the attributes are sent at other moments
+  than a snapshot, so an attribute could belong to an older frame, and `image.snapshot` writes the
+  bytes unchanged. The time asked, not answered: the frame is taken somewhere between the two, and
+  the answer's time adds the camera's encoding and the transfer (about 0.35 s by the speed test quoted in #83). Nothing
+  changes in what is sent when: each picture is sent only when it
+  would have been anyway.
+  Not done: sending the state after the detector and the rest (names, taught boxes) later. The
+  taught comparison can filter a box out, so the state would go on and off again (an automation
+  starting for nothing, two rows); faces only add names, but they cost little (measured with the
+  debug timing on the demo Driveway: detector 0.14–0.25 s, taught comparison 0.22–0.37 s, faces
+  0.04–0.06 s). Where a check's time goes is shown by `log_level: debug` (one line per check, the
+  wait for a model run apart), so a slow installation can be judged by its numbers.
 
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Don't send values** (`sensor.publish`, default
