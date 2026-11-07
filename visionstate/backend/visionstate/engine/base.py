@@ -22,7 +22,7 @@ from ..lights import Lights
 from ..mqtt import MqttBridge
 from ..settings import RUNTIME, Settings, merge_review, merge_teach
 from ..shared_frames import SharedFrames
-from ..sources import FrameGrabber, HomeAssistant
+from ..sources import CameraUses, FrameGrabber, HomeAssistant
 from ..storage import Storage
 from .state import LiveState, SensorConfig, SoundRecording
 
@@ -40,7 +40,8 @@ class RuntimeBase:
         self.storage = Storage(settings)
         self.ha = HomeAssistant(settings)
         self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
-        self.grabber = FrameGrabber(self.ha)
+        self.camera_uses = CameraUses()  # ESP32 cameras of ours, set up for their sensors (sources.py)
+        self.grabber = FrameGrabber(self.ha, self.camera_uses)
         self.shared_frames = SharedFrames(
             lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
         )

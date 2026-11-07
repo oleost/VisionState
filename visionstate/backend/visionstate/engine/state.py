@@ -285,6 +285,7 @@ class SoundLive:
     near: dict[str, dict] = field(default_factory=dict)
     near_rows: set[int] = field(default_factory=set)  # history rows of near misses whose clip is on its way
     reported: bool = False  # "no sound" is in the log, until sound comes back
+    silent_hops: int = 0  # hops in a row of digital silence (SOUND["dead_silence_s"])
 
 
 @dataclass

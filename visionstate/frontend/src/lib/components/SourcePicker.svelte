@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { api } from '../api';
   import { app } from '../app.svelte';
+  import { href, paths } from '../router.svelte';
   import type { Camera } from '../types';
 
   let {
@@ -133,6 +134,9 @@
       {/if}
     {/if}
   </div>
+  <p class="xsmall muted" data-testid="esp32-link">
+    An ESP32 {sound ? 'microphone' : 'camera'} of your own? <a href={href(paths.esp32())}>Set one up with ESPHome</a>
+  </p>
 </fieldset>
 
 <style>

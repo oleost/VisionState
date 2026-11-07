@@ -30,6 +30,8 @@ export interface Triggers {
   /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
   light_entity: string;
   light_delay_s: number;
+  /** How an ESP32 camera of ours is set up for this sensor (config camera_uses); '' = by its kind. */
+  camera_use: string;
 }
 
 export interface ReviewRules {
@@ -126,6 +128,8 @@ export interface SensorSound extends SoundSettings {
   /** The level a window must reach to be analysed (null: not learned yet). */
   line: number | null;
   analysed: boolean;
+  /** Nothing but digital silence for a while: a microphone not wired, broken or muted. */
+  dead_silent: boolean;
   /** The stream's audio and video, once it was opened. */
   stream: { codec: string; sample_rate: number; channels: number; video: { codec: string; width: number; height: number } | null } | null;
 }
@@ -602,6 +606,19 @@ export interface Counts {
   unlabelled: number;
 }
 
+/** An ESP32 camera of ours behind a sensor's snapshot address (settings.CAMERA_USES keys). */
+export interface SensorCamera {
+  /** How the camera is set up now (its last picture said so). */
+  now: string | null;
+  /** What this sensor asks for: its own choice, or by its kind (`automatic`). */
+  wanted: string | null;
+  automatic: boolean;
+  /** What its kind asks for (Automatic). */
+  by_kind: string | null;
+  /** What the camera is asked for: the most demanding of the sensors on it. */
+  asked: string | null;
+}
+
 export interface Sensor {
   id: number;
   slug: string;
@@ -621,6 +638,8 @@ export interface Sensor {
   /** What can be chosen on its Home Assistant tab. */
   ha_entities: HaEntity[];
   triggers: Triggers;
+  /** Set when the source is an ESP32 camera of ours (esphome/): only then its set-up can be chosen. */
+  camera: SensorCamera | null;
   review: ReviewOverrides;
   review_effective: ReviewRules;
   entity_id: string;
@@ -739,6 +758,18 @@ export interface AppConfig {
   sound_levels: SoundLevel[];
   /** Thresholds suggested from review answers: from at least `min_answers` answers. */
   advice: { min_answers: number };
+  /** What an ESP32 camera of ours is set up as: key → name, most demanding first. */
+  camera_uses: Record<string, string>;
+  /** The ESP32 guide (settings.ESPHOME). */
+  esphome: {
+    port: number;
+    username: string;
+    password_chars: number;
+    kinds: Record<string, string>;
+    /** What a camera looks at (Camera use on the device): its option, and what it is for. */
+    camera_uses: Record<string, string>;
+    boards: Record<string, EsphomeBoard>;
+  };
   sound: {
     hop_s: number;
     window_s: number;
@@ -1082,4 +1113,56 @@ export interface SoundRecording {
   /** The loudest sample of each 1/peaks_per_s second, 0…1. */
   peaks: number[];
   peaks_per_s: number;
+}
+
+/** A board the ESP32 guide writes a configuration for, with its default pins. */
+export interface EsphomeBoard {
+  name: string;
+  description: string;
+  kinds: string[];
+  /** What lights while VisionState listens or looks; null on a board without an LED. */
+  light: string | null;
+  /** The board's pins; a board without mute_pin takes no mute switch. */
+  pins: Record<string, string>;
+  /** About the wiring, below its table. */
+  wiring_note?: string;
+  /** Its camera takes the first I2S port (an ESP32-CAM). */
+  camera_i2s?: boolean;
+  /** 'built_in': a microphone on the board (nothing to wire); otherwise an INMP441 is wired to it. */
+  microphone?: string;
+  /** The Wi-Fi bands it joins (its radio), as the guide says them. */
+  wifi: string;
+}
+
+export interface EsphomeConfiguration {
+  name: string;
+  friendly_name: string;
+  /** The whole file, with {{field}} where the page puts the user's values (never sent to VisionState). */
+  yaml: string;
+  fields: string[];
+  port: number;
+  username: string;
+  sound: boolean;
+  picture: boolean;
+}
+
+export interface EsphomeCheckPart {
+  ok: boolean;
+  status: number | null;
+  detail?: string;
+  bytes?: number;
+}
+
+export interface EsphomeCheck {
+  addresses: { sound?: string; picture?: string };
+  sound?: EsphomeCheckPart;
+  picture?: EsphomeCheckPart;
+}
+
+export interface EsphomeDevice {
+  entity_id: string;
+  name: string;
+  address: string;
+  /** Its flash (an ESP32-CAM), offered as the light for checks in the dark. */
+  light: string | null;
 }

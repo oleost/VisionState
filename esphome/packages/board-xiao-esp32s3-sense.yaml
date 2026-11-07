@@ -1,0 +1,27 @@
+# A Seeed Studio XIAO ESP32-S3 Sense: an ESP32-S3 with 8 MB PSRAM, and its camera board with an
+# OV2640 (or OV3660) and a PDM microphone, so nothing needs wiring.
+substitutions:
+  light_pin: GPIO21       # the orange user LED (on when low)
+  light_inverted: "true"
+  mic_clk: GPIO42         # the built-in microphone, on the camera board
+  mic_data: GPIO41
+  mute_pin: GPIO1         # D0: a switch to GND, if you wire one (packages/mute-pin.yaml)
+
+esp32:
+  board: seeed_xiao_esp32s3
+  variant: esp32s3
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# The light that is on while someone listens or looks (packages/common.yaml switches it).
+output:
+  - platform: gpio
+    id: vs_light
+    pin:
+      number: ${light_pin}
+      inverted: ${light_inverted}

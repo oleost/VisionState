@@ -8,12 +8,18 @@ export const POLL = {
   sensor: 2_000,
   liveFrame: 2_000,
   thumbnail: 15_000,
+  /** The ESP32 guide looks for the new device in Home Assistant. */
+  esp32Devices: 5_000,
 };
 
 export const TOAST_MS = 5_000;
 
 /** Shown on a sensor that is held back: readings, or what is sent to Home Assistant (its Home Assistant tab). */
 export const CAMERA_CHANGED = { label: 'Camera changed', help: 'Readings are held: check the region' };
+export const DEAD_SILENT = {
+  label: 'Pure silence',
+  help: 'The stream has been pure digital silence for a while, quieter than any room: is the microphone wired, or muted (on an ESP32, its Microphone switch or mute switch)?',
+};
 export const NOT_SENT = { label: 'Values not sent', help: 'Its entities in Home Assistant are unavailable until you choose “Send values” on its Home Assistant tab.' };
 export const NOT_IN_HA = { label: 'Not in Home Assistant', help: 'It has no entities in Home Assistant. Choose “Send values” on its Home Assistant tab to create them.' };
 /** A sensor's Home Assistant tab: what it has there. */
@@ -350,3 +356,14 @@ export const SPEED_TEST_ROLES: Record<string, string> = {
   wheel_readers: 'Wheel readers',
   sound_models: 'Sound models',
 };
+
+/** How an INMP441 is wired to an ESP32 (the ESP32 guide): the microphone's pin, and the board's —
+ *  a power pin, or the key of a pin in the board's settings (settings.ESPHOME). */
+export const INMP441_WIRING: { mic: string; board: string; pin?: string }[] = [
+  { mic: 'VDD', board: '3V3' },
+  { mic: 'GND', board: 'GND' },
+  { mic: 'SCK', board: '', pin: 'mic_sck' },
+  { mic: 'WS', board: '', pin: 'mic_ws' },
+  { mic: 'SD', board: '', pin: 'mic_sd' },
+  { mic: 'L/R', board: 'GND' },
+];

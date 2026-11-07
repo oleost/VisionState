@@ -1,0 +1,46 @@
+# What every microphone has (microphone.yaml, microphone-pdm.yaml include it): the stream's sound,
+# the Microphone switch, and the gain as a number in Home Assistant, kept over restarts.
+substitutions:
+  mic_gain: "4"
+
+visionstate_stream:
+  microphone:
+    microphone: vs_microphone
+    gain_factor: ${mic_gain}
+
+globals:
+  - id: vs_pin_muted  # set by packages/mute-pin.yaml
+    type: bool
+    initial_value: "false"
+
+script:
+  - id: vs_apply_mute
+    then:
+      - lambda: id(vs_microphone).set_mute_state(!id(vs_microphone_on).state || id(vs_pin_muted));
+
+switch:
+  - platform: template
+    id: vs_microphone_on
+    name: Microphone
+    icon: mdi:microphone
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: vs_apply_mute
+    on_turn_off:
+      - script.execute: vs_apply_mute
+
+number:
+  - platform: template
+    id: vs_microphone_gain
+    name: Microphone gain
+    icon: mdi:microphone-plus
+    entity_category: config
+    min_value: 1
+    max_value: 64
+    step: 1
+    optimistic: true
+    restore_value: true
+    initial_value: ${mic_gain}
+    on_value:
+      - lambda: id(vs_stream).set_gain_factor((int32_t) x);

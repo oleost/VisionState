@@ -1,0 +1,31 @@
+# A microphone for VisionState on a Waveshare ESP32-S3-Touch-LCD-2 with an INMP441.
+#
+# In ESPHome: make a new device for an ESP32-S3 (it writes the name, the Wi-Fi and an API key), then
+# replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+substitutions:
+  name: vs-kitchen-microphone
+  friendly_name: Kitchen microphone
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+  # The wiring (esphome/README.md): change the pins here if you wired it differently.
+  # mic_sck: GPIO43
+  # mic_ws: GPIO44
+  # mic_sd: GPIO18  # with a camera in the socket (GPIO12 without)
+
+external_components:
+  - source: github://oleost/VisionState@esphome-v1
+
+packages:
+  visionstate:
+    url: https://github.com/oleost/VisionState
+    ref: esphome-v1
+    files:
+      - esphome/packages/board-waveshare-esp32s3-lcd2.yaml
+      - esphome/packages/common.yaml
+      - esphome/packages/microphone.yaml
+
+api:
+  encryption:
+    key: !secret vs_kitchen_microphone_api_key  # or the key ESPHome wrote for the device

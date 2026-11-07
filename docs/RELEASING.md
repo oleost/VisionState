@@ -119,6 +119,21 @@ Only when the maintainer says the beta is tested, after the checks above.
    `python scripts/channel.py beta <last beta version>` and commit (a beta version whose images
    exist); the next beta release sets the next version.
 
+## The ESPHome firmware
+
+`esphome/` is released on its own, with tags `esphome-vN` (not the app's version). Devices fetch
+the packages and the component from GitHub at that tag, so a tag is never moved or deleted once
+released; a change that breaks existing devices' files gets the next N.
+
+- CI (`.github/workflows/esphome.yml`) compiles every configuration in `esphome/tests` with the
+  oldest ESPHome the packages accept and the newest: on a change under `esphome/`, on an
+  `esphome-v*` tag, and weekly (a new ESPHome that breaks the component is seen before users
+  compile it).
+- Before the first release the firmware is built from the branch `esp32` (`settings.ESPHOME["ref"]`,
+  fetched again at every build: `settings.ESPHOME["refresh"]`). At release: tag `esphome-v1` on the
+  commit that `beta` holds, and set `ref` to the tag and `refresh` to `1d` in the same app beta
+  (the examples already name the tag).
+
 ## Dependencies and platforms
 
 - Dependabot opens one grouped PR per ecosystem monthly, against `beta`.

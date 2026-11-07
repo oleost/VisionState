@@ -16,6 +16,8 @@ from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
 from ..mqtt import entity_options, main_entities
 from ..settings import (
+    CAMERA_USE_BY_KIND,
+    CAMERA_USES,
     COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
@@ -173,6 +175,14 @@ class Triggers(BaseModel):
     )
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
+    camera_use: str = TRIGGER_DEFAULTS["camera_use"]  # settings.CAMERA_USES, or "" (by the kind)
+
+    @field_validator("camera_use")
+    @classmethod
+    def _valid_camera_use(cls, value: str) -> str:
+        if value and value not in CAMERA_USES:
+            raise ValueError(f"Not a camera use: {value!r}")
+        return value
 
     @field_validator("entities")
     @classmethod
@@ -622,6 +632,8 @@ def sound_view(sensor: Sensor, live: LiveState | None) -> dict | None:
         "levels": list(heard.levels) if heard else [],
         "line": heard.line if heard else None,
         "analysed": bool(heard and heard.analysed),
+        # Nothing but digital silence for SOUND["dead_silence_s"]: a microphone not wired or muted.
+        "dead_silent": bool(heard and heard.silent_hops * SOUND["hop_s"] >= SOUND["dead_silence_s"]),
         "stream": getattr(stream, "info", None) or None,
     }
 
@@ -683,10 +695,23 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     if live and live.face_burst.until > now:
         paces.append(FACES["burst_interval_s"])
     pace = min(paces) if paces else None
+    # An ESP32 camera of ours (esphome/): how it is set up now, and what this sensor asks of it.
+    ours = rt.camera_uses.ours.get(sensor.source) if sensor.source_type == "http" else None
+    camera = None
+    if ours is not None:
+        wanted = merge_triggers(sensor.triggers)["camera_use"]
+        camera = {
+            "now": ours if ours in CAMERA_USES else None,
+            "wanted": wanted or CAMERA_USE_BY_KIND.get(sensor.kind),
+            "automatic": not wanted,
+            "by_kind": CAMERA_USE_BY_KIND.get(sensor.kind),
+            "asked": rt.camera_uses.use_for(sensor.source),  # the most demanding of the sensors on it
+        }
     return {
         "id": sensor.id,
         "slug": sensor.slug,
         "name": sensor.name,
+        "camera": camera,
         "kind": sensor.kind,
         "source_type": sensor.source_type,
         "source": sensor.source,

@@ -1,0 +1,15 @@
+# VisionState's stream on a Home Assistant Voice (Preview Edition), added to its own configuration
+# after it is taken control of in ESPHome. Its sound comes from the XMOS chip; channel 1 is the one
+# the wake word hears: echo of its own speaker cancelled and noise suppressed, without automatic gain
+# (channel 0 has that, which would hide how loud a sound is). Not tried on a device.
+packages:
+  voice_assistant: !include voice-assistant.yaml
+
+substitutions:
+  vs_mic_gain: "4"  # what the wake word uses on this channel
+
+visionstate_stream:
+  microphone:
+    microphone: i2s_mics
+    channels: 1
+    gain_factor: ${vs_mic_gain}

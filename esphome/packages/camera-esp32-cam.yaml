@@ -1,0 +1,49 @@
+# The ESP32-CAM's OV2640 as a camera entity in Home Assistant and as /snapshot.jpg, and its flash
+# LED as a light (off until something switches it on).
+packages:
+  camera_use: !include camera-use.yaml  # what it looks at: the picture size, quality and exposure
+
+substitutions:
+  # The largest picture it can give: what Camera use (camera-use.yaml) chooses from fits in it.
+  camera_resolution: 1600x1200
+
+esp32_camera:
+  id: vs_camera
+  name: Camera
+  external_clock:
+    pin: GPIO0
+    frequency: 20MHz
+  i2c_pins:
+    sda: GPIO26
+    scl: GPIO27
+  data_pins: [GPIO5, GPIO18, GPIO19, GPIO21, GPIO36, GPIO39, GPIO34, GPIO35]
+  vsync_pin: GPIO25
+  href_pin: GPIO23
+  pixel_clock_pin: GPIO22
+  power_down_pin: GPIO32
+  resolution: ${camera_resolution}
+  jpeg_quality: 10
+  # A fresh snapshot waits for the camera's next picture, at most 1 / max_framerate after the last
+  # (ESPHome's 10 fps made every snapshot 100 ms slower). Idle, idle_framerate applies.
+  max_framerate: 25 fps
+  # Two buffers: a picture asked for is the newest the camera has (CAMERA_GRAB_LATEST).
+  frame_buffer_count: 2
+  idle_framerate: 0.1 fps
+
+visionstate_stream:
+  camera: vs_camera
+
+output:
+  - platform: ledc
+    id: vs_flash_output
+    pin: GPIO4
+    # Not channel 0: the camera's clock (XCLK) runs on LEDC channel 0 and timer 0, and the flash
+    # there took it over, so the camera took no new pictures (only the one it had ready).
+    channel: 2
+
+light:
+  - platform: monochromatic
+    id: vs_flash
+    name: Flash
+    output: vs_flash_output
+    restore_mode: ALWAYS_OFF

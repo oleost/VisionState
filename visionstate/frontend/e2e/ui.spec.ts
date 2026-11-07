@@ -65,6 +65,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ...sound,
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
+    ['esp32', 'esp32', 'An ESP32 microphone or camera of your own'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
     ['upload', `sensors/${id}/upload`, 'Drop images, ZIP archives or video here'],
     ['dataset', `sensors/${id}/dataset`, /\d+ images/],
@@ -2206,4 +2207,145 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   // Over: the sensors go on.
   await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
   errors.expectNone();
+});
+
+test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a sensor from the device', async ({
+  page,
+}, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await press(page.getByTestId('esp32-link').getByRole('link', { name: 'Set one up with ESPHome' }), info);
+  const guide = page.getByTestId('esp32-guide');
+  await expect(guide.getByRole('heading', { name: 'An ESP32 microphone or camera of your own' })).toBeVisible();
+  const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]'); // under "What is in it" (closed)
+  await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
+
+  // A XIAO ESP32-S3 Sense: its own microphone (PDM), nothing to wire.
+  await press(guide.getByText('XIAO ESP32-S3 Sense', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await expect(yaml).toHaveValue(/camera-xiao-esp32s3-sense\.yaml[\s\S]*microphone-pdm\.yaml/);
+  await expect(guide.getByText('Nothing to wire: the camera and the microphone are on the board.')).toBeVisible();
+
+  // A Waveshare ESP32-S3-Touch-LCD-2: a microphone only, wired to its headers, with no mute pin; its display is the light.
+  await press(guide.getByText('Waveshare ESP32-S3-Touch-LCD-2', { exact: true }), info);
+  await expect(yaml).toHaveValue(/board-waveshare-esp32s3-lcd2\.yaml[\s\S]*microphone\.yaml/);
+  await expect(yaml).not.toHaveValue(/mute/);
+  await expect(guide.getByText(/A mute switch on a pin/)).toHaveCount(0);
+  await expect(guide.locator('table')).toContainText('GPIO43');
+  await expect(guide.getByText(/With a camera in the socket, SD goes to GPIO18/)).toBeVisible();
+  await expect(guide.getByText('Its display (a red dot) lights while VisionState listens or looks.')).toBeVisible();
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 GHz network/)).toBeVisible();
+
+  // A Waveshare ESP32-C5-WIFI6-KIT: a microphone with a mute switch, and Wi-Fi on 5 GHz too.
+  await press(guide.getByText('Waveshare ESP32-C5-WIFI6-KIT', { exact: true }), info);
+  await expect(yaml).toHaveValue(/board-waveshare-esp32c5-kit\.yaml[\s\S]*microphone\.yaml/);
+  await expect(guide.locator('table')).toContainText('GPIO10');
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 or 5 GHz network/)).toBeVisible();
+
+  // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
+  await press(guide.getByText('ESP32-CAM', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await guide.getByRole('textbox', { name: 'Device name' }).fill('Front door');
+  await press(guide.getByText(/A mute switch on a pin/), info);
+  await expect(yaml).toHaveValue(/esp32-cam-microphone\.yaml[\s\S]*microphone\.yaml[\s\S]*mute-pin\.yaml/);
+  // What the camera looks at: written for the device's Camera use.
+  await expect(yaml).toHaveValue(/camera_use: "States"/);
+  await press(guide.getByText('Meters and displays', { exact: true }), info);
+  await expect(yaml).toHaveValue(/camera_use: "Meters and displays"/);
+  await expect(yaml).toHaveValue(/name: front-door/);
+  await expect(guide.locator('table')).toContainText('GPIO14');
+  await expect(guide.locator('table')).toContainText('GPIO12 to GND');
+  // The Wi-Fi and the device's password are fields of the page, filled into the file in the browser.
+  const download = guide.getByRole('button', { name: /^Download/ });
+  await expect(download).toBeDisabled();
+  await guide.getByRole('textbox', { name: 'Wi-Fi name' }).fill('Our Wi-Fi');
+  await guide.getByLabel('Wi-Fi password', { exact: true }).fill('very secret');
+  await expect(download).toBeEnabled();
+  const password = await guide.getByRole('textbox', { name: 'Device password' }).inputValue();
+  expect(password).toHaveLength(20);
+  await expect(yaml).toHaveValue(new RegExp(`wifi_ssid: "Our Wi-Fi"[\\s\\S]*stream_password: "${password}"`));
+  await expect(yaml).not.toHaveValue(/very secret/); // shown masked
+  const [file] = await Promise.all([page.waitForEvent('download'), press(download, info)]);
+  expect(file.suggestedFilename()).toBe('front-door.yaml');
+  const saved = await (await import('node:fs/promises')).readFile(await file.path(), 'utf8');
+  expect(saved).toContain('wifi_password: "very secret"'); // the file itself has it
+  await expect(yaml).not.toHaveValue(/\{\{/);
+  await expectNoClipping(page, '[data-testid=esp32-guide] .btn');
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'esp32-guide.png'), fullPage: true });
+
+  // Home Assistant finds the device: first waiting under Discovered (with the key it asks for), then
+  // added, with its address filled in. No board here: Home Assistant's answers are made up.
+  let devices: unknown = { devices: [], waiting: ['front-door'], error: null };
+  await page.route('**/api/v1/esphome/devices', (route) => route.fulfill({ json: devices }));
+  const waiting = guide.getByTestId('esp32-waiting');
+  await expect(waiting).toContainText('Home Assistant has found front-door: add it.', { timeout: 15_000 });
+  await press(waiting.getByRole('button', { name: 'Show' }), info);
+  await expect(waiting.locator('.key')).toHaveText(/^[A-Za-z0-9+/]{43}=$/);
+  devices = {
+    devices: [{ entity_id: 'sensor.front_door_ip_address', name: 'Front door', address: '10.0.0.7' }],
+    waiting: [],
+    error: null,
+  };
+  await expect(guide.getByTestId('esp32-found')).toContainText('10.0.0.7', { timeout: 15_000 });
+  await expect(guide.getByRole('textbox', { name: 'IP address' })).toHaveValue('10.0.0.7');
+
+  // The device answers (no board here: the check is answered for it) and becomes a sound sensor.
+  const sound = `http://visionstate:${password}@10.0.0.7:8081/audio.wav`;
+  await page.route('**/api/v1/esphome/check', (route) =>
+    route.fulfill({
+      json: {
+        addresses: { sound, picture: 'http://visionstate:x@10.0.0.7:8081/snapshot.jpg' },
+        sound: { ok: true, status: 200 },
+        picture: { ok: false, status: 401 },
+      },
+    }),
+  );
+  await press(guide.getByRole('button', { name: 'Check' }), info);
+  await expect(guide.getByTestId('esp32-check')).toContainText('Picture: Wrong password');
+  await press(guide.getByRole('button', { name: 'Make a sound sensor' }), info);
+  await expect(page.getByRole('heading', { name: 'Name it and pick a stream with sound' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Stream with sound' })).toHaveValue(sound);
+  await expect(page.getByLabel('Sensor name')).toHaveValue('Front door sound'); // not the device's own name
+  expect(page.url()).not.toContain(password); // the password never goes into the address bar
+  errors.expectNone();
+});
+
+test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera follows', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // The fake camera's /esp32/ answers as our firmware does (an X-VisionState-Camera header).
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: `ESP32 door ${info.project.name}`,
+      source_type: 'http',
+      source: `${CAMERA_URL}/esp32/snapshot.jpg`,
+      interval_s: 2,
+      states: [{ name: 'Open' }, { name: 'Closed' }],
+    },
+  });
+  const id = (await made.json()).id as number;
+  const cameraUse = async () => (await (await request.get(`${CAMERA_URL}/esp32/state`)).json()).use as string;
+  try {
+    await expect
+      .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now, { timeout: 30_000 })
+      .toBe('states'); // a state sensor: still things
+    await page.goto(`#/sensors/${id}/settings`);
+    const setup = page.getByLabel('Camera set-up');
+    await expect(setup).toBeVisible();
+    await expect(setup.locator('option').first()).toHaveText('Automatic: States');
+    await setup.selectOption('meter');
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    await expect.poll(cameraUse, { timeout: 30_000 }).toBe('meter');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+    // Any other camera has no such choice.
+    await page.goto(`#/sensors/${await seededSensorId(request)}/settings`);
+    await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+    await expect(page.getByLabel('Camera set-up')).toHaveCount(0);
+    errors.expectNone();
+  } finally {
+    await request.delete(`api/v1/sensors/${id}`);
+    await request.get(`${CAMERA_URL}/esp32/snapshot.jpg?use=states`); // as it was, for the next project
+  }
 });

@@ -1,0 +1,32 @@
+# A camera and a microphone for VisionState on a Seeed Studio XIAO ESP32-S3 Sense (both are on its
+# camera board: nothing to wire).
+#
+# In ESPHome: make a new device for an ESP32-S3 (it writes the name, the Wi-Fi and an API key), then
+# replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+substitutions:
+  name: vs-living-room
+  friendly_name: Living room
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+  camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
+  # mute_pin: GPIO1
+
+external_components:
+  - source: github://oleost/VisionState@esphome-v1
+
+packages:
+  visionstate:
+    url: https://github.com/oleost/VisionState
+    ref: esphome-v1
+    files:
+      - esphome/packages/board-xiao-esp32s3-sense.yaml
+      - esphome/packages/common.yaml
+      - esphome/packages/camera-xiao-esp32s3-sense.yaml
+      - esphome/packages/microphone-pdm.yaml
+      - esphome/packages/mute-pin.yaml  # leave this line out if you wire no mute switch
+
+api:
+  encryption:
+    key: !secret vs_living_room_api_key  # or the key ESPHome wrote for the device

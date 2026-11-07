@@ -1,0 +1,28 @@
+# A camera for VisionState on a generic ESP32-CAM (AI-Thinker layout).
+#
+# In ESPHome: make a new device for an ESP32 (it writes the name, the Wi-Fi and an API key), then
+# replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+substitutions:
+  name: vs-garage-camera
+  friendly_name: Garage camera
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+  camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
+
+external_components:
+  - source: github://oleost/VisionState@esphome-v1
+
+packages:
+  visionstate:
+    url: https://github.com/oleost/VisionState
+    ref: esphome-v1
+    files:
+      - esphome/packages/board-esp32-cam.yaml
+      - esphome/packages/common.yaml
+      - esphome/packages/camera-esp32-cam.yaml
+
+api:
+  encryption:
+    key: !secret vs_garage_camera_api_key  # or the key ESPHome wrote for the device

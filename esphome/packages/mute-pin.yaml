@@ -1,0 +1,18 @@
+# A mute switch on a pin: unwired the microphone is on; a switch from the pin to GND, closed, mutes
+# it (the stream then carries silence).
+binary_sensor:
+  - platform: gpio
+    id: vs_mute_switch
+    name: Mute switch
+    icon: mdi:microphone-off
+    pin:
+      number: ${mute_pin}
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on_off: 50ms
+    on_state:
+      - lambda: id(vs_pin_muted) = x;
+      - script.execute: vs_apply_mute

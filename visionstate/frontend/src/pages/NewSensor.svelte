@@ -10,6 +10,7 @@
   import SourcePicker from '../lib/components/SourcePicker.svelte';
   import TriggersEditor from '../lib/components/TriggersEditor.svelte';
   import { haSlug, slugify } from '../lib/format';
+  import { takeNewSensorPrefill } from '../lib/prefill.svelte';
   import { go, href, paths } from '../lib/router.svelte';
   import type { ReadingSettings, Roi, SensorKind, SoundSettings, Triggers } from '../lib/types';
   import { HA_MODES, LOW_STREAM_NAME, SENSOR_KIND_INFO, SENSOR_MODE_INFO, SMALL_FRAME_PX } from '../lib/ui';
@@ -33,13 +34,16 @@
   let mode = $state<'picture' | 'sound'>('picture');
   const STEPS = $derived(mode === 'sound' ? SOUND_STEPS : PICTURE_STEPS);
   let sound = $state<SoundSettings>(structuredClone($state.snapshot(app.config!.sound_defaults)));
-  let streamType = $state('ha_camera'); // a Home Assistant camera, or a stream address ('rtsp')
-  let streamSource = $state('');
+  // From the ESP32 guide: the device's name and address, as if picked here.
+  const given = takeNewSensorPrefill();
+  if (given) mode = given.mode;
+  let streamType = $state(given?.mode === 'sound' ? given.sourceType : 'ha_camera'); // a Home Assistant camera, or a stream address ('rtsp')
+  let streamSource = $state(given?.mode === 'sound' ? given.source : '');
 
   let step = $state(0);
-  let name = $state('');
-  let sourceType = $state('ha_camera');
-  let source = $state('');
+  let name = $state(given?.name ?? '');
+  let sourceType = $state(given?.mode === 'picture' ? given.sourceType : 'ha_camera');
+  let source = $state(given?.mode === 'picture' ? given.source : '');
   let roi = $state<Roi | null>(null);
   let kind = $state<SensorKind>('single_state');
   let states = $state<{ name: string; color?: string }[]>([{ name: 'Open' }, { name: 'Closed' }]);
@@ -49,7 +53,19 @@
   let previewUrl = $state<string | null>(null);
   let previewSize = $state<[number, number] | null>(null);
   // A small picture, or a source named like a sub-stream: maybe the camera's low-resolution stream.
-  const lowStream = $derived(previewSize !== null && (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)));
+  // An ESP32 from the guide has one picture size, its own: no word about a camera's low-resolution stream.
+  const fromGuide = (s: string) => given?.mode === 'picture' && s === given.source;
+  const lowStream = $derived(
+    !fromGuide(source) &&
+      previewSize !== null &&
+      (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)),
+  );
+  // The guide's device has a flash: offered as the light (one tap), never switched on unasked.
+  let lightKey = $state(0);
+  function useFlash() {
+    triggers.light_entity = given!.light!;
+    lightKey++;
+  }
   let previewError = $state('');
   let previewBusy = $state(false);
   let previewLoad = 0; // the load that counts: a slow answer from the camera picked before is dropped
@@ -81,7 +97,8 @@
       previewUrl = null;
       previewSize = null;
       previewError = '';
-      if (picture && type === 'ha_camera' && chosen) loadPreview();
+      // A Home Assistant camera at once; an address once typed — or at once, from the ESP32 guide.
+      if (picture && chosen && (type === 'ha_camera' || fromGuide(chosen))) loadPreview();
     });
   });
 
@@ -297,7 +314,13 @@
             <input class="input" bind:value={name} placeholder="Garage door" />
           </label>
           <SourcePicker bind:sourceType bind:source ondone={urlTyped} />
-          <div style="max-width:640px"><LightEditor bind:triggers /></div>
+          {#if given?.light && triggers.light_entity !== given.light}
+            <p class="small" data-testid="esp32-flash">
+              The device has a flash (<span class="mono">{given.light}</span>): it can light the picture for checks in the
+              dark. <button class="btn sm" onclick={useFlash}>Use the flash</button>
+            </p>
+          {/if}
+          <div style="max-width:640px">{#key lightKey}<LightEditor bind:triggers />{/key}</div>
           <div class="after-hold">
             <CameraPreview
               url={previewUrl}

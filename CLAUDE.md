@@ -31,6 +31,8 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
 | Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
+| ESP32 microphones and cameras of our own: the plan, the decisions, what is checked | [`docs/ESP32_PLAN.md`](docs/ESP32_PLAN.md) |
+| The ESPHome firmware: boards, wiring, how to install it | [`esphome/README.md`](esphome/README.md) |
 | The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
 | Test image sources | `visionstate/backend/tests/assets/README.md` |
@@ -135,7 +137,9 @@ itself (`__main__.py`).
   sensor stores them).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
-  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). The sound model comes with `python -m visionstate.backbones models --all`.
+  plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). An ESP32 camera of
+  ours: `/esp32/snapshot.jpg` answers as the firmware does (the `X-VisionState-Camera` header,
+  `?use=` sets it up), `/esp32/state` says how it is set up. The sound model comes with `python -m visionstate.backbones models --all`.
 - **The Home Assistant side:** any local MQTT broker (e.g. Mosquitto on 1883) and
   `VISIONSTATE_MQTT_HOST=127.0.0.1`: discovery configs appear under `homeassistant/…`, values under
   `visionstate/<slug>/…`.

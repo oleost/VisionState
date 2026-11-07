@@ -1,0 +1,48 @@
+# A Waveshare ESP32-C5-WIFI6-KIT (ESP32-C5-WROOM-1: Wi-Fi 6 on 2.4 and 5 GHz; any of its flash and
+# PSRAM sizes). The pins are those a user wired an INMP441 to (#75): GPIO8, 9 and 10 on the P1 header.
+# The mute pin is GPIO4 (P2 header), one that is neither a strapping pin nor the battery's ADC
+# (GPIO6). Its two USB-C sockets both install it.
+substitutions:
+  mic_sck: GPIO8          # INMP441 SCK
+  mic_ws: GPIO9           # INMP441 WS
+  mic_sd: GPIO10          # INMP441 SD
+  mute_pin: GPIO4         # a switch to GND, if you wire one (packages/mute-pin.yaml)
+
+esp32:
+  board: esp32-c5-devkitc-1
+  variant: esp32c5
+  framework:
+    type: esp-idf
+
+# The light that is on while someone listens or looks (packages/common.yaml switches it): the RGB
+# LED (WS2812B on GPIO27, a strapping pin that is only read at boot), dimmed red.
+output:
+  - platform: template
+    id: vs_light
+    type: binary
+    write_action:
+      - if:
+          condition:
+            lambda: return state;
+          then:
+            - light.turn_on:
+                id: vs_rgb
+                brightness: 30%
+                red: 100%
+                green: 0%
+                blue: 0%
+          else:
+            - light.turn_off: vs_rgb
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: vs_rgb
+    internal: true
+    pin:
+      number: GPIO27
+      ignore_strapping_warning: true
+    num_leds: 1
+    chipset: WS2812
+    channel_colors: GRB
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF

@@ -1,0 +1,34 @@
+# The XIAO ESP32-S3 Sense's camera as a camera entity in Home Assistant and as /snapshot.jpg. The
+# board has no flash LED. On the S3 the camera has a peripheral of its own (not I2S), so the
+# microphone needs no port kept for it.
+packages:
+  camera_use: !include camera-use.yaml  # what it looks at: the picture size, quality and exposure
+
+substitutions:
+  # The largest picture it can give: what Camera use (camera-use.yaml) chooses from fits in it.
+  camera_resolution: 1600x1200
+
+esp32_camera:
+  id: vs_camera
+  name: Camera
+  external_clock:
+    pin: GPIO10
+    frequency: 20MHz
+  i2c_pins:
+    sda: GPIO40
+    scl: GPIO39
+  data_pins: [GPIO15, GPIO17, GPIO18, GPIO16, GPIO14, GPIO12, GPIO11, GPIO48]
+  vsync_pin: GPIO38
+  href_pin: GPIO47
+  pixel_clock_pin: GPIO13
+  resolution: ${camera_resolution}
+  jpeg_quality: 10
+  # A fresh snapshot waits for the camera's next picture, at most 1 / max_framerate after the last
+  # (as on the ESP32-CAM, camera-esp32-cam.yaml). Idle, idle_framerate applies.
+  max_framerate: 25 fps
+  # Two buffers: a picture asked for is the newest the camera has (CAMERA_GRAB_LATEST).
+  frame_buffer_count: 2
+  idle_framerate: 0.1 fps
+
+visionstate_stream:
+  camera: vs_camera

@@ -358,6 +358,9 @@ SOUND = {
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
     "offline_after_s": 20.0,  # unavailable only after this long without audio: a reconnect is not news
     "live_levels": 120,  # levels (one per hop) the Live tab shows
+    # A stream of nothing but digital silence (sounds.SILENCE_DB) for this long is said to be: no
+    # room is that quiet, so its microphone is not wired, broken or muted (an ESP32's switch).
+    "dead_silence_s": 60.0,
     "max_sounds": 20,  # the model's sounds per sensor (one entity each)
     "max_custom": 10,  # own sounds per sensor (one entity each)
     "max_taught": 50,  # clips taught per own sound
@@ -396,6 +399,89 @@ SOUND = {
 # A threshold suggested from review answers (advice.py): from at least this many answers.
 ADVICE = {
     "min_answers": 3,
+}
+
+# ESP32 devices of our own, built with ESPHome (esphome/ in the repository, docs/ESP32_PLAN.md): what
+# the guide on the ESP32 page writes (esphome.py). The boards' pins are the defaults of
+# esphome/packages/board-*.yaml (tests/test_esphome.py keeps them the same).
+ESPHOME = {
+    "repository": "https://github.com/oleost/VisionState",
+    # The branch the firmware is built on until it is released (then the tag esphome-v1, as esphome/examples has).
+    "ref": "esp32",
+    # How often ESPHome fetches the firmware again: every build while it is a branch (then "1d").
+    "refresh": "0s",
+    "port": 8081,  # visionstate_stream's port
+    "username": "visionstate",
+    "password_chars": 20,  # a password the guide makes up
+    "check_timeout_s": 6.0,
+    "kinds": {
+        "microphone": "Microphone",
+        "camera": "Camera",
+        "camera_microphone": "Camera and microphone",
+    },
+    # What a camera looks at: Camera use in esphome/packages/camera-use.yaml (its option, written
+    # as camera_use), which sets the picture size, quality and exposure. The first is the default.
+    "camera_uses": {
+        "States": "Still things: a door, a gate, a light (states)",
+        "Meters and displays": "A meter or a display: every pixel, less compression (readings)",
+        "People, cars and animals": "Things that move: a short exposure, so they stay sharp (objects)",
+    },
+    "boards": {
+        "esp32-devkit": {
+            "name": "ESP32 DevKit",
+            "description": "ESP32-WROOM-32, 30 or 38 pins",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            "light": "The blue LED",
+            "pins": {"mic_sck": "GPIO26", "mic_ws": "GPIO25", "mic_sd": "GPIO33", "mute_pin": "GPIO32"},
+        },
+        "esp32-cam": {
+            "name": "ESP32-CAM",
+            "description": "AI-Thinker layout and its clones; the microphone on the SD card's pins",
+            "wifi": "2.4 GHz",
+            "kinds": ["camera", "camera_microphone"],
+            "light": "The small red LED on the back",
+            "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
+            # Its camera driver takes the first I2S port: esp32-cam-microphone.yaml keeps it.
+            "camera_i2s": True,
+        },
+        "xiao-esp32s3-sense": {
+            "name": "XIAO ESP32-S3 Sense",
+            "description": "Seeed Studio; the camera and the microphone are on its camera board, nothing to wire",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone", "camera", "camera_microphone"],
+            "light": "The orange LED",
+            "pins": {"mute_pin": "GPIO1"},
+            "microphone": "built_in",  # a PDM microphone (microphone-pdm.yaml), not an INMP441
+        },
+        "esp32s3-devkit": {
+            "name": "ESP32-S3 DevKit",
+            "description": "ESP32-S3-DevKitC-1 and its clones",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "pins": {"mic_sck": "GPIO4", "mic_ws": "GPIO5", "mic_sd": "GPIO6", "mute_pin": "GPIO7"},
+        },
+        "waveshare-esp32s3-lcd2": {
+            "name": "Waveshare ESP32-S3-Touch-LCD-2",
+            "description": "The microphone on its headers",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            # No LED of its own: its display shows a red dot instead. No pin known to be free for a mute switch.
+            "light": "Its display (a red dot)",
+            "pins": {"mic_sck": "GPIO43", "mic_ws": "GPIO44", "mic_sd": "GPIO12"},
+            "wiring_note": "SCK and WS on the P2 header's TX and RX, SD on its pin 10. With a camera in the "
+            "socket, SD goes to GPIO18 (P1 header, pin 6) instead: change mic_sd in the file.",
+        },
+        "waveshare-esp32c5-kit": {
+            "name": "Waveshare ESP32-C5-WIFI6-KIT",
+            "description": "ESP32-C5: Wi-Fi on 2.4 and 5 GHz",
+            "wifi": "2.4 or 5 GHz",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "pins": {"mic_sck": "GPIO8", "mic_ws": "GPIO9", "mic_sd": "GPIO10", "mute_pin": "GPIO4"},
+        },
+    },
 }
 
 DETECTION = {
@@ -591,7 +677,20 @@ TRIGGER_DEFAULTS = {
     # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
     # threw away only the stale one and the frame read was often dark.
     "light_delay_s": 2.0,
+    # How an ESP32 camera of ours (esphome/) is set up before this sensor's pictures: one of
+    # CAMERA_USES, or "" to choose by the sensor's kind (CAMERA_USE_BY_KIND). Only for a camera that
+    # answers as ours (an X-VisionState-Camera header); ignored for any other.
+    "camera_use": "",
 }
+# What an ESP32 camera of ours looks at (esphome/packages/camera-use.yaml): the key a snapshot asks
+# with, and its name, most demanding first: sensors on one camera share the most demanding of them,
+# so the camera is not switched back and forth between their pictures.
+CAMERA_USES = {
+    "meter": "Meters and displays",
+    "movement": "People, cars and animals",
+    "states": "States",
+}
+CAMERA_USE_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),

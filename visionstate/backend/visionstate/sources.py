@@ -17,9 +17,9 @@ from typing import cast
 import httpx
 import numpy as np
 
-from .ha_events import camera_stream, websocket_url
+from .ha_events import camera_stream, discovered, websocket_url
 from .redact import redact
-from .settings import RUNTIME, SOUND, SUPERVISOR_URL, Settings
+from .settings import CAMERA_USES, RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +126,12 @@ class HomeAssistant:
             raise SourceError(f"{entity_id}: {redact(str(err)) or type(err).__name__}") from err
         return self.base.removesuffix("/api") + path, {"Authorization": f"Bearer {self._token}"}
 
+    async def discovered(self, domain: str) -> list[str]:
+        """Devices Home Assistant has found for an integration, waiting to be added."""
+        if not self.enabled or not self._ws_url:
+            return []
+        return await discovered(self._ws_url, self._token, domain)
+
     async def entities(self) -> list[dict]:
         """All entities (id, name, domain, state), for picking trigger entities."""
         if not self.enabled:
@@ -220,11 +226,37 @@ class HomeAssistant:
             return False
 
 
+class CameraUses:
+    """ESP32 cameras of ours (esphome/) and what their sensors want them set up as
+    (settings.CAMERA_USES). The grabber tells it which addresses answered as ours and asks it what
+    to ask them for; the engine tells it what each sensor wants."""
+
+    def __init__(self) -> None:
+        # Snapshot address -> how the camera is set up now (the X-VisionState-Camera header of its
+        # last picture).
+        self.ours: dict[str, str] = {}
+        self._wants: dict[int, tuple[str, str]] = {}  # sensor -> (its address, the use it wants)
+
+    def want(self, sensor_id: int, source: str, use: str | None) -> None:
+        """What a sensor wants its camera set up as (None: nothing)."""
+        if use is None:
+            self._wants.pop(sensor_id, None)
+        else:
+            self._wants[sensor_id] = (source, use)
+
+    def use_for(self, source: str) -> str | None:
+        """The use asked of a camera: the most demanding the sensors on it want (so pictures for
+        two sensors do not switch it back and forth), or None when none wants one."""
+        wanted = {use for address, use in self._wants.values() if address == source}
+        return next((use for use in CAMERA_USES if use in wanted), None)
+
+
 class FrameGrabber:
     """Fetches a single JPEG/PNG frame from any supported source type."""
 
-    def __init__(self, ha: HomeAssistant):
+    def __init__(self, ha: HomeAssistant, camera_uses: CameraUses | None = None):
         self.ha = ha
+        self.camera_uses = camera_uses if camera_uses is not None else CameraUses()
         self._http = httpx.AsyncClient(timeout=RUNTIME["http_timeout_s"], follow_redirects=True)
         # An RTSP grab blocks a thread for seconds (connecting, waiting for a key frame): on threads
         # of its own, so cameras that do not answer never hold up the database or the AI models.
@@ -272,10 +304,26 @@ class FrameGrabber:
             raise SourceError(describe(err)) from err
 
     async def _get_limited(self, url: str) -> bytes:
-        """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]."""
-        async with self._http.stream("GET", url) as resp:
+        """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]. A
+        camera of ours (one that answered with X-VisionState-Camera) is asked to be set up for its
+        sensors first (?use=...)."""
+        asked = url
+        uses = self.camera_uses
+        use = uses.use_for(url) if url in uses.ours else None
+        if use is not None:
+            asked = f"{url}{'&' if '?' in url else '?'}use={use}"
+            if uses.ours.get(url) != use:  # the camera switches: worth a line when looking into it
+                log.info("Asking the ESP32 camera at %s to be set up for %s", redact(url), CAMERA_USES[use])
+        async with self._http.stream("GET", asked) as resp:
             if resp.status_code != 200:
                 raise SourceError(f"HTTP {resp.status_code}")
+            camera = resp.headers.get("x-visionstate-camera")
+            if camera is not None:
+                if url not in uses.ours:
+                    log.info("The camera at %s is a VisionState ESP32 (set up for %s)", redact(url), camera)
+                uses.ours[url] = camera
+            elif uses.ours.pop(url, None) is not None:
+                log.info("The camera at %s no longer answers as a VisionState ESP32", redact(url))
             return await read_limited(resp)
 
 

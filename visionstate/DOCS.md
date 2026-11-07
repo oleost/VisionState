@@ -540,9 +540,25 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
 - a microphone of its own: an ESP32 with an I2S microphone (such as an INMP441) sending its sound
   as an HTTP stream of WAV, for a room without a camera.
 
+**An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
+guide for an ESP32 or ESP32-S3 DevKit with an INMP441 microphone, an ESP32-CAM with its camera
+(and a microphone too, if you like), a Seeed Studio XIAO ESP32-S3 Sense, whose camera and
+microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or
+things that move — which sets the camera's picture size, compression and exposure (*Camera use*
+on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
+pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
+still things — or as chosen under *Camera set-up* in the sensor's settings, shown only for such a
+camera; sensors on one camera share the most demanding. It shows the wiring and gives the device's file to download (the
+Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
+device. Once the device is installed it tells you to add it in Home Assistant (and shows the
+encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
+`esphome/README.md` in the repository.
+
 The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it
-runs.
+runs. A stream that stays pure digital silence — quieter than any room — shows *Pure silence*:
+its microphone is not wired, is broken, or is muted (on an ESP32, its *Microphone* switch or mute
+switch; on a camera, its audio switched off). The sensor hears nothing then.
 
 **What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
 of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised

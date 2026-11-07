@@ -1,0 +1,23 @@
+# CI: VisionState's stream added to M5Stack's Atom VoiceS3R configuration, at a commit of it.
+substitutions:
+  name: vs-test-atom
+  friendly_name: Test Atom VoiceS3R
+  stream_password: !secret vs_stream_password
+
+packages:
+  atom_voices3r: github://m5stack/esphome-yaml/common/atom-voices3r-satellite-base.yaml@7358db0145d17c276f616c2d27315c0d3833fe71
+  visionstate: !include ../packages/atom-voices3r.yaml
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password

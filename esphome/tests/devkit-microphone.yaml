@@ -1,0 +1,18 @@
+# CI: an ESP32 DevKit with an INMP441 and a mute switch, built from the packages in this folder.
+substitutions:
+  name: vs-test-microphone
+  friendly_name: Test microphone
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+packages:
+  board: !include ../packages/board-esp32-devkit.yaml
+  common: !include ../packages/common.yaml
+  microphone: !include ../packages/microphone.yaml
+  mute_pin: !include ../packages/mute-pin.yaml

@@ -1,0 +1,5 @@
+# Camera and microphone on the plain ESP32: its camera driver uses the first I2S port (I2S0) for
+# the picture, and ESPHome hands out ports in order. This empty one takes port 0, so the
+# microphone gets port 1. Include it before packages/microphone.yaml.
+i2s_audio:
+  - id: vs_i2s_reserved_for_camera

@@ -197,6 +197,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         self.stop_listening(sensor_id)
         self.live.pop(sensor_id, None)
         self._camera_of.pop(sensor_id, None)
+        self.camera_uses.want(sensor_id, "", None)
         self.sound_heads.pop(sensor_id, None)
         self.sound_room.pop(sensor_id, None)
         room_path(self.settings.heads_dir, sensor_id).unlink(missing_ok=True)

@@ -1,0 +1,62 @@
+# What the camera looks at, as a choice in Home Assistant (camera-esp32-cam.yaml and
+# camera-xiao-esp32s3-sense.yaml include it): the picture size, its JPEG quality and how it is
+# exposed, kept over restarts. VisionState asks a snapshot for what its sensor needs
+# (/snapshot.jpg?use=states|meter|movement): the camera is set up so first, stays so until something
+# asks otherwise, and this choice follows. The camera starts at its largest size
+# (camera_resolution), so each choice fits its buffers.
+#
+# - States: still things (a door, a gate): 800x600, JPEG quality 10, exposure and gain automatic.
+# - Meters and displays: every pixel the sensor has (1600x1200) and less compression (8), for the
+#   digits; the subject stands still, and the flash lights it.
+# - People, cars and animals: 800x600 (the sensor bins pixels there: more light each, more pictures
+#   a second), the exposure fixed and short (camera_motion_exposure, a number in Home Assistant:
+#   the sensor's lines, about 20 ms at 250) so something moving stays sharp, and the gain automatic
+#   up to 16x to keep it bright. Darker and noisier in poor light: a light helps.
+substitutions:
+  camera_use: States
+  camera_motion_exposure: "250"
+
+esphome:
+  on_boot:
+    priority: -100  # after the camera started
+    then:
+      - lambda: |-
+          id(vs_stream).set_motion_exposure((int) id(vs_motion_exposure).state);
+          id(vs_stream).set_camera_use(id(vs_camera_use).current_option());
+
+select:
+  - platform: template
+    id: vs_camera_use
+    name: Camera use
+    icon: mdi:camera-iris
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    options:
+      - States
+      - Meters and displays
+      - People, cars and animals
+    initial_option: ${camera_use}
+    on_value:
+      - lambda: id(vs_stream).set_camera_use(x);
+
+number:
+  - platform: template
+    id: vs_motion_exposure
+    name: Exposure for moving things
+    icon: mdi:camera-timer
+    entity_category: config
+    min_value: 30
+    max_value: 1200
+    step: 10
+    optimistic: true
+    restore_value: true
+    initial_value: ${camera_motion_exposure}
+    on_value:
+      - lambda: id(vs_stream).set_motion_exposure((int) x);
+
+visionstate_stream:
+  on_camera_use:
+    - lambda: |-
+        if (id(vs_camera_use).current_option() != x)
+          id(vs_camera_use).publish_state(x);

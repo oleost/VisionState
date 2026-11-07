@@ -325,8 +325,8 @@ As for images: CC0 / public domain, or drawn by our own code.
   strong case: camera audio is often poor (§12), and a room without a camera can still listen. 16 kHz
   16-bit mono is about 256 kbit/s, easy over Wi-Fi.
   - *A stream of its own* (firmware that sends the microphone as an HTTP stream of WAV or raw PCM, or
-    over RTSP) needs nothing beyond phase 1. It is not stock ESPHome; community components exist
-    (e.g. an HTTP transport in `gnumpi/esphome_audio`) and phase 0 picks one to recommend.
+    over RTSP) needs nothing beyond phase 1. It is not stock ESPHome: VisionState has its own
+    component and packages for it (below).
   - **Recommended: the ESP32 streams all the time** and VisionState decides what is loud enough
     (§4, step 3): the firmware stays simple, the level is set in the UI, not in firmware.
   - *Optional later: the ESP32 sends only when it is loud* (keeping about a second from before the
@@ -336,6 +336,7 @@ As for images: CC0 / public domain, or drawn by our own code.
     on a wake word, and Home Assistant does not pass that audio on to apps. Listening all day needs
     an integration of its own — phase 4, once phase 0 has checked what ESPHome offers. Voice
     satellites (Home Assistant's own voice hardware) are left out for now.
+  - **Our own firmware** for an ESP32 microphone, with or without a camera: [`ESP32_PLAN.md`](ESP32_PLAN.md).
   - **No push** (the maintainer's decision, 2026-10-29): VisionState always opens the connection; a
     device never connects to VisionState to deliver audio, which would break the rule that the app
     is only reachable through Home Assistant Ingress.

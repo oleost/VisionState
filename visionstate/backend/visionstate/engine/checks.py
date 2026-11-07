@@ -14,7 +14,7 @@ from .. import backbones, imaging
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import RUNTIME, UNKNOWN_STATE
+from ..settings import CAMERA_USE_BY_KIND, RUNTIME, UNKNOWN_STATE
 from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
@@ -98,6 +98,10 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         does not: its frames are taken in the light, a frame without it would be no baseline. One
         alone on its camera takes its frames and keeps its moments as if nothing was shared."""
         key = (cfg.source_type, cfg.source)
+        # What an ESP32 camera of ours should be set up as for it (the grabber asks it, sources.py).
+        wants = cfg.enabled and cfg.source_type == "http" and not cfg.is_sound
+        use = cfg.triggers.get("camera_use") or CAMERA_USE_BY_KIND.get(cfg.kind) if wants else None
+        self.camera_uses.want(cfg.id, cfg.source, use)
         if cfg.enabled and not cfg.triggers["light_entity"]:
             self._camera_of[cfg.id] = key
         else:
