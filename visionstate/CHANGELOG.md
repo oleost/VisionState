@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.15.0b1
+
+**Every picture says when its frame was taken** (discussion #83, thanks to @ecdlguy).
+
+- A picture reaches Home Assistant a moment after the camera took it: the check needs that time,
+  seconds on a small CPU. Now every picture VisionState sends — an object's snapshot and each
+  sensor's *Last frame* — carries in its EXIF when the camera was asked for the frame
+  (`DateTimeOriginal` with milliseconds, in UTC). A picture saved with Home Assistant's
+  `image.snapshot` keeps it, so it can be matched with your camera's own recording to the second.
+- The same EXIF says which part of the camera frame the picture shows (`UserComment`:
+  `{"crop":[left,top,right,bottom]}`, from 0 to 1 like the `boxes` attribute).
+
+**See where a check's time goes.**
+
+- With the app option `log_level: debug`, every check logs how long it took, part by part:
+  `Sensor driveway: check 1.01 s (grab 0.32, decode 0.01, detect 0.25, taught 0.37, faces 0.06,
+  publish 0.00, history 0.00)`. When a check had to wait while other sensors used the AI models,
+  *waited* at the end says how long.
+
 ## 0.14.0
 
 **Teach sounds as your own microphone hears them, get a threshold suggested from your answers, and
