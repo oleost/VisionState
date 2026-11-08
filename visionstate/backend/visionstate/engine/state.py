@@ -314,6 +314,7 @@ class LiveState:
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check
+    taught_seen: list = field(default_factory=list)  # object sensors: the last check's embedded crops (teach.Seen)
     # Object sensors: the frames the last checks analysed, so a box can be taught a while after
     # it was shown (``frames`` turns over quickly); classes filtered away in the last check and
     # when each was last stored in the history.

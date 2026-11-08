@@ -44,6 +44,17 @@ class TaughtIndex:
 
 
 @dataclass(frozen=True)
+class Seen:
+    """A crop embedded in a check: reused by the next check for a box at the same place."""
+
+    key: str  # the detector's class of the box
+    box: tuple[float, float, float, float]
+    vector: np.ndarray
+    backbone: str
+    age: int = 0  # checks it has been reused in
+
+
+@dataclass(frozen=True)
 class Match:
     label: str
     similarity: float
@@ -165,6 +176,18 @@ def plan(found: list[dict], candidates: list[dict], index: TaughtIndex) -> tuple
             if len(rescue) >= TEACH["max_rescue"]:
                 break
     return checked, rescue
+
+
+def reusable(earlier: list[Seen], key: str, box: Sequence[float], backbone: str) -> Seen | None:
+    """The embedding of the last check this box can use instead of its own: same class and model,
+    at the same place (TEACH["reuse_iou"]), and not reused TEACH["recheck_every"] - 1 times yet."""
+    same = [
+        s
+        for s in earlier
+        if s.key == key and s.backbone == backbone and s.age + 1 < TEACH["recheck_every"]
+        and box_iou(s.box, box) >= TEACH["reuse_iou"]
+    ]  # fmt: skip
+    return max(same, key=lambda s: box_iou(s.box, box), default=None)
 
 
 def apply(

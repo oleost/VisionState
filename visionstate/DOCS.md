@@ -210,7 +210,9 @@ like one of the boxes you taught; otherwise the AI's own answer stands, so teach
 something on by a vague resemblance. An object that stays where it is (a parked car) keeps its
 answer while it still looks much like it, so a change of light does not make it flicker. This uses
 the same model as state sensors (DINOv2), which is always loaded; it costs a little extra time per
-box, only for the objects you taught.
+box, only for the objects you taught (on a small CPU about as long as the AI itself takes for the
+whole picture). A box that stays at the same place is looked at again only every third check: in
+between it keeps what the model saw in it, so someone standing in view costs much less.
 
 **When it is not sure, it asks.** A box that looks somewhat like one of your own labels, but not
 clearly (say a car in light you never taught it in), goes to the **review queue**: *Is this Our

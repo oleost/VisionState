@@ -112,15 +112,34 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         found: list[dict],
         candidates: list[dict],
         previous: list[dict] | None = None,
+        seen: list[teach.Seen] | None = None,
     ) -> list[dict]:
-        """Compare a check's boxes with the taught ones (see teach.apply); ``previous``: the last check's."""
+        """Compare a check's boxes with the taught ones (see teach.apply); ``previous``: the last
+        check's boxes, ``seen``: its embedded crops, reused for boxes that stayed (teach.reusable).
+        The crops embedded or reused here are kept in the live state for the next check."""
         checked, rescue = teach.plan(found, candidates, index)
-        crops = [teach.crop(image, found[i]["box"]) for i in checked] + [teach.crop(image, d["box"]) for d in rescue]
+        boxes = [found[i] for i in checked] + rescue
         embedder = self.embedder
-        if not crops or embedder is None:
+        if not boxes or embedder is None:
             return found
-        async with timing.slot(self._sem):
-            vectors = await asyncio.to_thread(teach.embed, embedder, crops)
+        backbone = embedder.spec.id
+        reused = [teach.reusable(seen or [], d["key"], d["box"], backbone) for d in boxes]
+        todo = [n for n, r in enumerate(reused) if r is None]
+        fresh: list = []
+        if todo:
+            crops = [teach.crop(image, boxes[n]["box"]) for n in todo]
+            async with timing.slot(self._sem):
+                fresh = list(await asyncio.to_thread(teach.embed, embedder, crops))
+        now: list[teach.Seen] = []
+        for n, d in enumerate(boxes):
+            earlier = reused[n]
+            if earlier is None:
+                vector = fresh.pop(0)
+                now.append(teach.Seen(d["key"], tuple(d["box"]), vector, backbone))
+            else:
+                now.append(teach.Seen(d["key"], tuple(d["box"]), earlier.vector, backbone, earlier.age + 1))
+        self.live_state(cfg.id).taught_seen = now
+        vectors = np.stack([s.vector for s in now])
         n = len(checked)
         return teach.apply(
             found,

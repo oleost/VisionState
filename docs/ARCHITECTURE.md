@@ -103,7 +103,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
 | `sound.py` | Sound sensors: the sound model (on first use), listening (`_listen`, every hop instead of a check), deciding and publishing each sound, history rows, clips, review questions, own sounds (`train_sound_head`, the room's windows), recording one from the stream (`start_recording`, `stop_recording`) |
-| `teaching.py` | Taught boxes of object sensors (index, embeddings) |
+| `teaching.py` | Taught boxes of object sensors (index, embeddings); the comparison step of a check (`apply_taught`: a box at the same place as in the last check reuses its embedding, `teach.reusable`, kept in `LiveState.taught_seen`) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
 | `benchmark.py` | The speed test: every sensor paused and every model let go, then each chosen model downloaded when needed, loaded, run on the sensor's camera or microphone and let go; what was downloaded only for it deleted again |

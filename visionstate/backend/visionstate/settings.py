@@ -434,6 +434,12 @@ TEACH = {
     "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
     "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work
     "max_rescue": 4,  # unsure boxes compared per check
+    # A box at the same place as one compared in the last check (they overlap this much: a still
+    # object's box moved up to 5 %, a weak box's edge 15 %, see snapshot_move) reuses that check's
+    # embedding instead of embedding its crop again; every recheck_every-th check it is embedded
+    # anew. One embedding costs about a detector run (discussion #83: ~1 s on a Celeron J3455).
+    "reuse_iou": 0.85,
+    "recheck_every": 3,
     "rescue_overlap_iou": 0.5,  # an unsure box overlapping a counted one this much is that same object
     "crop_margin": 0.1,  # share of a box's size added on each side of what is compared
     "min_box": 0.01,  # smallest taught box side, as a share of the frame

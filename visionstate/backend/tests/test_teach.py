@@ -176,6 +176,19 @@ def test_unsure_boxes_are_rescued_only_when_a_missed_box_was_taught():
     assert len(result) == 1
 
 
+def test_a_box_that_stayed_reuses_the_last_embedding_for_a_few_checks():
+    here = (0.1, 0.1, 0.3, 0.5)
+    seen = teach.Seen("person", here, PERSON, "dinov2")
+    assert teach.reusable([seen], "person", (0.101, 0.1, 0.301, 0.5), "dinov2") is seen  # detector jitter
+    assert teach.reusable([seen], "person", (0.15, 0.1, 0.35, 0.5), "dinov2") is None  # it moved
+    assert teach.reusable([seen], "dog", here, "dinov2") is None  # another class
+    assert teach.reusable([seen], "person", here, "dinov2-base") is None  # another model
+    last = teach.Seen("person", here, PERSON, "dinov2", TEACH["recheck_every"] - 1)
+    assert teach.reusable([last], "person", here, "dinov2") is None  # time to look again
+    near = teach.Seen("person", (0.102, 0.1, 0.302, 0.5), STATUE, "dinov2")
+    assert teach.reusable([near, seen], "person", here, "dinov2") is seen  # the closest box
+
+
 def test_plan_compares_only_taught_classes_and_bounds_the_work():
     idx = index([(NONE_LABEL, "person", STATUE)])
     found = [det("dog")] + [det("person", 0.5 + i / 100) for i in range(TEACH["max_checked"] + 3)]
@@ -236,6 +249,62 @@ class FakeEmbedder:
 
     def embed(self, images):
         return np.stack([unit(1, 0, 0, 0) for _ in images])
+
+
+class CountingEmbedder(FakeEmbedder):
+    def __init__(self):
+        self.crops = 0
+
+    def embed(self, images):
+        self.crops += len(images)
+        return super().embed(images)
+
+
+def test_a_person_standing_still_is_embedded_every_few_checks(settings):  # noqa: F811
+    """Discussion #83: on a slow CPU each embedded crop costs about a detector run, at every check
+    of a burst. A box at the same place reuses the last check's embedding, with the same answer."""
+    import asyncio
+
+    from PIL import Image
+
+    from visionstate.db import Database, Sensor
+    from visionstate.engine import Runtime
+
+    settings.ensure_dirs()
+    db = Database(settings.db_path)
+    db.init()
+    rt = Runtime(settings, db)
+    rt.embedder = embedder = CountingEmbedder()
+    with db.session() as s:
+        row = Sensor(slug="yard", name="Yard", kind=KIND_OBJECTS, source_type="http", source="x", interval_s=5,
+                     threshold=0.6, debounce=1, objects={"classes": ["person"]})  # fmt: skip
+        s.add(row)
+        s.flush()
+        sid = row.id
+    cfg = rt.load_sensor(sid)
+    assert cfg is not None
+    idx = index([(NONE_LABEL, "person", unit(1, 0, 0, 0))])  # the statue: not a person
+    image = Image.new("RGB", (200, 100))
+    live = rt.live_state(sid)
+
+    def check(*boxes) -> list[dict]:
+        seen, live.taught_seen = live.taught_seen, []  # as _run_objects hands it over
+        found = [det("person", box=b) for b in boxes]
+        return asyncio.run(rt.apply_taught(cfg, image, idx, found, [], live.detections, seen))
+
+    statue, walker = (0.1, 0.1, 0.3, 0.5), (0.6, 0.1, 0.8, 0.5)
+    counts = []
+    for _ in range(TEACH["recheck_every"] + 1):
+        result = check(statue)
+        assert result[0]["filtered"]  # the same answer, embedded or not
+        counts.append(embedder.crops)
+    assert counts == [1] * TEACH["recheck_every"] + [2]  # embedded again every recheck_every-th check
+    before = embedder.crops
+    check(statue, walker)
+    assert embedder.crops == before + 1  # only the new box
+    check((0.2, 0.1, 0.4, 0.5), walker)  # the first one moved
+    assert embedder.crops == before + 2
+    db.engine.dispose()
 
 
 def test_an_index_built_before_an_own_label_existed_is_rebuilt(settings):  # noqa: F811

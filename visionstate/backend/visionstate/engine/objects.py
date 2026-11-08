@@ -33,6 +33,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         live = self.live_state(cfg.id)
         classes = cfg.objects["classes"]
         index = await self.taught_index(cfg)
+        # Embeddings are reused only from the check right before (teach.reusable).
+        seen, live.taught_seen = live.taught_seen, []
         rescue = bool(index and index.rescue)
         # Once a box the detector missed was taught, its unsure boxes are looked at too.
         floor = min(cfg.threshold, self.teach_limits(cfg)["rescue_floor"]) if rescue else cfg.threshold
@@ -49,7 +51,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             found = [d for d in found if d["score"] >= cfg.threshold and d["key"] in classes]
         if index is not None:
             with timing.step("taught"):
-                found = await self.apply_taught(cfg, image, index, found, candidates, live.detections)
+                found = await self.apply_taught(cfg, image, index, found, candidates, live.detections, seen)
         if cfg.faces_on:
             with timing.step("faces"):
                 found = await self.apply_faces(cfg, image, found, live.detections)

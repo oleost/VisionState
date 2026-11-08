@@ -775,15 +775,28 @@ the broker holds no pictures nobody asked for.
   (`UserComment`, JSON). In the picture, not an attribute: the attributes are sent at other moments
   than a snapshot, so an attribute could belong to an older frame, and `image.snapshot` writes the
   bytes unchanged. The time asked, not answered: the frame is taken somewhere between the two, and
-  the answer's time adds the camera's encoding and the transfer (about 0.35 s by the speed test quoted in #83). Nothing
-  changes in what is sent when: each picture is sent only when it
-  would have been anyway.
+  the answer's time adds the camera's encoding and the transfer (about 0.35 s by the speed test
+  quoted in #83). Nothing changes in what is sent when: each picture is sent only when it would
+  have been anyway.
   Not done: sending the state after the detector and the rest (names, taught boxes) later. The
-  taught comparison can filter a box out, so the state would go on and off again (an automation
-  starting for nothing, two rows); faces only add names, but they cost little (measured with the
-  debug timing on the demo Driveway: detector 0.14–0.25 s, taught comparison 0.22–0.37 s, faces
-  0.04–0.06 s). Where a check's time goes is shown by `log_level: debug` (one line per check, the
-  wait for a model run apart), so a slow installation can be judged by its numbers.
+  taught comparison can filter a box out, add one (an unsure box rescued) or change its class, so
+  the state would change twice (an automation starting for nothing, two rows); faces only add
+  names, but they cost little (measured with the debug timing on the demo Driveway: detector
+  0.14–0.25 s, taught comparison 0.22–0.37 s, faces 0.04–0.06 s). Where a check's time goes is
+  shown by `log_level: debug` (one line per check, the wait for a model run apart), so a slow
+  installation can be judged by its numbers.
+  Done instead, from #83's numbers (a Celeron J3455: detector 0.9 s, taught comparison 4–7 s, about
+  1 s per crop): the comparison's cost is the number of crops, each embedded alone (the 8-bit
+  backbone gives a crop another vector in another batch, `teach.embed`), up to
+  `settings.TEACH["max_checked"]` + `max_rescue` per check, at every check of a burst while someone
+  stands in view. A box at the same place as one in the check right before (`reuse_iou`, below the
+  jitter of a still object's box: a parked car on a real doorbell camera's 640×480 stream, 3 s
+  apart, overlapped 0.98–0.99 with D-FINE N and S; a weak box that jumps more is just embedded
+  again) reuses that embedding, and is embedded anew every
+  `recheck_every`-th check, as the face step carries a sure name. The vector is reused, not the
+  answer: `teach.apply` decides as before, so a box taught in between counts at once. Only from the
+  check right before, so an object that left and another that came to the same place are looked at
+  anew.
 
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Don't send values** (`sensor.publish`, default
