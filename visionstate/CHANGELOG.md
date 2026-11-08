@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0b2
+
+**Taught objects cost much less while someone stays in view** (discussion #83, thanks to @ecdlguy).
+
+- Comparing a box with the boxes you taught takes about as long as the AI needs for the whole
+  picture, on a small CPU around a second per box, at every check while someone stands there. A box
+  at the same place as in the check before now keeps what the model saw in it and is looked at
+  again every third check, so two of three checks skip that work. The answers are the same: a box
+  you teach in between counts at once. The first check when someone arrives costs as before.
+
 ## 0.15.0b1
 
 **Every picture says when its frame was taken** (discussion #83, thanks to @ecdlguy).
