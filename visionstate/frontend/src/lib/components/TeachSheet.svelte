@@ -189,7 +189,7 @@
         {:else}
           VisionState will look again at boxes it is unsure about and compare them with what you showed it.
         {/if}
-        You can turn this off or forget it under Settings.
+        You can turn this off or forget it under Settings → Objects.
       </p>
       <div class="row actions">
         <button class="btn primary first" disabled={busy} onclick={send}>Teach</button>

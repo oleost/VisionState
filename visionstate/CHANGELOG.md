@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.15.0b3
+
+**A sensor's page, tidied up: the same few tabs for every kind of sensor, and its Settings in
+sections** (issue #84, thanks to @Bimmerfriend). Feedback on the new layout is welcome in #85.
+
+- **The same tabs for every kind:** what it sees now (*Live*, or *Label* for a state sensor),
+  *History*, *Dataset* (what it was taught) and *Quality* (how well it does). *Upload* is now part
+  of *Dataset*; an object sensor's taught boxes and a sound sensor's *Own sounds* are its
+  *Dataset*. On a very narrow screen what does not fit goes under *More*.
+- **Settings is the button beside Pause**, in sections: *General*, *Region*, what it looks for,
+  *Checks and output*, *Home Assistant* (no longer a tab of its own) and *Export or delete* —
+  where *Delete sensor* is easy to find now. On a phone they are a list that says what is set in
+  each; on a wider screen a menu beside the open one.
+- **One Save for all sections:** a change waits for *Save changes* at the bottom of the screen and
+  is kept while you look at another section; *Undo* puts back what is saved.
+- On a phone the import options on *Dataset* are behind a button so the images start on the first
+  screen, and the Review count in the top menu shows *99+* so the menu fits.
+- Smaller things: every sensor card on the dashboard has *Live* (or *Label*), *History* and
+  *Settings*; *In Home Assistant* on the Live tab links to where it is changed; an own sound's
+  clips stay on one line, and its red button says *Forget sound*.
+- Links to the old tabs (bookmarks) still open where they went.
+
 ## 0.15.0b2
 
 **Taught objects cost much less while someone stays in view** (discussion #83, thanks to @ecdlguy).

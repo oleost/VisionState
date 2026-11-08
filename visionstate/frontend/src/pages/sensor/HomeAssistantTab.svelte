@@ -37,6 +37,14 @@
     return sensor.ha_entities.filter((e) => e.on && (mode === 'none' || !isOn(e)));
   });
   const removesAll = $derived(sensor.in_ha && mode === 'none');
+  // Save only once something differs from what the sensor has (like the rest of its Settings).
+  const changed = $derived(
+    mode !== modeOf(sensor) ||
+      sensor.ha_entities.some((e) => isOn(e) !== e.on) ||
+      (!!sensor.objects &&
+        (snapshotAspect !== (sensor.objects.snapshot_aspect ?? '') ||
+          snapshotMove !== Math.round((sensor.objects.snapshot_move ?? 0) * 100))),
+  );
 
   async function save() {
     saving = true;
@@ -144,7 +152,7 @@
       <ConfirmButton class="btn primary" onconfirm={save} confirmLabel="Tap again to remove">Save changes</ConfirmButton>
     </div>
   {:else}
-    <div class="row"><button class="btn primary" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+    <div class="row"><button class="btn primary" disabled={saving || !changed} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button></div>
   {/if}
 </div>
 

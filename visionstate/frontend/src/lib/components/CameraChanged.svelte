@@ -43,7 +43,7 @@
         <Icon name="check" size={14} /> The region is right
       </button>
       {#if !onSettings}
-        <a class="btn sm" href={href(paths.sensor(sensor.id, 'settings'))}>Adjust the region</a>
+        <a class="btn sm" href={href(paths.sensorSettings(sensor.id, 'detect'))}>Adjust the region</a>
       {/if}
     </div>
   </div>

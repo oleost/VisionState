@@ -132,7 +132,7 @@
           <span>Enter the camera password again for:</span>
           <span class="row masked">
             {#each result.masked as sensor (sensor.id)}
-              <button class="btn sm" onclick={() => go(paths.sensor(sensor.id, 'settings'))}>{sensor.name}</button>
+              <button class="btn sm" onclick={() => go(paths.sensorSettings(sensor.id, 'general'))}>{sensor.name}</button>
             {/each}
           </span>
         {/if}

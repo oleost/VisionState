@@ -222,7 +222,7 @@
     <input type="checkbox" bind:checked={notInHa} aria-label={HA_MODES.none.label} />
     <span class="col" style="gap:2px">
       <strong class="small">{HA_MODES.none.label}</strong>
-      <span class="xsmall faint">{HA_MODES.none.help} You can change this on its Home Assistant tab.</span>
+      <span class="xsmall faint">{HA_MODES.none.help} You can change this under its Settings → Home Assistant.</span>
     </span>
   </label>
 {/snippet}

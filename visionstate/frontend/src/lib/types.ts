@@ -618,7 +618,7 @@ export interface Sensor {
   publish: boolean;
   /** Off: it has no entities in Home Assistant at all. */
   in_ha: boolean;
-  /** What can be chosen on its Home Assistant tab. */
+  /** What can be chosen under its Settings → Home Assistant. */
   ha_entities: HaEntity[];
   triggers: Triggers;
   review: ReviewOverrides;

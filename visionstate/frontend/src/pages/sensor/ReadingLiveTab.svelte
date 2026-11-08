@@ -66,14 +66,14 @@
       <div class="notice small" data-testid="try-wheel-reader">
         <span
           >New: the <strong>wheel reader</strong> reads how far each wheel has turned, so a wheel between two digits is
-          read right. Try it under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+          read right. Try it under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Region and reading → Read with</a>.</span
         >
       </div>
     {:else if newerWheels}
       <div class="notice small" data-testid="try-newer-wheel-reader">
         <span
           >New: <strong>{newerWheels.name}</strong>. {newerWheels.description} Try it under
-          <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings → Read with</a>.</span
+          <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Region and reading → Read with</a>.</span
         >
       </div>
     {/if}
@@ -88,10 +88,10 @@
               .dials?.length
               ? ', then each pointer dial with the needle that was found drawn on it'
               : ''}. If a
-            digit is cut off or sits in two fields, adjust the region or the number of digits on the Settings tab.
+            digit is cut off or sits in two fields, adjust the region or the number of digits under Settings → Region and reading.
           {:else}
             If digits are cut off or faint segments show up here, draw the region tighter around the number or pick the
-            display type on the Settings tab.
+            display type under Settings → Region and reading.
           {/if}
         </p>
       </section>
@@ -124,7 +124,7 @@
         {:else}
           <span class="xsmall faint">
             {sensor.triggers.regular ? `Reads every ${sensor.interval_s} s.` : 'Only reads when triggered.'}
-            <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it reads</a>.
+            <a href={href(paths.sensorSettings(sensor.id, 'checks'))}>Change when it reads</a>.
           </span>
         {/if}
       </div>

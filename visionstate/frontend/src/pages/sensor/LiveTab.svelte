@@ -104,7 +104,7 @@
         An object is reported after {plural(sensor.debounce, 'check')} with it and cleared {objects.clear_after_s} s after it
         was last seen. Boxes below {pct(sensor.threshold)} are ignored.
         {#if objects.taught && objects.use_taught}
-          Boxes are also compared with <a href={href(paths.sensor(sensor.id, 'quality'))}>what you taught</a>.
+          Boxes are also compared with <a href={href(paths.sensor(sensor.id, 'dataset'))}>what you taught</a>.
         {/if}
       </p>
       <div class="trigger">
@@ -117,10 +117,10 @@
         {:else}
           <span class="xsmall faint">
             {#if sensor.triggers.regular}
-              Checks every {sensor.interval_s} s. <a href={href(paths.sensor(sensor.id, 'settings'))}>Add a motion or change trigger</a>
+              Checks every {sensor.interval_s} s. <a href={href(paths.sensorSettings(sensor.id, 'checks'))}>Add a motion or change trigger</a>
               to react faster.
             {:else}
-              Only checks when triggered. <a href={href(paths.sensor(sensor.id, 'settings'))}>Change when it checks</a>.
+              Only checks when triggered. <a href={href(paths.sensorSettings(sensor.id, 'checks'))}>Change when it checks</a>.
             {/if}
           </span>
         {/if}

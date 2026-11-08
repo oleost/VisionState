@@ -193,7 +193,7 @@
       <p class="small muted">
         Tell whether the reader read the meter right: a misread that was rejected shows the checks work; a right
         reading that was rejected points at a setting. The reader does not learn from your answers — they show how
-        reliable the reading is. Spot checks of accepted readings can be switched on under Settings → Sensor output.
+        reliable the reading is. Spot checks of accepted readings can be switched on under Settings → Checks and output.
       </p>
     </div>
     {#if verifiedTotal || unchecked}

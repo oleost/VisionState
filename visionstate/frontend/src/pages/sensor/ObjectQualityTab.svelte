@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Object sensors: what the sensor was taught (boxes per label, own labels) and the boxes it
-  // filtered away lately, so it is always visible what teaching changes. Shown once a box was taught.
+  // Object sensors' Dataset tab: what the sensor was taught (boxes per label, own labels) and the
+  // boxes it filtered away lately, so it is always visible what teaching changes; before anything was
+  // taught, how to teach it.
   import { untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { toast, toastError } from '../../lib/app.svelte';
@@ -109,13 +110,12 @@
 
 <div class="layout">
   <div class="col" style="gap:var(--space-5)">
-    <PeopleCards {sensor} {onchange} />
     {#if boxesTaught}
       <section class="card pad">
         <div class="card-title"><h3>What you taught</h3></div>
         {#if taught && !taught.use_taught}
           <div class="notice warn" style="margin-bottom:12px">
-            Turned off under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>: the AI alone decides until you turn it on again.
+            <span>Turned off under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Objects</a>: the AI alone decides until you turn it on again.</span>
           </div>
         {/if}
         <p class="small muted">
@@ -126,6 +126,15 @@
             Nothing to compare with yet.
           {/if}
           Tap a box on the <a href={href(paths.sensor(sensor.id, 'live'))}>Live</a> tab or in the history to teach more.
+        </p>
+      </section>
+    {:else}
+      <section class="card pad col" data-testid="nothing-taught">
+        <h3>What you taught</h3>
+        <p class="small muted">
+          Nothing yet. When the AI gets a box wrong, tap it on the <a href={href(paths.sensor(sensor.id, 'live'))}>Live</a> tab or
+          in the history: say it is not that object, something else, or one of your own (such as “Our car”). Draw a box
+          around what it missed. What you teach shows here, and the sensor compares new boxes with it.
         </p>
       </section>
     {/if}
@@ -165,6 +174,8 @@
         </section>
       {/each}
     {/if}
+    <!-- After what was taught, which is what this tab is about: the people are shared by every camera. -->
+    <PeopleCards {sensor} {onchange} />
   </div>
 
   <section class="card pad filtered">

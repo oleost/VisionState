@@ -5,7 +5,7 @@
   import Toasts from './lib/components/Toasts.svelte';
   import { pollWhileVisible } from './lib/poll';
   import { href, paths, route } from './lib/router.svelte';
-  import { POLL, SENSOR_TABS, type SensorTab } from './lib/ui';
+  import { OLD_TABS, POLL, SENSOR_TABS, SETTINGS_SECTIONS, type SensorTab, type SettingsSection } from './lib/ui';
   import Dashboard from './pages/Dashboard.svelte';
   import History from './pages/History.svelte';
   import NewSensor from './pages/NewSensor.svelte';
@@ -22,9 +22,15 @@
     .catch((err) => (app.error = err.message));
   onDestroy(pollWhileVisible(POLL.status, refreshStatus));
 
-  const [section, id, tab] = $derived(route.parts);
-  // '' = the sensor's first tab, which depends on its kind (resolved by SensorPage).
-  const sensorTab = $derived((SENSOR_TABS.some((t) => t.id === tab) ? tab : '') as SensorTab | '');
+  const [section, id, tab, part] = $derived(route.parts);
+  // '' = the sensor's first tab, which depends on its kind (resolved by SensorPage). A tab of an
+  // earlier version opens where it went.
+  const sensorTab = $derived(
+    (OLD_TABS[tab]?.tab ?? (SENSOR_TABS.some((t) => t.id === tab) ? tab : '')) as SensorTab | '',
+  );
+  const settingsSection = $derived(
+    (OLD_TABS[tab]?.section ?? (SETTINGS_SECTIONS.includes(part as SettingsSection) ? part : '')) as SettingsSection | '',
+  );
 </script>
 
 <Nav />
@@ -41,7 +47,7 @@
   {:else if section === 'sensors' && id === 'new'}
     <NewSensor />
   {:else if section === 'sensors' && id}
-    <SensorPage id={Number(id)} tab={sensorTab} />
+    <SensorPage id={Number(id)} tab={sensorTab} section={settingsSection} />
   {:else if section === 'review'}
     <Review />
   {:else if section === 'history'}

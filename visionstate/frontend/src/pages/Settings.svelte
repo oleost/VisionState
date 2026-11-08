@@ -157,7 +157,7 @@
     try {
       const result = await api.importBundle(file);
       toastImported(result);
-      go(paths.sensor(result.id, result.faces_off ? 'settings' : ''));
+      go(result.faces_off ? paths.sensorSettings(result.id, 'detect') : paths.sensor(result.id));
     } catch (err) {
       toastError(err);
     } finally {
@@ -309,7 +309,7 @@
             <span class="hint"
               >{wheelReader.description} {wheelReader.license},
               <a href={wheelReader.source} target="_blank" rel="noreferrer">source</a>. New counters read with it
-              (<em>Read with</em> on a counter's Settings tab).</span
+              (<em>Read with</em> under a counter's Settings → Region and reading).</span
             >
           </div>
         {/if}
@@ -338,7 +338,7 @@
 
     <section class="card pad col">
       <h3>Review queue</h3>
-      <p class="small muted">Which frames are collected for review. Each sensor can override these on its Settings tab.</p>
+      <p class="small muted">Which frames are collected for review. Each sensor can override these under its own Settings.</p>
       {#if reviewRules}
         <ReviewRulesEditor bind:value={reviewRules} />
         <button class="btn primary" style="align-self:flex-start" disabled={savingReview} onclick={saveReview}>
@@ -350,8 +350,8 @@
     <section class="card pad col" data-testid="teach-limits">
       <h3>Teaching object sensors</h3>
       <p class="small muted">
-        How closely a box must resemble the boxes you taught an object sensor. Each sensor can override these on its Settings
-        tab.
+        How closely a box must resemble the boxes you taught an object sensor. Each sensor can override these under its own
+        Settings → Objects.
       </p>
       {#if teach}
         <TeachLimitsEditor
@@ -372,7 +372,7 @@
     <section class="card pad col" data-testid="face-limits">
       <h3>Recognising faces</h3>
       <p class="small muted">
-        For object sensors that recognise faces. Each sensor can override these on its Settings tab (Faces).
+        For object sensors that recognise faces. Each sensor can override these under its own Settings → Objects (Faces).
       </p>
       {#if faceLimits}
         <FaceLimitsEditor

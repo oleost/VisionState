@@ -17,7 +17,7 @@
   import { READING_MODE_INFO } from '../lib/ui';
   import { go, href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { CAMERA_CHANGED, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS } from '../lib/ui';
+  import { CAMERA_CHANGED, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS, TABS_BY_KIND } from '../lib/ui';
 
   let sensors = $state<Sensor[] | null>(null);
   let importInput: HTMLInputElement;
@@ -39,7 +39,7 @@
     try {
       const result = await api.importBundle(file);
       toastImported(result);
-      go(paths.sensor(result.id, result.faces_off ? 'settings' : ''));
+      go(result.faces_off ? paths.sensorSettings(result.id, 'detect') : paths.sensor(result.id));
     } catch (err) {
       toastError(err);
     } finally {
@@ -137,20 +137,13 @@
               {#if !s.in_ha}<span class="chip warn not-sent" title={NOT_IN_HA.help}>{NOT_IN_HA.label}</span>{:else if !s.publish}<span class="chip warn not-sent" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
               <span class="small muted">{meta(s)}</span>
             </div>
-            {#if isObjectSensor(s) || isReadingSensor(s) || isSoundSensor(s)}
-              <div class="actions">
-                <a class="btn sm" href={href(paths.sensor(s.id, 'live'))}>Live</a>
-                <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
-                <a class="btn sm" href={href(paths.sensor(s.id, 'settings'))}>Settings</a>
-              </div>
-            {:else}
-              <Timeline sensor={s} />
-              <div class="actions">
-                <a class="btn sm" href={href(paths.sensor(s.id, 'label'))}>Label</a>
-                <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
-                <a class="btn sm" href={href(paths.sensor(s.id, 'quality'))}>Quality</a>
-              </div>
-            {/if}
+            {#if !(isObjectSensor(s) || isReadingSensor(s) || isSoundSensor(s))}<Timeline sensor={s} />{/if}
+            <!-- The same three on every card: where it opens (Live, or Label), History and Settings. -->
+            <div class="actions">
+              <a class="btn sm" href={href(paths.sensor(s.id, TABS_BY_KIND[s.kind][0]))}>{s.kind === 'single_state' ? 'Label' : 'Live'}</a>
+              <a class="btn sm" href={href(paths.sensor(s.id, 'history'))}>History</a>
+              <a class="btn sm" href={href(paths.sensorSettings(s.id))}>Settings</a>
+            </div>
           </div>
         </article>
       {/each}

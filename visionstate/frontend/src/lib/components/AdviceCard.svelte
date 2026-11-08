@@ -20,7 +20,7 @@
   // What tells a sound, an own label or a face apart when no threshold does.
   const hint = $derived(
     sensor.kind === 'sound'
-      ? 'Teach it with clips on Own sounds.'
+      ? 'Teach it with clips on its Dataset tab.'
       : sensor.kind === 'objects'
         ? 'Teach more boxes or faces.'
         : sensor.kind === 'single_state'

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Recognising people by their face, on an object sensor's Settings tab. Off by default: turning
+  // Recognising people by their face, under an object sensor's Settings → Objects. Off by default: turning
   // it on opens a sheet that says what is stored and what is downloaded, before anything is. Its
   // changes are saved at once (not with "Save changes"), like teaching is.
   import { api } from '../api';
@@ -65,9 +65,8 @@
   {#if !looksForPeople}
     <p class="small muted">Add Person to the objects to recognise people by their face.</p>
   {:else if !settings.enabled}
-    <strong class="small">Recognise people by their face</strong>
     <p class="small muted">
-      Name the people you know; each gets an on/off sensor in Home Assistant.
+      Recognise people by their face: name the people you know, and each gets an on/off sensor in Home Assistant.
       {#if people}It knows the {people} {people === 1 ? 'person' : 'people'} you named on other cameras right away.{/if}
     </p>
     <div class="row">

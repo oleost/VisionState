@@ -222,7 +222,7 @@ the user's limits `settings.FACE_TUNABLE`).
 Why it is a part of object sensors and not a kind, the research, the privacy rules and what is
 left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
 
-- Off by default; on only for a sensor that looks for `person` (its Settings tab, or the wizard),
+- Off by default; on only for a sensor that looks for `person` (its Settings → Objects, or the wizard),
   after a confirmation that names what is stored and downloaded. The face models are never
   bundled: the first sensor that turns it on downloads them (`backbones.download` with progress)
   and loads them in the background — the sensor runs without faces meanwhile; a failed download waits for **Try again**. The last sensor
@@ -682,7 +682,7 @@ unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`)
 device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
 without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_trigger`. The button is "Read now".
-Four more entities exist only when chosen on the sensor's Home Assistant tab (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+Four more entities exist only when chosen under the sensor's Settings → Home Assistant (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
 `settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
 memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
@@ -704,7 +704,7 @@ Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_t
 `visionstate_<slug>_<sound key>`): `device_class: smoke` for smoke and fire alarms (decided
 2026-10-29; DOCS.md says it is no replacement for a smoke detector), `sound` for the others, and
 the pause switch; no frame and no "check now". A sound no longer listened for (or an own sound
-forgotten) loses its entity; each sound can be chosen away on the Home Assistant tab. Only changes
+forgotten) loses its entity; each sound can be chosen away under Settings → Home Assistant. Only changes
 are published: on/off, no scores. Paused, its sounds go off. It becomes unavailable only after
 `SOUND["offline_after_s"]` without audio: a reconnect is not news, and "no sound" is logged once.
 
@@ -723,7 +723,7 @@ Every other value is sent only when it differs from what that topic got last
 only throw it away. What was sent is forgotten when discovery is published (MQTT connected again,
 a sensor changed), so nothing waits for a change after the broker or Home Assistant restarted.
 
-**What a sensor has in Home Assistant** (decided 2026-10-31; the Home Assistant tab, one place
+**What a sensor has in Home Assistant** (decided 2026-10-31; Settings → Home Assistant, one place
 instead of a choice here and a switch there). `mqtt.entity_options` lists what can be chosen, with
 its default (off: `settings.HA_ENTITIES_NOT_BY_DEFAULT` and the snapshots); `sensor.ha_entities`
 holds what was chosen against it, and `sensor.in_ha` off means no entities at all. What is chosen
@@ -829,15 +829,23 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
    depends on the kind; objects and readings are tested on a fresh frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
-4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
-5. **Dataset** — filter by state/unlabelled, relabel, unlabel, delete.
+4. **Dataset** — at the top drag & drop images/ZIP/video, label them in a grid or accept all
+   suggestions (*Needs a label*); below every image, filtered by state/unlabelled: relabel,
+   unlabel, delete.
+5. *(Upload was its own tab until it joined Dataset.)*
 6. **Quality** — accuracy, confusion matrix, samples per state (day/night), suggestions,
    *possibly mislabelled* images with keep / change / delete. A red cell of the confusion matrix
    lists the images behind it (the cross-validation's wrong guesses, also those the user kept).
 7. **History** — published state changes and flagged frames; "add as" to the dataset. The same
    list as the History page (11), fixed to this sensor.
-8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
-   export, delete.
+8. **Sensor settings** — the button beside *Pause*, not a tab, in sections
+   (`ui.SETTINGS_SECTIONS`): *General* (name, source, light), *Region*, what it looks for (states,
+   objects with faces and *What you taught*, a reading with its region, sounds), *Checks and
+   output* (when to check, output, review overrides, *From your answers*), *Home Assistant* (§8,
+   saved on its own) and *Export or delete*. One form for all sections, so a change is kept while
+   another is open; *Save changes* and *Undo* appear at the bottom of the screen once something
+   changed. A phone lists the sections, each with a line of what is set, and opens one at a time;
+   a wider screen shows the list as a menu beside the open one.
 9. **Review** — the review queue across sensors, keyboard driven.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
     global review rules, storage (disk use and history limits), backup and restore, import.
@@ -856,27 +864,36 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     (`newer_than` = the newest row when loaded) and shown on request, so the list never moves
     under a finger. Index `(sensor_id, created_at, id)`; indexes added later are created at start-up.
 
-Every sensor has a **Home Assistant** tab (§8). Besides it, reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
-image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
-the rejected and checked readings with *read correctly* / *misread*), **History** (new values
-and rejected readings) and **Settings** (mode,
-decimals, unit, device class, display, limits). The reading settings start with the type —
-*digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
-the region in the wizard and on the Settings tab, a straightened region's in its perspective, inside it).
+**The same tabs for every kind** (decided 2026-11-08), most used first: what it sees now (**Live**,
+a state sensor's **Label**), **History**, **Dataset** (what it was taught) and **Quality** (how well
+it does), in `ui.TABS_BY_KIND`. Before, a state sensor had seven tabs (Upload, Settings and Home
+Assistant among them) that did not fit a phone, people could not find where to delete a sensor
+(the Settings tab was off the screen), and *Quality* meant three things: how well a state sensor
+does, what an object sensor was taught, and a sound sensor's place was called *Own sounds*. Now
+what was taught is *Dataset* everywhere and *Quality* is only how well it does; links to the old
+tabs still open where they went (`ui.OLD_TABS`). A tab that does not fit a very narrow screen goes
+under *More* (`TabBar`), and the open tab stays in the row.
 
-Object sensors have three instead: **Live** (the exact analysed frame with its boxes and
-per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
-boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
-was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
-**Quality** tab (taught boxes per answer, own labels, frames filtered away lately) appears once
-something was taught, so a sensor that was never taught looks exactly as before. The boxes on Live
+Reading sensors have **Live** (value, last read, the analysed frame and the image the reader saw),
+**Quality** (accepted share today / 7 / 30 days, by reason, per day, and the rejected and checked
+readings with *read correctly* / *misread*) and **History** (new values and rejected readings);
+nothing is taught per reading sensor, so no Dataset. Their Settings has the region and the reading
+in one section (*Region and reading*: mode, decimals, unit, device class, display), because the
+cells are drawn over the region. It starts with the type — *digital display* or *mechanical
+counter* (with its number of digits; the cells are drawn over the region in the wizard and in
+Settings, a straightened region's in its perspective, inside it).
+
+Object sensors have **Live** (the exact analysed frame with its boxes and per-class status),
+**Dataset** (taught boxes per answer, own labels, frames filtered away lately; before anything was
+taught, how to teach it) and **History** (appeared / cleared / filtered away, expandable to the
+frame with boxes). Every box on Live and on a history frame can be tapped to teach it (§5). The boxes on Live
 change together with the frame they belong to, so the page does not move while the next frame
 loads.
 
 Sound sensors have **Live** (the level against its line, each sound's score against its threshold,
-the stream), **Own sounds** (the Quality tab's place: teaching and forgetting own sounds),
-**History** (heard / no longer heard, clips played after a tap) and **Settings** (sounds, levels,
-clips).
+the stream), **Dataset** (teaching and forgetting own sounds, and clips of the built-in ones) and
+**History** (heard / no longer heard, clips played after a tap); their Settings has *Listening*
+(sounds, levels, clips) and *Review*.
 
 ## 10. Data model & extensibility
 

@@ -49,6 +49,16 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
    you what is missing.
 
+**A sensor's page** has a few tabs: what it sees now (**Live**, or **Label** for a state sensor),
+**History**, **Dataset** (what it was taught: a state sensor's images and uploads, an object
+sensor's taught boxes, a sound sensor's own sounds) and **Quality** (how well it does: state and
+reading sensors). **Settings**, beside **Pause** at the top, is in sections: *General* (name, camera,
+light), *Region*, what it looks for (*States*, *Objects*, *Region and reading* or *Listening*),
+*Checks and output* (or *Review* for a sound sensor), *Home Assistant*, and *Export or delete*. On a
+phone they are a list, each saying what is set; tap one to open it. A change waits for **Save
+changes** at the bottom of the screen, and is kept while you look at another section (**Undo**
+puts back what is saved). A tab that does not fit on a very narrow screen is under **More**.
+
 The sensor appears in Home Assistant as a device named after the sensor, with these entities
 (Home Assistant names them after the device, like other integrations):
 
@@ -77,7 +87,7 @@ each new state in its database, so values that only move a little (a timestamp, 
 the decimal, the same picture again) would fill it. The pictures, and an object's boxes, follow
 the result at once and are otherwise sent again every few minutes.
 
-**What a sensor has in Home Assistant** is set on its **Home Assistant** tab:
+**What a sensor has in Home Assistant** is set under its **Settings → Home Assistant**:
 
 - **Send values:** its entities exist and follow what the sensor finds.
 - **Don't send values:** the sensor runs as usual — its
@@ -97,10 +107,10 @@ comes back with the entity ID and name it had. Removing needs MQTT to be connect
 nothing is saved and you are told why.
 Sensors not sent, or not in Home Assistant, are marked on the dashboard.
 
-A sensor made before this tab existed keeps what it has in use: after the update, the optional
+A sensor made before this choice existed keeps what it has in use: after the update, the optional
 entities of a reading sensor (raw reading, problem, accepted, rate, reader image) that are on in Home
 Assistant stay, and those that are off there are removed. Those removed can take a while to leave
-Home Assistant's lists. From then on the tab decides.
+Home Assistant's lists. From then on the choice decides.
 
 ## Object sensors
 
@@ -118,13 +128,13 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   |---|---|
   | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
   | `sensor.<name>_<object>_count` | How many there are |
-  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked on the **Home Assistant** tab |
+  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked under **Settings → Home Assistant** |
 
   A **snapshot** is new when the count changes, sent just before the object goes on, and when the
-  object has moved (at a check, by the share you set on the **Home Assistant** tab, so something
+  object has moved (at a check, by the share you set under **Settings → Home Assistant**, so something
   parked sends nothing new; 0 turns it off); several of the
   same object share one picture that covers them all, and the last one stays after they have gone.
-  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* on the same tab
+  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* in the same place
   is `free` or width:height such as `1:1`, `4:3` or `16:9`: the picture gets as close as the region
   allows and never cuts the object. In a phone notification, trigger
   on the binary sensor and pass the picture as its image:
@@ -172,7 +182,7 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   count changes, and every few minutes while it stays, so they are not for following a moving
   object live. `boxes` holds one `[left, top, right, bottom]` per object, from 0 to 1 of the full
   camera frame. Removing an object from the list removes its entities.
-- **Settings tab → Sensor output**:
+- **Settings → Checks and output → Sensor output**:
 
   | Setting | Default | Meaning |
   |---|---|---|
@@ -230,10 +240,10 @@ few seconds apart, and answering one lets the next come right away.
   them (`filtered`).
 - Counted again where it should not be (at night, say, when an IR camera shows it in black and
   white)? Mark it once more on such a frame: every taught box widens what is recognised.
-- The **Quality** tab appears once you taught something: every taught box by answer (tap × to
+- The **Dataset** tab shows what you taught: every taught box by answer (tap × to
   forget one), your own labels (**Remove label** removes its entities too) and the frames filtered
   away lately — check now and then that nothing real is filtered away.
-- **Settings → What you taught**: **Use what you taught** off lets the AI alone decide again (what
+- **Settings → Objects → What you taught**: **Use what you taught** off lets the AI alone decide again (what
   you taught is kept); **Forget all** removes every taught box and own label.
 - **How close is close enough** can be tuned, in percent of likeness (100% = the very same
   picture): when a box takes a taught answer, how long it keeps it while it stays in place, from
@@ -338,7 +348,7 @@ everyone.
   people the AI finds alike (*teach both in more light and from more angles*) and faces that look
   more like someone else than the person they were taught as (**move** gives them that name).
   **Rename** changes the name (the entity IDs stay), **Remove person** removes their faces and
-  their entities on every camera, **Forget everyone** all of it. A sensor's **Quality** tab shows
+  their entities on every camera, **Forget everyone** all of it. A sensor's **Dataset** tab shows
   the same people.
 - **Off** (the switch on the Faces card) removes the people's entities from that sensor; the people
   stay. Deleting a sensor keeps the faces taught on it. Turned off on every sensor, the face model
@@ -437,7 +447,7 @@ objects the region stays a border.
   you can also leave it out of the region and count one digit and one decimal less.
   The wheel reader reads mechanical counters better than the text reader on every meter it was
   tried on. New counters use it; counters set up before it came keep the text reader until you
-  choose a wheel reader on their Settings tab (their Live tab suggests it).
+  choose a wheel reader under their Settings → Region and reading (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
@@ -456,7 +466,7 @@ objects the region stays a border.
   readings first; until then a rate per hour applies, which you may change — it starts at a
   standard one (for a water meter with three decimals, or with pointer dials down to the fourth,
   0.04 m³ a minute) — and once learned, the
-  Settings tab shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
+  Settings (Checks and output) shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
   *Fixed per reading* the largest rise from one reading to the next, the same however long the
   app was away (after a restart a real rise waits for your answer in Review); *No limit* rejects only a counter that reads lower. Choosing *Fixed rate* or
   *Fixed per reading* fills in the standard limit to start from.
@@ -504,7 +514,7 @@ objects the region stays a border.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
   `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- More entities, for those who tick them on the sensor's **Home Assistant** tab:
+- More entities, for those who tick them under the sensor's **Settings → Home Assistant**:
 
   | Entity | What it is |
   |---|---|
@@ -554,7 +564,7 @@ The wizard listens to the stream for a few seconds and shows what it sends (code
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it
 runs.
 
-**What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
+**What it recognises out of the box** (pick them in the wizard or under Settings → Listening, like the objects
 of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised
 well; someone talking, shouting or screaming and knocking fairly — these are shown first. *Show
 all* lists many more, grouped and searchable: other alarms and signals (a car alarm, an alarm
@@ -569,7 +579,7 @@ about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms so
 teach yours as an own sound. A sound on TV is a real sound to the sensor.
 
 **Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
-door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
+door — are taught from a few clips each on the **Dataset** tab: from a clip in the History
 (with clips on: *Teach this clip as*), recorded from the sensor's own stream (*Record*: tap it,
 make the sound, tap *Stop*), or from recordings made with a phone (*Add recordings*: any sound or
 video file; its loudest four seconds are kept). A recording from the stream goes on for a few
@@ -591,7 +601,7 @@ lower the line. The levels are relative to the loudest the stream can be (dBFS),
 pressure: the same room shows other numbers on another microphone.
 
 **When a sound counts.** Each sound has a threshold (*Heard when the AI is at least this sure*,
-under Settings): it is heard
+under Settings → Listening): it is heard
 when its score passes the threshold in two of the last three windows, and stays heard while it
 scores above half of it. The Live tab shows each sound's score against its threshold: lower it
 when a sound is missed, raise it when something else is taken for it.
@@ -604,8 +614,8 @@ camera's H.264 sub stream. Clips are kept in the app's own storage (not the medi
 every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
 part of the history in a backup.
 
-**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the **Own
-sounds** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
+**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the
+**Dataset** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
 from the History, *Teach this clip as*). From clips of it, it also hears the sound when the AI
 alone was not sure enough — your own door, as it sounds through your microphone. A clip of what it
 is not — a cupboard door, a siren on TV — holds the built-in sound back when something is clearly
@@ -641,14 +651,14 @@ sensor is made.
 
 ## Training tips (state sensors)
 
-- **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
+- **Dataset tab**: drop many images, a ZIP file or a **video** at the top. Videos are split into one
   frame every few seconds (near-duplicates are skipped). The current model suggests a label
   for each frame — check them and click **Accept all suggestions**, or select frames and
   press a state key.
 - **Review** (top menu): frames the AI was unsure about and frames where the state flipped back
   and forth (optionally also random spot checks). Answering these is the fastest way to improve a
   state sensor (its answers become training images).
-  Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
+  Tune it under **Settings → Review queue** (all sensors) or under a sensor's **Settings → Checks and output** —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
   shows how many items wait per sensor: tap a sensor to see only its items (handy when two sensors
@@ -677,7 +687,7 @@ sensor is made.
   state, guessed as another) — also those you already said are right. A red cell turns green only
   when the label changes or the AI learns the difference from more images like it.
 - Include different light: day, night (IR), sun, rain, snow.
-- Changing the region on the **Settings** tab retrains the model from the stored images.
+- Changing the region (**Settings → Region**) retrains the model from the stored images.
 
 ## When it checks (triggers)
 
@@ -737,12 +747,12 @@ automations.
 **A threshold from your answers** — every kind of sensor. Each answer in Review is kept with the
 score of what was asked about: a state's confidence, a reading's, the similarity to an own label
 or a face, a sound's score. Once there are a few, **From your answers** at the top of the sensor's
-**Settings** shows how your right and wrong answers fare at each threshold it decides by, and
+**Settings → Checks and output** shows how your right and wrong answers fare at each threshold it decides by, and
 suggests one that lets more of the right ones and fewer of the wrong ones through: right answers
 just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
 (nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
 — label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
-**Own sounds** too. An answer counts while what it taught is there: delete the frame, box, face
+the **Dataset** tab too. An answer counts while what it taught is there: delete the frame, box, face
 or clip it taught (because it was wrong, or is no longer wanted) and the answer no longer counts.
 
 ## History
@@ -843,11 +853,11 @@ a known point:
   For a sensor where faces were taught it asks first whether to **include the faces** taught on it
   (unticked by default), with their people's names. An import adds them to the people of the same
   name (or makes them), but face recognition stays off until you turn it on there: the import
-  says so and opens the sensor's Settings tab.
+  says so and opens the sensor's Settings (Objects).
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
-  trains it automatically. If the camera URL needed a password, enter it again on the sensor's
-  Settings tab. An image in the file that cannot be read is skipped (the message says how many).
+  trains it automatically. If the camera URL needed a password, enter it again under the sensor's
+  Settings → General. An image in the file that cannot be read is skipped (the message says how many).
 
 ## Beta channel
 
@@ -889,7 +899,7 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   counters use **v2** (6 MB, about 10 milliseconds per reading): it also looks at each wheel's
   neighbours, so a region that does not quite fit is still read right, and it holds back a
   reading when any one wheel is unclear. **v1** (2 MB) stays for the counters set up with it;
-  their Live tab suggests v2, and *Read with* on the Settings tab switches.
+  their Live tab suggests v2, and *Read with* under Settings → Region and reading switches.
   Only loaded while at least one reading sensor exists.
 - **Sound sensors:** **CED-Tiny** (Apache-2.0, 7 MB, about 8 milliseconds per second of sound on a
   desktop CPU) — never included: downloaded when the first sound sensor is made, loaded while one
