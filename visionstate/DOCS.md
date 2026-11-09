@@ -875,6 +875,8 @@ gives the numbers as a text file to share, without names or addresses.
   model alone. They keep their last values in Home Assistant and go on by themselves afterwards.
 - Models you do not have are downloaded for the test and **deleted afterwards**, unless you tick
   *Keep the downloaded models*. A model that does not fit in the free memory is skipped.
+- On an object sensor it tests the object detectors, the face models (one person) and the plate
+  models (one vehicle: the sensor's region read as if it were a vehicle).
 - It measures speed and memory, not how good a model is at your picture. Testing only shows the numbers:
   to use another model, choose it under *AI model*.
 - Memory is only measured on Linux, so on Home Assistant, not when running it on a Windows PC.
@@ -937,7 +939,8 @@ a known point:
   For a sensor where faces were taught it asks first whether to **include the faces** taught on it
   (unticked by default), with their people's names. An import adds them to the people of the same
   name (or makes them), but face recognition stays off until you turn it on there: the import
-  says so and opens the sensor's Settings (Objects).
+  says so and opens the sensor's Settings (Objects). The cars taught on it come along (without
+  their plates, which are in a backup); plate reading also stays off until you turn it on there.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
   trains it automatically. If the camera URL needed a password, enter it again under the sensor's

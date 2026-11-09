@@ -431,11 +431,13 @@ export interface PhotoResult {
   faces: number | null;
 }
 
-/** POST /import: the new sensor; `faces_off`: it recognised faces where it was exported (now off). */
+/** POST /import: the new sensor; `faces_off` / `plates_off`: it recognised faces / read licence
+ * plates where it was exported (now off). */
 export interface ImportResult {
   id: number;
   skipped: number;
   faces_off: boolean;
+  plates_off: boolean;
 }
 
 /** The face model: chosen, loaded, downloading (bytes), embedding the taught faces (count) or why it failed. */

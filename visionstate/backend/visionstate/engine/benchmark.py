@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
-from .. import backbones, detectors, faces, imaging, readers
+from .. import backbones, detectors, faces, imaging, plates, readers
 from ..db import Sensor
 from ..dials import read_needles
 from ..redact import redact
@@ -37,6 +37,7 @@ from ..settings import (
     KIND_STATES,
     SOUND,
     VERSION,
+    plates_on,
 )
 from ..sounds import MODELS as SOUND_MODELS
 from ..sources import open_audio
@@ -200,7 +201,7 @@ class BenchmarkMixin(ChecksMixin):
         if cfg.kind == KIND_STATES:
             return ["backbones"]
         if cfg.kind == KIND_OBJECTS:
-            return ["detectors", "face_models"]
+            return ["detectors", "face_models", "plate_models"]
         if cfg.kind == KIND_SOUND:
             return ["sound_models"]
         return ["wheel_readers", "readers"] if cfg.reading.get("display") == "counter" else ["readers"]
@@ -211,12 +212,15 @@ class BenchmarkMixin(ChecksMixin):
             "backbones": backbones.BACKBONES,
             "detectors": detectors.DETECTORS,
             "face_models": faces.RECOGNISERS,
+            "plate_models": plates.MODELS,
             "readers": readers.READERS,
             "wheel_readers": readers.WHEEL_READERS,
             "sound_models": SOUND_MODELS,
         }[role]
 
     def _benchmark_files(self, role: str, spec) -> list:  # noqa: ANN001 - a model of any registry
+        if role == "plate_models":
+            return list(spec.files)  # its finder and its reader
         return [faces.DETECTOR, spec] if role == "face_models" else [spec]
 
     def _benchmark_current(self, cfg: SensorConfig, role: str) -> str:
@@ -227,6 +231,8 @@ class BenchmarkMixin(ChecksMixin):
             return self.db.get_text("detector", detectors.DEFAULT_DETECTOR)
         if role == "face_models":
             return self.face_choice if (cfg.objects.get("faces") or {}).get("enabled") else ""
+        if role == "plate_models":
+            return self.plate_choice if plates_on(cfg.objects) else ""
         if role == "readers":
             return "" if readers.uses_wheels(cfg.reading) else self.db.get_text("reader", readers.DEFAULT_READER)
         if role == "wheel_readers":
@@ -364,6 +370,7 @@ class BenchmarkMixin(ChecksMixin):
         self.embedder = self.detector = self.reader = None
         self.wheel_readers.clear()
         self.face_model = None
+        self.plate_model = None
         self.sound_model = None
         await asyncio.to_thread(backbones.release_memory)
 
@@ -380,6 +387,10 @@ class BenchmarkMixin(ChecksMixin):
             await self.faces_settled()
         except Exception:  # noqa: BLE001 - the sensors go on without faces, as when loading them fails
             log.exception("Could not load the face model again")
+        try:
+            await self.plates_settled()
+        except Exception:  # noqa: BLE001 - the sensors go on without plates, as when loading them fails
+            log.exception("Could not load the plate model again")
         for sensor_id in list(self._wake):
             self.wake(sensor_id)
         later, self._retrain_after_benchmark = self._retrain_after_benchmark, set()
@@ -474,6 +485,13 @@ class BenchmarkMixin(ChecksMixin):
     def _benchmark_load(self, cfg: SensorConfig, role: str, spec) -> Callable:  # noqa: ANN001
         """The model loaded; what comes back does the work of a check with it, on a decoded picture
         (for sound: on a window of samples)."""
+        if role == "plate_models":
+            finder, reader = (self.model_path(f) for f in spec.files)
+            assert finder is not None and reader is not None
+            model = plates.PlateModel(spec, plates.Finder(spec.finder, finder), plates.PlateReader(spec.reader, reader))
+            box = imaging.region_box(cfg.roi, DETECTION["context_margin"])
+            # One vehicle: the region as if it were a vehicle box (a check reads each vehicle box).
+            return lambda image: plates.read_plates(model, imaging.crop_box(image, box))
         path = self.model_path(spec)
         assert path is not None
         if role == "backbones":

@@ -39,7 +39,7 @@
     try {
       const result = await api.importBundle(file);
       toastImported(result);
-      go(result.faces_off ? paths.sensorSettings(result.id, 'detect') : paths.sensor(result.id));
+      go(result.faces_off || result.plates_off ? paths.sensorSettings(result.id, 'detect') : paths.sensor(result.id));
     } catch (err) {
       toastError(err);
     } finally {

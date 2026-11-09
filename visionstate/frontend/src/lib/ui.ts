@@ -370,6 +370,7 @@ export const SPEED_TEST_ROLES: Record<string, string> = {
   backbones: 'State models',
   detectors: 'Object detectors',
   face_models: 'Face recognition (for each person seen)',
+  plate_models: 'Licence plates (for each vehicle seen)',
   readers: 'Text and number readers',
   wheel_readers: 'Wheel readers',
   sound_models: 'Sound models',

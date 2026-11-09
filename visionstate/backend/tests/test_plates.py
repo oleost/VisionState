@@ -311,6 +311,14 @@ def test_a_car_is_named_by_its_plate_and_unknown_plates_make_events(settings, mo
             timeout=60,
         )
 
+        # Exported and imported, plate reading comes along off: it is turned on with its confirmation.
+        exported = client.get(f"/api/v1/sensors/{sid}/export")
+        imported = client.post("/api/v1/import", files={"file": ("b.zip", exported.content, "application/zip")})
+        assert imported.status_code == 201 and imported.json()["plates_off"] and not imported.json()["faces_off"]
+        copy = client.get(f"/api/v1/sensors/{imported.json()['id']}").json()
+        assert copy["objects"]["plates"]["enabled"] is False and copy["objects"]["plates"]["unknown"] is True
+        client.delete(f"/api/v1/sensors/{copy['id']}")
+
         # A car renamed keeps its key; forgotten, it is no own label any more.
         renamed = client.put(f"/api/v1/cars/{car['key']}", json={"name": "Our car", "plate": "VS 12345"}).json()
         assert renamed["key"] == car["key"] and renamed["name"] == "Our car"
@@ -405,3 +413,20 @@ def test_a_car_overlapping_another_vehicle_is_not_learned_from():
     assert not _overlaps_vehicle(car, [car, {"key": "truck", "box": [0.6, 0.1, 0.9, 0.5]}])
     assert _overlaps_vehicle(car, [car, {"key": "truck", "box": [0.4, 0.3, 0.9, 0.6]}])
     assert not _overlaps_vehicle(car, [car, {"key": "person", "box": [0.2, 0.2, 0.3, 0.6]}])
+
+
+@requires_plates
+def test_the_speed_test_measures_the_plate_models(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = PlateCamera("VS 12345")
+        sid = create(client, name="Drive", objects={"classes": ["car"]}, interval_s=60).json()["id"]
+        sensor = next(s for s in client.get("/api/v1/benchmark").json()["sensors"] if s["id"] == sid)
+        offered = {m["id"]: m for m in sensor["models"] if m["role"] == "plate_models"}
+        assert set(offered) == set(plates.MODELS) and not offered[plates.DEFAULT_MODEL]["current"]  # plates off
+        pick = {"role": "plate_models", "id": plates.DEFAULT_MODEL}
+        assert client.post("/api/v1/benchmark", json={"sensor_id": sid, "models": [pick]}).status_code == 202
+        assert wait_for(lambda: client.get("/api/v1/benchmark/run").json()["run"]["state"] != "running", timeout=120)
+        [result] = client.get("/api/v1/benchmark/run").json()["run"]["results"]
+        assert result["status"] == "done", result
+        assert result["ai"]["median"] > 0 and rt.plate_model is None  # let go again: no sensor reads plates
