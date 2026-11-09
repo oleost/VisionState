@@ -1661,6 +1661,9 @@ test('a backup of everything is downloaded and restored', async ({ page, request
   await expect(card.getByRole('checkbox', { name: /History/ })).toBeChecked();
   await expect(card.getByRole('checkbox', { name: /Camera passwords/ })).not.toBeChecked();
   const download = card.getByRole('link', { name: /Download backup/ });
+  // The sizes come a moment later and make the lines longer: on a phone that moves the boxes, and
+  // a tap before then can land beside the one meant.
+  await expect(download).toContainText('about');
   await press(card.getByRole('checkbox', { name: /Downloaded AI models/ }), info);
   await expect(download).toHaveAttribute('href', /leave_out=models/);
   await expectNoHorizontalOverflow(page);
@@ -2116,6 +2119,11 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
   // answer yes to it, and it leaves the queue.
   const before = await waiting();
+  // The clips taught so far: the answer adds one, to whichever sound the question named — a
+  // built-in one, or the own sound "Our siren" when that was almost heard (both can be asked).
+  const clipIds = async () =>
+    ((await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json()).clips as { id: number }[]).map((c) => c.id);
+  const known = new Set(await clipIds());
   // Played once, the clip goes round until the next question, whose clip then plays by itself in
   // the same player (a phone lets an element it played play again, never a new one).
   await press(page.getByRole('button', { name: 'Play the clip' }), info);
@@ -2132,18 +2140,11 @@ test('a sound heard on a camera: its video clip in the history, the question in 
       await expect.poll(() => player!.evaluate((el) => !(el as HTMLMediaElement).paused)).toBe(true);
     }
   }
-  // The answer taught the clip to that built-in sound, which then hears it surely and asks no more:
-  // forget it, so the next project is asked too.
-  const taught = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-  const builtin = new Set((taught.builtin as { key: string }[]).map((b) => b.key));
-  await expect.poll(async () => {
-    const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-    return (now.clips as { label: string }[]).filter((c) => builtin.has(c.label)).length;
-  }).toBeGreaterThan(0);
-  const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-  for (const c of now.clips as { id: number; label: string }[]) {
-    if (builtin.has(c.label)) await request.delete(`api/v1/sound-clips/${c.id}`);
-  }
+  // The answer taught its clip to that sound, which then hears it surely and asks no more: forget
+  // that clip (only it), so the next project is asked too.
+  const added = async () => (await clipIds()).filter((c) => !known.has(c));
+  await expect.poll(async () => (await added()).length, { timeout: 30_000 }).toBeGreaterThan(0);
+  for (const c of await added()) await request.delete(`api/v1/sound-clips/${c}`);
   errors.expectNone();
 });
 
