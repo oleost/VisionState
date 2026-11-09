@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.15.0b4
+
+**Untested: licence plates, and one list of the household's cars.** This is a first beta of a new
+feature and has not been tried on real cameras yet: expect thresholds to change. Feedback is welcome.
+
+- **Read licence plates** on an object sensor that looks for cars, trucks, buses or motorcycles. It
+  is off until you turn it on under *Settings → Objects → Cars and licence plates*; a sheet first
+  says what it does and which model is downloaded.
+- **Events in Home Assistant:** when one of your cars comes, the sensor's *Licence plate* entity
+  fires a `known_car` event with the plate and the car. With *Report plates of cars I do not know*
+  turned on, other cars fire `unknown_plate`. Each event is also a row in the history, with the
+  frame.
+- **One list of your cars, shared by every camera.** A car can have no plate, one, or several
+  (another plate in winter, a trailer), and its look is taught on each camera as before.
+  - Existing own labels of a vehicle, such as *Our car*, move into the list by themselves. They
+    keep their taught boxes and their entities.
+  - A car seen from the side, with no plate visible, is still recognised by its look.
+- **The look and the plate work together:**
+  - When the look says it is your car, a plate read one character off still counts. This is set
+    under *Let a car's look help*.
+  - The plate always decides: a car that only looks like yours, with another plate, is not yours.
+  - Each car's entities have an `identified_by` attribute: `plate`, `look` or `plate_and_look`.
+- **It learns a car's look from its plate:** when a plate is read surely but the camera does not
+  know the car's look yet, that box is taught as the car. This happens now and then, not at every
+  check, and the boxes are marked *by its plate* under *What you taught*.
+- **Plate models:**
+  - *PP-OCR small (open)* is the default and is used without asking. In a test with 53 plates from
+    eight countries it read 39 exactly and 47 within one character.
+  - *Plate model, fast* (runs on a Raspberry Pi 4) and *Plate model, accurate* are made for plates
+    and read 50–51 of the 53. Their makers state no licence for the model files, so they are chosen
+    only after you accept that, under *Settings → AI model*.
+- **Plates seen at an angle are straightened** before they are read.
+- **The speed test** measures the plate models too, on an object sensor.
+- **A sensor imported** from an export comes with plate reading off, like face recognition: turn it
+  on there with its own confirmation. The cars taught on it come along, but their plates are in a
+  backup.
+- **Good to know:**
+  - The plate must be at least about 80 pixels wide in the camera's picture; use the camera's main
+    stream, not the substream.
+  - A plate is not a key: never open a gate on a plate alone.
+  - Reporting the plates of passers-by may not be allowed where you live.
+
 ## 0.15.0b3
 
 **A sensor's page, tidied up: the same few tabs for every kind of sensor, and its Settings in
