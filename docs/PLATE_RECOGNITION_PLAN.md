@@ -190,7 +190,7 @@ taught-box limit. The boxes are ordinary taught boxes marked *by its plate*.
 turns the cut plate level and its characters upright, from an edge map of the plate (the turn
 that makes its row sums most uneven, then the shear that does the same for its columns); the
 plate is read both ways and the reader's surer read is kept, so a plate seen straight on loses
-nothing. Measured on the benchmark's vehicles turned and sheared by hand (`tilt.py`; exact reads
+nothing. Measured on the benchmark's vehicles turned and sheared by hand (a script in the local benchmark folder; exact reads
 of 53, straightening off → on; turn in degrees, shear as x moved per y):
 
 | Turn, shear | open | fast | accurate |

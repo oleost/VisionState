@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0b4
+## 0.15.0b5
 
 **Untested: licence plates, and one list of the household's cars.** This is a first beta of a new
 feature and has not been tried on real cameras yet: expect thresholds to change. Feedback is welcome.
