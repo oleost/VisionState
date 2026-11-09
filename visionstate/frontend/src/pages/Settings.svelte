@@ -26,6 +26,8 @@
   let detector = $state('');
   let reader = $state('');
   let faceModel = $state('');
+  let plateModel = $state('');
+  let plateAccepted = $state(false);
   let threads = $state(0);
   let saving = $state(false);
   let importInput: HTMLInputElement;
@@ -115,6 +117,7 @@
       detector = s.detector;
       reader = s.reader;
       faceModel = s.face_model;
+      plateModel = s.plate_model;
       threads = s.inference_threads;
     })
     .catch(toastError);
@@ -124,6 +127,9 @@
   const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
   const wheelReader = $derived(info?.wheel_readers.find((r) => r.id === info?.wheel_reader));
   const selectedFace = $derived(info?.face_models.find((m) => m.id === faceModel));
+  const selectedPlate = $derived(info?.plate_models.find((m) => m.id === plateModel));
+  // A plate model whose weights state no licence is chosen only when the user accepts that.
+  const plateNeedsAccept = $derived(!!selectedPlate && !selectedPlate.open && plateModel !== info?.plate_model);
   const retrains = $derived(info !== null && backbone !== info.backbone);
   const changed = $derived(
     info !== null &&
@@ -131,6 +137,7 @@
         detector !== info.detector ||
         reader !== info.reader ||
         faceModel !== info.face_model ||
+        plateModel !== info.plate_model ||
         threads !== info.inference_threads),
   );
   const threadChoices = $derived(info ? Array.from({ length: info.threads_max }, (_, i) => i + 1) : []);
@@ -139,7 +146,16 @@
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, detector, reader, face_model: faceModel, inference_threads: threads });
+      info = await api.saveSettings({
+        backbone,
+        detector,
+        reader,
+        face_model: faceModel,
+        plate_model: plateModel,
+        plate_model_accepted: plateAccepted,
+        inference_threads: threads,
+      });
+      plateAccepted = false;
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
       if (retrained) loadTeach(); // the defaults depend on the state model
@@ -288,6 +304,30 @@
           {/if}
         </label>
         <label class="field">
+          Licence plates (object sensors)
+          <select class="input" bind:value={plateModel} onchange={() => (plateAccepted = false)}>
+            {#each info.plate_models as m (m.id)}
+              <option value={m.id}>{m.name}{m.installed ? '' : ` · download ${mb(m.size)}`}</option>
+            {/each}
+          </select>
+          {#if selectedPlate}
+            <span class="hint"
+              >{selectedPlate.description} {selectedPlate.license},
+              <a href={selectedPlate.source} target="_blank" rel="noreferrer">source</a>; {selectedPlate.data} Downloaded when a
+              sensor turns plate reading on.</span
+            >
+          {/if}
+        </label>
+        {#if plateNeedsAccept}
+          <label class="check accept" data-testid="plate-accept">
+            <input type="checkbox" bind:checked={plateAccepted} />
+            <span class="small">
+              Its makers state no licence for these model files, nor which plates they were trained on. I want to use it
+              anyway.
+            </span>
+          </label>
+        {/if}
+        <label class="field">
           Reading sensors: displays
           <select class="input" bind:value={reader}>
             {#each bySize(info.readers) as r (r.id)}
@@ -327,7 +367,7 @@
           >
         </label>
         <div class="row">
-          <button class="btn primary" disabled={!changed || saving} onclick={save}>
+          <button class="btn primary" disabled={!changed || saving || (plateNeedsAccept && !plateAccepted)} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}
           </button>
           <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object and reading sensors need no training.</span>

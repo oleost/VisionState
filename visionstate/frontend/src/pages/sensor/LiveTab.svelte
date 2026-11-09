@@ -7,7 +7,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct, plural } from '../../lib/format';
   import FaceStats from '../../lib/components/FaceStats.svelte';
-  import { faceNote, facesOn, objectColor, objectCount, objectKeys, objectName } from '../../lib/objects';
+  import { faceNote, facesOn, objectColor, objectCount, objectKeys, objectName, plateNote, platesOn } from '../../lib/objects';
   import { href, paths } from '../../lib/router.svelte';
   import type { Detection, Sensor } from '../../lib/types';
   import { TRIGGER_SOURCES } from '../../lib/ui';
@@ -27,6 +27,14 @@
   const faces = $derived(facesOn(sensor));
   const faceNotes = $derived(
     faces ? objects.detections.filter((d) => d.face && !d.filtered).map((d) => faceNote(d, objects.custom)) : [],
+  );
+  // Reading plates: what was read on each vehicle box of the last check.
+  const plateNotes = $derived(
+    platesOn(sensor)
+      ? objects.detections
+          .filter((d) => d.plate && !d.filtered)
+          .map((d) => `${objectName(d.key)} · ${plateNote(d, objects.custom)}`)
+      : [],
   );
   // Each class, followed by its own labels ("Rex" under "Dog").
   const rows = $derived(
@@ -98,6 +106,11 @@
         <div class="faces">
           {#each faceNotes as note, i (i)}<span class="xsmall muted">Person · {note}</span>{/each}
           <FaceStats {objects} />
+        </div>
+      {/if}
+      {#if plateNotes.length}
+        <div class="faces" data-testid="plate-notes">
+          {#each plateNotes as note, i (i)}<span class="xsmall muted">{note}</span>{/each}
         </div>
       {/if}
       <p class="xsmall faint" style="margin-top:12px">

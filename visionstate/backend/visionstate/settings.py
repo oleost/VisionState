@@ -58,6 +58,7 @@ OBJECT_DEFAULTS = {
     "custom": [],
     "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
     "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
+    "plates": {},  # reading licence plates: see PLATE_DEFAULTS (missing = default)
     "snapshot_aspect": "free",  # the shape of an object's snapshot: "free", or width:height such as "16:9"
     # A new snapshot while the count stays, once the boxes differ this much from those of the last one
     # (imaging.box_change; 0 = only when the count changes). Above a parked car's jitter between checks.
@@ -564,6 +565,65 @@ FACES = {
     "max_photos": 10,
     "photo_video_interval_s": 0.5,
 }
+# --- Licence plates (object sensors; plates.py, docs/PLATE_RECOGNITION_PLAN.md) ------------------
+PLATES = {
+    # A read that can be a plate: this many letters and digits, at least one a digit.
+    "min_chars": 3,
+    "max_chars": 10,
+    "finder_score": 0.4,  # a plate finder made for plates: its least confidence
+    # PP-OCR's text finder: the vehicle image's longest side (larger images are made smaller), the
+    # map value that is text, the least mean value of an area of text, and how far it is widened.
+    "text_side": 640,
+    "text_thresh": 0.3,
+    "text_box_thresh": 0.5,
+    "text_unclip": 1.5,
+    "max_candidates": 8,  # areas of text read per vehicle at most (the most certain first)
+    "min_aspect": 1.2,  # an area of text narrower than this × its height is no plate
+    "crop_pad": 0.08,  # a found plate is cut this much wider on every side before it is read
+    "max_read_width": 480,  # the reader's widest input
+    # A plate seen at an angle is straightened before it is read (plates.straighten): turned by at
+    # most this many degrees and sheared by at most this much (x moves by shear × y), and only when
+    # that makes its lines and strokes clearly sharper than as it was (by straighten_gain).
+    "straighten": True,
+    "straighten_max_turn": 30,
+    "straighten_max_shear": 0.6,
+    "straighten_gain": 1.1,
+    "max_vehicles": 3,  # vehicle boxes looked at per check at most (the largest first)
+    "min_vehicle_px": 60,  # a vehicle box narrower than this (frame pixels) is too far to read
+    # A read is a car's plate when it is at most this far from it (plates.distance: a confusable
+    # character costs 0.5, any other 1). Only an exact read names the car at once; a close one
+    # must be read on two checks while the box stays.
+    "match_distance": 1.0,
+    "min_score": 0.5,  # a read the reader is less sure of counts for nothing
+    # A plate that is not a car's becomes an unknown plate once read the same way on this many
+    # checks while the vehicle stays (one read is too often a sticker or a half plate).
+    "unknown_after": 2,
+    "recheck_every": 3,  # a car named by an exact read is carried over this many checks without reading
+    "max_cars": 50,  # cars the household can name
+    "event_cooldown_s": 300,  # the same car or plate makes one event per this many seconds per sensor
+    # Learning a car's look from its plate (objects["plates"]["learn"]): a vehicle whose plate was
+    # read exactly as a car's, at least this sure, that its look does not know yet, is taught as
+    # that car on this sensor; at most once per learn_every_s per car and sensor (other light,
+    # another angle, not the same parked car again and again), and up to learn_max such boxes.
+    "learn_score": 0.8,
+    "learn_every_s": 3600,
+    "learn_max": 20,
+}
+VEHICLE_CLASSES = ("car", "truck", "bus", "motorcycle")  # the classes a plate is looked for in
+PLATE_DEFAULTS = {
+    "enabled": False,
+    "unknown": False,  # report plates of cars it does not know (an event in Home Assistant)
+    # When a car's taught look says a vehicle is that car, a plate read at most this far from the
+    # car's plate (plates.distance: about one per wrong or missing character) names it at once.
+    # 0: the look does not help the plate.
+    "look_distance": 1.0,
+    # Learn a car's look from its plate: a sure plate on a car its look does not know is taught.
+    "learn": True,
+}
+PLATE_LIMITS = {"look_distance": (0.0, 2.0)}
+# The events of an object sensor's plate entity: a car of the household, or a plate it does not know.
+PLATE_EVENTS = ("known_car", "unknown_plate")
+
 FACE_UNKNOWN_KEY = "unknown_person"  # the key (and entity) of a face nobody was taught for
 # A person's own entity (sensor.visionstate_<key>) says on which sensor they are seen: its slug,
 # the one that saw them last when several do, or this when none sees them now.
@@ -769,8 +829,9 @@ HISTORY = {
 # kinds). api/history.py says which rows each one matches, the UI how it is named.
 HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     KIND_STATES: ("change", "flagged"),  # a published change; a frame put in the review queue
-    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
-    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
+    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]);
+    # "plate_seen": a car of the household came, or an unknown plate was read (its plate event).
+    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen", "plate_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
     KIND_SOUND: ("heard", "quiet", "near"),  # a sound began to be heard; no longer; almost heard (asked about)
 }
@@ -870,6 +931,7 @@ def merge_objects(stored: dict | None) -> dict:
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     merged["teach"] = {k: v for k, v in (merged.get("teach") or {}).items() if k in TEACH_TUNABLE and v is not None}
     merged["faces"] = merge_faces(merged.get("faces"))
+    merged["plates"] = {k: type(v)((merged.get("plates") or {}).get(k, v)) for k, v in PLATE_DEFAULTS.items()}
     return merged
 
 
@@ -885,6 +947,11 @@ def merge_faces(stored: dict | None) -> dict:
 def faces_on(objects: dict) -> bool:
     """Whether an object sensor recognises faces: switched on, and it looks for people."""
     return bool(objects["faces"]["enabled"]) and "person" in objects["classes"]
+
+
+def plates_on(objects: dict) -> bool:
+    """Whether an object sensor reads licence plates: switched on, and it looks for a vehicle."""
+    return bool(objects["plates"]["enabled"]) and any(c in VEHICLE_CLASSES for c in objects["classes"])
 
 
 def active_custom(objects: dict) -> list[dict]:

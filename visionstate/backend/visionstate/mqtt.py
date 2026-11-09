@@ -21,6 +21,7 @@ from .settings import (
     KIND_READING,
     KIND_SOUND,
     KIND_STATES,
+    PLATE_EVENTS,
     READING_PROBLEMS,
     READING_RATE_UNITS,
     SUPERVISOR_URL,
@@ -60,6 +61,8 @@ def topics(slug: str) -> dict[str, str]:
         "accepted": f"{base}/accepted",
         "rate": f"{base}/rate",
         "reader_image": f"{base}/reader_image",
+        # object sensors that read licence plates: an event per car of the household or unknown plate
+        "plate": f"{base}/plate",
     }
 
 
@@ -94,6 +97,7 @@ class SensorDescriptor:
 
     # sound sensors: (key, display name, icon, device class) per sound
     sounds: list[tuple[str, str, str, str]] = field(default_factory=list)
+    plates: bool = False  # object sensors that read licence plates: the plate event entity
 
     def entity_on(self, entity: str, default: bool) -> bool:
         """Whether an optional entity exists in Home Assistant. Not settled yet (None): those it had
@@ -186,6 +190,8 @@ def entity_options(sensor: SensorDescriptor) -> list[dict]:
                     "default": False,
                 },
             ]
+        if sensor.plates:
+            options.append({"id": "plate", "name": "Licence plate", "default": True})
     else:
         options.append({"id": "confidence", "name": "Confidence", "default": True})
     options.append({"id": "frame", "name": "Last frame", "default": True})
@@ -325,6 +331,18 @@ def _object_entities(d: _Discovery) -> list[tuple[str, dict]]:
             d.config("sensor", f"{key}_count", count),
             d.config("image", f"{key}{SNAPSHOT_SUFFIX}", snapshot),
         ]
+    if d.sensor.plates:
+        # An event per car of the household that comes, and per plate it does not know (when the
+        # sensor reports those): Home Assistant keeps each one with its plate, so it has a history.
+        plate = {
+            "name": "Licence plate",
+            **d.suggest("event", "plate"),
+            "state_topic": d.t["plate"],
+            "event_types": list(PLATE_EVENTS),
+            "icon": "mdi:card-text-outline",
+            **d.with_camera,
+        }
+        entities.append(d.config("event", "plate", plate))
     return entities
 
 
@@ -542,6 +560,9 @@ def main_entities(sensor: SensorDescriptor) -> list[tuple[str, str]]:
             entities.append((f"{uid}_{key}", on))
         if f"{key}_count" not in off:
             entities.append((f"{uid}_{key}_count", count))
+    if sensor.plates and "plate" not in off:
+        plate = f"event.{uid}_plate" if sensor.entity_prefix else f"event.{ha_slug(f'{sensor.name} licence plate')}"
+        entities.append((f"{uid}_plate", plate))
     return entities
 
 

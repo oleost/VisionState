@@ -35,7 +35,7 @@
 
   const own = $derived(sensor.objects?.custom ?? []);
   // Boxes taught by their look (faces are under People): only then is "What you taught" shown.
-  const boxesTaught = $derived((sensor.objects?.taught ?? 0) > 0 || own.some((l) => !l.face));
+  const boxesTaught = $derived((sensor.objects?.taught ?? 0) > 0 || own.some((l) => !l.face && !l.car));
   const compared = $derived((sensor.objects?.taught_keys ?? []).map((k) => objectName(k).toLowerCase()));
 
   interface Group {
@@ -50,7 +50,7 @@
   const groups = $derived.by(() => {
     if (!taught) return [] as Group[];
     const result = new Map<string, Group>();
-    for (const label of taught.labels.filter((l) => !l.face)) {
+    for (const label of taught.labels.filter((l) => !l.face && !l.car)) {
       result.set(label.key, {
         id: label.key,
         title: label.name,
@@ -80,6 +80,7 @@
 
   function badge(box: TaughtBox): string {
     if (box.detected === null) return 'missed';
+    if (box.origin === 'plate') return 'by its plate';
     if (box.label !== noneLabel() && box.label !== box.detected && !own.some((l) => l.key === box.label))
       return `AI said ${objectName(box.detected).toLowerCase()}`;
     return '';

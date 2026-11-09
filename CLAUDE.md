@@ -30,6 +30,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
 | Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
+| Licence plates: models, licences, privacy, the plan and its status | [`docs/PLATE_RECOGNITION_PLAN.md`](docs/PLATE_RECOGNITION_PLAN.md) |
 | Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
 | The sound model: how it is made and published | [`tools/soundmodel/README.md`](tools/soundmodel/README.md) |
 | What changed in a version | `visionstate/CHANGELOG.md` (written at release, never edited afterwards) |
@@ -125,7 +126,8 @@ itself (`__main__.py`).
   `http://127.0.0.1:8765/…` as an *HTTP snapshot URL*: `/snapshot.jpg` (a drawn garage door;
   `/set?state=open|closed|partial`, `/set?night=1`), `/photo/<name>.jpg` (the CC0 photos from
   `backend/tests/assets`, for object sensors), `/display.jpg?text=12:05&style=lcd|led` (a drawn
-  seven-segment display) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
+  seven-segment display), `/plate.jpg?text=VS 12345` (a real car, CC0, with that licence plate drawn on
+  it) and `/counter.jpg?value=89939.5&digits=7&decimals=3` (a drawn mechanical
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
   `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and

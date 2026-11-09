@@ -7,6 +7,7 @@ GET /set?state=open|closed|partial   changes what the camera shows
 GET /set?night=1                 switches to a greyscale "IR" image
 GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/assets (for object sensors)
 GET /display.jpg?text=12.5&style=lcd|led   a drawn seven-segment display (for reading sensors)
+GET /plate.jpg?text=VS 12345     a real car (CC0 photo) with that licence plate drawn on it (plate reading)
 GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter with rolling digits
                                  (value = the number on the wheels; .5 = last wheel half way);
                                  &turn=125 turns the picture (a camera hanging askew above the meter),
@@ -41,7 +42,7 @@ TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "te
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent))  # the backend package, for the sound stream
-from displays import STYLES, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
+from displays import STYLES, car_with_plate, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
 from displays import render as render_display  # noqa: E402
 
 SOUND = None  # tests/sound_stream.SoundSource, made on first use (it needs the backend's packages)
@@ -187,6 +188,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/meter-region.json":
                 self._send(json.dumps({"region": region, "dials": placed}).encode(), "application/json")
                 return
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
+            self._send(buf.getvalue(), "image/jpeg")
+        elif url.path == "/plate.jpg":
+            text = (parse_qs(url.query).get("text") or ["VS 12345"])[0][:12]
+            image = car_with_plate(text, Image.open(PHOTOS / "plate_car.jpg"))
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=90)
             self._send(buf.getvalue(), "image/jpeg")

@@ -18,6 +18,7 @@ from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, KIND_OBJECTS, TEACH
 from .base import RuntimeBase
 from .faces import FacesMixin
 from .logic import steer_face_burst, update_tracks
+from .plates import PlatesMixin, identified_by
 from .publishing import PublishingMixin
 from .state import ObjectTrack, SensorConfig
 from .teaching import TeachingMixin
@@ -26,7 +27,7 @@ log = logging.getLogger(__name__)
 OBJECT_BOX_COLOR = "#7ee2b8"  # boxes drawn on the Home Assistant image of an object sensor
 
 
-class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase):
+class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin, RuntimeBase):
     async def _run_objects(self, cfg: SensorConfig, image: Image.Image, frame_id: str | None) -> None:
         """One check of an object sensor: detect, compare with what was taught, update and publish.
         ``frame_id`` (the frame analysed) is announced together with what was found in it."""
@@ -55,6 +56,9 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         if cfg.faces_on:
             with timing.step("faces"):
                 found = await self.apply_faces(cfg, image, found, live.detections)
+        if cfg.plates_on:
+            with timing.step("plates"):
+                found = await self.apply_plates(cfg, image, found, live.detections)
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.frame_id, live.detections = frame_id, found  # together: the boxes belong to that frame
@@ -70,7 +74,14 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             await self.update_people(cfg)  # each person's own entity: where they are seen
             if steer_face_burst(live.face_burst, found, now) == "start":
                 live.last_trigger = {"source": "person", "detail": "looking for a face", "at": now}
+        plate_events = await self.announce_plates(cfg, found) if cfg.plates_on else []
+        if cfg.plates_on:
+            try:
+                await self.learn_from_plates(cfg, image, found)
+            except Exception:  # noqa: BLE001 - learning is extra: the check goes on without it
+                log.exception("Sensor %s: could not learn a car's look from its plate", cfg.slug)
 
+        cars = {c["key"] for c in cfg.custom_labels if c.get("car")}
         for key in keys:
             track = live.tracks[key]
             ot = object_topics(cfg.slug, key)
@@ -82,10 +93,24 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
             }
             if index is not None:
                 attributes["filtered"] = sum(1 for d in found if d.get("filtered") and d["key"] == key)
+            if key in cars:
+                # A car of the household: whether it is known by its plate, its look or both. Kept
+                # while it is on and this check has no box of it (it is cleared after a while).
+                how = identified_by(found, key) if track.on else None
+                if how is None and track.on:
+                    how = live.car_identified.get(key)
+                live.car_identified[key] = how
+                attributes["identified_by"] = how
             await self._send_snapshot(cfg, key, image, attributes["boxes"], track.count if track.on else 0)
             await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
             await self._send(cfg, ot["count"], str(track.count), retain=True)
-            shows = (track.on, track.count, live.last_trigger, attributes.get("filtered"))
+            shows = (
+                track.on,
+                track.count,
+                live.last_trigger,
+                attributes.get("filtered"),
+                attributes.get("identified_by"),
+            )
             await self._send_on_change(cfg, ot["attributes"], shows, lambda attributes=attributes: attributes)
         names = {key: label.name for key, label in detectors.LABELS.by_key.items()}
         names.update({c["key"]: c["name"] for c in cfg.custom_labels})
@@ -109,6 +134,8 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         await self._record_filtered(cfg, image, found, now)
         if cfg.faces_on:
             await self._record_face(cfg, image, found, now)
+        for key, score in plate_events:
+            await asyncio.to_thread(self._record_detection, cfg.id, image, key, "plate", score, found)
         await self._ask_unsure(cfg, image, found, now)
         timing.lap("history")
 
@@ -256,7 +283,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
         self, sensor_id: int, image: Image.Image, key: str, published: str, score: float, found: list[dict]
     ) -> None:
         """A history row of an object sensor: a class or own label went "on" or "off", was
-        "filtered", or a face nobody is named for was seen ("face")."""
+        "filtered", a face nobody is named for was seen ("face"), or a plate made an event ("plate")."""
         frame = self.storage.save_history(sensor_id, image)
         with self.db.session() as s:
             s.add(
@@ -267,7 +294,7 @@ class ObjectChecksMixin(FacesMixin, TeachingMixin, PublishingMixin, RuntimeBase)
                     confidence=score,
                     probs={},
                     frame=frame,
-                    is_change=published != "face",  # a face seen is not a change of what is there
+                    is_change=published not in ("face", "plate"),  # not a change of what is there
                     reviewed=True,  # nothing to review: the detector is not trained here
                     detections=found,
                 )

@@ -15,6 +15,7 @@
   import DigitCells from '../../lib/components/DigitCells.svelte';
   import ExportButton from '../../lib/components/ExportButton.svelte';
   import FacesCard from '../../lib/components/FacesCard.svelte';
+  import PlatesCard from '../../lib/components/PlatesCard.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
@@ -67,7 +68,10 @@
   if (objectSensor) api.teachLimits().then((t) => (globalTeach = t)).catch(toastError);
   // Boxes taught by their look; faces are counted on the Faces card.
   const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
-  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
+  // Own labels the user made (not the people or cars every sensor shares).
+  const taughtSomething = $derived(
+    !!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face && !l.car)),
+  );
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -345,6 +349,7 @@
         <LabelPicker bind:selected={classes} {...objectPicker()} />
       </section>
       {#key facesVersion}<FacesCard {sensor} {onchange} />{/key}
+      <PlatesCard {sensor} {onchange} />
       {#if taughtSomething}
         <section class="card pad col">
           <h3>What you taught</h3>

@@ -216,6 +216,48 @@ knew). Instead a second step compares boxes with boxes the user taught:
   global < sensor. Asking and keeping must not start above a match (refused by the API). A user's
   value stays when the backbone changes; the UI says to look at it again.
 
+**Reading licence plates** (`plates.py`, `engine/plates.py`, `api/plates.py`; registry
+`plates.json`, tunables `settings.PLATES`, per sensor `objects["plates"]` with
+`settings.PLATE_DEFAULTS`). The research, the benchmark, the licences and the decisions are in
+[`PLATE_RECOGNITION_PLAN.md`](PLATE_RECOGNITION_PLAN.md). In short:
+
+- Off by default; on only for a sensor that looks for a vehicle (`settings.VEHICLE_CLASSES`),
+  after a confirmation. A plate model is a finder and a reader; the default is open (Apache-2.0:
+  PP-OCRv6 small text detection and recognition), the others (fast-alpr's YOLOv9 plate finder and
+  global plate reader) state no licence for their weights and are chosen only with
+  `plate_model_accepted`. Never bundled; downloaded and loaded in the background like the face
+  model, let go when no sensor reads plates.
+- Each check: vehicle boxes (the largest first, at most `PLATES["max_vehicles"]`, wide enough) are
+  cut from the full frame; the finder finds the plate (the text finder every text, kept only when
+  the read looks like a plate: `plates.looks_like_plate`; two lines of a plate read line by line)
+  and the reader reads it, and once more straightened (`plates.straighten`; the surer read is
+  kept). The read closest to a car's plate wins (`plates.distance`: confusable
+  characters and the plate's edge cost half). An exact read names the car at once, a close one when
+  a second check of the same box agrees; a box keeps its car while no plate is read, and a sure car
+  is carried for `recheck_every` checks without reading. A plate that is no car's is *unknown*
+  after `unknown_after` equal reads.
+- A car can also be taught by its look on each sensor (taught boxes under the car's key, teaching
+  ran first: the box's `match`). When the look says a car and a read is at most the sensor's
+  `objects["plates"]["look_distance"]` from that car's plate, it is that car at once; an exact read
+  of another car, or a far plate read `unknown_after` times, overrules the look. With
+  `objects["plates"]["learn"]` an exact, sure read on a box whose look does not know the car
+  teaches that box as the car (origin "plate"; `PlatesMixin.learn_from_plates`, at most once per
+  `learn_every_s` per car and sensor, up to `learn_max`: `settings.PLATES`; never from a box that
+  overlaps another vehicle). A car's entities carry `identified_by` (`plates.identified_by`
+  in `engine/plates.py`: plate, look or plate_and_look), sent only when it changes. Forgetting a car
+  deletes its taught boxes on every sensor.
+- The cars are shared by every sensor (the DB setting `cars`: {key, name, plate, parent}; no plate:
+  known by its look); a sensor gets each as an own label (`engine.with_shared`, not stored on the
+  sensor) while it reads plates, and those whose look was taught on it. Every named vehicle is one:
+  a new label of a vehicle class made while teaching is a car, and own labels of a vehicle class
+  (from before, or brought by an imported sensor) become cars at start and after an import
+  (`Runtime.adopt_car_labels`, keeping their key, so their boxes and entities stay). A sensor's
+  export lists the cars taught on it as own labels; imported, they are the car of that key. Its
+  `event` entity (`mqtt._object_entities`, events `settings.PLATE_EVENTS`) fires once per vehicle
+  while it stays and per car or plate per `event_cooldown_s`; each event is a history row
+  (`published_key` "plate", the plate in its detections). Unknown plates are only sent with
+  `objects["plates"]["unknown"]` on; otherwise a read is not kept beyond the check's detections.
+
 **Recognising people by their face** (`faces.py`, `engine/faces.py`, `api/faces.py`; registry
 `faces.json`, tunables `settings.FACES`, per sensor `objects["faces"]` with `settings.FACE_DEFAULTS`;
 the user's limits `settings.FACE_TUNABLE`).
@@ -261,7 +303,7 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
   embeddings are cached per face model (`face_embedding`), deleted with the face, never in a sensor
   bundle; a full backup holds them with the faces (the database goes along whole, see §12).
-  A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
+  A sensor that recognises faces gets every person as an own label (`engine.with_shared`, not
   stored on the sensor): its entities, and a name its faces can get. One index of all taught
   faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
 - Each person also has two entities of their own on the app's device: `sensor.visionstate_<key>_seen_by`
@@ -1106,6 +1148,7 @@ is part of backups and needs no restart.
 | **Teaching sounds, thresholds from answers** ✅ | Sound sensors hear a camera through Home Assistant; built-in sounds taught with the household's clips (and what they are not), own sounds recorded from the sensor's microphone, sounds almost heard asked about (by the AI's own score, quiet after five no); a threshold suggested from the Review answers on every kind of sensor, an answer counting while what it taught is there; clips with the camera's video and all their sound | 0.14.0 (betas 0.14.0b3, b5, b7, b8) |
 | **Nothing phones home, checked** ✅ | ONNX Runtime's telemetry to Microsoft switched off, and CI fails when the image reaches anything beyond its broker and camera | 0.14.0 (beta 0.14.0b6) |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Licence plates** | Own cars known by their plate, unknown plates read into Home Assistant, as many countries as possible — an open plate model and two made for plates (accepted first), a benchmark of 53 plates — [`PLATE_RECOGNITION_PLAN.md`](PLATE_RECOGNITION_PLAN.md) | next beta |
 | **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

@@ -211,7 +211,7 @@ that frame's time:
 | **Correct** | Kept as it is; it also keeps similar boxes from being taken for something else |
 | **Not a …** | Boxes that look like this one no longer count — the statue that is "a person", the shadow that is "a dog" |
 | **Something else… → another object** | Counted as that object instead |
-| **Something else… → New label…** | Your own label, a kind of that object — **Our car**, **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too |
+| **Something else… → New label…** | Your own label, a kind of that object — **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too. A car, truck, bus or motorcycle named this way is one of **your cars**, shared by every camera (see *Your cars and their plates* below) |
 | **Missed something?** | Draw a box around what the AI missed and say what it is. Boxes the AI was unsure about are looked at again and counted when they look like it |
 
 The first time, VisionState asks whether to start: from then on it checks each box of the objects
@@ -359,6 +359,90 @@ everyone.
   backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
   person; a sensor's export never contains them. A backup from Settings → Backup holds the faces and
   these numbers too (untick *People and their faces* to leave them out): keep it somewhere safe.
+
+### Your cars and their plates
+
+The household's cars (and trucks, buses, motorcycles) are **one list shared by every camera**, on
+the sensor's **Settings → Objects → Cars and licence plates** card. A car is known by its **look**
+on each camera it was taught on (tap it on the **Live** tab and choose it, or name it there with
+**New label…**), and by its **plates** wherever plates are read. A car may have no plate (known by
+its look only) or several, separated by commas (another plate in winter, a trailer). The card says
+on which cameras its look was taught. It is an entity of every sensor that reads plates and of each
+sensor its look was taught on. Own labels of a vehicle made before the list existed (*Our car*)
+moved into it by themselves, with their taught boxes and entities. A sensor's export takes the
+cars taught on it along (their plates stay in the backup).
+
+Looks alone cannot tell two cars of the same model and colour apart; a plate can. So a car's look
+helps its plate, and the plate decides (below).
+
+### Reading licence plates
+
+An object sensor that looks for **Car** (or Truck, Bus, Motorcycle) can read the plates of the
+vehicles it finds. Your own cars are named by their plate: each gets an on/off sensor and a count
+in Home Assistant, like own labels, and when one comes the sensor's **Licence plate** entity
+(`event.<sensor>_licence_plate`) fires a *known_car* event with the plate and the car. With
+**Report plates of cars I do not know** on, a car that is not yours fires an *unknown_plate* event
+with its plate. Home Assistant keeps every event, so its history shows who came and when, and an
+automation can use them. It is **off** until you turn it on, and plates of every country are read
+(letters A–Z and digits; letters such as Ü or Ø are left out).
+
+**Before you turn it on.** A plate belongs to a person. With only your own cars, a plate that is
+not yours is forgotten at once. Reporting unknown plates keeps them: as events in Home Assistant
+and with the frame in VisionState's history. A camera that sees a street, a pavement or a
+neighbour's drive may not be allowed to record the plates of passers-by where you live. It is
+**not a key**: a copied plate reads the same, so never open a gate on a plate alone.
+
+- **Turn it on** under the sensor's **Settings → Objects → Cars and licence plates → Turn on…**. A sheet says
+  what it does and which plate model is downloaded (once), and nothing happens until you confirm.
+  The sensor keeps working without plates while it downloads; the card shows the progress, and
+  **Try again** if it failed.
+- **Your cars**: **Add a car** with its name, its plates (spaces and dashes do not matter; several
+  separated by commas) and its kind, or give a car named by its look its plate with the pencil.
+  Renaming keeps the entity IDs; forgetting a car removes its entities and its taught look
+  everywhere.
+- **The Live tab** says what was read on each vehicle: *VS12345 · Our car*, *checking whose car*,
+  *not one of your cars* or *reading*. The **History** keeps a row with the frame for each plate
+  event (*Licence plate read* in the filter).
+- **How it decides**: a plate read exactly as one of your cars names the car at once. A read one
+  character off (a reader takes O for 0, I for 1, B for 8) names it when the next check agrees. A
+  car that stays keeps its name while its plate is not seen (from the side, too far). A plate
+  that is not yours counts as unknown after it was read the same way twice. Each car or plate
+  makes one event per visit, and not again within five minutes on the same sensor.
+- **A car's look helps its plate.** Tap one of your cars on the **Live** tab and choose it (*one of
+  your cars*) to teach how it looks on this camera, as with own labels. The car is then also named
+  by its look while its plate cannot be read, and **Let a car's look help** (on the same card) decides how far off a plate may be read when the look says it is that car: then it names
+  the car at once (*VS12845 · Our car (plate and look)*). *No* leaves the plate alone in charge.
+  The plate still decides: read exactly as another of your cars it is that car, and a plate far
+  from the car's read the same way twice is another car that only looks the same.
+- **How it was known**: each car's on/off sensor and count have an attribute `identified_by`:
+  `plate`, `look` (a car parked side-on, its plate not seen) or `plate_and_look`, kept while the
+  car is there. A car known by its look alone is on as before; only a plate read makes a
+  *known_car* event. An automation that must be sure (a garage door) can ask for `plate` or
+  `plate_and_look`, and still never for a plate alone if it opens something (see above).
+- **It learns a car's look from its plate** (**Learn a car's look from its plate**, on by
+  default): when a plate is read exactly as one of your cars, and surely, but the car's look on
+  this camera does not know it yet, that box is taught as the car. Now and then, not at every
+  check: once an hour per car and camera at most, so it gathers other light and other angles
+  instead of the same parked car, and up to a limit per car. These boxes are marked *by its plate*
+  under **What you taught**, where a wrong one is forgotten like any other. A car that overlaps
+  another vehicle is not learned from (the plate may be the other one's).
+- **Which camera works?** The plate must be sharp and big enough: at least about 80 pixels wide in
+  the camera's picture, straight on or a little from the side (a plate seen at an angle is
+  straightened before it is read), in daylight or under a light. Use
+  the camera's **main stream**. A camera at the gate or drive, at car height, sees plates best;
+  one high above a road sees them from above and too small. Infrared at night makes reflecting
+  plates white: whether it reads them depends on the camera.
+- **Plate models** (Settings → AI model → *Licence plates*): **PP-OCR small (open)**, the
+  default, is used without asking: it finds the text on a vehicle and reads it (Apache-2.0),
+  but is not made for plates — in a benchmark of 53 plates from eight countries it read 39
+  right and 47 within one character, enough to know your own cars. **Plate model, fast** and
+  **Plate model, accurate** are made for plates of 65+ countries and read 50 and 51 of the 53
+  right; their makers state no licence for the model files nor the plates they were trained on,
+  so they are only chosen after you accept that. *Fast* runs on a Raspberry Pi 4.
+- **Off** removes the entities of the cars whose look was not taught on that sensor; the cars stay
+  in the list, and those known by their look there go on being recognised by it. Turned off on every sensor,
+  the plate model is let go from memory, and its files can be deleted under *Compare and manage
+  the models*. The cars are in a backup (*Sensors and settings*).
 
 ## Reading sensors
 
@@ -892,6 +976,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   cards, the progress on the Faces card and the People page; the sensors find people without
   naming them until it is done); the people are kept. Only loaded while a
   sensor recognises faces.
+- **Licence plates** (object sensors that read plates): never included — downloaded when a sensor
+  first turns plate reading on; see *Reading licence plates* above for the three models and their
+  licences. Only loaded while a sensor reads plates.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
   21 MB). Mechanical counters are read by an included **VisionState wheel reader** (listed under

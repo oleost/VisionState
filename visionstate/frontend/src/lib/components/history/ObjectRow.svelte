@@ -41,6 +41,8 @@
     ask: '? (asked in Review)',
     face: '· face seen (tap the person to name them)',
   };
+  // A plate event: the plate read on the frame (a car of the household, or one it does not know).
+  const plate = $derived((p.detections ?? []).find((d) => d.plate?.event)?.plate);
 </script>
 
 <div class="card item">
@@ -53,7 +55,9 @@
           <span class="dot" class:ring={filtered} style:background={on ? objectColor(classes, p.state_key) : 'var(--c-unknown)'}></span>
           {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{p.published_key === 'face' && taught.length
             ? '· face seen'
-            : (WHAT[p.published_key ?? ''] ?? '')}
+            : p.published_key === 'plate'
+              ? `· plate ${plate?.text ?? ''}${plate?.event === 'unknown_plate' ? ' (not one of your cars)' : ''}`
+              : (WHAT[p.published_key ?? ''] ?? '')}
         </strong>
         {#if (on || filtered) && p.confidence}<span class="mono small muted">{pct(p.confidence)}</span>{/if}
       </span>

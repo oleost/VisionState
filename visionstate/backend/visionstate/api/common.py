@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_shared
 from ..mqtt import entity_options, main_entities
 from ..settings import (
     COUNTER_LIMIT,
@@ -30,6 +30,8 @@ from ..settings import (
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    PLATE_DEFAULTS,
+    PLATE_LIMITS,
     READING,
     READING_CHANGE_LIMITS,
     READING_DEFAULTS,
@@ -267,6 +269,21 @@ class FacesIn(FaceLimits):
     ask_unknown: bool = FACE_DEFAULTS["ask_unknown"]
 
 
+class PlatesIn(BaseModel):
+    """Reading licence plates on an object sensor: on or off, and whether plates of cars it does not
+    know make an event, and how far off a plate may be when the car's look agrees. Defaults:
+    settings.PLATE_DEFAULTS, limits settings.PLATE_LIMITS."""
+
+    enabled: bool = PLATE_DEFAULTS["enabled"]
+    unknown: bool = PLATE_DEFAULTS["unknown"]
+    learn: bool = PLATE_DEFAULTS["learn"]
+    look_distance: float = Field(
+        default=PLATE_DEFAULTS["look_distance"],
+        ge=PLATE_LIMITS["look_distance"][0],
+        le=PLATE_LIMITS["look_distance"][1],
+    )
+
+
 class ObjectsIn(BaseModel):
     """What an object sensor looks for. Defaults and limits: settings.OBJECT_*."""
 
@@ -282,14 +299,17 @@ class ObjectsIn(BaseModel):
     )
     teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
     faces: FacesIn | None = None  # recognising people by their face; unset keeps what the sensor has
+    plates: PlatesIn | None = None  # reading licence plates; unset keeps what the sensor has
     # Own labels ("custom") are made by teaching a box (api/teach.py) or a face (api/faces.py), never set here.
 
     def stored(self, exclude_unset: bool = False) -> dict:
-        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach", "faces"})
+        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach", "faces", "plates"})
         if self.teach is not None or not exclude_unset:
             data["teach"] = self.teach.stored() if self.teach else {}
         if self.faces is not None:
             data["faces"] = self.faces.model_dump(exclude_none=True)
+        if self.plates is not None:
+            data["plates"] = self.plates.model_dump()
         return data
 
     @field_validator("classes")
@@ -545,7 +565,7 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
     recognises faces), live, and what was taught."""
     if sensor.kind != KIND_OBJECTS:
         return None
-    settings = with_people(merge_objects(sensor.objects), session)
+    settings = with_shared(merge_objects(sensor.objects), session, sensor.id)
     parents = {label["key"]: label["parent"] for label in active_custom(settings)}
     tracks = live.tracks if live else {}
     per_class = []

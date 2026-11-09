@@ -344,6 +344,8 @@ export interface Detection {
   ask?: { id: number | null; label: string; similarity: number; face?: boolean };
   /** Person boxes of a sensor that recognises faces: what the face search found (see FaceInfo). */
   face?: FaceInfo;
+  /** Vehicle boxes of a sensor that reads licence plates: what was read (see PlateInfo). */
+  plate?: PlateInfo;
   /** On a history frame: taught from it since (its label is the answer; filtered: "not it"). */
   taught?: boolean;
 }
@@ -448,6 +450,59 @@ export interface FaceStatus {
   downloaded: boolean;
 }
 
+/** A vehicle box's plate (backend engine/plates.py): the read, and whose car it is. `state`:
+ * 'match' (a car of the household), 'pending' (close to one: one more read must agree), 'unknown'
+ * (read the same way on two checks), 'reading' (not yet). `event`: this frame made a plate event. */
+export interface PlateInfo {
+  text: string;
+  score: number;
+  box: [number, number, number, number];
+  car: string | null;
+  state: 'match' | 'pending' | 'unknown' | 'reading';
+  sure?: boolean;
+  kept?: boolean;
+  /** Named because the car's taught look agreed with a plate read a little off. */
+  look?: boolean;
+  event?: 'known_car' | 'unknown_plate';
+}
+
+/** A car of the household, shared by every sensor (GET /cars). */
+export interface Car {
+  key: string;
+  name: string;
+  /** Its plates, separated by commas; empty: known by its look only. */
+  plate: string;
+  /** The kind of vehicle: car, truck, bus or motorcycle. */
+  parent: string;
+  /** The sensors its look was taught on (GET /cars only). */
+  taught?: { sensor: number; name: string; boxes: number }[];
+}
+
+export interface PlateSettings {
+  enabled: boolean;
+  /** Plates of cars it does not know make an event in Home Assistant. */
+  unknown: boolean;
+  /** When a car's taught look agrees, a plate read this far off (about characters) names it; 0 = never. */
+  look_distance: number;
+  /** Learn a car's look from its plate: a sure plate on a car its look does not know is taught. */
+  learn: boolean;
+}
+
+export interface PlateStatus {
+  model: string;
+  loaded: boolean;
+  loading: boolean;
+  progress: { done: number; total: number } | null;
+  error: string;
+  downloaded: boolean;
+}
+
+export interface PlateModelInfo extends BackboneInfo {
+  data: string;
+  /** Its licence and training data allow any use: chosen without accepting anything. */
+  open: boolean;
+}
+
 export interface FaceModelInfo extends BackboneInfo {
   /** What its makers say it was trained on. */
   data: string;
@@ -473,6 +528,9 @@ export interface OwnLabel {
   parent: string;
   /** A person (shared by every sensor, GET /people): added by the backend while the sensor recognises faces. */
   face?: boolean;
+  /** A car of the household (shared by every sensor, GET /cars): added while the sensor reads plates
+   * or when its look was taught on this sensor. */
+  car?: boolean;
 }
 
 export interface ObjectSettings {
@@ -488,6 +546,7 @@ export interface ObjectSettings {
   /** This sensor's own teaching limits; a missing one follows the global value. */
   teach?: TeachOverrides;
   faces?: FaceSettings;
+  plates?: PlateSettings;
 }
 
 export type TeachKey = 'match_similarity' | 'keep_similarity' | 'ask_similarity' | 'rescue_similarity' | 'rescue_floor';
@@ -707,6 +766,9 @@ export interface AppConfig {
   /** The key (and entity) of a face nobody was taught for. */
   face_unknown_key: string;
   faces: { max_people: number; max_faces_per_person: number; suggest_faces: number; stats_window: number };
+  plate_defaults: PlateSettings;
+  /** The classes a plate is looked for in, how many cars there can be, the plate entity's events. */
+  plates: { vehicles: string[]; max_cars: number; events: string[]; limits: { look_distance: [number, number] } };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
@@ -782,6 +844,8 @@ export interface Status {
   sound_model_error: string;
   /** The face model, and how many people and sensors that recognise faces there are. */
   faces: FaceStatus & { people: number; sensors: number };
+  /** The plate model, and how many cars and sensors that read plates there are. */
+  plates: PlateStatus & { cars: number; sensors: number };
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -924,7 +988,7 @@ export interface BackboneInfo {
 }
 
 /** The AI models a user chooses, by their list in GET /settings. */
-export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'readers';
+export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'plate_models' | 'readers';
 
 /** GET /storage: disk use and the history limits (whichever is reached first applies). */
 export type BackupPart = 'sensors' | 'samples' | 'faces' | 'history' | 'models';
@@ -974,6 +1038,9 @@ export interface SettingsInfo {
   /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
   face_model: string;
   face_models: FaceModelInfo[];
+  /** Licence plates on object sensors: the plate model chosen; downloaded when a sensor turns plates on. */
+  plate_model: string;
+  plate_models: PlateModelInfo[];
   /** Threads per model run: the user's choice, 0 = automatic (one per core, `threads_auto`); at most `threads_max`. */
   inference_threads: number;
   /** Null where the app cannot count the cores (a PC running it for development): ONNX Runtime does. */

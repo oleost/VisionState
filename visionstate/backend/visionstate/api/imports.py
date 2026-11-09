@@ -55,8 +55,13 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
         raise HTTPException(400, f"Import failed: {redact(str(err))}") from err
     finally:
         path.unlink(missing_ok=True)
+    # Own labels of a vehicle kind it brought become cars of the household (or are the car of
+    # that key already, when it was exported from another installation of this one's data).
+    adopted = await asyncio.to_thread(rt.adopt_car_labels)
     await rt.sensor_created(sensor_id)
     await rt.people_changed()  # people that came with their faces
+    if adopted:
+        await rt.cars_changed()
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg and cfg.kind == KIND_STATES:
         rt.schedule_retrain(sensor_id, delay=0)

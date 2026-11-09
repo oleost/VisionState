@@ -163,6 +163,11 @@ export const MODEL_KINDS = [
     title: 'Faces (object sensors)',
     text: 'Tells who a person is from their face; downloaded when a sensor recognises faces. Its size includes the face finder.',
   },
+  {
+    key: 'plate_models',
+    title: 'Licence plates (object sensors)',
+    text: 'Finds and reads the plate of a vehicle; downloaded when a sensor reads plates. Its size includes the plate finder.',
+  },
   { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
   { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
 ] as const;
@@ -177,6 +182,7 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   import: 'Import',
   history: 'History',
   recording: 'Recorded from the stream',
+  plate: 'Learned from its plate',
 };
 
 export const SENSOR_TABS = [
@@ -338,6 +344,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   filtered: 'Filtered away',
   asked: 'Asked “is it yours?”',
   face_seen: 'Face seen, not named',
+  plate_seen: 'Licence plate read',
   value: 'New value',
   rejected: 'Rejected reading',
   verified: 'Checked by hand',

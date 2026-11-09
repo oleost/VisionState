@@ -1693,7 +1693,7 @@ test('the AI models can be compared, and the teaching and face limits set for al
     await expect(compare.getByText('D-FINE L (most accurate)')).toBeVisible();
     await expect(compare.getByText('DINOv2 base · fp32 (most accurate)')).toBeVisible();
     await expect(compare.getByText('AuraFace v1 (accurate)')).toBeVisible();
-    await expect(compare.getByText(/· in use$/)).toHaveCount(5); // one per kind
+    await expect(compare.getByText(/· in use$/)).toHaveCount(6); // one per kind
     // From the smallest to the largest, in every kind.
     const settings = await (await request.get('api/v1/settings')).json();
     const smallest = [...settings.detectors].sort((a, b) => a.size - b.size)[0].name;
@@ -2307,4 +2307,98 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   // Over: the sensors go on.
   await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
   errors.expectNone();
+});
+
+test('licence plates: turned on after a sheet, a car added, named by its plate on the Live tab and in the history', async ({
+  page,
+  request,
+}, info) => {
+  // Every device runs this against the same backend: its own sensor, car and plate.
+  const plate = { desktop: 'VS 12345', mobile: 'VS 23456', iphone: 'VS 34567' }[info.project.name] ?? 'VS 45678';
+  const name = `Plates ${info.project.name}`;
+  const carName = `Car ${info.project.name}`;
+  for (const s of await (await request.get('api/v1/sensors')).json()) {
+    if (s.name === name) await request.delete(`api/v1/sensors/${s.id}`);
+  }
+  for (const c of await (await request.get('api/v1/cars')).json()) {
+    if (c.name === carName) await request.delete(`api/v1/cars/${c.key}`);
+  }
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name,
+      kind: 'objects',
+      source_type: 'http',
+      source: `${CAMERA_URL}/plate.jpg?text=${encodeURIComponent(plate)}`,
+      objects: { classes: ['car'], clear_after_s: 0 },
+      interval_s: 2,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+
+  // Off by default; turning it on asks first and says what it means.
+  await page.goto(`#/sensors/${id}/settings/detect`);
+  const card = page.getByTestId('plates-card');
+  await pressCentered(card.getByRole('button', { name: 'Turn on…' }), info);
+  const sheet = page.getByRole('dialog', { name: `Read licence plates on ${name}?` });
+  await expect(sheet.getByText(/It is not a key/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(sheet.getByRole('button', { name: /^(Turn on|Download and turn on)$/ }), info);
+  await expect(card.getByText('Report plates of cars I do not know')).toBeVisible();
+
+  // A car of the household, with its plate.
+  await pressCentered(card.getByRole('button', { name: 'Add a car' }), info);
+  await card.getByPlaceholder('Our car').fill(carName);
+  await card.getByPlaceholder('AB 12345').fill(plate);
+  await press(card.getByRole('button', { name: 'Add car' }), info);
+  await expect(card.getByTestId('car').filter({ hasText: carName })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .card');
+
+  // Reporting unknown plates asks first too.
+  await pressCentered(card.getByRole('checkbox', { name: /Report plates of cars I do not know/ }), info);
+  await expect(page.getByRole('dialog', { name: 'Report plates of cars you do not know?' })).toBeVisible();
+  await press(page.getByRole('button', { name: 'Cancel' }), info);
+  await expect(card.getByRole('checkbox', { name: /Report plates of cars I do not know/ })).not.toBeChecked();
+
+  // How far off a plate may be when the car's look agrees: saved at once.
+  await card.getByTestId('look-distance').selectOption('2');
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.plates.look_distance)
+    .toBe(2);
+  await expectNoClipping(page, '.btn, .card');
+
+  // The Live tab: the plate read and whose car it is; the car is an entity of the sensor.
+  await page.goto(`#/sensors/${id}/live`);
+  const text = plate.replace(' ', '');
+  await expect(page.getByTestId('plate-notes').getByText(`Car · ${text} · ${carName}`)).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText(/^event\..*licence_plate$/)).toBeVisible();
+
+  // The history: the car's coming is a plate row.
+  await page.goto(`#/sensors/${id}/history`);
+  await expect(page.getByText(`${carName} · plate ${text}`).first()).toBeVisible({ timeout: 30_000 });
+  await expectNoHorizontalOverflow(page);
+
+  await request.delete(`api/v1/sensors/${id}`);
+  for (const c of await (await request.get('api/v1/cars')).json()) {
+    if (c.name === carName) await request.delete(`api/v1/cars/${c.key}`);
+  }
+});
+
+test('a plate model that states no licence is chosen only after accepting that', async ({ page }, info) => {
+  await page.goto('#/settings');
+  const select = page.getByRole('combobox', { name: 'Licence plates (object sensors)' });
+  await select.scrollIntoViewIfNeeded();
+  const options = await select.locator('option').allTextContents();
+  await select.selectOption({ label: options.find((o) => o.startsWith('Plate model, fast'))! });
+  const accept = page.getByTestId('plate-accept');
+  await expect(accept).toBeVisible();
+  const save = page.getByRole('button', { name: 'Apply', exact: true });
+  await expect(save).toBeDisabled();
+  await expectNoHorizontalOverflow(page);
+  await press(accept.getByRole('checkbox'), info);
+  await expect(save).toBeEnabled();
+  // Not saved: the open model stays for the other tests.
+  await select.selectOption({ label: options.find((o) => o.startsWith('PP-OCR small'))! });
+  await expect(accept).toHaveCount(0);
 });

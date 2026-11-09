@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import imaging, readers, sounds
 from ..db import Face, Prediction, ReadingWatch, Sample, SampleLabel, Sensor
-from ..engine import Runtime, with_people
+from ..engine import Runtime, with_shared
 from ..settings import (
     FACE_UNKNOWN_KEY,
     KIND_OBJECTS,
@@ -90,7 +90,7 @@ def review_queue(
                         "states": [{"key": st.key, "name": st.name, "color": st.color} for st in sensor.states],
                         "reading": merge_reading(sensor.reading) if sensor.kind == KIND_READING else None,
                         # object sensors: the own labels (and people) a question can be about
-                        "labels": with_people(merge_objects(sensor.objects), s)["custom"]
+                        "labels": with_shared(merge_objects(sensor.objects), s, sensor.id)["custom"]
                         if sensor.kind == KIND_OBJECTS
                         else [],
                         # sound sensors: the sounds it listens for, and its own sounds an answer can name

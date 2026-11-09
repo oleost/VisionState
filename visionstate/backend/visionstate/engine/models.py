@@ -103,6 +103,8 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
             self.sound_model = None
         async with self._face_lock:
             self.face_model = None  # the next check that recognises faces loads it again (faces.py)
+        async with self._plate_lock:
+            self.plate_model = None  # likewise plates (plates.py)
         await asyncio.to_thread(backbones.release_memory)
 
     async def load_reader(self, reader_id: str) -> readers.Reader:
