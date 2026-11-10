@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.15.0b6
+
+**ESP32 microphones and cameras of your own, set up with ESPHome.** The firmware (`esphome-v1`)
+has been tried on an ESP32 DevKit with an INMP441 microphone and on an ESP32-CAM; the other boards
+are compiled but not yet tried on a board. Feedback is welcome in #75.
+
+- **A guide in the app:** *Set one up with ESPHome*, under a new sensor's sound or image source.
+  Pick the board and what it is (microphone, camera or both); it shows the wiring and gives the
+  device's file to import in the ESPHome app. The Wi-Fi you type stays in your browser. Once the
+  device is added in Home Assistant, the guide finds it, checks it and makes the sensor.
+- **Boards:** ESP32 DevKit and ESP32-S3 DevKit with an INMP441, ESP32-CAM (camera, or camera and
+  microphone), Seeed Studio XIAO ESP32-S3 Sense, Waveshare ESP32-S3-Touch-LCD-2 and
+  ESP32-C5-WIFI6-KIT.
+- **On the device in Home Assistant:** a *Microphone* switch, the gain, an optional mute switch on
+  a pin, and a light that is on while VisionState listens or looks.
+- **A camera of ours is set up for what each sensor looks at** (*Camera use*): still things, a
+  meter or display (a bigger picture, less compression), or things that move (a short exposure).
+  Sensors on one camera share the most demanding. Its snapshot is always taken after the request,
+  so it is fresh.
+- **A voice assistant too:** such a microphone can also be a voice assistant, its wake word heard
+  by Home Assistant and its answer played on a media player. A Home Assistant Voice PE or an
+  M5Stack Atom VoiceS3R can keep its own firmware and get VisionState's stream added. Both are
+  compiled, not yet tried on a device: see `esphome/README.md`.
+- **Pure silence:** a sound sensor whose stream is nothing but digital silence for a while says so
+  on the dashboard and on its Live tab (a microphone not wired, broken or muted). This is for every
+  sound sensor, not only ESP32s.
+
+**Cars that look the same** (two white Teslas with their own plates): add the second car with
+*Kind → The same look as → Tesla*. The first car then stands for the look they share, and each car
+under it is known by its plate. Each keeps what was taught of it, so choosing its kind again undoes
+it.
+
+- **How a car was known** is shown on the Live tab (*Detected by its plate*, *by its look*, *by its
+  plate and look*), and on a sensor that reads plates each car has an entity **… identified by**,
+  which can be chosen away under *Settings → Home Assistant*.
+
 ## 0.15.0b5
 
 **Untested: licence plates, and one list of the household's cars.** This is a first beta of a new

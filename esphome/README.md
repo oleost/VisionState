@@ -184,13 +184,13 @@ a voice assistant:
      stream_password: !secret vs_stream_password
 
    external_components:
-     - source: github://oleost/VisionState@esp32  # esphome-v1 once released
+     - source: github://oleost/VisionState@esphome-v1
 
    packages:
      # … the device's own package stays first …
      visionstate:
        url: https://github.com/oleost/VisionState
-       ref: esp32
+       ref: esphome-v1
        files:
          - esphome/packages/voice-pe.yaml  # an Atom VoiceS3R: esphome/packages/atom-voices3r.yaml
    ```
@@ -217,6 +217,37 @@ What it does on the device:
 It builds next to both devices' own firmware (2026-11-05). Not checked on a device: memory and CPU
 next to the wake word, the gain, and how alarms sound through the
 processing ([`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md) §5).
+
+## A voice assistant on a microphone of ours
+
+A board with VisionState's microphone (a DevKit, an ESP32-CAM, an S3…) can also be a voice
+assistant, with no speaker of its own:
+
+- **The wake word is heard by Home Assistant**, so it runs on an ESP32 without PSRAM too: the
+  device sends its sound to Home Assistant all the time, next to VisionState's stream. The
+  assist pipeline needs a wake word engine (such as the openWakeWord app).
+- **The answer plays on a media player in Home Assistant**: a Chromecast, a Music Assistant
+  player… On the device in Home Assistant (*Settings → Devices & services → ESPHome → the
+  device → Configure*), switch on *Allow the device to perform Home Assistant actions*. A
+  Chromecast fetches the answer from Home Assistant's internal URL, so it must reach that.
+- From the wake word until the answer is done the stream carries silence (*VisionState pauses for
+  the assistant* turns that off). *Microphone* and the mute switch mute both.
+
+Add the package after the microphone's, with the player:
+
+```yaml
+substitutions:
+  assistant_media_player: media_player.living_room
+
+packages:
+  visionstate:
+    # …
+    files:
+      # … the board, common.yaml and microphone.yaml …
+      - esphome/packages/voice-assistant-ha-wake-word.yaml
+```
+
+Compiled for an ESP32 DevKit, not yet tried on a board.
 
 ## When something is wrong
 

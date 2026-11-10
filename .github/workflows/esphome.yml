@@ -26,6 +26,7 @@ jobs:
         esphome: ["2026.10.2", "latest"]
         config:
           - devkit-microphone
+          - devkit-microphone-assistant
           - esp32cam-camera
           - esp32cam-camera-microphone
           - xiao-camera-microphone

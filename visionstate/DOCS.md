@@ -636,8 +636,8 @@ objects the region stays a border.
 
 ## Sound sensors
 
-*What it has been tried on.* It has not been tried on a Raspberry Pi 4, an ESP32 microphone or
-clips in the Home Assistant app on iOS yet. If you try a camera, please report its model and how it
+*What it has been tried on.* An ESP32 DevKit with an INMP441 microphone; not yet on a Raspberry
+Pi 4 or with clips in the Home Assistant app on iOS. If you try a camera, please report its model and how it
 went.
 
 A sound sensor listens to a stream's sound all the time and tells Home Assistant what it hears:
@@ -671,7 +671,8 @@ camera; sensors on one camera share the most demanding. It shows the wiring and 
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
-`esphome/README.md` in the repository.
+`esphome/README.md` in the repository; there too how such a microphone can also be a voice
+assistant, its wake word heard by Home Assistant and its answer played on a media player.
 
 The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it

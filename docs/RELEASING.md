@@ -129,10 +129,10 @@ released; a change that breaks existing devices' files gets the next N.
   oldest ESPHome the packages accept and the newest: on a change under `esphome/`, on an
   `esphome-v*` tag, and weekly (a new ESPHome that breaks the component is seen before users
   compile it).
-- Before the first release the firmware is built from the branch `esp32` (`settings.ESPHOME["ref"]`,
-  fetched again at every build: `settings.ESPHOME["refresh"]`). At release: tag `esphome-v1` on the
-  commit that `beta` holds, and set `ref` to the tag and `refresh` to `1d` in the same app beta
-  (the examples already name the tag).
+- The guide writes the tag `settings.ESPHOME["ref"]` into a device's file, and the examples name the
+  same. A new tag: tag `esphome-vN` on the commit that `beta` holds, and set `ref` to it in the same
+  app beta. While firmware is built on a branch of its own, `ref` is that branch and
+  `settings.ESPHOME["refresh"]` is `0s` (fetched again at every build); a tag is `1d`.
 
 ## Dependencies and platforms
 

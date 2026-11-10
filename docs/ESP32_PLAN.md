@@ -33,7 +33,7 @@ Assistant or a test before anything is built on them).
 - **Our own code under Apache-2.0**, in this repository (a folder of its own, tags `esphome-v*`,
   its own CI), on the branch `esp32` while it is built.
 
-## 2. Built (on `esp32`, not released)
+## 2. Built (released as `esphome-v1`)
 
 The component `visionstate_stream` and the packages in `esphome/`: the microphone as an endless
 WAV over HTTP (16 kHz, mono, 16 bits), the camera's picture as a snapshot taken after the request,
@@ -94,6 +94,13 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   take), memory and CPU next to the wake word, and the mute: the microphone's mute is shared, so the
   pause must be the stream's own. The same may work on other ESPHome voice devices (Home
   Assistant Voice PE: its sound is processed first, with automatic gain — to check).
+- **A voice assistant on a microphone of ours** (the maintainer, 2026-11-10, for the DevKit with an
+  INMP441: the wake word not by a button, the answer on a Chromecast or Music Assistant player):
+  `esphome/packages/voice-assistant-ha-wake-word.yaml`. The wake word is Home Assistant's
+  (`use_wake_word`), since `micro_wake_word` on an ESP32 without PSRAM is not known to work; the
+  answer goes to a media player through a Home Assistant action. The stream pauses from the wake
+  word (not from the pipeline's start: with the wake word in Home Assistant the pipeline runs all
+  the time). *Not checked*: on a board.
 - ***Only when loud*** (the device sends only above VisionState's line, with a heartbeat): not
   built. On mains power the only gain is privacy; it costs the background VisionState learns and
   every sound below the line. Left until someone asks for it.
@@ -105,7 +112,7 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
 
 ## 5. Not checked yet, and how
 
-On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has not arrived):
+On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM, and an INMP441 since 2026-11-10):
 
 - [x] Both boards start, join the Wi-Fi and show up in Home Assistant, installed through the guide
       (2026-11-04).
@@ -143,6 +150,10 @@ On the maintainer's boards (an ESP32-WROOM-32 and an ESP32-CAM; the INMP441 has 
       at that exposure, how a meter's digits read at 1600x1200 against 800x600, and the XIAO.
 - [ ] The mute pin: GPIO12 on the ESP32-CAM is a strapping pin — does the board still start with
       the switch closed and open?
+- [x] The INMP441 on an ESP32 D1 mini (WROOM-32), wired as the DevKit's defaults (2026-11-10):
+      VisionState's sensor takes the sound (room noise about −50 to −25 dB at gain 4), and a smoke
+      alarm played from a speaker in the room was heard (about 30 s, one short drop in a pause of
+      its beeps).
 - [ ] With the INMP441: the level of a smoke alarm at a few metres and the gain it needs, how long
       until VisionState hears a sound (against a camera's RTSP and its Home Assistant stream), gaps
       over 24 hours, and on the ESP32-CAM gaps in the sound while a picture is sent.
@@ -171,15 +182,17 @@ that answered with `X-VisionState-Camera`; no new database version; the new `cam
 sensor's triggers is empty by default and ignored by older versions (exports and backups both
 ways); the guide does nothing until opened.
 
-- [ ] Fix `test_every_kept_backup_restores[backup-format1-schema15.zip]` on `beta` (not from this
+- [x] Fix `test_every_kept_backup_restores[backup-format1-schema15.zip]` on `beta` (not from this
       work): the kept backup's history is older than `history_days`, so the app deletes it at
       start and the test fails by today's date (it passed CI on 2026-11-05). It would stop the next
       beta tag.
-- [ ] *Pure silence* is new for every sound sensor, not only ESP32s: 60 s of exact digital zeros
+- [x] *Pure silence* is new for every sound sensor, not only ESP32s: 60 s of exact digital zeros
       (`SOUND["dead_silence_s"]`) gives a log warning and the chip on the dashboard. A camera that
       sends true zeros in a quiet room (a noise gate) would show it every night. Check on the
-      maintainer's own sound sensors on the test Home Assistant before the beta.
-- [ ] Merge `esp32` into `beta`; tag `esphome-v1` and set `settings.ESPHOME["ref"]` to the tag and
+      maintainer's own sound sensors on the test Home Assistant before the beta. (2026-11-10: the
+      doorbell's RTSP stream, down to −86 dB in a quiet room, was not taken for it.)
+- [x] Merge `esp32` into `beta`; tag `esphome-v1` and set `settings.ESPHOME["ref"]` to the tag and
       `refresh` to `1d` in the same beta (`docs/RELEASING.md`), so beta users' devices stay on a
       fixed firmware. A later fix that needs a change in users' files gets `esphome-v2`.
-- [ ] The usual checks, the changelog entry shown to the maintainer, and their "go".
+- [x] The usual checks, the changelog entry shown to the maintainer, and their "go" (2026-11-10:
+      released in 0.15.0b6).

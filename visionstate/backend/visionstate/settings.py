@@ -407,10 +407,10 @@ ADVICE = {
 # esphome/packages/board-*.yaml (tests/test_esphome.py keeps them the same).
 ESPHOME = {
     "repository": "https://github.com/oleost/VisionState",
-    # The branch the firmware is built on until it is released (then the tag esphome-v1, as esphome/examples has).
-    "ref": "esp32",
-    # How often ESPHome fetches the firmware again: every build while it is a branch (then "1d").
-    "refresh": "0s",
+    # The firmware's release tag (esphome/examples name the same; docs/RELEASING.md): never moved.
+    "ref": "esphome-v1",
+    # How often ESPHome looks for the firmware again (a tag does not change).
+    "refresh": "1d",
     "port": 8081,  # visionstate_stream's port
     "username": "visionstate",
     "password_chars": 20,  # a password the guide makes up

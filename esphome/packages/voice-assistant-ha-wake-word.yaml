@@ -1,0 +1,46 @@
+# A voice assistant on a VisionState microphone (microphone.yaml): the wake word is heard by Home
+# Assistant (use_wake_word: its pipeline needs a wake word engine, such as openWakeWord), so it
+# also runs on an ESP32 without PSRAM. The device has no speaker: the answer is played on a media
+# player in Home Assistant (assistant_media_player: a Chromecast, a Music Assistant player…), which
+# needs "Allow the device to perform Home Assistant actions" on the device in Home Assistant.
+# The microphone is shared: its Microphone switch and mute switch mute both. From the wake word until
+# the answer is done the stream carries silence (VisionState pauses for the assistant turns that off).
+substitutions:
+  assistant_media_player: media_player.living_room  # the device's own file sets it
+  assistant_gain: "4"
+
+voice_assistant:
+  id: vs_assistant
+  microphone:
+    microphone: vs_microphone
+    gain_factor: ${assistant_gain}
+  use_wake_word: true
+  on_client_connected:
+    - voice_assistant.start_continuous:
+  on_client_disconnected:
+    - voice_assistant.stop:
+  on_wake_word_detected:
+    - lambda: if (id(vs_pause_for_assistant).state) id(vs_stream).set_paused(true);
+  on_tts_end:
+    - homeassistant.action:
+        action: media_player.play_media
+        data:
+          entity_id: ${assistant_media_player}
+          media_content_id: !lambda return x;
+          media_content_type: music
+          announce: "true"
+  on_end:
+    - lambda: id(vs_stream).set_paused(false);
+  on_error:
+    - lambda: id(vs_stream).set_paused(false);
+
+switch:
+  - platform: template
+    id: vs_pause_for_assistant
+    name: VisionState pauses for the assistant
+    icon: mdi:microphone-message-off
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_off:
+      - lambda: id(vs_stream).set_paused(false);
