@@ -5,6 +5,9 @@ sound and image sensors, built with ESPHome. The firmware is in [`esphome/`](../
 what ESP32 microphones mean for sound sensors in general (stream all the time, no push) is in
 [`SOUND_PLAN.md`](SOUND_PLAN.md) §10.
 
+Testing on real boards and feedback since the release: issue
+[#86](https://github.com/oleost/VisionState/issues/86) (#75 was the pull request it was built in).
+
 This plan keeps three things apart: what the maintainer **decided**, what is **proposed** (by
 Claude, open to change), and what is **not checked** yet (claims that need a board, a Home
 Assistant or a test before anything is built on them).
