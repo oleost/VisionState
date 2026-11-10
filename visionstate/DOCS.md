@@ -375,6 +375,18 @@ cars taught on it along (their plates stay in the backup).
 Looks alone cannot tell two cars of the same model and colour apart; a plate can. So a car's look
 helps its plate, and the plate decides (below).
 
+**Two cars that look the same** (two white Teslas, each with its own plate): add the second car
+and choose **Kind → The same look as → Tesla**. The first car then stands for the look they share:
+it is on whenever one of them is seen, also side-on with no plate in view, and each car under it
+is on only when its own plate is read (and stays on while that car stays where it is); seen by
+its look alone, the Live tab says so (*Detected by its look (Tesla, Tesla EJ86876 or Tesla 2)*).
+Its plates move to a car of their own under it (*Tesla EJ86876*). Each car keeps what was taught
+of it; they only count as one look. So it is undone by choosing the car's kind (**Car**) again —
+and it is only for cars that really look the same: two different cars made one look are both
+named by it. Teaching on the **Live** tab offers only the shared look. On the Live tab and the
+card the cars sit under it. Forgetting the shared car leaves the others known by their plates
+alone.
+
 ### Reading licence plates
 
 An object sensor that looks for **Car** (or Truck, Bus, Motorcycle) can read the plates of the
@@ -414,9 +426,12 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
   the car at once (*VS12845 · Our car (plate and look)*). *No* leaves the plate alone in charge.
   The plate still decides: read exactly as another of your cars it is that car, and a plate far
   from the car's read the same way twice is another car that only looks the same.
-- **How it was known**: each car's on/off sensor and count have an attribute `identified_by`:
-  `plate`, `look` (a car parked side-on, its plate not seen) or `plate_and_look`, kept while the
-  car is there. A car known by its look alone is on as before; only a plate read makes a
+- **How it was known**: on the **Live** tab a car that is there says so (*Detected by its
+  plate*, *by its look*, *by its plate and look*). On a sensor that reads plates each car also has
+  an entity **… identified by** (`plate`, `look` — parked side-on, its plate not seen —,
+  `plate_and_look`, or `none` while it is not there), which can be chosen away on the sensor's
+  **Home Assistant** tab, and its on/off sensor and count have the attribute `identified_by` with
+  the same value, kept while the car is there. A car known by its look alone is on as before; only a plate read makes a
   *known_car* event. An automation that must be sure (a garage door) can ask for `plate` or
   `plate_and_look`, and still never for a plate alone if it opens something (see above).
 - **It learns a car's look from its plate** (**Learn a car's look from its plate**, on by

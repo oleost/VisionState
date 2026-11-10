@@ -288,8 +288,9 @@ def unsure_for(detection: dict, key: str) -> bool:
 
 
 def counts_for(detection: dict, key: str) -> bool:
-    """Whether a box counts for a class or own label (filtered boxes count for nothing)."""
-    return not detection.get("filtered") and (detection["key"] == key or detection.get("label") == key)
+    """Whether a box counts for a class or own label (filtered boxes count for nothing); a box named
+    by the plate of a car that shares another car's look counts for that car too (its ``group``)."""
+    return not detection.get("filtered") and key in (detection["key"], detection.get("label"), detection.get("group"))
 
 
 def seen_faintly(candidates: list[dict], box: Sequence[float]) -> bool:

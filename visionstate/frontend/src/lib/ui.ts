@@ -185,6 +185,13 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   plate: 'Learned from its plate',
 };
 
+/** How a car of the household that is here was known (ObjectLive.identified_by). */
+export const IDENTIFIED_BY: Record<string, string> = {
+  plate_and_look: 'by its plate and look',
+  plate: 'by its plate',
+  look: 'by its look',
+};
+
 export const SENSOR_TABS = [
   { id: 'live', label: 'Live' },
   { id: 'label', label: 'Label' },

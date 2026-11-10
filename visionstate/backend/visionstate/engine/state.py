@@ -63,6 +63,9 @@ class SensorConfig:
     in_ha: bool = True  # see db.Sensor.in_ha
     ha_entities: dict | None = field(default_factory=dict)  # see db.Sensor.ha_entities
     frame_size: list | None = None  # see db.Sensor.frame_size
+    # Object sensors: car -> the car whose look it shares (the "cars" setting); its taught boxes
+    # count as that car's when boxes are recognised, so sharing a look is undone by unsharing it.
+    car_looks: dict[str, str] = field(default_factory=dict)
 
     @property
     def state_keys(self) -> list[str]:
@@ -148,6 +151,7 @@ class SensorConfig:
             self.ha_entities,
             heard,
             self.plates_on,
+            [c["key"] for c in self.custom_labels if c.get("car")] if self.plates_on else [],
         )
 
     @cached_property
@@ -181,7 +185,15 @@ class SensorConfig:
             in_ha=row.in_ha is not False,
             ha_entities=row.ha_entities,
             frame_size=row.frame_size,
+            car_looks=car_looks(object_session(row)) if row.kind == KIND_OBJECTS else {},
         )
+
+
+def car_looks(session: Session | None) -> dict[str, str]:
+    """Each car that shares another car's look -> that car."""
+    if session is None:
+        return {}
+    return {c["key"]: c["look"] for c in household_cars(session) if c.get("look")}
 
 
 def household_cars(session: Session) -> list[dict]:
@@ -193,8 +205,9 @@ def household_cars(session: Session) -> list[dict]:
 def with_shared(objects: dict, session: Session | None, sensor_id: int | None = None) -> dict:
     """An object sensor's settings with what every sensor shares among its own labels: the people
     (db.Person) while it recognises faces, {key, name, parent "person", face True}, and the
-    household's cars (the "cars" setting), {key, name, parent, car True}: every car while it reads
-    plates, otherwise the cars whose look was taught on this sensor (``sensor_id``). Each one is
+    household's cars (the "cars" setting), {key, name, parent, car True, look (a car whose look it
+    shares)}: every car while it reads plates, otherwise the cars whose look was taught on this
+    sensor (``sensor_id``; a car whose look another car shares, when that one was). Each one is
     an entity of the sensor and a name its boxes can get."""
     if session is None:
         return objects
@@ -217,8 +230,15 @@ def with_shared(objects: dict, session: Session | None, sensor_id: int | None = 
             if sensor_id is not None
             else set()
         )
-        cars = [c for c in cars if c["key"] in taught]
-    custom += [{"key": c["key"], "name": c["name"], "parent": c.get("parent", "car"), "car": True} for c in cars]
+        # A car that shares another car's look is that car here (its boxes are taught as it).
+        looks = {c["key"]: c["look"] for c in cars if c.get("look")}
+        taught = {looks.get(key, key) for key in taught}
+        cars = [c for c in cars if c["key"] in taught and not c.get("look")]
+    custom += [
+        {"key": c["key"], "name": c["name"], "parent": c.get("parent", "car"), "car": True}
+        | ({"look": c["look"]} if c.get("look") else {})
+        for c in cars
+    ]
     return {**objects, "custom": custom}
 
 

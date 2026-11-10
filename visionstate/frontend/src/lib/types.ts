@@ -335,6 +335,8 @@ export interface Detection {
   box: [number, number, number, number];
   filtered?: boolean;
   label?: string;
+  /** Named by the plate of a car that shares another car's look: that car (it counts for both). */
+  group?: string;
   was?: string;
   rescued?: boolean;
   match?: { id: number; label: string; similarity: number };
@@ -478,6 +480,8 @@ export interface Car {
   parent: string;
   /** The sensors its look was taught on (GET /cars only). */
   taught?: { sensor: number; name: string; boxes: number }[];
+  /** Another car whose look it shares (the same model and colour): told apart by their plates. */
+  look?: string;
 }
 
 export interface PlateSettings {
@@ -524,6 +528,9 @@ export interface ObjectQuestion {
 }
 
 /** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
+/** How a car of the household is known: by its plate, its taught look, or both. */
+export type IdentifiedBy = 'plate_and_look' | 'plate' | 'look';
+
 export interface OwnLabel {
   key: string;
   name: string;
@@ -533,6 +540,8 @@ export interface OwnLabel {
   /** A car of the household (shared by every sensor, GET /cars): added while the sensor reads plates
    * or when its look was taught on this sensor. */
   car?: boolean;
+  /** A car that shares another car's look: that car. */
+  look?: string;
 }
 
 export interface ObjectSettings {
@@ -568,6 +577,10 @@ export interface ObjectLive {
   key: string;
   /** Own labels: the object they are a kind of. */
   parent: string | null;
+  /** A car that shares another car's look: that car. */
+  group?: string | null;
+  /** A car of the household that is here: how it was known. */
+  identified_by?: IdentifiedBy | null;
   on: boolean;
   count: number;
   score: number;
@@ -704,7 +717,7 @@ export interface HaEntity {
   on: boolean;
   /** An object sensor's: the class or own label it belongs to, and what it is of that object. */
   object?: string;
-  column?: 'detected' | 'count' | 'snapshot';
+  column?: 'detected' | 'count' | 'snapshot' | 'identified';
 }
 
 export interface SensorInput {

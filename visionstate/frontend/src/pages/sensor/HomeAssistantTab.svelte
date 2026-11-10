@@ -21,9 +21,12 @@
 
   const isOn = (e: HaEntity) => chosen[e.id] ?? e.on;
   // An object sensor's entities as a table: one row per object, one column per entity of it.
-  const COLUMNS = ['detected', 'count', 'snapshot'] as const;
+  const COLUMNS_ALL = ['detected', 'count', 'snapshot', 'identified'] as const;
+  const COLUMN_NAMES = { detected: 'Detected', count: 'Count', snapshot: 'Snapshot', identified: 'Identified by' };
+  // "Identified by" only while a car of the household is among them (a sensor that reads plates).
+  const COLUMNS = $derived(COLUMNS_ALL.filter((c) => c !== 'identified' || sensor.ha_entities.some((e) => e.column === c)));
   const objects = $derived.by(() => {
-    const rows = new Map<string, Partial<Record<(typeof COLUMNS)[number], HaEntity>>>();
+    const rows = new Map<string, Partial<Record<(typeof COLUMNS_ALL)[number], HaEntity>>>();
     for (const e of sensor.ha_entities) {
       if (e.object && e.column) rows.set(e.object, { ...rows.get(e.object), [e.column]: e });
     }
@@ -85,13 +88,14 @@
       <p class="small muted">
         What this sensor has in Home Assistant.
         {#if objects.length}A snapshot is the object cut from the frame: new when its count changes or it moves, and the last one stays after it has gone.{/if}
+        {#if COLUMNS.includes('identified')}Identified by: whether one of your cars is here by its plate, its look or both (<span class="mono">plate</span>, <span class="mono">look</span>, <span class="mono">plate_and_look</span>, or <span class="mono">none</span>).{/if}
       </p>
       {#if objects.length}
         <table class="entities">
           <thead>
             <tr>
               <th></th>
-              {#each COLUMNS as column (column)}<th class="tick">{column === 'detected' ? 'Detected' : column === 'count' ? 'Count' : 'Snapshot'}</th>{/each}
+              {#each COLUMNS as column (column)}<th class="tick">{COLUMN_NAMES[column]}</th>{/each}
             </tr>
           </thead>
           <tbody>

@@ -159,7 +159,8 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
             if body.detected is not None and body.detected not in detectors.LABELS.by_key:
                 raise HTTPException(400, f"Unknown object {body.detected!r}")
             new = None
-            cars = {c["key"] for c in household_cars(s) if c.get("parent", "car") in objects["classes"]}
+            household = household_cars(s)
+            cars = {c["key"] for c in household if c.get("parent", "car") in objects["classes"]}
             parent = body.parent or body.detected or ""
             if body.new_label and parent in VEHICLE_CLASSES:
                 # A named vehicle is a car of the household (shared by every sensor), made when the

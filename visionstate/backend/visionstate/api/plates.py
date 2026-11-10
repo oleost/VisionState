@@ -23,11 +23,13 @@ router = APIRouter(prefix=API_PREFIX, tags=["plates"])
 class CarIn(BaseModel):
     """A car of the household: its name (the entity's name), its plates (none: known by its look
     only; several separated by commas: a car with another plate in winter, a trailer) and what
-    kind of vehicle it is."""
+    kind of vehicle it is. ``look``: another car whose look it shares (two cars of the same model
+    and colour): that car is then the look of both, and the plates tell them apart."""
 
     name: str = Field(min_length=1, max_length=64)
     plate: str = Field(default="", max_length=64)
     parent: str = "car"
+    look: str = ""
 
     @field_validator("plate")
     @classmethod
@@ -59,6 +61,14 @@ def _store(s: Session, cars: list[dict]) -> None:
 
 
 def _check(cars: list[dict], body: CarIn, keep: str | None = None) -> None:
+    if body.look:
+        look = next((c for c in cars if c["key"] == body.look), None)
+        if look is None or look["key"] == keep:
+            raise HTTPException(400, f"No other car called {body.look!r}")
+        if look.get("look"):
+            raise HTTPException(400, f"{look['name']} shares the look of another car itself")
+        if keep is not None and any(c.get("look") == keep for c in cars):
+            raise HTTPException(400, "Other cars share this car's look")
     for car in cars:
         if car["key"] == keep:
             continue
@@ -102,8 +112,35 @@ def new_car(s: Session, body: CarIn) -> dict:
     while key in taken:
         key, n = f"{base}_{n}", n + 1
     car = {"key": key, "name": body.name.strip(), "plate": body.plate, "parent": body.parent}
-    _store(s, [*cars, car])
+    cars.append(car)
+    _share_look(s, cars, car, body.look)
+    _store(s, cars)
     return car
+
+
+def _share_look(s: Session, cars: list[dict], car: dict, look: str) -> None:
+    """Let ``car`` share the look of the car ``look`` ("": its own look). That car becomes the look
+    of all of them: its plates move to a car of their own under it (named after it and its plate).
+    Each keeps its taught boxes; recognising, they count as that car's (``SensorConfig.car_looks``),
+    so choosing the car's own kind again undoes it."""
+    car.pop("look", None)
+    if not look:
+        return
+    shared = next(c for c in cars if c["key"] == look)
+    car["look"], car["parent"] = look, shared.get("parent", "car")
+    if shared.get("plate"):
+        first = shared["plate"].split(",")[0].strip()
+        taken = taken_keys(s) | {c["key"] for c in cars}
+        names = {c["name"].lower() for c in cars}
+        name, n = f"{shared['name']} {first}"[:64], 2
+        while name.lower() in names:
+            name, n = f"{shared['name']} {first} ({n})"[:64], n + 1
+        base = slugify(name, "car")
+        key, n = base, 2
+        while key in taken:
+            key, n = f"{base}_{n}", n + 1
+        cars.append({"key": key, "name": name, "plate": shared["plate"], "parent": car["parent"], "look": look})
+        shared["plate"] = ""
 
 
 @router.post("/cars")
@@ -136,6 +173,10 @@ async def change_car(key: str, body: CarIn, request: Request) -> dict:
                 raise HTTPException(404, f"No car called {key!r}")
             _check(cars, body, keep=key)
             car.update({"name": body.name.strip(), "plate": body.plate, "parent": body.parent})
+            _share_look(s, cars, car, body.look)
+            for other in cars:
+                if other.get("look") == key:
+                    other["parent"] = car["parent"]  # the cars that share its look are its kind
             _store(s, cars)
             s.commit()
             return car
@@ -155,7 +196,11 @@ async def forget_car(key: str, request: Request) -> Response:
             cars = _cars(s)
             if not any(c["key"] == key for c in cars):
                 raise HTTPException(404, f"No car called {key!r}")
-            _store(s, [c for c in cars if c["key"] != key])
+            kept = [c for c in cars if c["key"] != key]
+            for car in kept:
+                if car.get("look") == key:
+                    car.pop("look")  # its look is forgotten with it: known by its plate alone
+            _store(s, kept)
             taught = [
                 sensor_id
                 for sensor_id in s.scalars(select(Sensor.id))

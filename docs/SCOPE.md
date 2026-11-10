@@ -244,9 +244,19 @@ knew). Instead a second step compares boxes with boxes the user taught:
   teaches that box as the car (origin "plate"; `PlatesMixin.learn_from_plates`, at most once per
   `learn_every_s` per car and sensor, up to `learn_max`: `settings.PLATES`; never from a box that
   overlaps another vehicle). A car's entities carry `identified_by` (`plates.identified_by`
-  in `engine/plates.py`: plate, look or plate_and_look), sent only when it changes. Forgetting a car
-  deletes its taught boxes on every sensor.
-- The cars are shared by every sensor (the DB setting `cars`: {key, name, plate, parent}; no plate:
+  in `engine/plates.py`: plate, look or plate_and_look), sent only when it changes, and on a
+  sensor that reads plates its own enum entity `<key>_identified` (`mqtt.IDENTIFIED_STATES`, a
+  column of the Home Assistant tab: the on/off sensor stays on/off, so no automation breaks).
+  Forgetting a car deletes its taught boxes on every sensor.
+- Cars of the same look (asked for 2026-11-09: two white Teslas with different plates): a car's
+  `look` is another car's key, one level deep. That car is the look of both: each keeps its own
+  taught boxes, which count as that car's when the index is built (`SensorConfig.car_looks`), so
+  unsharing undoes it (moving the boxes did not: tried on dev, a car made the look of another by
+  mistake could not be taken back). Its plates move to a car of their own under it
+  (`api/plates.py`); the cars under it are named by their plates only
+  (`plates.grouped` gives such a box a `group`, and `teach.counts_for` counts it for both), so
+  the look never guesses which of them is parked side-on.
+- The cars are shared by every sensor (the DB setting `cars`: {key, name, plate, parent, look}; no plate:
   known by its look); a sensor gets each as an own label (`engine.with_shared`, not stored on the
   sensor) while it reads plates, and those whose look was taught on it. Every named vehicle is one:
   a new label of a vehicle class made while teaching is a car, and own labels of a vehicle class

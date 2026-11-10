@@ -65,8 +65,9 @@
   // their face, not here; the household's cars can be taught by their look too), except what it is now.
   const options = $derived([
     ...classes.filter((k) => k !== current).map((k) => ({ key: k, text: objectName(k), sub: '' })),
+    // A car that shares another car's look is taught as that car: only that one is offered.
     ...activeLabels(sensor)
-      .filter((l) => l.key !== current && !l.face)
+      .filter((l) => l.key !== current && !l.face && !l.look)
       .map((l) => ({
         key: l.key,
         text: l.name,
@@ -74,7 +75,7 @@
       })),
     // The household's cars not yet taught here (nor read by a plate here).
     ...cars
-      .filter((c) => c.key !== current && classes.includes(c.parent) && !own.some((l) => l.key === c.key))
+      .filter((c) => c.key !== current && !c.look && classes.includes(c.parent) && !own.some((l) => l.key === c.key))
       .map((c) => ({ key: c.key, text: c.name, sub: 'one of your cars' })),
   ]);
 

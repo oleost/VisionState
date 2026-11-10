@@ -55,7 +55,7 @@
   async function saveCar() {
     if (!editing) return;
     busy = true;
-    const body = { name: editing.name, plate: editing.plate, parent: editing.parent };
+    const body = { name: editing.name, plate: editing.plate, parent: editing.parent, look: editing.look ?? '' };
     try {
       if (editing.key) await api.changeCar(editing.key, body);
       else await api.addCar(body);
@@ -82,6 +82,40 @@
   }
 
   const newCar = (): Car => ({ key: '', name: '', plate: '', parent: sensor.objects?.classes.find((c) => vehicles.includes(c)) ?? 'car' });
+
+  // Each car followed by the cars that share its look (the same model and colour, told apart by
+  // their plates).
+  const listed = $derived(
+    cars.filter((c) => !c.look || !cars.some((o) => o.key === c.look)).flatMap((c) => [c, ...cars.filter((o) => o.look === c.key)]),
+  );
+  const nameOf = (key: string) => cars.find((c) => c.key === key)?.name ?? key;
+  // The cars whose look the car being edited can share: not itself, not one that shares another's,
+  // and none while other cars share its own.
+  const lookChoices = $derived(
+    editing && !cars.some((c) => c.look && c.look === editing?.key)
+      ? cars.filter((c) => c.key !== editing?.key && !c.look)
+      : [],
+  );
+  // Both cars' looks were taught already: they become one look (a mistake if they do not look alike).
+  const bothTaught = $derived(
+    !!editing?.look &&
+      !!cars.find((c) => c.key === editing?.key)?.taught?.length &&
+      !!cars.find((c) => c.key === editing?.look)?.taught?.length,
+  );
+  const sharedPlate = $derived(editing?.look ? (cars.find((c) => c.key === editing?.look)?.plate ?? '') : '');
+  // The Kind select: a kind of vehicle, or "look:<car>" for the same look as one of the cars.
+  const kindValue = $derived(editing ? (editing.look ? `look:${editing.look}` : editing.parent) : '');
+  function setKind(value: string) {
+    if (!editing) return;
+    if (value.startsWith('look:')) {
+      const look = value.slice(5);
+      editing.look = look;
+      editing.parent = cars.find((c) => c.key === look)?.parent ?? editing.parent;
+    } else {
+      editing.look = '';
+      editing.parent = value;
+    }
+  }
 </script>
 
 <section class="card pad col plates" data-testid="plates-card">
@@ -185,12 +219,14 @@
   {#if looksForVehicles}
     <div class="col cars">
       <strong class="small">Your cars</strong>
-      {#each cars as car (car.key)}
-        <div class="row car" data-testid="car">
+      {#each listed as car (car.key)}
+        <div class="row car" class:shared={!!car.look} data-testid="car">
           <span class="col" style="gap:2px;min-width:0">
             <span class="small">{car.name}</span>
             <span class="xsmall faint">
-              {#if car.plate}<span class="mono">{car.plate}</span>{:else}No plate{/if} · {objectName(car.parent)}{#if car.taught?.length}{` · look taught on ${car.taught.map((t) => t.name).join(', ')}`}{/if}
+              {#if car.plate}<span class="mono">{car.plate}</span>{:else}No plate{/if} · {car.look
+                ? `looks like ${nameOf(car.look)}`
+                : objectName(car.parent)}{#if car.taught?.length}{` · look taught on ${car.taught.map((t) => t.name).join(', ')}`}{/if}
             </span>
           </span>
           <span class="spacer"></span>
@@ -222,9 +258,21 @@
           </label>
           <label class="col field">
             <span class="xsmall muted">Kind</span>
-            <select class="input" bind:value={editing.parent}>
+            <select class="input" value={kindValue} onchange={(e) => setKind(e.currentTarget.value)} data-testid="car-kind">
               {#each vehicles as v (v)}<option value={v}>{objectName(v)}</option>{/each}
+              {#if lookChoices.length}
+                <optgroup label="The same look as">
+                  {#each lookChoices as c (c.key)}<option value={`look:${c.key}`}>{c.name}</option>{/each}
+                </optgroup>
+              {/if}
             </select>
+            {#if editing.look}
+              <span class="xsmall faint">
+                For two cars of the same model and colour: {nameOf(editing.look)} becomes the look of both (on when either is
+                seen, also side-on), and each is named by its plate. Only for cars that look the same: choose its kind
+                again to undo it.{#if bothTaught}{' '}<strong>Both looks were taught: they count as one from now on.</strong>{/if}{#if sharedPlate}{' '}Its plate <span class="mono">{sharedPlate}</span> moves to a car of its own under it.{/if}
+              </span>
+            {/if}
           </label>
           <div class="row" style="gap:8px">
             <button class="btn sm primary" type="submit" disabled={busy || !editing.name.trim()}>
@@ -299,6 +347,9 @@
     gap: var(--space-2);
     padding: var(--space-2) 0;
     border-bottom: 1px solid var(--c-border);
+  }
+  .car.shared {
+    padding-left: var(--space-5); /* under the car whose look it shares */
   }
   .car .small {
     overflow-wrap: anywhere;

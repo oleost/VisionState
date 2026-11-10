@@ -2322,7 +2322,7 @@ test('licence plates: turned on after a sheet, a car added, named by its plate o
     if (s.name === name) await request.delete(`api/v1/sensors/${s.id}`);
   }
   for (const c of await (await request.get('api/v1/cars')).json()) {
-    if (c.name === carName) await request.delete(`api/v1/cars/${c.key}`);
+    if (c.name.startsWith(carName)) await request.delete(`api/v1/cars/${c.key}`);
   }
   const created = await request.post('api/v1/sensors', {
     data: {
@@ -2374,15 +2374,34 @@ test('licence plates: turned on after a sheet, a car added, named by its plate o
   const text = plate.replace(' ', '');
   await expect(page.getByTestId('plate-notes').getByText(`Car · ${text} · ${carName}`)).toBeVisible({ timeout: 90_000 });
   await expect(page.getByText(/^event\..*licence_plate$/)).toBeVisible();
+  // ... and how it was known, there and as an entity that can be chosen on the Home Assistant tab.
+  await expect(page.getByText(/^Detected by its plate/).first()).toBeVisible();
+  await page.goto(`#/sensors/${id}/settings/home-assistant`);
+  await expect(page.getByRole('columnheader', { name: 'Identified by' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: `${carName} identified by` })).toBeChecked();
+  await expectNoHorizontalOverflow(page);
 
   // The history: the car's coming is a plate row.
   await page.goto(`#/sensors/${id}/history`);
   await expect(page.getByText(`${carName} · plate ${text}`).first()).toBeVisible({ timeout: 30_000 });
   await expectNoHorizontalOverflow(page);
 
+  // A second car of the same look: the first stands for the look, its plate moves to a car under it.
+  await page.goto(`#/sensors/${id}/settings/detect`);
+  await pressCentered(card.getByRole('button', { name: 'Add a car' }), info);
+  await card.getByPlaceholder('Our car').fill(`${carName} 2`);
+  await card.getByPlaceholder('AB 12345').fill(plate.replace('VS', 'EL')); // its own on every device
+  await card.getByTestId('car-kind').selectOption({ label: carName });
+  await expect(card.getByText(/moves to a car of its own under it/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await pressCentered(card.getByRole('button', { name: 'Add car' }), info);
+  await expect(card.getByTestId('car').filter({ hasText: `${carName} ${plate}` })).toBeVisible();
+  await expect(card.getByTestId('car').filter({ hasText: `${carName} 2` })).toContainText(`looks like ${carName}`);
+  await expectNoClipping(page, '.btn, .card');
+
   await request.delete(`api/v1/sensors/${id}`);
   for (const c of await (await request.get('api/v1/cars')).json()) {
-    if (c.name === carName) await request.delete(`api/v1/cars/${c.key}`);
+    if (c.name.startsWith(carName)) await request.delete(`api/v1/cars/${c.key}`);
   }
 });
 

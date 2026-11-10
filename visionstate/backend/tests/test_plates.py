@@ -11,11 +11,12 @@ from PIL import Image
 
 from visionstate import plates
 from visionstate.db import Sensor
-from visionstate.engine.plates import PlatesMixin
+from visionstate.engine.plates import PlatesMixin, grouped
 from visionstate.engine.plates import identified_by as plates_identified
 from visionstate.main import create_app
-from visionstate.mqtt import SensorDescriptor, discovery_messages, entity_options
+from visionstate.mqtt import IDENTIFIED_STATES, SensorDescriptor, discovery_messages, entity_options
 from visionstate.settings import KIND_OBJECTS, PLATE_EVENTS, PLATES, merge_objects, plates_on
+from visionstate.teach import counts_for
 
 from .conftest import ASSETS, MODEL_DIR, requires_detector
 from .displays import car_with_plate, licence_plate
@@ -65,11 +66,13 @@ def test_only_a_read_with_a_digit_and_the_right_length_can_be_a_plate():
 CARS = [{"key": "our_car", "name": "Our car", "plate": "VS 12345"}, {"key": "van", "name": "Van", "plate": "EL 98765"}]
 
 
-def name_car(det: dict, texts: list[str], look_distance: float, before: dict | None = None) -> dict:
+def name_car(
+    det: dict, texts: list[str], look_distance: float, before: dict | None = None, cars: list[dict] = CARS
+) -> dict:
     """One check's plate step on a vehicle box with these reads."""
     reads = [plates.PlateRead((10, 10, 60, 25), t, 0.9, 0.9) for t in texts]
-    object.__new__(PlatesMixin)._name_car(det, reads, before or {}, CARS, (0, 0, 100, 100), (100, 100), look_distance)
-    return det
+    object.__new__(PlatesMixin)._name_car(det, reads, before or {}, cars, (0, 0, 100, 100), (100, 100), look_distance)
+    return grouped([det], cars)[0]
 
 
 def looks_like(key: str) -> dict:
@@ -118,6 +121,37 @@ def test_a_plate_decides_over_the_look():
     assert twice["plate"]["state"] == "unknown" and "label" not in twice
 
 
+# Two white Teslas: the look of "tesla" is both, their plates tell them apart.
+TWINS = [
+    {"key": "tesla", "name": "Tesla", "plate": ""},
+    {"key": "tesla_a", "name": "Tesla A", "plate": "EJ 86876", "look": "tesla"},
+    {"key": "tesla_b", "name": "Tesla B", "plate": "EL 33333", "look": "tesla"},
+    *CARS,
+]
+
+
+def test_cars_of_the_same_look_are_told_apart_by_their_plates():
+    # Side-on, no plate: the look alone, which is both of them.
+    side = name_car(looks_like("tesla"), [], 1.0, cars=TWINS)
+    assert side["label"] == "tesla" and "group" not in side
+    assert plates_identified([side], "tesla") == "look" and plates_identified([side], "tesla_a") is None
+    # A plate read exactly: that one of them; it counts for the look too.
+    a = name_car(looks_like("tesla"), ["EJ86876"], 1.0, cars=TWINS)
+    assert a["label"] == "tesla_a" and a["group"] == "tesla"
+    assert counts_for(a, "tesla_a") and counts_for(a, "tesla") and not counts_for(a, "tesla_b")
+    assert plates_identified([a], "tesla_a") == plates_identified([a], "tesla") == "plate_and_look"
+    # A plate a little off: the look helps among the cars that share it.
+    b = name_car(looks_like("tesla"), ["EL33383"], 1.0, cars=TWINS)
+    assert b["label"] == "tesla_b" and b["plate"]["look"]
+    # The box stays: still that one while its plate is not read.
+    kept = name_car(looks_like("tesla"), [], 1.0, before=a["plate"], cars=TWINS)
+    assert kept["label"] == "tesla_a" and kept["group"] == "tesla"
+    # Another car's plate decides, a third white Tesla's plate read twice is not one of them.
+    assert name_car(looks_like("tesla"), ["EL98765"], 1.0, cars=TWINS)["label"] == "van"
+    once = name_car(looks_like("tesla"), ["ZX55555"], 1.0, cars=TWINS)
+    assert "label" not in name_car(looks_like("tesla"), ["ZX55555"], 1.0, before=once["plate"], cars=TWINS)
+
+
 # --- plates seen at an angle ------------------------------------------------------------------------
 
 
@@ -155,6 +189,22 @@ def test_a_sensor_that_reads_plates_has_a_plate_event_entity():
     assert any(o["id"] == "plate" for o in entity_options(sensor))
     without = SensorDescriptor("drive", "Drive", [], KIND_OBJECTS, [("car", "Car", "mdi:car")])
     assert not any("/event/" in topic for topic, _ in discovery_messages("homeassistant", without))
+
+
+def test_each_car_has_an_identified_by_entity_that_can_be_chosen_away():
+    objects = [("car", "Car", "mdi:car"), ("tesla", "Tesla", "mdi:car")]
+    sensor = SensorDescriptor("drive", "Drive", [], KIND_OBJECTS, objects, plates=True, cars=["tesla"])
+    configs = dict(discovery_messages("homeassistant", sensor))
+    entity = configs["homeassistant/sensor/visionstate_drive/tesla_identified/config"]
+    assert entity["options"] == list(IDENTIFIED_STATES) and entity["device_class"] == "enum"
+    assert entity["state_topic"] == "visionstate/drive/objects/tesla/identified"
+    option = next(o for o in entity_options(sensor) if o["id"] == "tesla_identified")
+    assert option["column"] == "identified" and option["default"]
+    assert not any(o["id"] == "car_identified" for o in entity_options(sensor))
+    sensor.chosen = {"tesla_identified": False}
+    assert "homeassistant/sensor/visionstate_drive/tesla_identified/config" not in dict(
+        discovery_messages("homeassistant", sensor)
+    )
 
 
 # --- the models -------------------------------------------------------------------------------------------
@@ -279,6 +329,13 @@ def test_a_car_is_named_by_its_plate_and_unknown_plates_make_events(settings, mo
             return [p.get("identified_by") for t, p in sent if t.endswith(topic) and isinstance(p, dict)]
 
         assert wait_for(lambda: "plate" in identified(), timeout=30)
+        # ... and its own "identified by" entity, and the Live tab.
+        assert "plate" in [p for t, p in sent if t.endswith(f"/drive/objects/{car['key']}/identified")]
+        live = client.get(f"/api/v1/sensors/{sid}").json()["objects"]["live"]
+        assert next(o for o in live if o["key"] == car["key"])["identified_by"] in ("plate", "plate_and_look")
+        assert f"{car['key']}_identified" in {
+            o["id"] for o in client.get(f"/api/v1/sensors/{sid}").json()["ha_entities"]
+        }
         # A sure plate on a car whose look it does not know yet: that box is learned as the car,
         # once (not again at every check while it stays).
         assert wait_for(lambda: client.get(f"/api/v1/sensors/{sid}").json()["objects"]["taught"] == 1, timeout=60)
@@ -404,6 +461,35 @@ def test_a_named_vehicle_is_a_car_of_the_household(settings):  # noqa: F811
         copy = client.get(f"/api/v1/sensors/{imported.json()['id']}").json()
         assert copy["objects"]["taught"] == 1 and any(c["key"] == tesla for c in copy["objects"]["custom"])
         assert len(client.get("/api/v1/cars").json()) == 2
+
+        # A second car of the same look: each keeps what was taught of it, both count as the shared
+        # look when boxes are recognised, and the shared car's plates move to a car of their own.
+        assert client.post(f"/api/v1/sensors/{sid}/taught", json={**body, "label": "our_car"}).status_code == 201
+        shared = client.put("/api/v1/cars/our_car", json={"name": "Our car", "plate": "EL 33333", "look": tesla})
+        assert shared.status_code == 200, shared.text
+        cars = {c["key"]: c for c in client.get("/api/v1/cars").json()}
+        assert cars[tesla]["plate"] == ""
+        assert {"sensor": sid, "name": "Drive", "boxes": 1} in cars[tesla]["taught"]
+        assert cars["our_car"]["taught"] == [{"sensor": sid, "name": "Drive", "boxes": 1}]
+        moved = next(c for c in cars.values() if c["name"] == "Tesla EL 11111")
+        assert moved["plate"] == "EL 11111, EL 22222" and moved["look"] == tesla
+        assert cars["our_car"]["look"] == tesla
+        cfg = rt.load_sensor(sid)
+        assert cfg.car_looks == {"our_car": tesla, moved["key"]: tesla}
+        index = rt._build_taught(cfg)
+        assert sorted(index.labels) == [tesla, tesla]  # one look, both cars' boxes
+        # Plates off here: only the shared look is an entity of the sensor.
+        keys = {c["key"] for c in client.get(f"/api/v1/sensors/{sid}").json()["objects"]["custom"]}
+        assert tesla in keys and "our_car" not in keys
+        # Its own look again: undone, its boxes are its own.
+        assert client.put("/api/v1/cars/our_car", json={"name": "Our car", "plate": "EL 33333"}).status_code == 200
+        assert sorted(rt._build_taught(rt.load_sensor(sid)).labels) == ["our_car", tesla]
+        assert client.put("/api/v1/cars/our_car", json={"name": "Our car", "look": tesla}).status_code == 200
+        # One level only; forgetting the look leaves them known by their plates.
+        assert client.put(f"/api/v1/cars/{tesla}", json={"name": "Tesla", "look": "our_car"}).status_code == 400
+        assert client.put("/api/v1/cars/our_car", json={"name": "Our car", "look": moved["key"]}).status_code == 400
+        assert client.delete(f"/api/v1/cars/{tesla}").status_code == 204
+        assert all("look" not in c for c in client.get("/api/v1/cars").json())
 
 
 def test_a_car_overlapping_another_vehicle_is_not_learned_from():

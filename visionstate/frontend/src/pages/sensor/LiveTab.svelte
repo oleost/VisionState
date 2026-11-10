@@ -9,8 +9,8 @@
   import FaceStats from '../../lib/components/FaceStats.svelte';
   import { faceNote, facesOn, objectColor, objectCount, objectKeys, objectName, plateNote, platesOn } from '../../lib/objects';
   import { href, paths } from '../../lib/router.svelte';
-  import type { Detection, Sensor } from '../../lib/types';
-  import { TRIGGER_SOURCES } from '../../lib/ui';
+  import type { Detection, ObjectLive, Sensor } from '../../lib/types';
+  import { IDENTIFIED_BY, TRIGGER_SOURCES } from '../../lib/ui';
 
   let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
 
@@ -18,7 +18,7 @@
 
   const objects = $derived(sensor.objects!);
   const keys = $derived(objectKeys(sensor));
-  const counts = (d: Detection, key: string) => !d.filtered && (d.key === key || d.label === key);
+  const counts = (d: Detection, key: string) => !d.filtered && (d.key === key || d.label === key || d.group === key);
   const seen = $derived(
     keys.map((key) => ({ key, n: objects.detections.filter((d) => counts(d, key)).length })).filter((x) => x.n > 0),
   );
@@ -37,10 +37,23 @@
       : [],
   );
   // Each class, followed by its own labels ("Rex" under "Dog").
+  // A look shared by cars (the same model and colour) cannot tell which of them it is: say so.
+  const lookOf = (o: ObjectLive) => {
+    const sharing = objects.live.filter((y) => y.group === o.key);
+    if (o.identified_by !== 'look' || !sharing.length) return '';
+    const names = [o, ...sharing].map((y) => objectName(y.key, objects.custom));
+    return ` (${names.slice(0, -1).join(', ')} or ${names.at(-1)})`;
+  };
+  // A car that shares another car's look under that car ("Tesla EJ86876" under "Tesla").
   const rows = $derived(
     objects.live
       .filter((o) => !o.parent)
-      .flatMap((o) => [o, ...objects.live.filter((x) => x.parent === o.key)]),
+      .flatMap((o) => [
+        o,
+        ...objects.live
+          .filter((x) => x.parent === o.key && !x.group)
+          .flatMap((x) => [x, ...objects.live.filter((y) => y.group === x.key)]),
+      ]),
   );
 
   async function checkNow() {
@@ -86,7 +99,7 @@
       <div class="card-title"><h3>Right now</h3><span class="xsmall faint">{ago(sensor.live.last_run)}</span></div>
       <ul class="classes">
         {#each rows as o (o.key)}
-          <li class="row" class:own={!!o.parent}>
+          <li class="row" class:own={!!o.parent} class:shared={!!o.group}>
             <span class="dot" style:background={o.on ? objectColor(keys, o.key) : 'var(--c-unknown)'}></span>
             <span class="col" style="gap:2px;min-width:0">
               <span class="row wrap" style="gap:6px">
@@ -94,7 +107,9 @@
                 {#if objects.use_taught && objects.taught_keys.includes(o.key)}<span class="taught xsmall">taught</span>{/if}
               </span>
               <span class="xsmall faint">
-                {#if o.on}Detected{o.score ? ` · ${pct(o.score)} sure` : ''}{:else if o.last_seen}Last seen {ago(o.last_seen)}{:else}Not seen yet{/if}
+                {#if o.on}Detected{o.identified_by ? ` ${IDENTIFIED_BY[o.identified_by]}` : ''}{lookOf(o)}{o.score
+                    ? ` · ${pct(o.score)} sure`
+                    : ''}{:else if o.last_seen}Last seen {ago(o.last_seen)}{:else}Not seen yet{/if}
               </span>
             </span>
             <span class="spacer"></span>
@@ -187,6 +202,9 @@
   }
   .own {
     padding-left: var(--space-5); /* an own label sits under its object */
+  }
+  .own.shared {
+    padding-left: calc(2 * var(--space-5)); /* a car under the car whose look it shares */
   }
   .taught {
     padding: 0 6px;

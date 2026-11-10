@@ -179,6 +179,14 @@ plate, one or several; its look is taught per camera. Own labels of a vehicle cl
 the list by themselves (same key: same taught boxes and entities). A car named by its look alone
 is an entity only of the sensors its look was taught on, or that read plates.
 
+**Cars that look the same** (asked for 2026-11-09: two white Model Ys with their own plates).
+A look cannot tell them apart, so it no longer tries: a car can share another car's look (*Kind →
+The same look as*). That car stands for the look (on whenever one of them is seen) and each car
+under it is named by its plate only. Proposed instead of a per-car "known by its plate only"
+switch, which would lose "a white Tesla is there" side-on. **How it was known** also became an
+entity per car (asked the same day), next to the on/off sensor rather than in its state, which
+stays on/off for the automations that use it.
+
 **Learning a car's look from its plate** (asked for 2026-11-09: when it is sure of the plate but
 not of the car, learn; switchable, sensible defaults). On by default: plates are off by default,
 and an exact read at high confidence is the surest label the app gets without the user. Limits

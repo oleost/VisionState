@@ -7,7 +7,7 @@ about a sensor is in state.py; its pure decisions (no I/O) are in logic.py.
 
 from .logic import entity_triggers, filter_detections, hear, next_check_at, review_reason, update_tracks
 from .runtime import Runtime
-from .state import Debouncer, LiveState, ObjectTrack, SensorConfig, SoundTrack, household_cars, with_shared
+from .state import Debouncer, LiveState, ObjectTrack, SensorConfig, SoundTrack, car_looks, household_cars, with_shared
 
 __all__ = [
     "Debouncer",
@@ -16,6 +16,7 @@ __all__ = [
     "Runtime",
     "SensorConfig",
     "SoundTrack",
+    "car_looks",
     "household_cars",
     "with_shared",
     "entity_triggers",

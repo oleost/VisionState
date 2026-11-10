@@ -40,19 +40,27 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         return index if index.ids else None
 
     def _build_taught(self, cfg: SensorConfig, generation: int = 0) -> teach.TaughtIndex:
+        """The sensor's taught boxes to compare with. A car that shares another car's look keeps its
+        own boxes (unsharing undoes it), but they count as that car's: one look for both."""
         parents = cfg.parents
+        looks = cfg.car_looks
         embedder = self.embedder
         assert embedder is not None  # taught_index only builds one with a backbone
         with self.db.session() as s:
             rows = s.scalars(
                 select(Sample).where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None)).order_by(Sample.id)
             )
-            examples = [x for x in rows if x.object_label is not None and teach.usable(x.object_label, parents)]
+            examples = [
+                x
+                for x in rows
+                if x.object_label is not None and teach.usable(looks.get(x.object_label, x.object_label), parents)
+            ]
         examples, vectors = self._taught_vectors(cfg, examples)
+        labels = [x.object_label or "" for x in examples]
         return teach.build(
             embedder.spec.id,
             [x.id for x in examples],
-            [x.object_label or "" for x in examples],
+            [looks.get(label, label) for label in labels],
             [x.detected for x in examples],
             vectors,
             parents,

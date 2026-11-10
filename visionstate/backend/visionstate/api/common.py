@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_shared
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, car_looks, with_shared
 from ..mqtt import entity_options, main_entities
 from ..settings import (
     COUNTER_LIMIT,
@@ -567,6 +567,8 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
         return None
     settings = with_shared(merge_objects(sensor.objects), session, sensor.id)
     parents = {label["key"]: label["parent"] for label in active_custom(settings)}
+    looks = {label["key"]: label["look"] for label in active_custom(settings) if label.get("look")}
+    identified = live.car_identified if live else {}
     tracks = live.tracks if live else {}
     per_class = []
     unknown = [FACE_UNKNOWN_KEY] if faces_on(settings) else []  # recognising faces: "unknown person"
@@ -576,6 +578,9 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
             {
                 "key": key,
                 "parent": parents.get(key),  # own labels: the class they are a kind of
+                "group": looks.get(key),  # a car that shares another car's look: that car
+                # a car of the household that is here: by its plate, its look or both
+                "identified_by": identified.get(key) if track.on else None,
                 "on": track.on,
                 "count": track.count,
                 "score": track.score,
@@ -587,6 +592,8 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
             Sample.sensor_id == sensor.id, Sample.object_label.is_not(None)
         )
     ).all()
+    shared = car_looks(session)  # a car that shares another car's look: its boxes count as that car's
+    taught = [(shared.get(label, label) if label else label, detected) for label, detected in taught]
     usable = [(label, detected) for label, detected in taught if label is not None and teach.usable(label, parents)]
     taught_faces = session.scalar(select(func.count()).select_from(Face).where(Face.sensor_id == sensor.id)) or 0
     stats = list(live.face_stats) if live else []

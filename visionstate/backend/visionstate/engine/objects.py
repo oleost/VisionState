@@ -104,6 +104,8 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
             await self._send_snapshot(cfg, key, image, attributes["boxes"], track.count if track.on else 0)
             await self._send(cfg, ot["state"], "ON" if track.on else "OFF", retain=True)
             await self._send(cfg, ot["count"], str(track.count), retain=True)
+            if key in cars and cfg.plates_on:  # its "identified by" entity (mqtt.IDENTIFIED_STATES)
+                await self._send(cfg, ot["identified"], attributes.get("identified_by") or "none", retain=True)
             shows = (
                 track.on,
                 track.count,

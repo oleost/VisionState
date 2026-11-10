@@ -38,6 +38,9 @@ ONLINE, OFFLINE = "online", "offline"
 RECONNECT_DELAY_S = 10
 CONFIRM_TIMEOUT_S = 10  # how long the broker may take to confirm a removal
 SNAPSHOT_SUFFIX = "_snapshot"  # the entity of an object's snapshot: "<key>_snapshot"
+IDENTIFIED_SUFFIX = "_identified"  # a car's "identified by" entity: "<key>_identified"
+# Its states: how the car is known in the last check, or not there.
+IDENTIFIED_STATES = ("plate_and_look", "plate", "look", "none")
 
 
 def topics(slug: str) -> dict[str, str]:
@@ -74,6 +77,7 @@ def object_topics(slug: str, key: str) -> dict[str, str]:
         "count": f"{base}/count",
         "attributes": f"{base}/attributes",
         "snapshot": f"{base}/snapshot",
+        "identified": f"{base}/identified",  # a car of the household: by its plate, its look or both
     }
 
 
@@ -98,6 +102,7 @@ class SensorDescriptor:
     # sound sensors: (key, display name, icon, device class) per sound
     sounds: list[tuple[str, str, str, str]] = field(default_factory=list)
     plates: bool = False  # object sensors that read licence plates: the plate event entity
+    cars: list[str] = field(default_factory=list)  # ...and the household's cars: how each was known
 
     def entity_on(self, entity: str, default: bool) -> bool:
         """Whether an optional entity exists in Home Assistant. Not settled yet (None): those it had
@@ -190,6 +195,16 @@ def entity_options(sensor: SensorDescriptor) -> list[dict]:
                     "default": False,
                 },
             ]
+            if key in sensor.cars:
+                options.append(
+                    {
+                        "id": f"{key}{IDENTIFIED_SUFFIX}",
+                        "object": name,
+                        "column": "identified",
+                        "name": f"{name} identified by",
+                        "default": True,
+                    }
+                )
         if sensor.plates:
             options.append({"id": "plate", "name": "Licence plate", "default": True})
     else:
@@ -331,6 +346,18 @@ def _object_entities(d: _Discovery) -> list[tuple[str, dict]]:
             d.config("sensor", f"{key}_count", count),
             d.config("image", f"{key}{SNAPSHOT_SUFFIX}", snapshot),
         ]
+        if key in d.sensor.cars:
+            # A car of the household: whether it is here by its plate, its look or both, or not.
+            identified = {
+                "name": f"{name} identified by",
+                **d.suggest("sensor", f"{key}{IDENTIFIED_SUFFIX}"),
+                "state_topic": ot["identified"],
+                "device_class": "enum",
+                "options": list(IDENTIFIED_STATES),
+                "icon": "mdi:card-search-outline",
+                **d.with_camera,
+            }
+            entities.append(d.config("sensor", f"{key}{IDENTIFIED_SUFFIX}", identified))
     if d.sensor.plates:
         # An event per car of the household that comes, and per plate it does not know (when the
         # sensor reports those): Home Assistant keeps each one with its plate, so it has a history.
@@ -878,7 +905,12 @@ class MqttBridge:
         """Forget one class of an object sensor (deselected): its entities and retained values."""
         if discovery:
             uid = f"{APP_SLUG}_{slug}"
-            entities = (("binary_sensor", key), ("sensor", f"{key}_count"), ("image", f"{key}{SNAPSHOT_SUFFIX}"))
+            entities = (
+                ("binary_sensor", key),
+                ("sensor", f"{key}_count"),
+                ("image", f"{key}{SNAPSHOT_SUFFIX}"),
+                ("sensor", f"{key}{IDENTIFIED_SUFFIX}"),
+            )
             for component, object_id in entities:
                 await self.publish(
                     f"{self.settings.discovery_prefix}/{component}/{uid}/{object_id}/config", "", retain=True

@@ -57,21 +57,34 @@ def _overlaps_vehicle(det: dict, found: list[dict]) -> bool:
 
 
 def identified_by(found: list[dict], key: str) -> str | None:
-    """How a car of the household is known in a check, for its entities' attributes: "plate_and_look"
-    (its plate and its taught look agree), "plate", "look" (its taught look alone: parked side-on,
-    the plate not seen), or None (no box of it). The surest box wins. A plate read while the box
-    stayed counts until the box goes (the plate's ``kept``)."""
+    """How a car of the household is known in a check, for its entities: "plate_and_look" (its
+    plate and its taught look agree), "plate", "look" (its taught look alone: parked side-on, the
+    plate not seen), or None (no box of it). The surest box wins. A plate read while the box
+    stayed counts until the box goes (the plate's ``kept``). A box named by the plate of a car
+    that shares another car's look (``group``) counts for both."""
     rank, how = 0, None
     for d in found:
-        if d.get("label") != key or d.get("filtered"):
+        if d.get("filtered") or key not in (d.get("label"), d.get("group")):
             continue
         plate = d.get("plate") or {}
-        by_plate = plate.get("state") == "match" and plate.get("car") == key
-        by_look = (d.get("match") or {}).get("label") == key
+        by_plate = plate.get("state") == "match" and plate.get("car") == d.get("label")
+        looked = (d.get("match") or {}).get("label")
+        by_look = looked is not None and looked in (d.get("label"), d.get("group"))
         this = (3, "plate_and_look") if by_plate and by_look else (2, "plate") if by_plate else (1, "look")
         if this[0] > rank:
             rank, how = this
     return how
+
+
+def grouped(found: list[dict], cars: list[dict]) -> list[dict]:
+    """A box named by the plate of a car that shares another car's look also counts for that car
+    (``group``): two cars of the same model and colour are one look, told apart by their plates."""
+    looks = {c["key"]: c["look"] for c in cars if c.get("look")}
+    for d in found:
+        d.pop("group", None)
+        if (look := looks.get(d.get("label") or "")) is not None:
+            d["group"] = look
+    return found
 
 
 class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
@@ -267,7 +280,9 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         the look says it is a car and the plate is read at most ``look_distance`` from that car's
         plate (the sensor's setting), the plate agrees: the car is named at once (``look`` True).
         A plate read the same way on PLATES["unknown_after"] checks that is far from the car the
-        look says is another car: the plate decides, and the box loses the look's name.
+        look says is another car: the plate decides, and the box loses the look's name. Cars that
+        share one car's look (``look``: the same model and colour) are told apart by their plates
+        only: the look names that car, a plate one of them (``grouped``).
         """
         model = self.wanted_plates()
         if model is None:
@@ -305,7 +320,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 reads = await asyncio.to_thread(plates.read_plates, model, crop)
             reads = [r for r in reads if r.score >= PLATES["min_score"]]
             self._name_car(result[i], reads, before, cars, px, (w, h), cfg.objects["plates"]["look_distance"])
-        return result
+        return grouped(result, cars)
 
     @staticmethod
     def _keep_car(det: dict, before: dict) -> None:
@@ -329,8 +344,11 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         if not reads:
             self._keep_car(det, before)
             return
-        # The car the box looks like (its taught look), if that is one of the cars.
+        # The car the box looks like (its taught look), if that is one of the cars, and the cars that
+        # share that look (cars of the same model and colour, told apart by their plates only).
         look = next((c for c in cars if c["key"] == (det.get("match") or {}).get("label")), None)
+        same_look = [c for c in cars if look is not None and look["key"] in (c["key"], c.get("look"))]
+        group = {c["key"] for c in same_look}
         # The read closest to a car's plate wins (a sticker read better than the plate must not hide
         # the plate); without a car close, the reader's best read.
         matches = [(plates.match(r.text, cars), r) for r in reads]
@@ -339,11 +357,12 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         if (
             look is not None
             and look_distance > 0
-            and not (m.key is not None and m.key != look["key"] and m.distance == 0)
+            and not (m.key is not None and m.key not in group and m.distance == 0)
         ):
-            # The look says which car: the read closest to that car's plate, if close enough.
+            # The look says which car (or which cars that look the same): the read closest to their
+            # plates, if close enough.
             to_look = min(
-                ((plates.match(r.text, [look]), r) for r in reads), key=lambda mr: (mr[0].distance, -mr[1].score)
+                ((plates.match(r.text, same_look), r) for r in reads), key=lambda mr: (mr[0].distance, -mr[1].score)
             )
             if to_look[0].distance <= look_distance:
                 m, read = to_look
@@ -363,7 +382,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
             "age": 0,
             "announced": before.get("announced"),
         }
-        by_look = look is not None and m.key == look["key"] and m.distance <= look_distance
+        by_look = look is not None and m.key in group and m.distance <= look_distance
         if m.key is not None and (m.distance <= PLATES["match_distance"] or by_look):
             sure = m.distance == 0 or by_look
             agreed = before.get("candidate") == m.key or (before.get("state") == "match" and before.get("car") == m.key)
@@ -393,14 +412,18 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         was read exactly as a car's in this check, surely (PLATES["learn_score"]), that the look does
         not know as that car, is taught as that car on this sensor (origin "plate", shown and
         forgotten like any taught box). At most once per PLATES["learn_every_s"] per car and sensor,
-        up to PLATES["learn_max"] such boxes, within the sensor's TEACH["max_examples"]."""
+        up to PLATES["learn_max"] such boxes, within the sensor's TEACH["max_examples"]. A car that
+        shares another car's look is learned when the look does not name that car either."""
         if not cfg.objects["plates"]["learn"]:
             return
         live = self.live_state(cfg.id)
+        looks = cfg.car_looks
         now = time.time()
         learned = False
         for d in found:
             plate = d.get("plate") or {}
+            # Its own boxes, also for a car that shares another car's look (they count as that car's
+            # when boxes are recognised: the look knows it once it names that car).
             car = plate.get("car")
             if (
                 not car
@@ -411,7 +434,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 or plate.get("distance")  # not read exactly
                 or plate.get("score", 0.0) < PLATES["learn_score"]
                 or d.get("filtered")
-                or (d.get("match") or {}).get("label") == car  # its look knows it already
+                or (d.get("match") or {}).get("label") in {car, looks.get(car, car)}  # its look knows it already
                 or _overlaps_vehicle(d, found)  # the plate may be the car's behind or in front
                 or now - live.plate_learned.get(car, 0.0) < PLATES["learn_every_s"]
             ):
