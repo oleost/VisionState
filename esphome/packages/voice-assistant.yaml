@@ -2,7 +2,11 @@
 # it), sharing the device's microphone with its wake word. Only VisionState listens (one listener,
 # behind the password). While the assistant hears a command and answers, the stream carries silence
 # (the switch turns that off): what is said to it is not VisionState's business. The device's own
-# mute mutes the stream too.
+# mute mutes the stream too; VisionState stream (stream-switch.yaml) switches it off on its own.
+packages:
+  diagnostics: !include diagnostics.yaml
+  stream_switch: !include stream-switch.yaml
+
 substitutions:
   stream_port: "8081"
   stream_username: visionstate

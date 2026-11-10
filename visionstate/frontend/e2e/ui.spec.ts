@@ -2149,6 +2149,54 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   errors.expectNone();
 });
 
+test('a sound sensor on an ESP32: its microphone set from the Live tab, and a newer firmware said', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  // The e2e backend has no Home Assistant: the device it would find there is answered here.
+  const device = {
+    name: 'hall',
+    address: '10.0.0.9',
+    ours: true,
+    firmware: '1.0.0-dev',
+    latest: '1.1.0',
+    outdated: true,
+    controls: [
+      { entity_id: 'switch.hall_microphone', kind: 'switch', name: 'Microphone', state: 'on' },
+      { entity_id: 'number.hall_microphone_gain', kind: 'number', name: 'Microphone gain', state: '4.0', min: 1, max: 64, step: 1 },
+    ],
+  };
+  const sent: unknown[] = [];
+  await page.route(`**/api/v1/sensors/${id}/device`, async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { entity_id: string; value: boolean | number };
+      sent.push(body);
+      const c = device.controls.find((x) => x.entity_id === body.entity_id)!;
+      c.state = typeof body.value === 'boolean' ? (body.value ? 'on' : 'off') : `${body.value}.0`;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { device, error: null } });
+  });
+  await page.goto(`#/sensors/${id}/live`);
+  const card = page.getByTestId('sound-device');
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('firmware-outdated')).toContainText('1.1.0');
+  const mic = card.getByLabel('Microphone', { exact: true });
+  await expect(mic).toBeChecked();
+  await press(mic, info);
+  await expect(mic).not.toBeChecked();
+  const gain = card.getByLabel('Microphone gain');
+  await gain.fill('8'); // a range input: set and let go
+  await expect(card.getByText('8', { exact: true })).toBeVisible();
+  expect(sent).toEqual([
+    { entity_id: 'switch.hall_microphone', value: false },
+    { entity_id: 'number.hall_microphone_gain', value: 8 },
+  ]);
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .card');
+  errors.expectNone();
+});
+
 test('own sounds: a recording taught as a new sound, played back, and forgotten', async ({ page, request }, info) => {
   test.skip(!(await soundModelInstalled(request)), 'no sound model');
   const id = await seededSoundSensorId(request);

@@ -6,6 +6,7 @@
   import ProbBars from '../../lib/components/ProbBars.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LevelChart from '../../lib/components/sound/LevelChart.svelte';
+  import DeviceCard from '../../lib/components/sound/DeviceCard.svelte';
   import { pct } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import { soundColor } from '../../lib/sound';
@@ -68,6 +69,7 @@
   </div>
 
   <aside class="col">
+    <DeviceCard sensorId={sensor.id} />
     <section class="card pad col stream">
       <div class="card-title"><h3>The stream</h3></div>
       {#if stream}

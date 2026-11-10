@@ -22,8 +22,16 @@ CONF_BUFFER_DURATION = "buffer_duration"
 CONF_FRESH_SNAPSHOT = "fresh_snapshot"
 CONF_LISTENERS = "listeners"
 CONF_ON_CAMERA_USE = "on_camera_use"
+CONF_MICROPHONE_SAMPLE_RATE = "microphone_sample_rate"
+CONF_LEVEL = "level"
+CONF_PEAK = "peak"
+CONF_CLIPPED = "clipped"
+CONF_DROPPED = "dropped"
+CONF_DIAGNOSTICS_INTERVAL = "diagnostics_interval"
 
-SAMPLE_RATE = 16000  # what VisionState's sound model takes
+SAMPLE_RATE = 16000  # what VisionState's sound model takes, and what /audio.wav always is
+# A microphone may run at its own rate: 48 kHz is filtered and taken down to 16 kHz on the device.
+MICROPHONE_SAMPLE_RATES = (16000, 48000)
 
 visionstate_stream_ns = cg.esphome_ns.namespace("visionstate_stream")
 VisionStateStream = visionstate_stream_ns.class_("VisionStateStream", cg.Component)
@@ -69,6 +77,22 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(CONF_FRESH_SNAPSHOT, default=True): cv.boolean,
             cv.Optional(CONF_LISTENERS): sensor.sensor_schema(accuracy_decimals=0, icon="mdi:ear-hearing"),
+            cv.Optional(CONF_MICROPHONE_SAMPLE_RATE, default=SAMPLE_RATE): cv.one_of(*MICROPHONE_SAMPLE_RATES, int=True),
+            # Diagnostics while someone listens, for wiring and gain: the level and the loudest sample
+            # (dBFS), samples that clipped, and sound dropped because a listener did not keep up (ms).
+            cv.Optional(CONF_LEVEL): sensor.sensor_schema(
+                unit_of_measurement="dBFS", accuracy_decimals=0, icon="mdi:waveform"
+            ),
+            cv.Optional(CONF_PEAK): sensor.sensor_schema(
+                unit_of_measurement="dBFS", accuracy_decimals=0, icon="mdi:chart-bell-curve"
+            ),
+            cv.Optional(CONF_CLIPPED): sensor.sensor_schema(accuracy_decimals=0, icon="mdi:waveform"),
+            cv.Optional(CONF_DROPPED): sensor.sensor_schema(
+                unit_of_measurement="ms", accuracy_decimals=0, icon="mdi:timer-sand-empty"
+            ),
+            cv.Optional(CONF_DIAGNOSTICS_INTERVAL, default="10s"): cv.All(
+                cv.positive_time_period_milliseconds, cv.Range(min=cv.TimePeriod(seconds=1))
+            ),
             # The camera use changed (by Home Assistant, or a snapshot that asked for another), with its name.
             cv.Optional(CONF_ON_CAMERA_USE): automation.validate_automation(single=True),
         }
@@ -79,14 +103,13 @@ CONFIG_SCHEMA = cv.All(
     _consume_sockets,
 )
 
-FINAL_VALIDATE_SCHEMA = cv.Schema(
-    {
-        cv.Optional(CONF_MICROPHONE): microphone.final_validate_microphone_source_schema(
-            "visionstate_stream", sample_rate=SAMPLE_RATE
-        ),
-    },
-    extra=cv.ALLOW_EXTRA,
-)
+def FINAL_VALIDATE_SCHEMA(config):  # noqa: N802 - the name ESPHome looks for
+    """The microphone must run at the rate given (16 kHz, or 48 kHz taken down to it here)."""
+    rate = config.get(CONF_MICROPHONE_SAMPLE_RATE, SAMPLE_RATE)
+    return cv.Schema(
+        {cv.Optional(CONF_MICROPHONE): microphone.final_validate_microphone_source_schema("visionstate_stream", sample_rate=rate)},
+        extra=cv.ALLOW_EXTRA,
+    )(config)
 
 
 async def to_code(config):
@@ -102,6 +125,16 @@ async def to_code(config):
         cg.add_define("USE_VISIONSTATE_MICROPHONE")
         source = await microphone.microphone_source_to_code(config[CONF_MICROPHONE])
         cg.add(var.set_microphone_source(source))
+        cg.add(var.set_input_rate(config[CONF_MICROPHONE_SAMPLE_RATE]))
+        cg.add(var.set_diagnostics_interval(config[CONF_DIAGNOSTICS_INTERVAL]))
+        for key, setter in (
+            (CONF_LEVEL, var.set_level_sensor),
+            (CONF_PEAK, var.set_peak_sensor),
+            (CONF_CLIPPED, var.set_clipped_sensor),
+            (CONF_DROPPED, var.set_dropped_sensor),
+        ):
+            if key in config:
+                cg.add(setter(await sensor.new_sensor(config[key])))
     if CONF_CAMERA in config:
         cg.add_define("USE_VISIONSTATE_CAMERA")
         cam = await cg.get_variable(config[CONF_CAMERA])

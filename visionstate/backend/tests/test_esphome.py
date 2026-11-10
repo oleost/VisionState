@@ -237,3 +237,139 @@ def test_discovered_esphome_devices_are_read_from_home_assistants_flows(monkeypa
 
     monkeypatch.setattr(ha_events, "ws_commands", commands)
     assert asyncio.run(ha_events.discovered("ws://ha", "t", "esphome")) == ["vs-hall"]
+
+
+@in_repo
+def test_the_firmwares_version_and_controls_are_the_apps():
+    # The version a device reports is the one the app compares with (settings.ESPHOME).
+    common = (ESPHOME_DIR / "packages" / "common.yaml").read_text(encoding="utf-8")
+    assert re.search(r'^    version: "([^"]+)"', common, re.MULTILINE)[1] == ESPHOME["firmware_version"]
+    project = re.search(r"^    name: (\S+)", common, re.MULTILINE)[1]
+    assert project.split(".")[-1] == ESPHOME["model"]
+    # Every control the Live tab shows is an entity of that name and kind in a package.
+    packages = {p.name: p.read_text(encoding="utf-8") for p in (ESPHOME_DIR / "packages").glob("*.yaml")}
+    for name, kind in ESPHOME["controls"].items():
+        assert any(
+            re.search(rf"^{kind}:\n(?:  .*\n|\n)*?    name: {re.escape(name)}$", text, re.MULTILINE)
+            for text in packages.values()
+        ), (name, kind)
+
+
+def test_firmware_versions_compare_with_dev_before_the_release():
+    assert esphome.firmware_version("1.1.0 (ESPHome 2026.10.2)") == "1.1.0"
+    assert esphome.firmware_version(None) is None
+    assert esphome.outdated("1.0.0-dev", "1.0.0") and esphome.outdated("1.0.0", "1.1.0")
+    assert not esphome.outdated("1.1.0", "1.1.0") and not esphome.outdated("1.2.0", "1.1.0")
+    assert not esphome.outdated(None, "1.1.0")
+
+
+def registries(sw_version="1.0.0-dev (ESPHome 2026.10.2)", model="visionstate"):
+    """Home Assistant's registries and states for one ESP32 microphone of ours, and another device."""
+
+    def entity(entity_id, name, device="dev1", **extra):
+        return {
+            "entity_id": entity_id,
+            "original_name": name,
+            "name": None,
+            "platform": "esphome",
+            "device_id": device,
+            **extra,
+        }
+
+    entities = [
+        entity("sensor.hall_ip_address", "IP address"),
+        entity("number.hall_microphone_gain", "Microphone gain"),
+        entity("switch.hall_microphone", "Microphone"),
+        entity("sensor.hall_uptime", "Uptime"),
+        entity("switch.hall_visionstate_stream", "VisionState stream", disabled_by="user"),
+        entity("sensor.other_ip_address", "IP address", device="dev2"),
+        entity("switch.other_microphone", "Microphone", device="dev2"),
+    ]
+    devices = [
+        {"id": "dev1", "name": "hall", "name_by_user": None, "model": model, "sw_version": sw_version},
+        {"id": "dev2", "name": "other", "model": "visionstate", "sw_version": "1.1.0 (ESPHome 2026.10.2)"},
+    ]
+    states = {
+        "sensor.hall_ip_address": {"state": "10.0.0.9"},
+        "number.hall_microphone_gain": {"state": "4.0", "attributes": {"min": 1, "max": 64, "step": 1}},
+        "switch.hall_microphone": {"state": "on"},
+        "sensor.other_ip_address": {"state": "10.0.0.10"},
+        "switch.other_microphone": {"state": "off"},
+    }
+    return entities, devices, states
+
+
+def test_a_sound_sensors_device_is_found_by_its_address_with_its_own_controls():
+    entities, devices, states = registries()
+    found = esphome.device_controls("10.0.0.9", entities, devices, states)
+    assert found["name"] == "hall" and found["ours"] and found["firmware"] == "1.0.0-dev"
+    assert found["outdated"] and found["latest"] == ESPHOME["firmware_version"]
+    # Its own controls only (not the other device's, not one switched off in Home Assistant), in order.
+    assert [c["entity_id"] for c in found["controls"]] == ["switch.hall_microphone", "number.hall_microphone_gain"]
+    assert found["controls"][1] | {} == {
+        "entity_id": "number.hall_microphone_gain", "kind": "number", "name": "Microphone gain",
+        "state": "4.0", "min": 1, "max": 64, "step": 1,
+    }  # fmt: skip
+    assert esphome.device_controls("10.0.0.99", entities, devices, states) is None
+    # Another firmware (a voice assistant's own) has the controls, but no version of ours to compare.
+    other = esphome.device_controls("10.0.0.9", entities, registries(model="home-assistant-voice")[1], states)
+    assert not other["ours"] and not other["outdated"] and other["firmware"] is None
+
+
+def test_the_live_tab_sets_the_devices_controls_through_home_assistant(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        entities, devices, states = registries()
+        calls = []
+
+        async def regs():
+            return entities, devices
+
+        async def raw_states():
+            return states
+
+        async def switch(entity_id, on):
+            calls.append(("switch", entity_id, on))
+
+        async def call_service(domain, service, data):
+            calls.append((f"{domain}.{service}", data["entity_id"], data["value"]))
+
+        rt.ha.registries, rt.ha.raw_states, rt.ha.switch, rt.ha.call_service = regs, raw_states, switch, call_service
+        body = {
+            "name": "Hall",
+            "kind": "sound",
+            "source_type": "rtsp",
+            "source": "http://visionstate:pw@10.0.0.9:8081/audio.wav",
+        }
+        sid = client.post("/api/v1/sensors", json=body).json()["id"]
+        got = client.get(f"/api/v1/sensors/{sid}/device").json()
+        assert got["error"] is None and got["device"]["outdated"]
+        assert len(got["device"]["controls"]) == 2
+        url = f"/api/v1/sensors/{sid}/device"
+        assert client.post(url, json={"entity_id": "switch.hall_microphone", "value": False}).status_code == 200
+        assert client.post(url, json={"entity_id": "number.hall_microphone_gain", "value": 8}).status_code == 200
+        assert calls == [
+            ("switch", "switch.hall_microphone", False),
+            ("number.set_value", "number.hall_microphone_gain", 8.0),
+        ]
+        # Only this device's controls, and the gain within its range.
+        assert client.post(url, json={"entity_id": "switch.other_microphone", "value": True}).status_code == 404
+        assert client.post(url, json={"entity_id": "light.kitchen", "value": True}).status_code == 404
+        assert client.post(url, json={"entity_id": "number.hall_microphone_gain", "value": 99}).status_code == 400
+        # A state sensor has no such device; Home Assistant gone: no controls, not an error page.
+        state = client.post(
+            "/api/v1/sensors",
+            json={
+                "name": "Door",
+                "source_type": "http",
+                "source": "http://x/s.jpg",
+                "states": [{"name": "Open"}, {"name": "Closed"}],
+            },
+        ).json()["id"]
+        assert client.get(f"/api/v1/sensors/{state}/device").status_code == 400
+
+        async def gone():
+            raise RuntimeError("no route")
+
+        rt.ha.registries = gone
+        assert client.get(f"/api/v1/sensors/{sid}/device").json() == {"device": None, "error": "no route"}

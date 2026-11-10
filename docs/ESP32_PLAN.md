@@ -36,7 +36,7 @@ Assistant or a test before anything is built on them).
 - **Our own code under Apache-2.0**, in this repository (a folder of its own, tags `esphome-v*`,
   its own CI), on the branch `esp32` while it is built.
 
-## 2. Built (released as `esphome-v1`)
+## 2. Built (released on the line `esphome-v1`)
 
 The component `visionstate_stream` and the packages in `esphome/`: the microphone as an endless
 WAV over HTTP (16 kHz, mono, 16 bits), the camera's picture as a snapshot taken after the request,
@@ -104,6 +104,14 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   answer goes to a media player through a Home Assistant action. The stream pauses from the wake
   word (not from the pipeline's start: with the wake word in Home Assistant the pipeline runs all
   the time). *Not checked*: on a board.
+- **From #75 and #85 (hruba202, 2026-11-10), built in firmware 1.1.0:** microphones at 48 kHz
+  filtered and taken down to 16 kHz on the device (`mic_sample_rate`; a 48-tap windowed sinc, edge at
+  7.2 kHz), *VisionState stream* on a shared microphone (`stream-switch.yaml`), the stream's
+  diagnostics (`diagnostics.yaml`: level, peak, clipped, dropped; off in Home Assistant until
+  switched on), and the device's *Microphone* and gain on a sound sensor's Live tab. Not built: an
+  allowed subnet (the password is the lock; a subnet check is easy to get wrong behind NAT and
+  Home Assistant's own network). The firmware is now a line that moves (`docs/RELEASING.md`, decided
+  with the maintainer 2026-11-10): updating is *Install*, not editing the file.
 - ***Only when loud*** (the device sends only above VisionState's line, with a heartbeat): not
   built. On mains power the only gain is privacy; it costs the background VisionState learns and
   every sound below the line. Left until someone asks for it.

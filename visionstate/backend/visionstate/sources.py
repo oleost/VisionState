@@ -17,7 +17,7 @@ from typing import cast
 import httpx
 import numpy as np
 
-from .ha_events import camera_stream, discovered, websocket_url
+from .ha_events import camera_stream, discovered, fetch_registries, websocket_url
 from .redact import redact
 from .settings import CAMERA_USES, RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
@@ -131,6 +131,20 @@ class HomeAssistant:
         if not self.enabled or not self._ws_url:
             return []
         return await discovered(self._ws_url, self._token, domain)
+
+    async def registries(self) -> tuple[list[dict], list[dict]]:
+        """The entity and device registries (empty without the WebSocket API)."""
+        if not self.enabled or not self._ws_url:
+            return [], []
+        return await fetch_registries(self._ws_url, self._token)
+
+    async def raw_states(self) -> dict[str, dict]:
+        """Every entity's state with its attributes, by entity ID."""
+        if not self.enabled:
+            return {}
+        resp = await self._client.get(f"{self.base}/states")
+        resp.raise_for_status()
+        return {s["entity_id"]: s for s in resp.json()}
 
     async def entities(self) -> list[dict]:
         """All entities (id, name, domain, state), for picking trigger entities."""

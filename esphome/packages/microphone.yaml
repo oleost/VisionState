@@ -1,7 +1,14 @@
 # An I2S microphone (INMP441: L/R to GND) as /audio.wav, 16 kHz mono. Its pins come from the board
-# package; its switch and gain from microphone-controls.yaml.
+# package; its switch and gain from microphone-controls.yaml. A microphone that must run at 48 kHz
+# (mic_sample_rate: "48000") is filtered and taken down to 16 kHz on the device.
 packages:
   controls: !include microphone-controls.yaml
+
+substitutions:
+  mic_sample_rate: "16000"
+
+visionstate_stream:
+  microphone_sample_rate: ${mic_sample_rate}
 
 i2s_audio:
   - id: vs_i2s_microphone
@@ -15,6 +22,6 @@ microphone:
     i2s_din_pin: ${mic_sd}
     adc_type: external
     pdm: false
-    sample_rate: 16000
+    sample_rate: ${mic_sample_rate}
     bits_per_sample: 32bit
     channel: left

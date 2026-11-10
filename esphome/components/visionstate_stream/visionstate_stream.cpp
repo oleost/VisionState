@@ -5,6 +5,7 @@
 #include <esp_http_server.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "esphome/core/alloc_helpers.h"
@@ -31,6 +32,11 @@ static const uint32_t IMAGE_TIMEOUT_MS = 5000;
 // camera: its next picture comes no sooner than 1 / max_framerate after the last.
 static const uint32_t WAKE_EVERY_MS = 10;
 static const uint32_t LISTENER_TASK_STACK = 4096;
+// The low-pass filter before taking a 48 kHz microphone down to 16 kHz: a windowed sinc, its edge
+// just below the new Nyquist frequency (8 kHz), so nothing above it folds back into what is heard.
+static const size_t DECIMATE_TAPS = 48;
+static const float DECIMATE_CUTOFF_HZ = 7200.0f;
+static const int32_t CLIP_LEVEL = 32700;  // a sample this loud counts as clipped
 #ifdef USE_VISIONSTATE_CAMERA
 // Camera use (packages/camera-use.yaml): the names Home Assistant shows, and the keys a snapshot
 // asks with (?use=...). VisionState asks for the one its sensor needs; it stays until changed.
@@ -101,21 +107,49 @@ void VisionStateStream::setup() {
     this->camera_->add_listener(this);
 #endif
 #ifdef USE_VISIONSTATE_MICROPHONE
-  this->microphone_source_->add_data_callback([this](const std::vector<uint8_t> &data) {
-    static const uint8_t SILENCE[256] = {};
-    LockGuard guard(this->lock_);
-    for (auto *listener : this->listeners_) {
-      if (!this->paused_) {
-        listener->buffer->write(data.data(), data.size());  // a full buffer drops its oldest sound
-        continue;
-      }
-      // Paused: as much silence instead, so the stream keeps its pace and the listener stays.
-      for (size_t left = data.size(); left > 0;) {
-        size_t n = std::min(left, sizeof(SILENCE));
-        listener->buffer->write(SILENCE, n);
-        left -= n;
-      }
+  if (this->decimate_ > 1) {
+    const float pi = 3.14159265f;
+    float fc = DECIMATE_CUTOFF_HZ / static_cast<float>(SAMPLE_RATE_OUT * this->decimate_);  // per input sample
+    float sum = 0.0f;
+    this->taps_.resize(DECIMATE_TAPS);
+    for (size_t i = 0; i < DECIMATE_TAPS; i++) {
+      float m = static_cast<float>(i) - (DECIMATE_TAPS - 1) / 2.0f;
+      float sinc = m == 0.0f ? 2.0f * fc : sinf(2.0f * pi * fc * m) / (pi * m);
+      float window = 0.54f - 0.46f * cosf(2.0f * pi * static_cast<float>(i) / (DECIMATE_TAPS - 1));  // Hamming
+      this->taps_[i] = sinc * window;
+      sum += this->taps_[i];
     }
+    for (auto &tap : this->taps_)
+      tap /= sum;  // unity gain for what is kept
+    this->history_.assign(DECIMATE_TAPS, 0.0f);
+  }
+  this->microphone_source_->add_data_callback([this](const std::vector<uint8_t> &data) {
+    if (this->decimate_ <= 1) {
+      this->deliver_(data.data(), data.size());
+      return;
+    }
+    // 48 kHz in: every sample into the filter, every third filtered one out.
+    const auto *in = reinterpret_cast<const int16_t *>(data.data());
+    size_t count = data.size() / 2;
+    this->out_.resize((count / this->decimate_ + 1) * 2);
+    auto *out = reinterpret_cast<int16_t *>(this->out_.data());
+    size_t n = 0;
+    size_t taps = this->taps_.size();
+    for (size_t i = 0; i < count; i++) {
+      this->history_[this->history_pos_] = in[i];
+      this->history_pos_ = this->history_pos_ + 1 == taps ? 0 : this->history_pos_ + 1;
+      if (++this->phase_ < this->decimate_)
+        continue;
+      this->phase_ = 0;
+      float acc = 0.0f;
+      size_t pos = this->history_pos_;  // the oldest sample
+      for (size_t k = 0; k < taps; k++) {
+        acc += this->taps_[k] * this->history_[pos];
+        pos = pos + 1 == taps ? 0 : pos + 1;
+      }
+      out[n++] = static_cast<int16_t>(std::max(-32768.0f, std::min(32767.0f, acc)));
+    }
+    this->deliver_(this->out_.data(), n * 2);
   });
 #endif
 
@@ -151,6 +185,78 @@ void VisionStateStream::setup() {
   httpd_register_err_handler(this->httpd_, HTTPD_405_METHOD_NOT_ALLOWED, not_found);
 }
 
+#ifdef USE_VISIONSTATE_MICROPHONE
+/// 16 kHz sound to every listener (silence while paused or switched off), counted for the diagnostics.
+void VisionStateStream::deliver_(const uint8_t *data, size_t len) {
+  static const uint8_t SILENCE[256] = {};
+  const auto *samples = reinterpret_cast<const int16_t *>(data);
+  size_t count = len / 2;
+  bool silent = this->paused_ || !this->stream_enabled_;
+  LockGuard guard(this->lock_);
+  if (!silent) {
+    for (size_t i = 0; i < count; i++) {
+      int32_t s = samples[i];
+      int32_t a = s < 0 ? -s : s;
+      this->sum_squares_ += static_cast<double>(s) * s;
+      this->peak_ = std::max(this->peak_, a);
+      if (a >= CLIP_LEVEL)
+        this->clipped_++;
+    }
+    this->samples_ += count;
+  }
+  for (auto *listener : this->listeners_) {
+    // A full buffer drops its oldest sound: counted, the listener is not keeping up (Wi-Fi).
+    size_t room = listener->buffer->free();
+    if (room < len)
+      this->dropped_bytes_ += len - room;
+    if (!silent) {
+      listener->buffer->write(data, len);
+      continue;
+    }
+    // As much silence instead, so the stream keeps its pace and the listener stays.
+    for (size_t left = len; left > 0;) {
+      size_t n = std::min(left, sizeof(SILENCE));
+      listener->buffer->write(SILENCE, n);
+      left -= n;
+    }
+  }
+}
+
+static float dbfs(double value) {
+  // dBFS (0 is the loudest there is), in whole numbers so Home Assistant does not store every wobble.
+  if (value <= 0)
+    return -96.0f;
+  return std::max(-96.0f, roundf(20.0f * log10f(static_cast<float>(value / 32768.0))));
+}
+
+void VisionStateStream::publish_diagnostics_() {
+  double sum_squares;
+  uint32_t samples, clipped, dropped;
+  int32_t peak;
+  {
+    LockGuard guard(this->lock_);
+    sum_squares = this->sum_squares_;
+    samples = this->samples_;
+    peak = this->peak_;
+    clipped = this->clipped_;
+    dropped = this->dropped_bytes_;
+    this->sum_squares_ = 0;
+    this->samples_ = 0;
+    this->peak_ = 0;
+    this->clipped_ = 0;
+    this->dropped_bytes_ = 0;
+  }
+  if (this->level_sensor_ != nullptr)
+    this->level_sensor_->publish_state(samples > 0 ? dbfs(sqrt(sum_squares / samples)) : NAN);
+  if (this->peak_sensor_ != nullptr)
+    this->peak_sensor_->publish_state(samples > 0 ? dbfs(peak) : NAN);
+  if (this->clipped_sensor_ != nullptr)
+    this->clipped_sensor_->publish_state(clipped);
+  if (this->dropped_sensor_ != nullptr)
+    this->dropped_sensor_->publish_state(static_cast<float>(dropped) * 1000.0f / BYTES_PER_SECOND);  // ms of sound
+}
+#endif
+
 void VisionStateStream::loop() {
 #ifdef USE_VISIONSTATE_CAMERA
   if (this->camera_use_changed_ && this->camera_use_ < CAMERA_USES) {
@@ -167,6 +273,13 @@ void VisionStateStream::loop() {
   } else if (count == 0 && this->microphone_wanted_) {
     this->microphone_source_->stop();
     this->microphone_wanted_ = false;
+  }
+  // Diagnostics while someone listens (nothing to measure otherwise), every diagnostics interval.
+  if (count > 0 && millis() - this->last_diagnostics_ >= this->diagnostics_ms_) {
+    this->last_diagnostics_ = millis();
+    if (this->level_sensor_ != nullptr || this->peak_sensor_ != nullptr || this->clipped_sensor_ != nullptr ||
+        this->dropped_sensor_ != nullptr)
+      this->publish_diagnostics_();
   }
 #endif
   if (this->listeners_sensor_ != nullptr && count != this->published_count_) {
@@ -185,7 +298,7 @@ void VisionStateStream::dump_config() {
                 this->port_, this->expected_auth_.empty() ? "none" : "user name and password", this->max_listeners_,
                 this->buffer_ms_);
 #ifdef USE_VISIONSTATE_MICROPHONE
-  ESP_LOGCONFIG(TAG, "  Sound: /audio.wav (16 kHz, mono, 16 bits)");
+  ESP_LOGCONFIG(TAG, "  Sound: /audio.wav (16 kHz, mono, 16 bits)%s", this->decimate_ > 1 ? ", from 48 kHz" : "");
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   ESP_LOGCONFIG(TAG, "  Picture: /snapshot.jpg%s", this->fresh_snapshot_ ? " (fresh)" : "");

@@ -1,5 +1,9 @@
 # What every microphone has (microphone.yaml, microphone-pdm.yaml include it): the stream's sound,
-# the Microphone switch, and the gain as a number in Home Assistant, kept over restarts.
+# the Microphone switch, and the gain as a number in Home Assistant, kept over restarts, and the
+# stream's diagnostics (diagnostics.yaml).
+packages:
+  diagnostics: !include diagnostics.yaml
+
 substitutions:
   mic_gain: "4"
 

@@ -121,18 +121,26 @@ Only when the maintainer says the beta is tested, after the checks above.
 
 ## The ESPHome firmware
 
-`esphome/` is released on its own, with tags `esphome-vN` (not the app's version). Devices fetch
-the packages and the component from GitHub at that tag, so a tag is never moved or deleted once
-released; a change that breaks existing devices' files gets the next N.
+`esphome/` is released on its own, with its own versions (not the app's). Devices fetch the
+packages and the component from GitHub by the ref in their file, the firmware's **line**
+`esphome-vN`: it is moved to each new version of that line, so a device gets it at its next
+*Install* with nothing changed in its file (`esphome/README.md`, *Updating the firmware*). Each
+version also gets a tag `esphome-vN.M.P` that is never moved or deleted (to stay on one, or go back).
+A change that would break the files devices have (a substitution renamed or removed, a package
+gone) starts the next line, `esphome-v(N+1)`; v1 then stays where it is.
 
 - CI (`.github/workflows/esphome.yml`) compiles every configuration in `esphome/tests` with the
   oldest ESPHome the packages accept and the newest: on a change under `esphome/`, on an
   `esphome-v*` tag, and weekly (a new ESPHome that breaks the component is seen before users
   compile it).
-- The guide writes the tag `settings.ESPHOME["ref"]` into a device's file, and the examples name the
-  same. A new tag: tag `esphome-vN` on the commit that `beta` holds, and set `ref` to it in the same
-  app beta. While firmware is built on a branch of its own, `ref` is that branch and
-  `settings.ESPHOME["refresh"]` is `0s` (fetched again at every build); a tag is `1d`.
+- The guide writes the line `settings.ESPHOME["ref"]` into a device's file, and the examples name the
+  same. The version is `project: version:` in `esphome/packages/common.yaml` and
+  `settings.ESPHOME["firmware_version"]` (`tests/test_esphome.py` keeps them the same); a device of
+  ours that reports an older one is told on its sound sensor's Live tab to install again.
+- A new version, in the same app beta (after the ESPHome CI on that commit is green): bump both
+  versions, tag `esphome-vN.M.P` on the commit `beta` holds, and move the line to it
+  (`git tag -f esphome-vN <commit> && git push -f origin esphome-vN`). The line is the one tag that is
+  ever moved.
 
 ## Dependencies and platforms
 

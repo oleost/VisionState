@@ -125,3 +125,68 @@ def addresses(host: str, password: str, *, sound: bool, picture: bool) -> dict[s
     if picture:
         found["picture"] = f"{base}/snapshot.jpg"
     return found
+
+
+def firmware_version(sw_version: str | None) -> str | None:
+    """Our firmware's version from what the device reports ("1.1.0 (ESPHome 2026.10.2)")."""
+    if not sw_version:
+        return None
+    return sw_version.split(" (", 1)[0].strip() or None
+
+
+def _version_key(version: str) -> tuple:
+    """Sortable: "1.0.0-dev" comes before "1.0.0"."""
+    main, _, pre = version.partition("-")
+    numbers = tuple(int(n) if n.isdigit() else 0 for n in main.split("."))
+    return (*numbers, 0 if pre else 1)
+
+
+def outdated(version: str | None, latest: str) -> bool:
+    return version is not None and _version_key(version) < _version_key(latest)
+
+
+def device_controls(host: str, entities: list[dict], devices: list[dict], states: dict[str, dict]) -> dict | None:
+    """The ESPHome device whose *IP address* entity shows this address, with the controls it has
+    (settings.ESPHOME["controls"]) and, for our firmware, whether a newer one is out. None: no such
+    device in Home Assistant."""
+    ip_entities = [
+        e
+        for e in entities
+        if e.get("platform") == "esphome"
+        and e.get("original_name") == "IP address"
+        and (states.get(e["entity_id"]) or {}).get("state") == host
+    ]
+    if not ip_entities or not ip_entities[0].get("device_id"):
+        return None
+    device_id = ip_entities[0]["device_id"]
+    device = next((d for d in devices if d.get("id") == device_id), {})
+    found: list[tuple[int, dict]] = []
+    for e in entities:
+        kind = ESPHOME["controls"].get(e.get("original_name") or "")
+        if e.get("device_id") != device_id or kind is None or not e["entity_id"].startswith(f"{kind}."):
+            continue
+        if e.get("disabled_by"):
+            continue
+        state = states.get(e["entity_id"]) or {}
+        attrs = state.get("attributes") or {}
+        control = {
+            "entity_id": e["entity_id"],
+            "kind": kind,
+            "name": e.get("name") or e.get("original_name"),
+            "state": state.get("state"),
+        }
+        if kind == "number":
+            control.update(min=attrs.get("min"), max=attrs.get("max"), step=attrs.get("step"))
+        found.append((list(ESPHOME["controls"]).index(e["original_name"]), control))
+    controls = [c for _, c in sorted(found, key=lambda ic: ic[0])]  # in the order of settings
+    ours = device.get("model") == ESPHOME["model"]
+    version = firmware_version(device.get("sw_version")) if ours else None
+    return {
+        "name": device.get("name_by_user") or device.get("name"),
+        "address": host,
+        "ours": ours,
+        "firmware": version,
+        "latest": ESPHOME["firmware_version"] if ours else None,
+        "outdated": ours and outdated(version, ESPHOME["firmware_version"]),
+        "controls": controls,
+    }

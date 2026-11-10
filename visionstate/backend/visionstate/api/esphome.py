@@ -1,10 +1,13 @@
 """The ESP32 guide (docs/ESP32_PLAN.md): the ESPHome configuration for a board and a kind of device,
 the devices Home Assistant knows the address of, and a check that the device answers with its
-sound and its pictures before a sensor is made from it."""
+sound and its pictures before a sensor is made from it. And a sound sensor's device: its
+microphone's controls on the Live tab, set through Home Assistant, and whether a newer firmware is out."""
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -12,8 +15,8 @@ from pydantic import BaseModel, Field
 
 from .. import esphome
 from ..redact import redact
-from ..settings import ESPHOME
-from .common import API_PREFIX, runtime
+from ..settings import ESPHOME, KIND_SOUND
+from .common import API_PREFIX, get_sensor, runtime
 
 router = APIRouter(prefix=API_PREFIX, tags=["esphome"])
 
@@ -27,6 +30,11 @@ class ConfigurationIn(BaseModel):
     name: str = Field(max_length=60)
     mute: bool = False
     camera_use: str | None = None  # settings.ESPHOME["camera_uses"]; None: the first
+
+
+class ControlIn(BaseModel):
+    entity_id: str = Field(max_length=255)
+    value: bool | float
 
 
 class CheckIn(BaseModel):
@@ -121,3 +129,57 @@ async def check(body: CheckIn) -> dict:
         if "picture" in found:
             result["picture"] = await _try(client, found["picture"], JPEG_MAGIC, stream=False)
     return result
+
+
+def _host(rt, sensor_id: int) -> str | None:  # noqa: ANN001 - the Runtime
+    """The host a sound sensor listens to (an ESP32 of ours is reached by its address)."""
+    with rt.db.session() as s:
+        sensor = get_sensor(s, sensor_id, KIND_SOUND)
+        return urlsplit(sensor.source).hostname if sensor.source_type in ("rtsp", "http") else None
+
+
+async def _device(request: Request, sensor_id: int) -> dict | None:
+    rt = runtime(request)
+    host = await asyncio.to_thread(_host, rt, sensor_id)
+    if not host:
+        return None
+    entities, devices = await rt.ha.registries()
+    states = await rt.ha.raw_states()
+    return esphome.device_controls(host, entities, devices, states)
+
+
+@router.get("/sensors/{sensor_id}/device")
+async def device(sensor_id: int, request: Request) -> dict:
+    """The ESPHome device a sound sensor listens to, if Home Assistant has it: its microphone's
+    controls and whether a newer firmware of ours is out."""
+    try:
+        found = await _device(request, sensor_id)
+    except HTTPException:
+        raise
+    except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: the Live tab shows no controls
+        return {"device": None, "error": redact(str(err)) or type(err).__name__}
+    return {"device": found, "error": None}
+
+
+@router.post("/sensors/{sensor_id}/device")
+async def set_control(sensor_id: int, body: ControlIn, request: Request) -> dict:
+    """Switch the device's microphone or stream, or set its gain (only the device's own controls)."""
+    found = await _device(request, sensor_id)
+    control = next((c for c in (found or {}).get("controls", []) if c["entity_id"] == body.entity_id), None)
+    if control is None:
+        raise HTTPException(404, "No such control on this sensor's device")
+    ha = runtime(request).ha
+    try:
+        if control["kind"] == "switch":
+            await ha.switch(body.entity_id, bool(body.value))
+        else:
+            value = float(body.value)
+            low, high = control.get("min"), control.get("max")
+            if (low is not None and value < low) or (high is not None and value > high):
+                raise HTTPException(400, f"Between {low:g} and {high:g}")
+            await ha.call_service("number", "set_value", {"entity_id": body.entity_id, "value": value})
+    except HTTPException:
+        raise
+    except Exception as err:  # noqa: BLE001 - Home Assistant refused or is gone
+        raise HTTPException(502, redact(str(err)) or type(err).__name__) from err
+    return {"ok": True}

@@ -23,7 +23,27 @@ a third gets *409*.
 In Home Assistant the device has: *Microphone* (on/off, kept over restarts), *Microphone gain*,
 *Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Camera use* and
 *Exposure for moving things* (a camera), *IP address*, *Wi-Fi signal*, *Uptime* and *Restart*. The
-board's LED is on while someone listens or looks.
+board's LED is on while someone listens or looks. VisionState shows a sound sensor's *Microphone*
+and gain on its **Live** tab and sets them through Home Assistant.
+
+**Diagnostics** (off in Home Assistant until switched on there, under the device's *Diagnostic*
+entities): every 10 s while VisionState listens, *Sound level* and *Sound peak* (dBFS: 0 is the
+loudest there is, a quiet room is about −60), *Samples clipped* (the gain too high, or something very
+loud) and *Sound dropped* (ms the listener did not keep up with: Wi-Fi). For wiring and gain.
+
+**A microphone at 48 kHz** (one that does not run at 16 kHz): `mic_sample_rate: "48000"` under
+`substitutions`. The device filters it and takes it down to 16 kHz itself, so the stream stays the
+same.
+
+## Updating the firmware
+
+A device's file names the firmware's line, `esphome-v1`. Each new version of v1 is put on that
+line, so updating is choosing **Install** for the device in the ESPHome app: nothing in the file
+changes (`refresh: 1d`: ESPHome looks for a newer one at most once a day; *Clean build files* first
+fetches it at once). VisionState says on a sound sensor's Live tab when the device has an older
+version than the app knows. Each version also has a tag of its own that never moves
+(`esphome-v1.0.0`, `esphome-v1.1.0` …): name one in the file instead to stay on it. A change that
+would break the files devices have gets a new line, `esphome-v2`, and stays out of v1.
 
 **Camera use** says what the camera looks at, and sets its picture size, JPEG quality and exposure
 ([`packages/camera-use.yaml`](packages/camera-use.yaml)). VisionState sets it itself: a snapshot can
@@ -207,6 +227,8 @@ What it does on the device:
   turns that off. The wake word itself is still heard. The device's own *Mute* mutes the stream
   too (VisionState shows *Pure silence*).
 - *VisionState microphone gain*, and *VisionState listening* (0 or 1).
+- *VisionState stream*: VisionState's stream on or off on its own (off: silence), leaving the
+  assistant's microphone on; and the diagnostics (above).
 - On the **Voice PE** it takes channel 1 of the XMOS chip, the one the wake word hears: the echo of
   its own speaker cancelled and noise suppressed, without automatic gain (channel 0 has that, which
   would hide how loud a sound is). Noise suppression may soften a steady tone: whether a smoke
@@ -231,7 +253,8 @@ assistant, with no speaker of its own:
   device → Configure*), switch on *Allow the device to perform Home Assistant actions*. A
   Chromecast fetches the answer from Home Assistant's internal URL, so it must reach that.
 - From the wake word until the answer is done the stream carries silence (*VisionState pauses for
-  the assistant* turns that off). *Microphone* and the mute switch mute both.
+  the assistant* turns that off). *Microphone* and the mute switch mute both; *VisionState stream*
+  switches off only VisionState's stream.
 
 Add the package after the microphone's, with the player:
 
@@ -256,7 +279,9 @@ Compiled for an ESP32 DevKit, not yet tried on a board.
 | *401* in the guide's check, or the sensor gets no sound | The password is not the one in the device's file (`stream_password`). |
 | *409* | Two listeners are on already (VisionState and someone else): close one. |
 | *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND; on a XIAO, that the camera board is on), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
-| Very quiet sound | Raise *Microphone gain* in Home Assistant. |
+| Very quiet sound | Raise the gain (on the sensor's Live tab, or *Microphone gain* in Home Assistant). *Sound level* (a diagnostic) says how loud it arrives. |
+| *Samples clipped* above 0 | The gain is too high for what is heard: lower it. |
+| *Sound dropped* above 0 | The Wi-Fi does not keep up: a better signal (*Wi-Fi signal* above about −70 dBm). |
 | The ESP32-CAM restarts, or the picture fails | A weak 5 V supply (see above). |
 | Home Assistant does not ask to add the device | It is not on the Wi-Fi yet (ESPHome's log shows it), or Home Assistant is on another network. |
 
@@ -268,13 +293,16 @@ Compiled for an ESP32 DevKit, not yet tried on a board.
 | [`packages/board-esp32-devkit.yaml`](packages/board-esp32-devkit.yaml), [`packages/board-esp32-cam.yaml`](packages/board-esp32-cam.yaml), [`packages/board-xiao-esp32s3-sense.yaml`](packages/board-xiao-esp32s3-sense.yaml), [`packages/board-esp32s3-devkit.yaml`](packages/board-esp32s3-devkit.yaml), [`packages/board-waveshare-esp32s3-lcd2.yaml`](packages/board-waveshare-esp32s3-lcd2.yaml), [`packages/board-waveshare-esp32c5-kit.yaml`](packages/board-waveshare-esp32c5-kit.yaml) | the board, its default pins and the light that shows someone listens (`vs_light`: an LED, or a display) |
 | [`packages/microphone.yaml`](packages/microphone.yaml) | an INMP441 (I2S) as `/audio.wav` |
 | [`packages/microphone-pdm.yaml`](packages/microphone-pdm.yaml) | the XIAO ESP32-S3 Sense's PDM microphone as `/audio.wav` |
-| [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch and the gain |
+| [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch, the gain and the diagnostics |
+| [`packages/diagnostics.yaml`](packages/diagnostics.yaml) | the stream's level, peak, clipped samples and dropped sound (off in Home Assistant until switched on) |
+| [`packages/stream-switch.yaml`](packages/stream-switch.yaml) | *VisionState stream*: the stream on and off on its own, on a device whose microphone is shared |
 | [`packages/mute-pin.yaml`](packages/mute-pin.yaml) | a mute switch on a pin: unwired, the microphone is on |
 | [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light |
 | [`packages/camera-xiao-esp32s3-sense.yaml`](packages/camera-xiao-esp32s3-sense.yaml) | the XIAO's camera and `/snapshot.jpg` (it has no flash) |
 | [`packages/esp32-cam-microphone.yaml`](packages/esp32-cam-microphone.yaml) | camera and microphone on a plain ESP32: keeps the camera's I2S port free |
 | [`packages/voice-pe.yaml`](packages/voice-pe.yaml), [`packages/atom-voices3r.yaml`](packages/atom-voices3r.yaml) | the stream added to a voice assistant's own configuration, on its microphone |
-| [`packages/voice-assistant.yaml`](packages/voice-assistant.yaml) | what both include: one listener, silence while the assistant listens, the gain |
+| [`packages/voice-assistant.yaml`](packages/voice-assistant.yaml) | what both include: one listener, silence while the assistant listens, the gain, *VisionState stream*, the diagnostics |
+| [`packages/voice-assistant-ha-wake-word.yaml`](packages/voice-assistant-ha-wake-word.yaml) | a microphone of ours as a voice assistant too: the wake word in Home Assistant, the answer on a media player |
 | [`components/visionstate_stream`](components/visionstate_stream) | the server: the stream, the snapshot and the login |
 
 [`tests/`](tests) holds the configurations CI compiles (`.github/workflows/esphome.yml`), built from the

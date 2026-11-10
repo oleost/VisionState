@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.15.0b8
+
+**ESP32 firmware 1.1.0, and it updates without editing its file.** Asked for by @hruba202 in #75
+and #85, thanks.
+
+- **Updating is one tap:** a device's file follows the firmware's line (`esphome-v1`), so a new
+  version comes with *Install* in the ESPHome app; nothing in the file changes. A sound sensor's
+  Live tab says when its device has an older version. Each version also has a tag of its own
+  (`esphome-v1.1.0`) for staying on it.
+- **The microphone on the Live tab:** a sound sensor on an ESP32 shows the device's *Microphone*
+  switch and its gain, set through Home Assistant, right next to the level they change.
+- **VisionState stream:** on a voice assistant, a switch that turns off only VisionState's stream
+  and leaves the assistant's microphone on.
+- **Diagnostics** on the device (off in Home Assistant until switched on there): the sound's level
+  and peak, samples that clipped, and sound dropped on a weak Wi-Fi.
+- **Microphones at 48 kHz** (such as the Waveshare ESP32-S3 Audio Board): filtered and taken down
+  to 16 kHz on the device (`mic_sample_rate: "48000"`).
+
 ## 0.15.0b7
 
 **ESP32 microphones and cameras of your own, set up with ESPHome.** The firmware (`esphome-v1`)

@@ -1,0 +1,13 @@
+# VisionState's stream on and off, on a device whose microphone is shared (a voice assistant): off,
+# VisionState gets silence while the assistant keeps the microphone. Kept over restarts.
+switch:
+  - platform: template
+    id: vs_stream_on
+    name: VisionState stream
+    icon: mdi:access-point-network
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - lambda: id(vs_stream).set_stream_enabled(true);
+    on_turn_off:
+      - lambda: id(vs_stream).set_stream_enabled(false);

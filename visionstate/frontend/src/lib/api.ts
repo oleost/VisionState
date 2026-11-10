@@ -22,6 +22,7 @@ import type {
   EsphomeCheck,
   EsphomeConfiguration,
   EsphomeDevice,
+  SensorDevice,
   HaEntity,
   HistoryFacets,
   HistoryFilter,
@@ -412,6 +413,9 @@ export const api = {
   esphomeDevices: () =>
     request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
   /** Ask the device for its sound and its picture, as the sensor will. */
+  sensorDevice: (id: number) => request<{ device: SensorDevice | null; error: string | null }>(`sensors/${id}/device`),
+  setSensorDevice: (id: number, entityId: string, value: boolean | number) =>
+    request<{ ok: boolean }>(`sensors/${id}/device`, send('POST', { entity_id: entityId, value })),
   esphomeCheck: (host: string, password: string, sound: boolean, picture: boolean) =>
     request<EsphomeCheck>('esphome/check', send('POST', { host, password, sound, picture })),
   /** Each threshold the sensor decides by, with how the review answers fare and a suggested one. */

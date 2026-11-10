@@ -5,6 +5,10 @@
 # needs "Allow the device to perform Home Assistant actions" on the device in Home Assistant.
 # The microphone is shared: its Microphone switch and mute switch mute both. From the wake word until
 # the answer is done the stream carries silence (VisionState pauses for the assistant turns that off).
+# VisionState stream (stream-switch.yaml) switches VisionState's stream off and leaves the assistant on.
+packages:
+  stream_switch: !include stream-switch.yaml
+
 substitutions:
   assistant_media_player: media_player.living_room  # the device's own file sets it
   assistant_gain: "4"

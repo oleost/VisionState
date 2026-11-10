@@ -27,6 +27,7 @@ jobs:
         config:
           - devkit-microphone
           - devkit-microphone-assistant
+          - devkit-microphone-48k
           - esp32cam-camera
           - esp32cam-camera-microphone
           - xiao-camera-microphone

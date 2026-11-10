@@ -1241,6 +1241,26 @@ export interface EsphomeCheck {
   picture?: EsphomeCheckPart;
 }
 
+/** A sound sensor's ESPHome device (GET sensors/{id}/device): its microphone's controls. */
+export interface SensorDevice {
+  name: string;
+  address: string;
+  /** Our firmware (settings.ESPHOME["model"]): it has a version to compare. */
+  ours: boolean;
+  firmware: string | null;
+  latest: string | null;
+  outdated: boolean;
+  controls: {
+    entity_id: string;
+    kind: 'switch' | 'number';
+    name: string;
+    state: string | null;
+    min?: number | null;
+    max?: number | null;
+    step?: number | null;
+  }[];
+}
+
 export interface EsphomeDevice {
   entity_id: string;
   name: string;

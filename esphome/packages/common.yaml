@@ -11,7 +11,7 @@ esphome:
   min_version: 2026.10.0
   project:
     name: oleost.visionstate
-    version: "1.0.0-dev"
+    version: "1.1.0"  # settings.ESPHOME["firmware_version"] (tests/test_esphome.py keeps them the same)
 
 logger:
 

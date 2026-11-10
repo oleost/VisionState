@@ -672,7 +672,10 @@ Wi-Fi you type stays in your browser) and import in the ESPHome app, with a pass
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
 `esphome/README.md` in the repository; there too how such a microphone can also be a voice
-assistant, its wake word heard by Home Assistant and its answer played on a media player.
+assistant, its wake word heard by Home Assistant and its answer played on a media player. On the
+sound sensor's **Live** tab, VisionState shows the device's *Microphone* switch and gain (set on the
+device through Home Assistant: watch the level while you change it), and says when a newer
+firmware is out: choose *Install* for the device in the ESPHome app, nothing in its file changes.
 
 The wizard listens to the stream for a few seconds and shows what it sends (codec, sample rate,
 whether it has video), how loud it is and what it heard. The Live tab shows the same while it

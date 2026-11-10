@@ -97,6 +97,14 @@ async def fetch_registry(url: str, token: str) -> list[dict]:
     return (await ws_commands(url, token, [{"type": "config/entity_registry/list"}]))[0] or []
 
 
+async def fetch_registries(url: str, token: str) -> tuple[list[dict], list[dict]]:
+    """Home Assistant's entity and device registries."""
+    entities, devices = await ws_commands(
+        url, token, [{"type": "config/entity_registry/list"}, {"type": "config/device_registry/list"}]
+    )
+    return entities or [], devices or []
+
+
 async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
     """Switch these entities on in Home Assistant."""
     update = "config/entity_registry/update"

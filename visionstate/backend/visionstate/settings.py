@@ -407,10 +407,24 @@ ADVICE = {
 # esphome/packages/board-*.yaml (tests/test_esphome.py keeps them the same).
 ESPHOME = {
     "repository": "https://github.com/oleost/VisionState",
-    # The firmware's release tag (esphome/examples name the same; docs/RELEASING.md): never moved.
+    # The firmware's line (docs/RELEASING.md): it moves to each new version of v1, so a device gets it
+    # at its next Install; esphome/examples name the same.
     "ref": "esphome-v1",
-    # How often ESPHome looks for the firmware again (a tag does not change).
+    # How often ESPHome looks for a newer firmware on that line.
     "refresh": "1d",
+    # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
+    # reports an older one is told to install again.
+    "firmware_version": "1.1.0",
+    # A device's entities shown on a sound sensor's Live tab, by their name in the firmware (the
+    # packages in esphome/) and kind: set there through Home Assistant.
+    "controls": {
+        "Microphone": "switch",
+        "VisionState stream": "switch",
+        "Microphone gain": "number",
+        "VisionState microphone gain": "number",
+    },
+    # The device model our firmware reports (esphome/packages/common.yaml, project name).
+    "model": "visionstate",
     "port": 8081,  # visionstate_stream's port
     "username": "visionstate",
     "password_chars": 20,  # a password the guide makes up

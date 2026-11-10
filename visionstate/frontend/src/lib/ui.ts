@@ -10,6 +10,8 @@ export const POLL = {
   thumbnail: 15_000,
   /** The ESP32 guide looks for the new device in Home Assistant. */
   esp32Devices: 5_000,
+  /** A sound sensor's ESP32: its microphone's controls on the Live tab. */
+  device: 10_000,
 };
 
 export const TOAST_MS = 5_000;

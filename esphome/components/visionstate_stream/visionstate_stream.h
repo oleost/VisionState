@@ -60,6 +60,17 @@ class VisionStateStream final : public Component
   /// everything else on the device too, such as a voice assistant).
   void set_paused(bool paused) { this->paused_ = paused; }
   bool is_paused() const { return this->paused_; }
+  /// Off, the stream carries silence (a switch of its own, apart from the microphone's mute and from
+  /// the pause for a voice assistant).
+  void set_stream_enabled(bool enabled) { this->stream_enabled_ = enabled; }
+  /// The microphone's own rate: 16000, or 48000 (filtered and taken down to 16 kHz here).
+  void set_input_rate(uint32_t rate) { this->decimate_ = rate / SAMPLE_RATE_OUT; }
+  void set_level_sensor(sensor::Sensor *sensor) { this->level_sensor_ = sensor; }
+  void set_peak_sensor(sensor::Sensor *sensor) { this->peak_sensor_ = sensor; }
+  void set_clipped_sensor(sensor::Sensor *sensor) { this->clipped_sensor_ = sensor; }
+  void set_dropped_sensor(sensor::Sensor *sensor) { this->dropped_sensor_ = sensor; }
+  void set_diagnostics_interval(uint32_t ms) { this->diagnostics_ms_ = ms; }
+  static const uint32_t SAMPLE_RATE_OUT = 16000;
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   void set_camera(camera::Camera *camera) { this->camera_ = camera; }
@@ -99,6 +110,28 @@ class VisionStateStream final : public Component
 #ifdef USE_VISIONSTATE_MICROPHONE
   microphone::MicrophoneSource *microphone_source_{nullptr};
   volatile bool paused_{false};
+  volatile bool stream_enabled_{true};
+  // Taking a 48 kHz microphone down to 16 kHz: a low-pass filter, then every third sample.
+  uint32_t decimate_{1};
+  std::vector<float> taps_;
+  std::vector<float> history_;  // the last taps_.size() input samples, a ring
+  size_t history_pos_{0};
+  uint32_t phase_{0};
+  std::vector<uint8_t> out_;
+  void deliver_(const uint8_t *data, size_t len);
+  // Diagnostics, counted by the microphone's task and published by the main loop.
+  sensor::Sensor *level_sensor_{nullptr};
+  sensor::Sensor *peak_sensor_{nullptr};
+  sensor::Sensor *clipped_sensor_{nullptr};
+  sensor::Sensor *dropped_sensor_{nullptr};
+  uint32_t diagnostics_ms_{10000};
+  uint32_t last_diagnostics_{0};
+  double sum_squares_{0};
+  uint32_t samples_{0};
+  int32_t peak_{0};
+  uint32_t clipped_{0};
+  uint32_t dropped_bytes_{0};
+  void publish_diagnostics_();
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   camera::Camera *camera_{nullptr};
