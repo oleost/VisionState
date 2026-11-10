@@ -247,6 +247,8 @@ def test_every_plate_model_reads_a_plate_on_a_real_car(spec, text):
         image = car_with_plate(text, photo)
     reads = plates.read_plates(load(spec), image)
     assert reads and reads[0].text == plates.normalise(text), [r.text for r in reads]
+    # Python floats only: a numpy float32 in a box cannot be sent as JSON (0.15.0b5's sensor list).
+    assert all(type(v) is float for r in reads for v in (*r.box, r.score, r.found)), reads[0]
 
 
 @pytest.mark.parametrize("spec", [on_disk(s) for s in plates.MODELS.values()])

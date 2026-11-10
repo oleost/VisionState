@@ -195,4 +195,4 @@ ways); the guide does nothing until opened.
       `refresh` to `1d` in the same beta (`docs/RELEASING.md`), so beta users' devices stay on a
       fixed firmware. A later fix that needs a change in users' files gets `esphome-v2`.
 - [x] The usual checks, the changelog entry shown to the maintainer, and their "go" (2026-11-10:
-      released in 0.15.0b6).
+      released in 0.15.0b7).

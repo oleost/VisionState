@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0b6
+## 0.15.0b7
 
 **ESP32 microphones and cameras of your own, set up with ESPHome.** The firmware (`esphome-v1`)
 has been tried on an ESP32 DevKit with an INMP441 microphone and on an ESP32-CAM; the other boards
@@ -35,6 +35,9 @@ it.
 - **How a car was known** is shown on the Live tab (*Detected by its plate*, *by its look*, *by its
   plate and look*), and on a sensor that reads plates each car has an entity **… identified by**,
   which can be chosen away under *Settings → Home Assistant*.
+
+**Fixed:** with *Plate model, fast* or *Plate model, accurate* chosen, the sensor list and the
+history stopped loading once a plate was found (0.15.0b5).
 
 ## 0.15.0b5
 

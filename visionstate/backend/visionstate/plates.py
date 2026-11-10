@@ -266,8 +266,11 @@ class Finder:
             score = float(row[6])
             if score < PLATES["finder_score"]:
                 continue
-            x1, y1, x2, y2 = (row[1] - dw) / r, (row[2] - dh) / r, (row[3] - dw) / r, (row[4] - dh) / r
-            found.append(Found((max(0.0, x1), max(0.0, y1), min(image.width, x2), min(image.height, y2)), score))
+            # Python floats: numpy's float32 cannot be sent as JSON (0.15.0b5 broke the sensor list with it).
+            x1, y1, x2, y2 = (float((row[i] - d) / r) for i, d in ((1, dw), (2, dh), (3, dw), (4, dh)))
+            found.append(
+                Found((max(0.0, x1), max(0.0, y1), min(float(image.width), x2), min(float(image.height), y2)), score)
+            )
         return sorted(found, key=lambda f: -f.score)
 
     def _text(self, image: Image.Image) -> list[Found]:
