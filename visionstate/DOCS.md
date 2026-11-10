@@ -666,7 +666,7 @@ microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIF
 things that move — which sets the camera's picture size, compression and exposure (*Camera use*
 on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
 pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
-still things — or as chosen under *Camera set-up* in the sensor's settings, shown only for such a
+still things — or as chosen under *Settings → General → Camera set-up* of the sensor, shown only for such a
 camera; sensors on one camera share the most demanding. It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the

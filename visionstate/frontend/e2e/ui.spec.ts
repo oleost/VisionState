@@ -2431,7 +2431,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await expect
       .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now, { timeout: 30_000 })
       .toBe('states'); // a state sensor: still things
-    await page.goto(`#/sensors/${id}/settings`);
+    await page.goto(`#/sensors/${id}/settings/general`); // on a phone Settings opens as a list of its sections
     const setup = page.getByLabel('Camera set-up');
     await expect(setup).toBeVisible();
     await expect(setup.locator('option').first()).toHaveText('Automatic: States');
@@ -2442,7 +2442,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
     // Any other camera has no such choice.
-    await page.goto(`#/sensors/${await seededSensorId(request)}/settings`);
+    await page.goto(`#/sensors/${await seededSensorId(request)}/settings/general`);
     await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
     await expect(page.getByLabel('Camera set-up')).toHaveCount(0);
     errors.expectNone();
