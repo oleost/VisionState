@@ -112,6 +112,8 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   allowed subnet (the password is the lock; a subnet check is easy to get wrong behind NAT and
   Home Assistant's own network). The firmware is now a line that moves (`docs/RELEASING.md`, decided
   with the maintainer 2026-11-10): updating is *Install*, not editing the file.
+  Tried 2026-11-10 on the WROOM-32: with ESPHome's fetch older than its refresh (a day), *Install*
+  fetched the moved `esphome-v1` (1.1.0) with the device's file unchanged.
 - ***Only when loud*** (the device sends only above VisionState's line, with a heartbeat): not
   built. On mains power the only gain is privacy; it costs the background VisionState learns and
   every sound below the line. Left until someone asks for it.
