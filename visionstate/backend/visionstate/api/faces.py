@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import detectors, faces, imaging, uploads
-from ..db import Face, Person, Sensor
+from ..db import Face, Person, Sensor, Setting
 from ..engine import Runtime, SensorConfig
 from ..settings import FACES, KIND_OBJECTS, TEACH, UPLOAD_LIMITS, merge_objects
 from .common import API_PREFIX, iso, runtime, slugify
@@ -107,10 +107,12 @@ def _check_name(s: Session, name: str, keep: int | None = None) -> str:
 
 
 def taken_keys(s: Session) -> set[str]:
-    """Keys a new person or own label may not have: objects VisionState knows, every own label of
-    every sensor and every person (all can be entities of one sensor)."""
+    """Keys a new person, car or own label may not have: objects VisionState knows, every own label
+    of every sensor, every person and every car (all can be entities of one sensor)."""
     taken = set(detectors.LABELS.by_key) | RESERVED_KEYS
     taken |= set(s.scalars(select(Person.key)))
+    cars = s.get(Setting, "cars")
+    taken |= {c["key"] for c in (cars.value if cars is not None and isinstance(cars.value, list) else [])}
     for objects in s.scalars(select(Sensor.objects).where(Sensor.kind == KIND_OBJECTS)):
         taken |= {label["key"] for label in merge_objects(objects)["custom"]}
     return taken

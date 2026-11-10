@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, imaging, readers, sounds, teach
+from .. import backbones, classifier, detectors, faces, imaging, plates, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
@@ -93,6 +93,14 @@ class RuntimeBase:
         # published, and when and on which sensor they were last seen.
         self._person_where: dict[str, str] = {}
         self._person_last: dict[str, tuple[float, int]] = {}
+        # Licence plates (object sensors): the plate model, loaded in the background when a sensor
+        # turns plate reading on (engine/plates.py); the chosen one (DB setting "plate_model").
+        self.plate_model: plates.PlateModel | None = None
+        self.plate_choice = plates.DEFAULT_MODEL
+        self.plate_error = ""
+        self.plate_progress: dict | None = None  # {"done", "total"} bytes while it downloads
+        self._plate_lock = asyncio.Lock()
+        self._plate_task: asyncio.Task | None = None
         # Sound sensors: the sound model (loaded on first use), each sensor's head for its own sounds,
         # and the windows of its room kept as "other" (engine/sound.py).
         self.sound_model: sounds.SoundModel | None = None

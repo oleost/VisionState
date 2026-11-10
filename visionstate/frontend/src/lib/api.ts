@@ -3,6 +3,8 @@ import type {
   AppConfig,
   BackupInfo,
   BackupPart,
+  Car,
+  PlateStatus,
   RestoreResult,
   ObjectSettings,
   FaceLimitsInfo,
@@ -165,6 +167,8 @@ export const api = {
     detector?: string;
     reader?: string;
     face_model?: string;
+    plate_model?: string;
+    plate_model_accepted?: boolean;
     inference_threads?: number;
   }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
@@ -344,6 +348,11 @@ export const api = {
     return request<PhotoResult>('people/photos', { method: 'POST', body: form });
   },
   retryFaces: () => request<FaceStatus>('faces/retry', send('POST')),
+  cars: () => request<Car[]>('cars'),
+  addCar: (car: Omit<Car, 'key'>) => request<Car>('cars', send('POST', car)),
+  changeCar: (key: string, car: Omit<Car, 'key'>) => request<Car>(`cars/${encodeURIComponent(key)}`, send('PUT', car)),
+  forgetCar: (key: string) => request<void>(`cars/${encodeURIComponent(key)}`, send('DELETE')),
+  retryPlates: () => request<PlateStatus>('plates/retry', send('POST')),
   faceLimits: () => request<FaceLimitsInfo>('face-limits'),
   saveFaceLimits: (values: FaceOverrides) => request<FaceLimitsInfo>('face-limits', send('PUT', values)),
   /** Delete a downloaded AI model that is not in use; `kind` is its list in GET /settings. */

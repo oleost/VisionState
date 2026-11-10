@@ -17,7 +17,7 @@ from PIL import Image
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert
 
-from .. import backbones, faces, imaging
+from .. import backbones, faces, imaging, timing
 from ..db import Face, FaceEmbedding, Person, Sensor
 from ..mqtt import person_topics
 from ..redact import redact
@@ -347,7 +347,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         self, model: faces.FaceModel, image: Image.Image
     ) -> tuple[faces.Face | None, Image.Image | None]:
         """The best face in a whole photo (a selfie from a phone), with it aligned."""
-        async with self._sem:
+        async with timing.slot(self._sem):
             [face] = await asyncio.to_thread(model.detector.detect, [image])
         if face is None:
             return None, None
@@ -362,7 +362,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             x1, y1, x2, y2 = faces.head_region(box, image.width, image.height)
             regions.append(image.crop((x1, y1, max(x2, x1 + 1), max(y2, y1 + 1))))
             offsets.append((x1, y1))
-        async with self._sem:
+        async with timing.slot(self._sem):
             found = await asyncio.to_thread(model.detector.detect, regions)
         result: list[tuple[faces.Face | None, Image.Image | None]] = []
         for face, (dx, dy) in zip(found, offsets, strict=True):
@@ -445,7 +445,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 usable.append((i, face, aligned))
         vectors = np.zeros((0, 0), dtype=np.float32)
         if usable and index.ids:
-            async with self._sem:
+            async with timing.slot(self._sem):
                 vectors = await asyncio.to_thread(model.recogniser.embed, [a for _, _, a in usable])
         for n, (i, face, _aligned) in enumerate(usable):
             clear = faces.clearly_seen(face, limits["min_face_px"])

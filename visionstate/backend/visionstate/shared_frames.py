@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -16,6 +17,7 @@ class SharedFrame:
 
     data: bytes
     decode: Callable[[bytes], Image.Image]
+    taken_at: float | None = None  # epoch seconds: when the camera was asked for it
     _image: asyncio.Future[Image.Image] | None = field(default=None, repr=False)
 
     async def image(self) -> Image.Image:
@@ -78,7 +80,8 @@ class SharedFrames:
         # Close membership before I/O: a later request needs its own fresh frame,
         # even when an earlier camera request or JPEG decoder is slow.
         self._pending.pop(key, None)
-        return SharedFrame(await self._grab(*key), self._decode)
+        taken_at = time.time()
+        return SharedFrame(await self._grab(*key), self._decode, taken_at)
 
     def _finished(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)

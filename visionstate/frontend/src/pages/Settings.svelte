@@ -26,6 +26,8 @@
   let detector = $state('');
   let reader = $state('');
   let faceModel = $state('');
+  let plateModel = $state('');
+  let plateAccepted = $state(false);
   let threads = $state(0);
   let saving = $state(false);
   let importInput: HTMLInputElement;
@@ -115,6 +117,7 @@
       detector = s.detector;
       reader = s.reader;
       faceModel = s.face_model;
+      plateModel = s.plate_model;
       threads = s.inference_threads;
     })
     .catch(toastError);
@@ -124,6 +127,9 @@
   const selectedReader = $derived(info?.readers.find((r) => r.id === reader));
   const wheelReader = $derived(info?.wheel_readers.find((r) => r.id === info?.wheel_reader));
   const selectedFace = $derived(info?.face_models.find((m) => m.id === faceModel));
+  const selectedPlate = $derived(info?.plate_models.find((m) => m.id === plateModel));
+  // A plate model whose weights state no licence is chosen only when the user accepts that.
+  const plateNeedsAccept = $derived(!!selectedPlate && !selectedPlate.open && plateModel !== info?.plate_model);
   const retrains = $derived(info !== null && backbone !== info.backbone);
   const changed = $derived(
     info !== null &&
@@ -131,6 +137,7 @@
         detector !== info.detector ||
         reader !== info.reader ||
         faceModel !== info.face_model ||
+        plateModel !== info.plate_model ||
         threads !== info.inference_threads),
   );
   const threadChoices = $derived(info ? Array.from({ length: info.threads_max }, (_, i) => i + 1) : []);
@@ -139,7 +146,16 @@
     saving = true;
     try {
       const retrained = retrains;
-      info = await api.saveSettings({ backbone, detector, reader, face_model: faceModel, inference_threads: threads });
+      info = await api.saveSettings({
+        backbone,
+        detector,
+        reader,
+        face_model: faceModel,
+        plate_model: plateModel,
+        plate_model_accepted: plateAccepted,
+        inference_threads: threads,
+      });
+      plateAccepted = false;
       toast(retrained ? 'AI model changed — state sensors are retraining' : 'AI models changed');
       refreshStatus();
       if (retrained) loadTeach(); // the defaults depend on the state model
@@ -157,7 +173,7 @@
     try {
       const result = await api.importBundle(file);
       toastImported(result);
-      go(paths.sensor(result.id, result.faces_off ? 'settings' : ''));
+      go(result.faces_off || result.plates_off ? paths.sensorSettings(result.id, 'detect') : paths.sensor(result.id));
     } catch (err) {
       toastError(err);
     } finally {
@@ -288,6 +304,30 @@
           {/if}
         </label>
         <label class="field">
+          Licence plates (object sensors)
+          <select class="input" bind:value={plateModel} onchange={() => (plateAccepted = false)}>
+            {#each info.plate_models as m (m.id)}
+              <option value={m.id}>{m.name}{m.installed ? '' : ` · download ${mb(m.size)}`}</option>
+            {/each}
+          </select>
+          {#if selectedPlate}
+            <span class="hint"
+              >{selectedPlate.description} {selectedPlate.license},
+              <a href={selectedPlate.source} target="_blank" rel="noreferrer">source</a>; {selectedPlate.data} Downloaded when a
+              sensor turns plate reading on.</span
+            >
+          {/if}
+        </label>
+        {#if plateNeedsAccept}
+          <label class="check accept" data-testid="plate-accept">
+            <input type="checkbox" bind:checked={plateAccepted} />
+            <span class="small">
+              Its makers state no licence for these model files, nor which plates they were trained on. I want to use it
+              anyway.
+            </span>
+          </label>
+        {/if}
+        <label class="field">
           Reading sensors: displays
           <select class="input" bind:value={reader}>
             {#each bySize(info.readers) as r (r.id)}
@@ -309,7 +349,7 @@
             <span class="hint"
               >{wheelReader.description} {wheelReader.license},
               <a href={wheelReader.source} target="_blank" rel="noreferrer">source</a>. New counters read with it
-              (<em>Read with</em> on a counter's Settings tab).</span
+              (<em>Read with</em> under a counter's Settings → Region and reading).</span
             >
           </div>
         {/if}
@@ -327,7 +367,7 @@
           >
         </label>
         <div class="row">
-          <button class="btn primary" disabled={!changed || saving} onclick={save}>
+          <button class="btn primary" disabled={!changed || saving || (plateNeedsAccept && !plateAccepted)} onclick={save}>
             {saving ? 'Switching (may download)…' : 'Apply'}
           </button>
           <span class="xsmall faint">A new state model retrains every state sensor from its stored images. Object and reading sensors need no training.</span>
@@ -338,7 +378,7 @@
 
     <section class="card pad col">
       <h3>Review queue</h3>
-      <p class="small muted">Which frames are collected for review. Each sensor can override these on its Settings tab.</p>
+      <p class="small muted">Which frames are collected for review. Each sensor can override these under its own Settings.</p>
       {#if reviewRules}
         <ReviewRulesEditor bind:value={reviewRules} />
         <button class="btn primary" style="align-self:flex-start" disabled={savingReview} onclick={saveReview}>
@@ -350,8 +390,8 @@
     <section class="card pad col" data-testid="teach-limits">
       <h3>Teaching object sensors</h3>
       <p class="small muted">
-        How closely a box must resemble the boxes you taught an object sensor. Each sensor can override these on its Settings
-        tab.
+        How closely a box must resemble the boxes you taught an object sensor. Each sensor can override these under its own
+        Settings → Objects.
       </p>
       {#if teach}
         <TeachLimitsEditor
@@ -372,7 +412,7 @@
     <section class="card pad col" data-testid="face-limits">
       <h3>Recognising faces</h3>
       <p class="small muted">
-        For object sensors that recognise faces. Each sensor can override these on its Settings tab (Faces).
+        For object sensors that recognise faces. Each sensor can override these under its own Settings → Objects (Faces).
       </p>
       {#if faceLimits}
         <FaceLimitsEditor

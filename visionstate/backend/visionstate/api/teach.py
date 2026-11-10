@@ -15,8 +15,17 @@ from sqlalchemy.orm import Session
 
 from .. import detectors, imaging, teach
 from ..db import Person, Prediction, Sample
-from ..engine import Runtime
-from ..settings import FACE_UNKNOWN_KEY, HISTORY, KIND_OBJECTS, NONE_LABEL, TEACH, active_custom, merge_objects
+from ..engine import Runtime, household_cars, with_shared
+from ..settings import (
+    FACE_UNKNOWN_KEY,
+    HISTORY,
+    KIND_OBJECTS,
+    NONE_LABEL,
+    TEACH,
+    VEHICLE_CLASSES,
+    active_custom,
+    merge_objects,
+)
 from .common import API_PREFIX, get_sensor, iso, runtime, slugify
 from .sensors import prediction_view
 
@@ -135,7 +144,7 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
     """
     rt = runtime(request)
 
-    def check() -> tuple[dict | None, str, dict | None]:
+    def check() -> tuple[dict | None, str, dict | None, set[str]]:
         """The label the box is taught as (and a new own label, if it makes one); 400 when it cannot be."""
         with rt.db.session() as s:
             sensor = get_sensor(s, sensor_id, KIND_OBJECTS)
@@ -150,27 +159,46 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
             if body.detected is not None and body.detected not in detectors.LABELS.by_key:
                 raise HTTPException(400, f"Unknown object {body.detected!r}")
             new = None
-            if body.new_label:
-                new = own_label(
-                    objects, body.new_label, body.parent or body.detected or "", set(s.scalars(select(Person.key)))
-                )
+            household = household_cars(s)
+            cars = {c["key"] for c in household if c.get("parent", "car") in objects["classes"]}
+            parent = body.parent or body.detected or ""
+            if body.new_label and parent in VEHICLE_CLASSES:
+                # A named vehicle is a car of the household (shared by every sensor), made when the
+                # box is stored.
+                if parent not in objects["classes"]:
+                    raise HTTPException(400, "An own label belongs to one of the sensor's objects")
+                new, label = {"car": True, "name": body.new_label.strip(), "parent": parent}, ""
+            elif body.new_label:
+                new = own_label(objects, body.new_label, parent, set(s.scalars(select(Person.key))))
                 label = new["key"]
             else:
-                active = {c["key"] for c in active_custom(objects)}
+                # Own labels, and the household's cars (a car is taught by its look on each sensor);
+                # people are taught by their face, not here.
+                active = {c["key"] for c in active_custom(with_shared(objects, s, sensor_id)) if not c.get("face")}
+                active |= cars
                 label = body.label or ""
                 if label == NONE_LABEL and body.detected is None:
                     raise HTTPException(400, "A box the detector missed needs a label")
                 if label != NONE_LABEL and label not in objects["classes"] and label not in active:
                     raise HTTPException(400, f"Not one of the sensor's objects or labels: {label!r}")
             roi = sensor.roi
-            return new, label, roi
+            return new, label, roi, cars
 
-    new, label, roi = await asyncio.to_thread(check)
+    new, label, roi, cars = await asyncio.to_thread(check)
     x1, _, x2, y2 = body.box
     if not imaging.in_region((x1 + x2) / 2, y2, roi):
         raise HTTPException(400, "That box is outside the sensor's region, so it never counts")
     image, origin = await frame_image(rt, sensor_id, body.frame_id, body.history_id)
-    if new is not None:
+    if new is not None and new.get("car"):
+
+        def add_car() -> str:
+            from .plates import CarIn, new_car  # noqa: PLC0415 - plates imports this module
+
+            with rt.db.session() as s:
+                return new_car(s, CarIn(name=new["name"], parent=new["parent"]))["key"]
+
+        label = await asyncio.to_thread(add_car)
+    elif new is not None:
 
         def add_label() -> None:
             with rt.db.session() as s:
@@ -189,8 +217,10 @@ async def teach_box(sensor_id: int, body: TeachIn, request: Request) -> dict:
             seen = await rt.seen_faintly(cfg, image, body.box) if cfg else None
         except Exception:  # noqa: BLE001 - detector unavailable: the box is taught anyway
             seen = None
-    if new is not None:
-        await rt.sensor_updated(sensor_id, retrain=False)  # the new label's entities
+    if new is not None and new.get("car"):
+        await rt.cars_changed()  # a new car: the entities of the sensors it belongs to
+    elif new is not None or label in cars:
+        await rt.sensor_updated(sensor_id, retrain=False)  # the new label's entities (a car: its first box here)
     rt.taught_changed(sensor_id)
     if body.history_id is not None:
         await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, label, body.detected)
@@ -324,7 +354,7 @@ def import_custom(stored: object) -> list[dict]:
         except KeyError, TypeError:
             continue
         taken = set(detectors.LABELS.by_key) | {label["key"] for label in labels} | RESERVED_KEYS
-        if item.get("face") or slugify(key, "") != key or key in taken or not name:
+        if item.get("face") or item.get("car") or slugify(key, "") != key or key in taken or not name:
             continue
         if parent not in detectors.LABELS.by_key or len(labels) >= TEACH["max_labels"]:
             continue

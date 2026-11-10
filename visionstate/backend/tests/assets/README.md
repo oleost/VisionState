@@ -8,6 +8,7 @@ down to 640 px.
 |---|---|---|
 | `driveway.jpg` | cars and one person | [TGSIs in car park driveway Townsville 104 9310.jpg](https://commons.wikimedia.org/wiki/File:TGSIs_in_car_park_driveway_Townsville_104_9310.jpg) |
 | `beach.jpg` | one person and several dogs | [Dog owner walking his dogs on the beach..JPG](https://commons.wikimedia.org/wiki/File:Dog_owner_walking_his_dogs_on_the_beach..JPG) |
+| `plate_car.jpg` | one car seen from the front; the plate tests draw a plate of their own over its real one (`car_with_plate` in `tests/displays.py`) | [2014 Tour de France. Team car Tinkoff-Saxo. Free image Spielvogel. No copyright.jpg](https://commons.wikimedia.org/wiki/File:2014_Tour_de_France._Team_car_Tinkoff-Saxo._Free_image_Spielvogel._No_copyright.jpg) (cut to 640 × 534) |
 | `cat.jpg` | one cat | [House cat sitting next to apartment entrance door looking off to side.jpg](https://commons.wikimedia.org/wiki/File:House_cat_sitting_next_to_apartment_entrance_door_looking_off_to_side.jpg) |
 
 The face tests use NASA portraits, works of the US federal government and so in the public domain,

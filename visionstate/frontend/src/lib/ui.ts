@@ -14,15 +14,15 @@ export const POLL = {
 
 export const TOAST_MS = 5_000;
 
-/** Shown on a sensor that is held back: readings, or what is sent to Home Assistant (its Home Assistant tab). */
+/** Shown on a sensor that is held back: readings, or what is sent to Home Assistant (its Settings → Home Assistant). */
 export const CAMERA_CHANGED = { label: 'Camera changed', help: 'Readings are held: check the region' };
 export const DEAD_SILENT = {
   label: 'Pure silence',
   help: 'The stream has been pure digital silence for a while, quieter than any room: is the microphone wired, or muted (on an ESP32, its Microphone switch or mute switch)?',
 };
-export const NOT_SENT = { label: 'Values not sent', help: 'Its entities in Home Assistant are unavailable until you choose “Send values” on its Home Assistant tab.' };
-export const NOT_IN_HA = { label: 'Not in Home Assistant', help: 'It has no entities in Home Assistant. Choose “Send values” on its Home Assistant tab to create them.' };
-/** A sensor's Home Assistant tab: what it has there. */
+export const NOT_SENT = { label: 'Values not sent', help: 'Its entities in Home Assistant are unavailable until you choose “Send values” under its Settings → Home Assistant.' };
+export const NOT_IN_HA = { label: 'Not in Home Assistant', help: 'It has no entities in Home Assistant. Choose “Send values” under its Settings → Home Assistant to create them.' };
+/** A sensor's Settings → Home Assistant: what it has there. */
 export type HaMode = 'send' | 'hold' | 'none';
 export const HA_MODES: Record<HaMode, { label: string; help: string }> = {
   send: { label: 'Send values', help: 'Its entities exist and follow what the sensor finds.' },
@@ -169,6 +169,11 @@ export const MODEL_KINDS = [
     title: 'Faces (object sensors)',
     text: 'Tells who a person is from their face; downloaded when a sensor recognises faces. Its size includes the face finder.',
   },
+  {
+    key: 'plate_models',
+    title: 'Licence plates (object sensors)',
+    text: 'Finds and reads the plate of a vehicle; downloaded when a sensor reads plates. Its size includes the plate finder.',
+  },
   { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
   { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
 ] as const;
@@ -183,33 +188,58 @@ export const SAMPLE_ORIGINS: Record<string, string> = {
   import: 'Import',
   history: 'History',
   recording: 'Recorded from the stream',
+  plate: 'Learned from its plate',
+};
+
+/** How a car of the household that is here was known (ObjectLive.identified_by). */
+export const IDENTIFIED_BY: Record<string, string> = {
+  plate_and_look: 'by its plate and look',
+  plate: 'by its plate',
+  look: 'by its look',
 };
 
 export const SENSOR_TABS = [
   { id: 'live', label: 'Live' },
   { id: 'label', label: 'Label' },
-  { id: 'upload', label: 'Upload' },
   { id: 'dataset', label: 'Dataset' },
   { id: 'quality', label: 'Quality' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
-  { id: 'home-assistant', label: 'Home Assistant' },
 ] as const;
 export type SensorTab = (typeof SENSOR_TABS)[number]['id'];
 
 /**
- * Tabs per sensor kind, in order; the first one is where the sensor opens. An object sensor shows
- * its Quality tab (what it was taught) only once something was taught (SensorPage).
+ * The tabs of a sensor per kind, in order (most used first: now, what happened, what it learned, how
+ * well it does); the first one is where the sensor opens. Settings is
+ * not among them: it is the button beside Pause (SensorPage). Dataset is what the sensor was taught
+ * (a state sensor's images and its upload, an object sensor's boxes, a sound sensor's own sounds);
+ * Quality how well it does.
  */
 export const TABS_BY_KIND: Record<SensorKind, SensorTab[]> = {
-  single_state: ['label', 'upload', 'dataset', 'quality', 'history', 'settings', 'home-assistant'],
-  objects: ['live', 'history', 'quality', 'settings', 'home-assistant'],
-  reading: ['live', 'history', 'quality', 'settings', 'home-assistant'],
-  sound: ['live', 'history', 'quality', 'settings', 'home-assistant'],
+  single_state: ['label', 'history', 'dataset', 'quality'],
+  objects: ['live', 'history', 'dataset'],
+  reading: ['live', 'history', 'quality'],
+  sound: ['live', 'history', 'dataset'],
 };
-/** A tab's label where a kind names it otherwise (a sound sensor's Quality tab holds its own sounds). */
-export const TAB_LABELS: Partial<Record<SensorKind, Partial<Record<SensorTab, string>>>> = {
-  sound: { quality: 'Own sounds' },
+
+/** Tabs of earlier versions, so a kept link still opens the right place. */
+export const OLD_TABS: Record<string, { tab: SensorTab; section?: SettingsSection }> = {
+  upload: { tab: 'dataset' },
+  'home-assistant': { tab: 'settings', section: 'home-assistant' },
+};
+
+/**
+ * The sections of a sensor's Settings, in order, per kind, with what they are called there. On a
+ * phone they are a list to pick from; on a wider screen a menu beside the open one.
+ */
+export const SETTINGS_SECTIONS = ['general', 'region', 'detect', 'checks', 'home-assistant', 'export'] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+export const SETTINGS_SECTION_LABELS: Record<SensorKind, Partial<Record<SettingsSection, string>>> = {
+  single_state: { general: 'General', region: 'Region', detect: 'States', checks: 'Checks and output', 'home-assistant': 'Home Assistant', export: 'Export or delete' },
+  objects: { general: 'General', region: 'Region', detect: 'Objects', checks: 'Checks and output', 'home-assistant': 'Home Assistant', export: 'Export or delete' },
+  // A reading's region and how it is read go together: the digits are drawn over the region (as in the wizard).
+  reading: { general: 'General', detect: 'Region and reading', checks: 'Checks and output', 'home-assistant': 'Home Assistant', export: 'Export or delete' },
+  sound: { general: 'General', detect: 'Listening', checks: 'Review', 'home-assistant': 'Home Assistant', export: 'Export or delete' },
 };
 
 /** What a new sensor does, as asked first in the wizard: look at the picture, or listen. */
@@ -327,6 +357,7 @@ export const HISTORY_EVENTS: Record<string, string> = {
   filtered: 'Filtered away',
   asked: 'Asked “is it yours?”',
   face_seen: 'Face seen, not named',
+  plate_seen: 'Licence plate read',
   value: 'New value',
   rejected: 'Rejected reading',
   verified: 'Checked by hand',
@@ -352,6 +383,7 @@ export const SPEED_TEST_ROLES: Record<string, string> = {
   backbones: 'State models',
   detectors: 'Object detectors',
   face_models: 'Face recognition (for each person seen)',
+  plate_models: 'Licence plates (for each vehicle seen)',
   readers: 'Text and number readers',
   wheel_readers: 'Wheel readers',
   sound_models: 'Sound models',

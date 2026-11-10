@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import AdviceCard from '../../lib/components/AdviceCard.svelte';
@@ -13,7 +13,9 @@
   import ObjectParams from '../../lib/components/ObjectParams.svelte';
   import LabelPicker from '../../lib/components/LabelPicker.svelte';
   import DigitCells from '../../lib/components/DigitCells.svelte';
+  import ExportButton from '../../lib/components/ExportButton.svelte';
   import FacesCard from '../../lib/components/FacesCard.svelte';
+  import PlatesCard from '../../lib/components/PlatesCard.svelte';
   import ReadingEditor from '../../lib/components/ReadingEditor.svelte';
   import ReadingParams from '../../lib/components/ReadingParams.svelte';
   import ReviewRulesEditor from '../../lib/components/ReviewRulesEditor.svelte';
@@ -24,15 +26,25 @@
   import StatesEditor from '../../lib/components/StatesEditor.svelte';
   import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
-  import { isObjectSensor, objectPicker } from '../../lib/objects';
+  import { isObjectSensor, objectName, objectPicker } from '../../lib/objects';
   import { extraDigits, isReadingSensor, valueDecimals } from '../../lib/reading';
   import { toPoints, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
   import { isSoundSensor } from '../../lib/sound';
+  import HomeAssistantTab from './HomeAssistantTab.svelte';
   import type { ReadPreview, ReviewRules, Roi, Sensor, SoundSettings, TeachLimitsInfo, TeachOverrides } from '../../lib/types';
-  import { REDACTED_MARK } from '../../lib/ui';
+  import { REDACTED_MARK, SETTINGS_SECTION_LABELS, SETTINGS_SECTIONS, type SettingsSection } from '../../lib/ui';
 
-  let { sensor, onchange }: { sensor: Sensor; onchange: () => void } = $props();
+  // A sensor's Settings in sections (SETTINGS_SECTIONS): on a phone a list of them, each saying what
+  // is set, and one open at a time; on a wider screen a menu beside the open one. The form is one
+  // for all sections, so a change in one is kept while another is open; Save and Undo appear at the
+  // bottom of the screen once something changed. Home Assistant saves on its own (HomeAssistantTab).
+  let {
+    sensor,
+    section = '',
+    onchange,
+    onreset,
+  }: { sensor: Sensor; section?: SettingsSection | ''; onchange: () => void; onreset: () => void } = $props();
 
   // Local editable copy; the parent keeps polling the live sensor.
   const initial = untrack(() => $state.snapshot(sensor));
@@ -56,7 +68,10 @@
   if (objectSensor) api.teachLimits().then((t) => (globalTeach = t)).catch(toastError);
   // Boxes taught by their look; faces are counted on the Faces card.
   const taughtCount = $derived(sensor.objects?.taught ?? 0); // boxes (faces are under People)
-  const taughtSomething = $derived(!!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face)));
+  // Own labels the user made (not the people or cars every sensor shares).
+  const taughtSomething = $derived(
+    !!sensor.objects && (taughtCount > 0 || sensor.objects.custom.some((l) => !l.face && !l.car)),
+  );
   const readingSensor = isReadingSensor(initial);
   const { value: _v, last: _l, has_image: _h, limit: _lim, camera_changed: _cc, ...initialReading } = initial.reading ?? ({} as NonNullable<typeof initial.reading>);
   let reading = $state({ ...app.config!.reading_defaults, ...initialReading });
@@ -77,6 +92,15 @@
       thresholdsBefore[key.slice('sound:'.length)] = value;
     } else if (key === 'teach:match_similarity') teachLimits = { ...teachLimits, match_similarity: value };
     else if (key === 'faces:match_similarity') facesVersion++;
+    // Saved already: not a change waiting for Save.
+    const was = saved ? JSON.parse(saved) : null;
+    if (was) {
+      const sub = key.split(':')[1];
+      if (key === 'threshold') was.threshold = value;
+      else if (key.startsWith('sound:')) was.sound = { ...was.sound, thresholds: { ...was.sound.thresholds, [sub]: value } };
+      else if (key === 'teach:match_similarity') was.objects = { ...was.objects, teach: { ...was.objects.teach, match_similarity: value } };
+      saved = JSON.stringify(was);
+    }
     onchange();
   }
 
@@ -114,33 +138,76 @@
   $effect(() => {
     if (editingDials) untrack(readDials);
   });
+  const labels = $derived(SETTINGS_SECTION_LABELS[sensor.kind]);
+  const sections = $derived(SETTINGS_SECTIONS.filter((id) => labels[id]));
+  // No section asked for: the first (a phone shows the list instead, by CSS).
+  const shown = $derived<SettingsSection>(
+    section && labels[section] ? section : section === 'region' && readingSensor ? 'detect' : 'general',
+  );
+  const short = (names: string[]) => (names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', '));
+  // What each section holds, in a line under its name in a phone's list.
+  const summaries = $derived<Record<SettingsSection, string>>({
+    general: [name, sourceType === 'ha_camera' ? source : (app.config?.source_types[sourceType] ?? sourceType), triggers.light_entity ? 'light' : '']
+      .filter(Boolean)
+      .join(' · '),
+    region: roi ? 'Part of the picture' : 'The whole picture',
+    detect: readingSensor
+      ? `${reading.digits} digits${reading.unit ? ` · ${reading.unit}` : ''}`
+      : objectSensor
+        ? short(classes.map((c) => objectName(c, sensor.objects?.custom ?? [])))
+        : soundSensor
+          ? `${sound.sounds.length + (sensor.sound?.custom?.length ?? 0)} sounds`
+          : short(states.map((x) => x.name)),
+    checks: soundSensor
+      ? sound.clips
+        ? 'Sounds only just heard are asked about'
+        : 'Nothing asked: clips are off'
+      : [interval_s > 0 ? `Every ${interval_s} s` : 'No regular check', `threshold ${Math.round(threshold * 100)} %`].join(' · '),
+    'home-assistant': !sensor.in_ha
+      ? 'Not in Home Assistant'
+      : !sensor.publish
+        ? 'Values not sent'
+        : `${sensor.ha_entities.filter((e) => e.on).length} entities`,
+    export: 'To a file, or delete the sensor',
+  });
   let globalReview = $state<ReviewRules | null>(null);
   api.reviewRules().then((r) => (globalReview = r)).catch(toastError);
   let saving = $state(false);
 
+  /** What Save sends: everything the form holds. */
+  function payload() {
+    return soundSensor
+      ? soundUpdate()
+      : {
+          name,
+          source_type: sourceType,
+          source,
+          ...(roi ? { roi } : { clear_roi: true }),
+          ...(objectSensor
+            ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
+            : readingSensor
+              ? { reading }
+              : { states, review }),
+          interval_s,
+          threshold,
+          debounce,
+          triggers,
+        };
+  }
+  // Changed = differs from what was saved, as the form first showed it (taken once the editors
+  // have settled their bound values).
+  let saved = $state('');
+  onMount(() => {
+    saved = JSON.stringify(payload());
+  });
+  const dirty = $derived(!!saved && JSON.stringify(payload()) !== saved);
+
   async function save() {
     saving = true;
     try {
-      await api.updateSensor(
-        sensor.id,
-        soundSensor
-          ? soundUpdate()
-          : {
-              name,
-              source_type: sourceType,
-              source,
-              ...(roi ? { roi } : { clear_roi: true }),
-              ...(objectSensor
-                ? { objects: { classes, clear_after_s: clearAfter, min_size: minSize, use_taught: useTaught, teach: teachLimits } }
-                : readingSensor
-                  ? { reading }
-                  : { states, review }),
-              interval_s,
-              threshold,
-              debounce,
-              triggers,
-            },
-      );
+      const sent = payload();
+      await api.updateSensor(sensor.id, sent);
+      saved = JSON.stringify(sent);
       toast('Settings saved');
       onchange();
     } catch (err) {
@@ -171,15 +238,34 @@
   }
 </script>
 
-<div class="layout">
-  <div class="col" style="gap:var(--space-5)">
+<div class="settings" class:picked={!!section}>
+  <nav class="sections" aria-label="Settings sections">
+    {#each sections as id (id)}
+      <a
+        href={href(paths.sensorSettings(sensor.id, id))}
+        class:on={id === shown}
+        class:danger={id === 'export'}
+        aria-current={id === shown ? 'page' : undefined}
+      >
+        <span class="col">
+          <strong>{labels[id]}</strong>
+          <span class="summary">{summaries[id]}</span>
+        </span>
+        <Icon name="chevron" size={16} />
+      </a>
+    {/each}
+  </nav>
+
+  <div class="content col">
+    <a class="back" href={href(paths.sensorSettings(sensor.id))}><Icon name="back" size={14} /> Settings</a>
+    <h2>{labels[shown]}</h2>
+    {#if shown === 'general'}
     {#if source.includes(REDACTED_MARK)}
       <div class="notice warn">
         The camera password was removed when this sensor was exported. Enter the full URL again below and save.
       </div>
     {/if}
     <section class="card pad col">
-      <h3>General</h3>
       <label class="field">Name <input class="input" bind:value={name} /></label>
       {#if soundSensor}
         <SourcePicker sound bind:sourceType bind:source />
@@ -205,10 +291,13 @@
       {/if}
     </section>
 
+    {:else if shown === 'region' || shown === 'detect'}
+      {#if shown === 'region' || readingSensor}
     {#if !soundSensor}
       <section class="card pad col">
+        <!-- The section's heading names it; the buttons keep to the right. -->
         <div class="card-title">
-          <h3>Region</h3>
+          <span></span>
           <span class="row wrap region-actions" style="gap:8px">
             {#if editingDials}
               <button class="btn sm" onclick={readDials} disabled={dialBusy}>
@@ -264,22 +353,19 @@
         {/if}
       </section>
     {/if}
-  </div>
-
-  <div class="col" style="gap:var(--space-5)">
-    <AdviceCard {sensor} onapply={adviceApplied} />
+      {/if}
+      {#if shown === 'detect'}
     {#if readingSensor}
       <section class="card pad col">
-        <h3>Reading</h3>
         <ReadingEditor bind:value={reading} seen={sensor.reading?.last?.text} />
       </section>
     {:else if objectSensor}
       <section class="card pad col">
-        <h3>Objects</h3>
         <p class="small muted">Each object gets an on/off sensor and a count in Home Assistant.</p>
         <LabelPicker bind:selected={classes} {...objectPicker()} />
       </section>
       {#key facesVersion}<FacesCard {sensor} {onchange} />{/key}
+      <PlatesCard {sensor} {onchange} />
       {#if taughtSomething}
         <section class="card pad col">
           <h3>What you taught</h3>
@@ -290,7 +376,7 @@
               <span class="xsmall faint">
                 {#if useTaught}
                   Boxes are compared with the {taughtCount} {taughtCount === 1 ? 'box' : 'boxes'} you taught
-                  (<a href={href(paths.sensor(sensor.id, 'quality'))}>see them</a>).
+                  (<a href={href(paths.sensor(sensor.id, 'dataset'))}>see them</a>).
                 {:else}
                   Off: the AI alone decides. What you taught is kept for when you turn it on again; own labels stay off.
                 {/if}
@@ -313,17 +399,18 @@
       {/if}
     {:else if soundSensor}
       <section class="card pad col">
-        <h3>Listening</h3>
         <SoundEditor bind:value={sound} own={sensor.sound?.custom ?? []} {hasVideo} />
       </section>
     {:else}
       <section class="card pad col">
-        <h3>States</h3>
         <p class="small muted">Removing a state also removes its labels. Renaming keeps the Home Assistant value.</p>
         <StatesEditor bind:states />
       </section>
     {/if}
 
+      {/if}
+    {:else if shown === 'checks'}
+    <AdviceCard {sensor} onapply={adviceApplied} />
     {#if !soundSensor}
     <section class="card pad col">
       <h3>When to check</h3>
@@ -358,7 +445,7 @@
 
     {#if !objectSensor && !readingSensor}
       <section class="card pad col">
-        <h3>Review</h3>
+        {#if !soundSensor}<h3>Review</h3>{/if}<!-- a sound sensor: the section is called Review -->
         {#if soundSensor}
           <p class="small muted">With clips on, a sound that was only just heard is asked about: listen, and answer.</p>
         {/if}
@@ -372,13 +459,32 @@
       </section>
     {/if}
 
-    <div class="row">
-      <button class="btn primary" disabled={saving || (objectSensor && !classes.length) || (soundSensor && (!source.trim() || !(sound.sounds.length || sensor.sound?.custom?.length)))} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
-      <span class="spacer"></span>
-      <ConfirmButton onconfirm={remove} confirmLabel="Click again to delete everything">
-        <Icon name="trash" size={14} /> Delete sensor
-      </ConfirmButton>
-    </div>
+    {:else if shown === 'home-assistant'}
+      <HomeAssistantTab {sensor} {onchange} />
+    {:else if shown === 'export'}
+      <section class="card pad col">
+        <h3>Export</h3>
+        <p class="small muted">A file with this sensor's settings and what it was taught, to import on another VisionState.</p>
+        <span><ExportButton {sensor} /></span>
+      </section>
+      <section class="card pad col">
+        <h3>Delete</h3>
+        <p class="small muted">The sensor with its images, history and what it was taught, and its entities in Home Assistant.</p>
+        <span>
+          <ConfirmButton onconfirm={remove} confirmLabel="Tap again to delete everything">
+            <Icon name="trash" size={14} /> Delete sensor
+          </ConfirmButton>
+        </span>
+      </section>
+    {/if}
+    {#if dirty}
+      <div class="savebar">
+        <span class="small muted">Unsaved changes</span>
+        <span class="spacer"></span>
+        <button class="btn" onclick={onreset}>Undo</button>
+        <button class="btn primary" disabled={saving || (objectSensor && !classes.length) || (soundSensor && (!source.trim() || !(sound.sounds.length || sensor.sound?.custom?.length)))} onclick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -400,19 +506,131 @@
       flex-basis: 100%;
     }
   }
-  .layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-    gap: var(--space-5);
-    align-items: start;
-  }
   .frame {
     border-radius: var(--radius-md);
     overflow: hidden;
   }
-  @media (max-width: 1000px) {
-    .layout {
+  .settings {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: var(--space-8);
+    align-items: start;
+  }
+  .sections {
+    position: sticky;
+    top: calc(var(--nav-h) + var(--space-5));
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sections a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    color: var(--c-muted);
+    font-weight: 500;
+  }
+  .sections a strong {
+    font-weight: 500;
+  }
+  .sections a.on,
+  .sections a:hover {
+    background: var(--c-surface-3);
+    color: var(--c-text);
+  }
+  .sections a.danger {
+    margin-top: var(--space-3);
+    color: var(--c-danger);
+  }
+  .sections .summary,
+  .sections :global(svg),
+  .back {
+    display: none;
+  }
+  .content {
+    gap: var(--space-5);
+    min-width: 0;
+    max-width: 880px; /* fields as wide as a whole desktop screen are hard to read */
+  }
+  .content h2 {
+    font-size: var(--fs-xl);
+  }
+  .savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--c-nav);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-md);
+  }
+  @media (max-width: 800px) {
+    /* A phone: the list of sections, or one section with a way back to it. */
+    .settings {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .settings.picked .sections,
+    .settings:not(.picked) .content {
+      display: none;
+    }
+    .sections {
+      position: static;
+      gap: 0;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg);
+      background: var(--c-surface);
+      overflow: hidden;
+    }
+    .sections a {
+      padding: var(--space-4);
+      border-radius: 0;
+      color: var(--c-text);
+      border-top: 1px solid var(--c-border);
+    }
+    .sections a:first-child {
+      border-top: 0;
+    }
+    .sections a.on {
+      background: none;
+    }
+    .sections a strong {
+      font-weight: 600;
+    }
+    .sections a.danger {
+      margin-top: 0;
+    }
+    .sections .summary {
+      display: block;
+      font-size: var(--fs-sm);
+      color: var(--c-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sections .col {
+      gap: 3px;
+      min-width: 0;
+    }
+    .sections :global(svg) {
+      display: block;
+      flex-shrink: 0;
+    }
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--c-muted);
+    }
+    .savebar {
+      margin: 0 calc(-1 * var(--page-pad));
+      border-radius: 0;
+      border-width: 1px 0 0;
     }
   }
 </style>

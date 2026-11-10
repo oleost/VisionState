@@ -62,7 +62,7 @@
   </p>
   {#if faces && !faces.sensors}
     <div class="notice">
-      No sensor recognises faces yet: turn it on under an object sensor's Settings → Faces (one that looks for Person).
+      No sensor recognises faces yet: turn it on under an object sensor's Settings → Objects (one that looks for Person).
     </div>
   {/if}
   {#if faces?.embedding}

@@ -8,8 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from .db import Database, Face, Person, Prediction, Sample, Sensor
+from .db import Database, Face, Person, Prediction, Sample, Sensor, Setting
 from .redact import has_credentials, redact
 from .settings import EXPORT_STRIP_CREDENTIALS, UPLOAD_LIMITS, VERSION
 from .storage import Storage
@@ -17,6 +18,23 @@ from .storage import Storage
 BUNDLE_SCHEMA = 1
 MANIFEST = "manifest.json"
 BACKUP_MANIFEST = "backup.json"  # a backup of everything (backup.py), not a sensor
+
+
+def _with_taught_cars(s: Session, sensor: Sensor) -> dict | None:
+    """An object sensor's settings, with the household's cars whose look was taught on it among its
+    own labels (as plain own labels: an import makes them cars again, or finds the car of that
+    key), so its taught boxes keep their label. Their plates stay in the backup, not here."""
+    if sensor.objects is None:
+        return None
+    row = s.get(Setting, "cars")
+    cars = row.value if row is not None and isinstance(row.value, list) else []
+    taught = set(s.scalars(select(Sample.object_label).where(Sample.sensor_id == sensor.id).distinct()))
+    labels = [
+        {"key": c["key"], "name": c["name"], "parent": c.get("parent", "car")} for c in cars if c["key"] in taught
+    ]
+    if not labels:
+        return sensor.objects
+    return {**sensor.objects, "custom": [*(sensor.objects.get("custom") or []), *labels]}
 
 
 def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, include_faces: bool = False) -> str:
@@ -46,7 +64,7 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
                 "debounce": sensor.debounce,
                 "triggers": sensor.triggers,
                 "review": sensor.review,
-                "objects": sensor.objects,
+                "objects": _with_taught_cars(s, sensor),
                 "reading": sensor.reading,
                 "sound": sensor.sound,
                 "entity_prefix": sensor.entity_prefix,

@@ -49,6 +49,16 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
 4. Label roughly **20 images per state**, including some at night. The **Quality** tab tells
    you what is missing.
 
+**A sensor's page** has a few tabs: what it sees now (**Live**, or **Label** for a state sensor),
+**History**, **Dataset** (what it was taught: a state sensor's images and uploads, an object
+sensor's taught boxes, a sound sensor's own sounds) and **Quality** (how well it does: state and
+reading sensors). **Settings**, beside **Pause** at the top, is in sections: *General* (name, camera,
+light), *Region*, what it looks for (*States*, *Objects*, *Region and reading* or *Listening*),
+*Checks and output* (or *Review* for a sound sensor), *Home Assistant*, and *Export or delete*. On a
+phone they are a list, each saying what is set; tap one to open it. A change waits for **Save
+changes** at the bottom of the screen, and is kept while you look at another section (**Undo**
+puts back what is saved). A tab that does not fit on a very narrow screen is under **More**.
+
 The sensor appears in Home Assistant as a device named after the sensor, with these entities
 (Home Assistant names them after the device, like other integrations):
 
@@ -77,7 +87,7 @@ each new state in its database, so values that only move a little (a timestamp, 
 the decimal, the same picture again) would fill it. The pictures, and an object's boxes, follow
 the result at once and are otherwise sent again every few minutes.
 
-**What a sensor has in Home Assistant** is set on its **Home Assistant** tab:
+**What a sensor has in Home Assistant** is set under its **Settings → Home Assistant**:
 
 - **Send values:** its entities exist and follow what the sensor finds.
 - **Don't send values:** the sensor runs as usual — its
@@ -97,10 +107,10 @@ comes back with the entity ID and name it had. Removing needs MQTT to be connect
 nothing is saved and you are told why.
 Sensors not sent, or not in Home Assistant, are marked on the dashboard.
 
-A sensor made before this tab existed keeps what it has in use: after the update, the optional
+A sensor made before this choice existed keeps what it has in use: after the update, the optional
 entities of a reading sensor (raw reading, problem, accepted, rate, reader image) that are on in Home
 Assistant stay, and those that are off there are removed. Those removed can take a while to leave
-Home Assistant's lists. From then on the tab decides.
+Home Assistant's lists. From then on the choice decides.
 
 ## Object sensors
 
@@ -118,13 +128,13 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
   |---|---|
   | `binary_sensor.<name>_<object>` | `on` while the object is there (occupancy) |
   | `sensor.<name>_<object>_count` | How many there are |
-  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked on the **Home Assistant** tab |
+  | `image.<name>_<object>_snapshot` | The object cut from the frame. Only when ticked under **Settings → Home Assistant** |
 
   A **snapshot** is new when the count changes, sent just before the object goes on, and when the
-  object has moved (at a check, by the share you set on the **Home Assistant** tab, so something
+  object has moved (at a check, by the share you set under **Settings → Home Assistant**, so something
   parked sends nothing new; 0 turns it off); several of the
   same object share one picture that covers them all, and the last one stays after they have gone.
-  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* on the same tab
+  It shows nothing outside the bounding box of the sensor's region. *Snapshot shape* in the same place
   is `free` or width:height such as `1:1`, `4:3` or `16:9`: the picture gets as close as the region
   allows and never cuts the object. In a phone notification, trigger
   on the binary sensor and pass the picture as its image:
@@ -158,13 +168,21 @@ Where it gets your camera wrong, you can correct it later (see *Teaching an obje
         filename: "/media/driveway/car_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
   ```
 
+  A picture reaches Home Assistant a while after its frame was taken (the time the check needs:
+  seconds on a small CPU). Every picture VisionState sends — snapshots and each sensor's
+  `last_frame` — says in its EXIF when the camera was asked for the frame: `DateTimeOriginal` with
+  `SubSecTimeOriginal` (milliseconds), in UTC (`OffsetTimeOriginal` `+00:00`). Its `UserComment`
+  holds `{"crop":[left,top,right,bottom]}`, the part of the camera frame it shows, from 0 to 1 like
+  `boxes`. `image.snapshot` keeps both, so a saved picture can be matched with a camera's own
+  recording to the second.
+
   Plus `image.…_last_frame` (the region with boxes drawn), `button.…_detect_now` and
   `switch.…_enabled`, like every sensor. The binary sensor's attributes list the confidence,
   the boxes and when it was last seen; they follow at once when the object comes or goes or its
   count changes, and every few minutes while it stays, so they are not for following a moving
   object live. `boxes` holds one `[left, top, right, bottom]` per object, from 0 to 1 of the full
   camera frame. Removing an object from the list removes its entities.
-- **Settings tab → Sensor output**:
+- **Settings → Checks and output → Sensor output**:
 
   | Setting | Default | Meaning |
   |---|---|---|
@@ -193,7 +211,7 @@ that frame's time:
 | **Correct** | Kept as it is; it also keeps similar boxes from being taken for something else |
 | **Not a …** | Boxes that look like this one no longer count — the statue that is "a person", the shadow that is "a dog" |
 | **Something else… → another object** | Counted as that object instead |
-| **Something else… → New label…** | Your own label, a kind of that object — **Our car**, **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too |
+| **Something else… → New label…** | Your own label, a kind of that object — **Rex**. It gets its own on/off sensor and count in Home Assistant; it still counts as the object too. A car, truck, bus or motorcycle named this way is one of **your cars**, shared by every camera (see *Your cars and their plates* below) |
 | **Missed something?** | Draw a box around what the AI missed and say what it is. Boxes the AI was unsure about are looked at again and counted when they look like it |
 
 The first time, VisionState asks whether to start: from then on it checks each box of the objects
@@ -202,7 +220,9 @@ like one of the boxes you taught; otherwise the AI's own answer stands, so teach
 something on by a vague resemblance. An object that stays where it is (a parked car) keeps its
 answer while it still looks much like it, so a change of light does not make it flicker. This uses
 the same model as state sensors (DINOv2), which is always loaded; it costs a little extra time per
-box, only for the objects you taught.
+box, only for the objects you taught (on a small CPU about as long as the AI itself takes for the
+whole picture). A box that stays at the same place is looked at again only every third check: in
+between it keeps what the model saw in it, so someone standing in view costs much less.
 
 **When it is not sure, it asks.** A box that looks somewhat like one of your own labels, but not
 clearly (say a car in light you never taught it in), goes to the **review queue**: *Is this Our
@@ -220,10 +240,10 @@ few seconds apart, and answering one lets the next come right away.
   them (`filtered`).
 - Counted again where it should not be (at night, say, when an IR camera shows it in black and
   white)? Mark it once more on such a frame: every taught box widens what is recognised.
-- The **Quality** tab appears once you taught something: every taught box by answer (tap × to
+- The **Dataset** tab shows what you taught: every taught box by answer (tap × to
   forget one), your own labels (**Remove label** removes its entities too) and the frames filtered
   away lately — check now and then that nothing real is filtered away.
-- **Settings → What you taught**: **Use what you taught** off lets the AI alone decide again (what
+- **Settings → Objects → What you taught**: **Use what you taught** off lets the AI alone decide again (what
   you taught is kept); **Forget all** removes every taught box and own label.
 - **How close is close enough** can be tuned, in percent of likeness (100% = the very same
   picture): when a box takes a taught answer, how long it keeps it while it stays in place, from
@@ -328,7 +348,7 @@ everyone.
   people the AI finds alike (*teach both in more light and from more angles*) and faces that look
   more like someone else than the person they were taught as (**move** gives them that name).
   **Rename** changes the name (the entity IDs stay), **Remove person** removes their faces and
-  their entities on every camera, **Forget everyone** all of it. A sensor's **Quality** tab shows
+  their entities on every camera, **Forget everyone** all of it. A sensor's **Dataset** tab shows
   the same people.
 - **Off** (the switch on the Faces card) removes the people's entities from that sensor; the people
   stay. Deleting a sensor keeps the faces taught on it. Turned off on every sensor, the face model
@@ -339,6 +359,105 @@ everyone.
   backups: keep those encrypted. The numbers the AI computes from a face are kept with them and deleted with the
   person; a sensor's export never contains them. A backup from Settings → Backup holds the faces and
   these numbers too (untick *People and their faces* to leave them out): keep it somewhere safe.
+
+### Your cars and their plates
+
+The household's cars (and trucks, buses, motorcycles) are **one list shared by every camera**, on
+the sensor's **Settings → Objects → Cars and licence plates** card. A car is known by its **look**
+on each camera it was taught on (tap it on the **Live** tab and choose it, or name it there with
+**New label…**), and by its **plates** wherever plates are read. A car may have no plate (known by
+its look only) or several, separated by commas (another plate in winter, a trailer). The card says
+on which cameras its look was taught. It is an entity of every sensor that reads plates and of each
+sensor its look was taught on. Own labels of a vehicle made before the list existed (*Our car*)
+moved into it by themselves, with their taught boxes and entities. A sensor's export takes the
+cars taught on it along (their plates stay in the backup).
+
+Looks alone cannot tell two cars of the same model and colour apart; a plate can. So a car's look
+helps its plate, and the plate decides (below).
+
+**Two cars that look the same** (two white Teslas, each with its own plate): add the second car
+and choose **Kind → The same look as → Tesla**. The first car then stands for the look they share:
+it is on whenever one of them is seen, also side-on with no plate in view, and each car under it
+is on only when its own plate is read (and stays on while that car stays where it is); seen by
+its look alone, the Live tab says so (*Detected by its look (Tesla, Tesla EJ86876 or Tesla 2)*).
+Its plates move to a car of their own under it (*Tesla EJ86876*). Each car keeps what was taught
+of it; they only count as one look. So it is undone by choosing the car's kind (**Car**) again —
+and it is only for cars that really look the same: two different cars made one look are both
+named by it. Teaching on the **Live** tab offers only the shared look. On the Live tab and the
+card the cars sit under it. Forgetting the shared car leaves the others known by their plates
+alone.
+
+### Reading licence plates
+
+An object sensor that looks for **Car** (or Truck, Bus, Motorcycle) can read the plates of the
+vehicles it finds. Your own cars are named by their plate: each gets an on/off sensor and a count
+in Home Assistant, like own labels, and when one comes the sensor's **Licence plate** entity
+(`event.<sensor>_licence_plate`) fires a *known_car* event with the plate and the car. With
+**Report plates of cars I do not know** on, a car that is not yours fires an *unknown_plate* event
+with its plate. Home Assistant keeps every event, so its history shows who came and when, and an
+automation can use them. It is **off** until you turn it on, and plates of every country are read
+(letters A–Z and digits; letters such as Ü or Ø are left out).
+
+**Before you turn it on.** A plate belongs to a person. With only your own cars, a plate that is
+not yours is forgotten at once. Reporting unknown plates keeps them: as events in Home Assistant
+and with the frame in VisionState's history. A camera that sees a street, a pavement or a
+neighbour's drive may not be allowed to record the plates of passers-by where you live. It is
+**not a key**: a copied plate reads the same, so never open a gate on a plate alone.
+
+- **Turn it on** under the sensor's **Settings → Objects → Cars and licence plates → Turn on…**. A sheet says
+  what it does and which plate model is downloaded (once), and nothing happens until you confirm.
+  The sensor keeps working without plates while it downloads; the card shows the progress, and
+  **Try again** if it failed.
+- **Your cars**: **Add a car** with its name, its plates (spaces and dashes do not matter; several
+  separated by commas) and its kind, or give a car named by its look its plate with the pencil.
+  Renaming keeps the entity IDs; forgetting a car removes its entities and its taught look
+  everywhere.
+- **The Live tab** says what was read on each vehicle: *VS12345 · Our car*, *checking whose car*,
+  *not one of your cars* or *reading*. The **History** keeps a row with the frame for each plate
+  event (*Licence plate read* in the filter).
+- **How it decides**: a plate read exactly as one of your cars names the car at once. A read one
+  character off (a reader takes O for 0, I for 1, B for 8) names it when the next check agrees. A
+  car that stays keeps its name while its plate is not seen (from the side, too far). A plate
+  that is not yours counts as unknown after it was read the same way twice. Each car or plate
+  makes one event per visit, and not again within five minutes on the same sensor.
+- **A car's look helps its plate.** Tap one of your cars on the **Live** tab and choose it (*one of
+  your cars*) to teach how it looks on this camera, as with own labels. The car is then also named
+  by its look while its plate cannot be read, and **Let a car's look help** (on the same card) decides how far off a plate may be read when the look says it is that car: then it names
+  the car at once (*VS12845 · Our car (plate and look)*). *No* leaves the plate alone in charge.
+  The plate still decides: read exactly as another of your cars it is that car, and a plate far
+  from the car's read the same way twice is another car that only looks the same.
+- **How it was known**: on the **Live** tab a car that is there says so (*Detected by its
+  plate*, *by its look*, *by its plate and look*). On a sensor that reads plates each car also has
+  an entity **… identified by** (`plate`, `look` — parked side-on, its plate not seen —,
+  `plate_and_look`, or `none` while it is not there), which can be chosen away on the sensor's
+  **Home Assistant** tab, and its on/off sensor and count have the attribute `identified_by` with
+  the same value, kept while the car is there. A car known by its look alone is on as before; only a plate read makes a
+  *known_car* event. An automation that must be sure (a garage door) can ask for `plate` or
+  `plate_and_look`, and still never for a plate alone if it opens something (see above).
+- **It learns a car's look from its plate** (**Learn a car's look from its plate**, on by
+  default): when a plate is read exactly as one of your cars, and surely, but the car's look on
+  this camera does not know it yet, that box is taught as the car. Now and then, not at every
+  check: once an hour per car and camera at most, so it gathers other light and other angles
+  instead of the same parked car, and up to a limit per car. These boxes are marked *by its plate*
+  under **What you taught**, where a wrong one is forgotten like any other. A car that overlaps
+  another vehicle is not learned from (the plate may be the other one's).
+- **Which camera works?** The plate must be sharp and big enough: at least about 80 pixels wide in
+  the camera's picture, straight on or a little from the side (a plate seen at an angle is
+  straightened before it is read), in daylight or under a light. Use
+  the camera's **main stream**. A camera at the gate or drive, at car height, sees plates best;
+  one high above a road sees them from above and too small. Infrared at night makes reflecting
+  plates white: whether it reads them depends on the camera.
+- **Plate models** (Settings → AI model → *Licence plates*): **PP-OCR small (open)**, the
+  default, is used without asking: it finds the text on a vehicle and reads it (Apache-2.0),
+  but is not made for plates — in a benchmark of 53 plates from eight countries it read 39
+  right and 47 within one character, enough to know your own cars. **Plate model, fast** and
+  **Plate model, accurate** are made for plates of 65+ countries and read 50 and 51 of the 53
+  right; their makers state no licence for the model files nor the plates they were trained on,
+  so they are only chosen after you accept that. *Fast* runs on a Raspberry Pi 4.
+- **Off** removes the entities of the cars whose look was not taught on that sensor; the cars stay
+  in the list, and those known by their look there go on being recognised by it. Turned off on every sensor,
+  the plate model is let go from memory, and its files can be deleted under *Compare and manage
+  the models*. The cars are in a backup (*Sensors and settings*).
 
 ## Reading sensors
 
@@ -427,7 +546,7 @@ objects the region stays a border.
   you can also leave it out of the region and count one digit and one decimal less.
   The wheel reader reads mechanical counters better than the text reader on every meter it was
   tried on. New counters use it; counters set up before it came keep the text reader until you
-  choose a wheel reader on their Settings tab (their Live tab suggests it).
+  choose a wheel reader under their Settings → Region and reading (their Live tab suggests it).
 - **Safety net**: a reading is rejected — and the last value kept — when the reader is less sure
   than the minimum (default 70 %), finds no number, a counter reads lower than before, a
   mechanical counter is read with the wrong number of digits, a counter goes up faster than its
@@ -446,7 +565,7 @@ objects the region stays a border.
   readings first; until then a rate per hour applies, which you may change — it starts at a
   standard one (for a water meter with three decimals, or with pointer dials down to the fourth,
   0.04 m³ a minute) — and once learned, the
-  Settings tab shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
+  Settings (Checks and output) shows what it learned in its place. *Fixed rate* takes a rise per hour you choose;
   *Fixed per reading* the largest rise from one reading to the next, the same however long the
   app was away (after a restart a real rise waits for your answer in Review); *No limit* rejects only a counter that reads lower. Choosing *Fixed rate* or
   *Fixed per reading* fills in the standard limit to start from.
@@ -494,7 +613,7 @@ objects the region stays a border.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
   `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
   last reading was rejected, if it was.
-- More entities, for those who tick them on the sensor's **Home Assistant** tab:
+- More entities, for those who tick them under the sensor's **Settings → Home Assistant**:
 
   | Entity | What it is |
   |---|---|
@@ -560,7 +679,7 @@ runs. A stream that stays pure digital silence — quieter than any room — sho
 its microphone is not wired, is broken, or is muted (on an ESP32, its *Microphone* switch or mute
 switch; on a camera, its audio switched off). The sensor hears nothing then.
 
-**What it recognises out of the box** (pick them in the wizard or under Settings, like the objects
+**What it recognises out of the box** (pick them in the wizard or under Settings → Listening, like the objects
 of an object sensor): a dog barking, a siren, a smoke or fire alarm and crying are recognised
 well; someone talking, shouting or screaming and knocking fairly — these are shown first. *Show
 all* lists many more, grouped and searchable: other alarms and signals (a car alarm, an alarm
@@ -575,7 +694,7 @@ about 3 kHz; low-frequency alarms (made to wake heavy sleepers) and CO alarms so
 teach yours as an own sound. A sound on TV is a real sound to the sensor.
 
 **Own sounds** — your doorbell, the washing machine beeping when it is done, the microwave, a
-door — are taught from a few clips each on the **Own sounds** tab: from a clip in the History
+door — are taught from a few clips each on the **Dataset** tab: from a clip in the History
 (with clips on: *Teach this clip as*), recorded from the sensor's own stream (*Record*: tap it,
 make the sound, tap *Stop*), or from recordings made with a phone (*Add recordings*: any sound or
 video file; its loudest four seconds are kept). A recording from the stream goes on for a few
@@ -597,7 +716,7 @@ lower the line. The levels are relative to the loudest the stream can be (dBFS),
 pressure: the same room shows other numbers on another microphone.
 
 **When a sound counts.** Each sound has a threshold (*Heard when the AI is at least this sure*,
-under Settings): it is heard
+under Settings → Listening): it is heard
 when its score passes the threshold in two of the last three windows, and stays heard while it
 scores above half of it. The Live tab shows each sound's score against its threshold: lower it
 when a sound is missed, raise it when something else is taken for it.
@@ -610,8 +729,8 @@ camera's H.264 sub stream. Clips are kept in the app's own storage (not the medi
 every user of Home Assistant can browse), as long as the history (Settings → Storage), and are
 part of the history in a backup.
 
-**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the **Own
-sounds** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
+**Teaching a built-in sound.** The built-in sounds the sensor listens for are on the
+**Dataset** tab too, each with *It is this* and *It is not this*: record or add clips (or teach one
 from the History, *Teach this clip as*). From clips of it, it also hears the sound when the AI
 alone was not sure enough — your own door, as it sounds through your microphone. A clip of what it
 is not — a cupboard door, a siren on TV — holds the built-in sound back when something is clearly
@@ -647,14 +766,14 @@ sensor is made.
 
 ## Training tips (state sensors)
 
-- **Upload tab**: drop many images, a ZIP file or a **video**. Videos are split into one
+- **Dataset tab**: drop many images, a ZIP file or a **video** at the top. Videos are split into one
   frame every few seconds (near-duplicates are skipped). The current model suggests a label
   for each frame — check them and click **Accept all suggestions**, or select frames and
   press a state key.
 - **Review** (top menu): frames the AI was unsure about and frames where the state flipped back
   and forth (optionally also random spot checks). Answering these is the fastest way to improve a
   state sensor (its answers become training images).
-  Tune it under **Settings → Review queue** (all sensors) or on a sensor's **Settings** tab —
+  Tune it under **Settings → Review queue** (all sensors) or under a sensor's **Settings → Checks and output** —
   e.g. lower "Send to review when the AI is less sure than" for a sensor that is rarely above
   80 %, or turn review off for it. Empty sensor fields use the global value. The Review page
   shows how many items wait per sensor: tap a sensor to see only its items (handy when two sensors
@@ -683,7 +802,7 @@ sensor is made.
   state, guessed as another) — also those you already said are right. A red cell turns green only
   when the label changes or the AI learns the difference from more images like it.
 - Include different light: day, night (IR), sun, rain, snow.
-- Changing the region on the **Settings** tab retrains the model from the stored images.
+- Changing the region (**Settings → Region**) retrains the model from the stored images.
 
 ## When it checks (triggers)
 
@@ -743,12 +862,12 @@ automations.
 **A threshold from your answers** — every kind of sensor. Each answer in Review is kept with the
 score of what was asked about: a state's confidence, a reading's, the similarity to an own label
 or a face, a sound's score. Once there are a few, **From your answers** at the top of the sensor's
-**Settings** shows how your right and wrong answers fare at each threshold it decides by, and
+**Settings → Checks and output** shows how your right and wrong answers fare at each threshold it decides by, and
 suggests one that lets more of the right ones and fewer of the wrong ones through: right answers
 just below the threshold suggest a lower one, wrong ones above it a higher one. *Use* sets it
 (nothing changes by itself). When no threshold tells them apart, it says so: then teaching does
 — label more frames, teach more boxes, faces or clips. Built-in sounds show it on their card on
-**Own sounds** too. An answer counts while what it taught is there: delete the frame, box, face
+the **Dataset** tab too. An answer counts while what it taught is there: delete the frame, box, face
 or clip it taught (because it was wrong, or is no longer wanted) and the answer no longer counts.
 
 ## History
@@ -787,6 +906,8 @@ gives the numbers as a text file to share, without names or addresses.
   model alone. They keep their last values in Home Assistant and go on by themselves afterwards.
 - Models you do not have are downloaded for the test and **deleted afterwards**, unless you tick
   *Keep the downloaded models*. A model that does not fit in the free memory is skipped.
+- On an object sensor it tests the object detectors, the face models (one person) and the plate
+  models (one vehicle: the sensor's region read as if it were a vehicle).
 - It measures speed and memory, not how good a model is at your picture. Testing only shows the numbers:
   to use another model, choose it under *AI model*.
 - Memory is only measured on Linux, so on Home Assistant, not when running it on a Windows PC.
@@ -849,11 +970,12 @@ a known point:
   For a sensor where faces were taught it asks first whether to **include the faces** taught on it
   (unticked by default), with their people's names. An import adds them to the people of the same
   name (or makes them), but face recognition stays off until you turn it on there: the import
-  says so and opens the sensor's Settings tab.
+  says so and opens the sensor's Settings (Objects). The cars taught on it come along (without
+  their plates, which are in a backup); plate reading also stays off until you turn it on there.
 - **Import** (dashboard or Settings) adds it as a new sensor (named "… (2)" when the name is
   taken) — also on another installation — and
-  trains it automatically. If the camera URL needed a password, enter it again on the sensor's
-  Settings tab. An image in the file that cannot be read is skipped (the message says how many).
+  trains it automatically. If the camera URL needed a password, enter it again under the sensor's
+  Settings → General. An image in the file that cannot be read is skipped (the message says how many).
 
 ## Beta channel
 
@@ -888,6 +1010,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   cards, the progress on the Faces card and the People page; the sensors find people without
   naming them until it is done); the people are kept. Only loaded while a
   sensor recognises faces.
+- **Licence plates** (object sensors that read plates): never included — downloaded when a sensor
+  first turns plate reading on; see *Reading licence plates* above for the three models and their
+  licences. Only loaded while a sensor reads plates.
 - **Reading sensors:** PP-OCRv6 tiny (PaddleOCR) — included, a few milliseconds per reading.
   PP-OCRv6 small is larger and reads unusual fonts more reliably (downloaded on first use,
   21 MB). Mechanical counters are read by an included **VisionState wheel reader** (listed under
@@ -895,7 +1020,7 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   counters use **v2** (6 MB, about 10 milliseconds per reading): it also looks at each wheel's
   neighbours, so a region that does not quite fit is still read right, and it holds back a
   reading when any one wheel is unclear. **v1** (2 MB) stays for the counters set up with it;
-  their Live tab suggests v2, and *Read with* on the Settings tab switches.
+  their Live tab suggests v2, and *Read with* under Settings → Region and reading switches.
   Only loaded while at least one reading sensor exists.
 - **Sound sensors:** **CED-Tiny** (Apache-2.0, 7 MB, about 8 milliseconds per second of sound on a
   desktop CPU) — never included: downloaded when the first sound sensor is made, loaded while one
@@ -920,7 +1045,7 @@ again to see; the change applies at once, without a restart.
 
 | Option | Description |
 |---|---|
-| `log_level` | Amount of logging. |
+| `log_level` | Amount of logging. At `debug`, every check also logs how long it took and where the time went, e.g. `Sensor driveway: check 3.10 s (grab 0.35, decode 0.07, detect 0.90, taught 1.20, faces 0.25, publish 0.08, history 0.10; waited 0.15)`; *waited* is time spent waiting while other sensors used the AI models. |
 | `discovery_prefix` | MQTT discovery prefix (normally `homeassistant`). |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | Only needed for a broker that Home Assistant does not provide. |
 

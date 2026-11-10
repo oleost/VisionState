@@ -216,13 +216,65 @@ knew). Instead a second step compares boxes with boxes the user taught:
   global < sensor. Asking and keeping must not start above a match (refused by the API). A user's
   value stays when the backbone changes; the UI says to look at it again.
 
+**Reading licence plates** (`plates.py`, `engine/plates.py`, `api/plates.py`; registry
+`plates.json`, tunables `settings.PLATES`, per sensor `objects["plates"]` with
+`settings.PLATE_DEFAULTS`). The research, the benchmark, the licences and the decisions are in
+[`PLATE_RECOGNITION_PLAN.md`](PLATE_RECOGNITION_PLAN.md). In short:
+
+- Off by default; on only for a sensor that looks for a vehicle (`settings.VEHICLE_CLASSES`),
+  after a confirmation. A plate model is a finder and a reader; the default is open (Apache-2.0:
+  PP-OCRv6 small text detection and recognition), the others (fast-alpr's YOLOv9 plate finder and
+  global plate reader) state no licence for their weights and are chosen only with
+  `plate_model_accepted`. Never bundled; downloaded and loaded in the background like the face
+  model, let go when no sensor reads plates.
+- Each check: vehicle boxes (the largest first, at most `PLATES["max_vehicles"]`, wide enough) are
+  cut from the full frame; the finder finds the plate (the text finder every text, kept only when
+  the read looks like a plate: `plates.looks_like_plate`; two lines of a plate read line by line)
+  and the reader reads it, and once more straightened (`plates.straighten`; the surer read is
+  kept). The read closest to a car's plate wins (`plates.distance`: confusable
+  characters and the plate's edge cost half). An exact read names the car at once, a close one when
+  a second check of the same box agrees; a box keeps its car while no plate is read, and a sure car
+  is carried for `recheck_every` checks without reading. A plate that is no car's is *unknown*
+  after `unknown_after` equal reads.
+- A car can also be taught by its look on each sensor (taught boxes under the car's key, teaching
+  ran first: the box's `match`). When the look says a car and a read is at most the sensor's
+  `objects["plates"]["look_distance"]` from that car's plate, it is that car at once; an exact read
+  of another car, or a far plate read `unknown_after` times, overrules the look. With
+  `objects["plates"]["learn"]` an exact, sure read on a box whose look does not know the car
+  teaches that box as the car (origin "plate"; `PlatesMixin.learn_from_plates`, at most once per
+  `learn_every_s` per car and sensor, up to `learn_max`: `settings.PLATES`; never from a box that
+  overlaps another vehicle). A car's entities carry `identified_by` (`plates.identified_by`
+  in `engine/plates.py`: plate, look or plate_and_look), sent only when it changes, and on a
+  sensor that reads plates its own enum entity `<key>_identified` (`mqtt.IDENTIFIED_STATES`, a
+  column of the Home Assistant tab: the on/off sensor stays on/off, so no automation breaks).
+  Forgetting a car deletes its taught boxes on every sensor.
+- Cars of the same look (asked for 2026-11-09: two white Teslas with different plates): a car's
+  `look` is another car's key, one level deep. That car is the look of both: each keeps its own
+  taught boxes, which count as that car's when the index is built (`SensorConfig.car_looks`), so
+  unsharing undoes it (moving the boxes did not: tried on dev, a car made the look of another by
+  mistake could not be taken back). Its plates move to a car of their own under it
+  (`api/plates.py`); the cars under it are named by their plates only
+  (`plates.grouped` gives such a box a `group`, and `teach.counts_for` counts it for both), so
+  the look never guesses which of them is parked side-on.
+- The cars are shared by every sensor (the DB setting `cars`: {key, name, plate, parent, look}; no plate:
+  known by its look); a sensor gets each as an own label (`engine.with_shared`, not stored on the
+  sensor) while it reads plates, and those whose look was taught on it. Every named vehicle is one:
+  a new label of a vehicle class made while teaching is a car, and own labels of a vehicle class
+  (from before, or brought by an imported sensor) become cars at start and after an import
+  (`Runtime.adopt_car_labels`, keeping their key, so their boxes and entities stay). A sensor's
+  export lists the cars taught on it as own labels; imported, they are the car of that key. Its
+  `event` entity (`mqtt._object_entities`, events `settings.PLATE_EVENTS`) fires once per vehicle
+  while it stays and per car or plate per `event_cooldown_s`; each event is a history row
+  (`published_key` "plate", the plate in its detections). Unknown plates are only sent with
+  `objects["plates"]["unknown"]` on; otherwise a read is not kept beyond the check's detections.
+
 **Recognising people by their face** (`faces.py`, `engine/faces.py`, `api/faces.py`; registry
 `faces.json`, tunables `settings.FACES`, per sensor `objects["faces"]` with `settings.FACE_DEFAULTS`;
 the user's limits `settings.FACE_TUNABLE`).
 Why it is a part of object sensors and not a kind, the research, the privacy rules and what is
 left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
 
-- Off by default; on only for a sensor that looks for `person` (its Settings tab, or the wizard),
+- Off by default; on only for a sensor that looks for `person` (its Settings → Objects, or the wizard),
   after a confirmation that names what is stored and downloaded. The face models are never
   bundled: the first sensor that turns it on downloads them (`backbones.download` with progress)
   and loads them in the background — the sensor runs without faces meanwhile; a failed download waits for **Try again**. The last sensor
@@ -261,7 +313,7 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   another recogniser can align it its own way) lives in `<data>/faces/`, not in the media folder;
   embeddings are cached per face model (`face_embedding`), deleted with the face, never in a sensor
   bundle; a full backup holds them with the faces (the database goes along whole, see §12).
-  A sensor that recognises faces gets every person as an own label (`engine.with_people`, not
+  A sensor that recognises faces gets every person as an own label (`engine.with_shared`, not
   stored on the sensor): its entities, and a name its faces can get. One index of all taught
   faces serves every sensor. Only a human adds a face (teach sheet, review answer), on any sensor.
 - Each person also has two entities of their own on the app's device: `sensor.visionstate_<key>_seen_by`
@@ -682,7 +734,7 @@ unit as Home Assistant does when that is clear (`m3` → `m³`, `kwh` → `kWh`)
 device class out (a warning in the log). The lists are `settings.HA_DEVICE_CLASS_UNITS`. Units
 without a device class are never touched: those entities exist, with history in their unit.
 Attributes: `read_text`, `rejected`, `last_trigger`. The button is "Read now".
-Four more entities exist only when chosen on the sensor's Home Assistant tab (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
+Four more entities exist only when chosen under the sensor's Settings → Home Assistant (below): *Raw reading* (`raw`, diagnostic), *Problem* (`problem`, enum of
 `settings.READING_PROBLEMS`, diagnostic), *Accepted (24 h)* (`accepted`, %, diagnostic, kept in
 memory and starting over after a restart) and, for counters only, *Rate* (`rate`: the change over
 about `rate_window_min` (15) minutes — the last accepted reading before the window anchors it, so
@@ -704,7 +756,7 @@ Attributes on the state entity: `probabilities`, `top_state`, `trained`, `last_t
 `visionstate_<slug>_<sound key>`): `device_class: smoke` for smoke and fire alarms (decided
 2026-10-29; DOCS.md says it is no replacement for a smoke detector), `sound` for the others, and
 the pause switch; no frame and no "check now". A sound no longer listened for (or an own sound
-forgotten) loses its entity; each sound can be chosen away on the Home Assistant tab. Only changes
+forgotten) loses its entity; each sound can be chosen away under Settings → Home Assistant. Only changes
 are published: on/off, no scores. Paused, its sounds go off. It becomes unavailable only after
 `SOUND["offline_after_s"]` without audio: a reconnect is not news, and "no sound" is logged once.
 
@@ -723,7 +775,7 @@ Every other value is sent only when it differs from what that topic got last
 only throw it away. What was sent is forgotten when discovery is published (MQTT connected again,
 a sensor changed), so nothing waits for a change after the broker or Home Assistant restarted.
 
-**What a sensor has in Home Assistant** (decided 2026-10-31; the Home Assistant tab, one place
+**What a sensor has in Home Assistant** (decided 2026-10-31; Settings → Home Assistant, one place
 instead of a choice here and a switch there). `mqtt.entity_options` lists what can be chosen, with
 its default (off: `settings.HA_ENTITIES_NOT_BY_DEFAULT` and the snapshots); `sensor.ha_entities`
 holds what was chosen against it, and `sensor.in_ha` off means no entities at all. What is chosen
@@ -767,6 +819,36 @@ the broker holds no pictures nobody asked for.
   each is a Home Assistant row, which is why it is a limit and the snapshot stays opt-in. Saving
   pictures to files is left to an automation (Home Assistant's `image.snapshot`): keeping them is
   an NVR's job, not decided here.
+- *When a picture's frame was taken* (discussion #83, `imaging.frame_exif`, `timing.py`): a picture
+  reaches Home Assistant seconds after its frame on a small CPU, and by how much varies with the
+  check, so a saved picture could not be matched with a camera's recording. Every picture sent (the
+  snapshots and *Last frame*, every kind) carries in its EXIF when the camera was asked for its
+  frame, in UTC (the container's time zone is not always set), and the part of the frame it shows
+  (`UserComment`, JSON). In the picture, not an attribute: the attributes are sent at other moments
+  than a snapshot, so an attribute could belong to an older frame, and `image.snapshot` writes the
+  bytes unchanged. The time asked, not answered: the frame is taken somewhere between the two, and
+  the answer's time adds the camera's encoding and the transfer (about 0.35 s by the speed test
+  quoted in #83). Nothing changes in what is sent when: each picture is sent only when it would
+  have been anyway.
+  Not done: sending the state after the detector and the rest (names, taught boxes) later. The
+  taught comparison can filter a box out, add one (an unsure box rescued) or change its class, so
+  the state would change twice (an automation starting for nothing, two rows); faces only add
+  names, but they cost little (measured with the debug timing on the demo Driveway: detector
+  0.14–0.25 s, taught comparison 0.22–0.37 s, faces 0.04–0.06 s). Where a check's time goes is
+  shown by `log_level: debug` (one line per check, the wait for a model run apart), so a slow
+  installation can be judged by its numbers.
+  Done instead, from #83's numbers (a Celeron J3455: detector 0.9 s, taught comparison 4–7 s, about
+  1 s per crop): the comparison's cost is the number of crops, each embedded alone (the 8-bit
+  backbone gives a crop another vector in another batch, `teach.embed`), up to
+  `settings.TEACH["max_checked"]` + `max_rescue` per check, at every check of a burst while someone
+  stands in view. A box at the same place as one in the check right before (`reuse_iou`, below the
+  jitter of a still object's box: a parked car on a real doorbell camera's 640×480 stream, 3 s
+  apart, overlapped 0.98–0.99 with D-FINE N and S; a weak box that jumps more is just embedded
+  again) reuses that embedding, and is embedded anew every
+  `recheck_every`-th check, as the face step carries a sure name. The vector is reused, not the
+  answer: `teach.apply` decides as before, so a box taught in between counts at once. Only from the
+  check right before, so an object that left and another that came to the same place are looked at
+  anew.
 
 Availability: app-wide LWT plus per-sensor camera availability. Removing a sensor
 removes its entities. **Don't send values** (`sensor.publish`, default
@@ -799,15 +881,23 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
    depends on the kind; objects and readings are tested on a fresh frame → optional triggers.
 3. **Label** — live view, one button per state (keys 1–9), current prediction, day/night
    coverage, last trigger, undo.
-4. **Upload** — drag & drop images/ZIP/video; label in a grid or accept all suggestions.
-5. **Dataset** — filter by state/unlabelled, relabel, unlabel, delete.
+4. **Dataset** — at the top drag & drop images/ZIP/video, label them in a grid or accept all
+   suggestions (*Needs a label*); below every image, filtered by state/unlabelled: relabel,
+   unlabel, delete.
+5. *(Upload was its own tab until it joined Dataset.)*
 6. **Quality** — accuracy, confusion matrix, samples per state (day/night), suggestions,
    *possibly mislabelled* images with keep / change / delete. A red cell of the confusion matrix
    lists the images behind it (the cross-validation's wrong guesses, also those the user kept).
 7. **History** — published state changes and flagged frames; "add as" to the dataset. The same
    list as the History page (11), fixed to this sensor.
-8. **Sensor settings** — name, source, region, states, when to check, output, review overrides,
-   export, delete.
+8. **Sensor settings** — the button beside *Pause*, not a tab, in sections
+   (`ui.SETTINGS_SECTIONS`): *General* (name, source, light), *Region*, what it looks for (states,
+   objects with faces and *What you taught*, a reading with its region, sounds), *Checks and
+   output* (when to check, output, review overrides, *From your answers*), *Home Assistant* (§8,
+   saved on its own) and *Export or delete*. One form for all sections, so a change is kept while
+   another is open; *Save changes* and *Undo* appear at the bottom of the screen once something
+   changed. A phone lists the sections, each with a line of what is set, and opens one at a time;
+   a wider screen shows the list as a menu beside the open one.
 9. **Review** — the review queue across sensors, keyboard driven.
 10. **Settings** — status, AI models (state backbone, object detector, number reader),
     global review rules, storage (disk use and history limits), backup and restore, import.
@@ -826,27 +916,36 @@ Principle: **easy by default, details on demand.** Dark theme, responsive.
     (`newer_than` = the newest row when loaded) and shown on request, so the list never moves
     under a finger. Index `(sensor_id, created_at, id)`; indexes added later are created at start-up.
 
-Every sensor has a **Home Assistant** tab (§8). Besides it, reading sensors have four tabs: **Live** (value, last read, the analysed frame and the
-image the reader saw), **Quality** (accepted share today / 7 / 30 days, by reason, per day, and
-the rejected and checked readings with *read correctly* / *misread*), **History** (new values
-and rejected readings) and **Settings** (mode,
-decimals, unit, device class, display, limits). The reading settings start with the type —
-*digital display* or *mechanical counter* (with its number of digits; the cells are drawn over
-the region in the wizard and on the Settings tab, a straightened region's in its perspective, inside it).
+**The same tabs for every kind** (decided 2026-11-08), most used first: what it sees now (**Live**,
+a state sensor's **Label**), **History**, **Dataset** (what it was taught) and **Quality** (how well
+it does), in `ui.TABS_BY_KIND`. Before, a state sensor had seven tabs (Upload, Settings and Home
+Assistant among them) that did not fit a phone, people could not find where to delete a sensor
+(the Settings tab was off the screen), and *Quality* meant three things: how well a state sensor
+does, what an object sensor was taught, and a sound sensor's place was called *Own sounds*. Now
+what was taught is *Dataset* everywhere and *Quality* is only how well it does; links to the old
+tabs still open where they went (`ui.OLD_TABS`). A tab that does not fit a very narrow screen goes
+under *More* (`TabBar`), and the open tab stays in the row.
 
-Object sensors have three instead: **Live** (the exact analysed frame with its boxes and
-per-class status), **History** (appeared / cleared / filtered away, expandable to the frame with
-boxes) and **Settings** (objects, region, triggers, output, and *What you taught* once something
-was taught). Every box on Live and on a history frame can be tapped to teach it (§5); a
-**Quality** tab (taught boxes per answer, own labels, frames filtered away lately) appears once
-something was taught, so a sensor that was never taught looks exactly as before. The boxes on Live
+Reading sensors have **Live** (value, last read, the analysed frame and the image the reader saw),
+**Quality** (accepted share today / 7 / 30 days, by reason, per day, and the rejected and checked
+readings with *read correctly* / *misread*) and **History** (new values and rejected readings);
+nothing is taught per reading sensor, so no Dataset. Their Settings has the region and the reading
+in one section (*Region and reading*: mode, decimals, unit, device class, display), because the
+cells are drawn over the region. It starts with the type — *digital display* or *mechanical
+counter* (with its number of digits; the cells are drawn over the region in the wizard and in
+Settings, a straightened region's in its perspective, inside it).
+
+Object sensors have **Live** (the exact analysed frame with its boxes and per-class status),
+**Dataset** (taught boxes per answer, own labels, frames filtered away lately; before anything was
+taught, how to teach it) and **History** (appeared / cleared / filtered away, expandable to the
+frame with boxes). Every box on Live and on a history frame can be tapped to teach it (§5). The boxes on Live
 change together with the frame they belong to, so the page does not move while the next frame
 loads.
 
 Sound sensors have **Live** (the level against its line, each sound's score against its threshold,
-the stream), **Own sounds** (the Quality tab's place: teaching and forgetting own sounds),
-**History** (heard / no longer heard, clips played after a tap) and **Settings** (sounds, levels,
-clips).
+the stream), **Dataset** (teaching and forgetting own sounds, and clips of the built-in ones) and
+**History** (heard / no longer heard, clips played after a tap); their Settings has *Listening*
+(sounds, levels, clips) and *Review*.
 
 ## 10. Data model & extensibility
 
@@ -1059,6 +1158,7 @@ is part of backups and needs no restart.
 | **Teaching sounds, thresholds from answers** ✅ | Sound sensors hear a camera through Home Assistant; built-in sounds taught with the household's clips (and what they are not), own sounds recorded from the sensor's microphone, sounds almost heard asked about (by the AI's own score, quiet after five no); a threshold suggested from the Review answers on every kind of sensor, an answer counting while what it taught is there; clips with the camera's video and all their sound | 0.14.0 (betas 0.14.0b3, b5, b7, b8) |
 | **Nothing phones home, checked** ✅ | ONNX Runtime's telemetry to Microsoft switched off, and CI fails when the image reaches anything beyond its broker and camera | 0.14.0 (beta 0.14.0b6) |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
+| **Licence plates** | Own cars known by their plate, unknown plates read into Home Assistant, as many countries as possible — an open plate model and two made for plates (accepted first), a benchmark of 53 plates — [`PLATE_RECOGNITION_PLAN.md`](PLATE_RECOGNITION_PLAN.md) | beta 0.15.0b5 (untested) |
 | **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 
 **Open ideas** (not scheduled): more on the History page (export of a filtered selection, a

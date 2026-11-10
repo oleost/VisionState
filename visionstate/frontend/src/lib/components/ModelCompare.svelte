@@ -19,7 +19,7 @@
   const chosen = (kind: Kind, id: string) =>
     kind === 'wheel_readers'
       ? info.wheel_readers_in_use.includes(id)
-      : id === { backbones: info.backbone, detectors: info.detector, face_models: info.face_model, readers: info.reader }[kind];
+      : id === { backbones: info.backbone, detectors: info.detector, face_models: info.face_model, plate_models: info.plate_model, readers: info.reader }[kind];
   const deletable = (kind: Kind): kind is ModelKind => kind !== 'wheel_readers';
 
   async function remove(kind: ModelKind, m: BackboneInfo) {

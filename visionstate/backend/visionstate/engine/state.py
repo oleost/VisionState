@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, object_session
 
 from .. import detectors, sounds
 from ..change_limit import Watch
-from ..db import Person, Sensor
+from ..db import Person, Sample, Sensor, Setting
 from ..mqtt import SensorDescriptor, muted_topics
 from ..settings import (
     FACE_UNKNOWN_KEY,
@@ -32,6 +32,7 @@ from ..settings import (
     merge_reading,
     merge_sound,
     merge_triggers,
+    plates_on,
 )
 from ..sources import AudioStream
 
@@ -62,6 +63,9 @@ class SensorConfig:
     in_ha: bool = True  # see db.Sensor.in_ha
     ha_entities: dict | None = field(default_factory=dict)  # see db.Sensor.ha_entities
     frame_size: list | None = None  # see db.Sensor.frame_size
+    # Object sensors: car -> the car whose look it shares (the "cars" setting); its taught boxes
+    # count as that car's when boxes are recognised, so sharing a look is undone by unsharing it.
+    car_looks: dict[str, str] = field(default_factory=dict)
 
     @property
     def state_keys(self) -> list[str]:
@@ -103,6 +107,11 @@ class SensorConfig:
         return {label["key"]: label["parent"] for label in self.custom_labels}
 
     @property
+    def plates_on(self) -> bool:
+        """An object sensor that reads licence plates."""
+        return self.is_objects and plates_on(self.objects)
+
+    @property
     def faces_on(self) -> bool:
         """An object sensor that recognises people by their face."""
         return self.is_objects and faces_on(self.objects)
@@ -141,6 +150,8 @@ class SensorConfig:
             self.in_ha,
             self.ha_entities,
             heard,
+            self.plates_on,
+            [c["key"] for c in self.custom_labels if c.get("car")] if self.plates_on else [],
         )
 
     @cached_property
@@ -166,7 +177,7 @@ class SensorConfig:
             triggers=merge_triggers(row.triggers),
             review=dict(row.review or {}),
             kind=row.kind or KIND_STATES,
-            objects=with_people(merge_objects(row.objects), object_session(row)),
+            objects=with_shared(merge_objects(row.objects), object_session(row), row.id),
             reading=merge_reading(row.reading),
             sound=merge_sound(row.sound),
             entity_prefix=bool(row.entity_prefix),
@@ -174,20 +185,61 @@ class SensorConfig:
             in_ha=row.in_ha is not False,
             ha_entities=row.ha_entities,
             frame_size=row.frame_size,
+            car_looks=car_looks(object_session(row)) if row.kind == KIND_OBJECTS else {},
         )
 
 
-def with_people(objects: dict, session: Session | None) -> dict:
-    """An object sensor's settings with the people (shared by every sensor, db.Person) among its
-    own labels while it recognises faces: {key, name, parent "person", face True}. Each one is an
-    entity of the sensor and a name its faces can get."""
-    if session is None or not faces_on(objects):
+def car_looks(session: Session | None) -> dict[str, str]:
+    """Each car that shares another car's look -> that car."""
+    if session is None:
+        return {}
+    return {c["key"]: c["look"] for c in household_cars(session) if c.get("look")}
+
+
+def household_cars(session: Session) -> list[dict]:
+    """The household's cars (the "cars" setting): {key, name, plate, parent} each."""
+    row = session.get(Setting, "cars")
+    return [dict(c) for c in row.value] if row is not None and isinstance(row.value, list) else []
+
+
+def with_shared(objects: dict, session: Session | None, sensor_id: int | None = None) -> dict:
+    """An object sensor's settings with what every sensor shares among its own labels: the people
+    (db.Person) while it recognises faces, {key, name, parent "person", face True}, and the
+    household's cars (the "cars" setting), {key, name, parent, car True, look (a car whose look it
+    shares)}: every car while it reads plates, otherwise the cars whose look was taught on this
+    sensor (``sensor_id``; a car whose look another car shares, when that one was). Each one is
+    an entity of the sensor and a name its boxes can get."""
+    if session is None:
         return objects
-    people = [
-        {"key": p.key, "name": p.name, "parent": "person", "face": True}
-        for p in session.scalars(select(Person).order_by(Person.created_at))
+    custom = [c for c in objects["custom"] if not c.get("face") and not c.get("car")]
+    if faces_on(objects):
+        custom += [
+            {"key": p.key, "name": p.name, "parent": "person", "face": True}
+            for p in session.scalars(select(Person).order_by(Person.created_at))
+        ]
+    cars = household_cars(session)
+    if cars and not plates_on(objects):
+        taught = (
+            set(
+                session.scalars(
+                    select(Sample.object_label)
+                    .where(Sample.sensor_id == sensor_id, Sample.object_label.in_([c["key"] for c in cars]))
+                    .distinct()
+                )
+            )
+            if sensor_id is not None
+            else set()
+        )
+        # A car that shares another car's look is that car here (its boxes are taught as it).
+        looks = {c["key"]: c["look"] for c in cars if c.get("look")}
+        taught = {looks.get(key, key) for key in taught}
+        cars = [c for c in cars if c["key"] in taught and not c.get("look")]
+    custom += [
+        {"key": c["key"], "name": c["name"], "parent": c.get("parent", "car"), "car": True}
+        | ({"look": c["look"]} if c.get("look") else {})
+        for c in cars
     ]
-    return {**objects, "custom": [*(c for c in objects["custom"] if not c.get("face")), *people]}
+    return {**objects, "custom": custom}
 
 
 class Debouncer:
@@ -315,6 +367,7 @@ class LiveState:
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check
+    taught_seen: list = field(default_factory=list)  # object sensors: the last check's embedded crops (teach.Seen)
     # Object sensors: the frames the last checks analysed, so a box can be taught a while after
     # it was shown (``frames`` turns over quickly); classes filtered away in the last check and
     # when each was last stored in the history.
@@ -331,6 +384,10 @@ class LiveState:
     face_frame: tuple[int, int] | None = None  # the size of the last frame looked at for faces
     face_min_px: float | None = None  # the smallest face (its width) it was looked at with
     face_logged: tuple[float, float] = (0.0, 0.0)  # when a face nobody is named for was last kept, and its width
+    plate_events: dict[str, float] = field(default_factory=dict)  # car key or plate -> when its last event was sent
+    # car key -> how it is known (plates.identified_by), and when its look was last learned or checked
+    car_identified: dict[str, str | None] = field(default_factory=dict)
+    plate_learned: dict[str, float] = field(default_factory=dict)
     # Reading sensors: the last read {"text", "score", "value", "reason", "at"} and the image
     # the reader saw (JPEG), shown in the UI so a bad region or display setting is easy to spot.
     reading: dict | None = None

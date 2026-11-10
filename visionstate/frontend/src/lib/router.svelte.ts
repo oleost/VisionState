@@ -1,7 +1,7 @@
 // Hash-based router (works below the dynamic Ingress path). All app paths are defined in `paths`.
 // A path may carry a query (`#/history?sensor=3`): `route.query` holds it, `setQuery` changes it.
 import type { SensorKind } from './types';
-import { TABS_BY_KIND, type SensorTab } from './ui';
+import { TABS_BY_KIND, type SensorTab, type SettingsSection } from './ui';
 
 function parse(): { parts: string[]; query: Record<string, string> } {
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
@@ -21,6 +21,8 @@ export const paths = {
   newSensor: () => 'sensors/new',
   /** Without a tab: the sensor's first tab (see TABS_BY_KIND). */
   sensor: (id: number, tab: SensorTab | '' = '') => (tab ? `sensors/${id}/${tab}` : `sensors/${id}`),
+  /** A sensor's Settings; without a section the list of them (a phone) or the first (wider). */
+  sensorSettings: (id: number, section: SettingsSection | '' = '') => `sensors/${id}/settings${section ? `/${section}` : ''}`,
   sensorHome: (id: number, kind: SensorKind) => `sensors/${id}/${TABS_BY_KIND[kind][0]}`,
   /** With a sensor: only its items (the filter of the Review page). */
   review: (sensorId: number | null = null) => withQuery('review', sensorId === null ? '' : `sensor=${sensorId}`),

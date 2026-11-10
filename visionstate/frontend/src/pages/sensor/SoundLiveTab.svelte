@@ -44,7 +44,7 @@
         Only sound above the line is analysed: {sound.level === 'auto'
           ? `${sound.above_db} dB above the background it learns`
           : `a fixed ${sound.fixed_db} dB`}. A sound that matters but stays below it — a beep two rooms away — is
-        missed: lower the line under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.
+        missed: lower the line under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Listening</a>.
       </p>
     </section>
 
@@ -62,7 +62,7 @@
           {/snippet}
         </ProbBars>
       {:else}
-        <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.</p>
+        <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Listening</a>.</p>
       {/if}
     </section>
   </div>

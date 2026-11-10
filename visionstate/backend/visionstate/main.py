@@ -18,6 +18,7 @@ from .api import backup as backup_api
 from .api import benchmark as benchmark_api
 from .api import cameras, faces, history, imports, review, samples, sensors, system, teach
 from .api import esphome as esphome_api
+from .api import plates as plates_api
 from .api import sounds as sounds_api
 from .api.common import API_PREFIX
 from .db import Database
@@ -99,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(teach.router)
     app.include_router(faces.router)
     app.include_router(faces.people_router)
+    app.include_router(plates_api.router)
     app.include_router(sounds_api.router)
     app.include_router(esphome_api.router)
 

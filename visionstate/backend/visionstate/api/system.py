@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from .. import backbones, detectors, faces, readers, sounds
+from .. import backbones, detectors, faces, plates, readers, sounds
 from ..db import Person, Prediction, Sensor
 from ..engine import Runtime
 from ..redact import redact
@@ -40,6 +40,10 @@ from ..settings import (
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
     OBJECT_SENSOR_DEFAULTS,
+    PLATE_DEFAULTS,
+    PLATE_EVENTS,
+    PLATE_LIMITS,
+    PLATES,
     QUALITY,
     READING,
     READING_DEFAULTS,
@@ -73,6 +77,7 @@ from ..settings import (
     TRIGGER_LIMITS,
     TRIGGER_MAX_ENTITIES,
     UNKNOWN_STATE,
+    VEHICLE_CLASSES,
     VERSION,
     VIDEO,
     merge_review,
@@ -139,6 +144,13 @@ def ui_config() -> dict:
         "face_defaults": {k: FACE_DEFAULTS[k] for k in ("enabled", "ask_unknown")},  # the limits: face-limits
         "face_limits": FACE_LIMITS,
         "face_unknown_key": FACE_UNKNOWN_KEY,
+        "plate_defaults": PLATE_DEFAULTS,
+        "plates": {
+            "vehicles": list(VEHICLE_CLASSES),
+            "max_cars": PLATES["max_cars"],
+            "events": list(PLATE_EVENTS),
+            "limits": PLATE_LIMITS,
+        },
         "faces": {k: FACES[k] for k in ("max_people", "max_faces_per_person", "suggest_faces", "stats_window")},
         "reading_sensor_defaults": READING_SENSOR_DEFAULTS,
         "reading_defaults": {**READING_DEFAULTS, "wheel_reader": readers.DEFAULT_WHEEL_READER, **READING_NEW_SENSOR},
@@ -242,6 +254,8 @@ async def status(request: Request) -> dict:
         "sound_model_error": rt.sound_model_error,
         # The face model, the people and how many sensors recognise them (the People page).
         "faces": {**rt.face_status(), "people": people, "sensors": len(face_sensors)},
+        # The plate model, the household's cars and how many sensors read plates.
+        "plates": {**rt.plate_status(), "cars": len(rt.cars()), "sensors": len(rt.plate_sensor_ids())},
         "mqtt": {
             "connected": mqtt.connected,
             "host": mqtt.config.host if mqtt.config else None,
@@ -263,6 +277,9 @@ class SettingsIn(BaseModel):
     detector: str | None = None  # object sensors; None keeps the current one
     reader: str | None = None  # reading sensors; None keeps the current one
     face_model: str | None = None  # face recognition on object sensors; None keeps the current one
+    plate_model: str | None = None  # licence plates on object sensors; None keeps the current one
+    # A plate model whose weights state no licence is only chosen when the user accepts that.
+    plate_model_accepted: bool = False
     inference_threads: int | None = None  # threads per model run, 0: one per core; None keeps it
 
 
@@ -272,6 +289,7 @@ MODELS = {
     "detectors": detectors.DETECTORS,
     "readers": readers.READERS,
     "face_models": faces.RECOGNISERS,
+    "plate_models": plates.MODELS,
 }
 
 
@@ -285,6 +303,8 @@ def _in_use(rt, kind: str, model_id: str, face_sensors: bool) -> str:
         return "It is the display reader in use. Choose another one first."
     if kind == "face_models" and model_id == rt.face_choice and face_sensors:
         return "A sensor recognises faces with it. Turn that off there first, or choose another face model."
+    if kind == "plate_models" and model_id == rt.plate_choice and rt.plate_sensor_ids():
+        return "A sensor reads plates with it. Turn that off there first, or choose another plate model."
     return ""
 
 
@@ -338,6 +358,29 @@ def get_settings(request: Request) -> dict:
             }
             for spec in faces.RECOGNISERS.values()
         ],
+        # Licence plates: a finder and a reader each; downloaded when a sensor turns plates on.
+        # Not open: no licence stated for the weights, chosen only when the user accepts that.
+        "plate_model": rt.plate_choice,
+        "plate_models": [
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "description": spec.description,
+                # Not on disk yet: what is still to download (a file may be shared); on disk: all of it.
+                "size": spec.size
+                if rt.plate_files_present(spec.id)
+                else sum(f.size for f in spec.files if rt.model_path(f) is None),
+                "installed": rt.plate_files_present(spec.id),
+                "downloaded": any(rt.downloaded(f) for f in spec.files),
+                "in_use": _in_use(rt, "plate_models", spec.id, face_sensors),
+                "license": spec.license,
+                "source": spec.source,
+                "data": spec.data,
+                "open": spec.open,
+                **spec.footprint.as_dict(),
+            }
+            for spec in plates.MODELS.values()
+        ],
         # Sound sensors: one model, downloaded when the first sound sensor is made.
         "sound_models": [
             {**model(spec), "data": spec.data, "published": bool(spec.url)} for spec in sounds.MODELS.values()
@@ -366,6 +409,11 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
         raise HTTPException(400, "Unknown reader")
     if body.face_model is not None and body.face_model not in faces.RECOGNISERS:
         raise HTTPException(400, "Unknown face model")
+    if body.plate_model is not None:
+        if body.plate_model not in plates.MODELS:
+            raise HTTPException(400, "Unknown plate model")
+        if not plates.MODELS[body.plate_model].open and not body.plate_model_accepted:
+            raise HTTPException(400, "This plate model states no licence for its weights: accept that to use it")
     if body.inference_threads is not None and not 0 <= body.inference_threads <= (os.cpu_count() or 1):
         raise HTTPException(400, "Threads must be between 0 (automatic) and the number of CPUs")
     current = await asyncio.to_thread(get_settings, request)
@@ -390,6 +438,8 @@ async def put_settings(body: SettingsIn, request: Request) -> dict:
             raise HTTPException(500, f"Could not load reader: {redact(str(err))}") from err
     if body.face_model is not None and body.face_model != current["face_model"]:
         await rt.set_face_model(body.face_model)  # loads in the background when a sensor uses faces
+    if body.plate_model is not None and body.plate_model != current["plate_model"]:
+        await rt.set_plate_model(body.plate_model)  # loads in the background when a sensor reads plates
     if threads_changed:
         assert body.inference_threads is not None
         try:
@@ -423,12 +473,15 @@ async def delete_model(kind: str, model_id: str, request: Request) -> dict:
     reason = await asyncio.to_thread(_in_use, rt, kind, model_id, face_sensors)
     if reason:
         raise HTTPException(409, reason)
-    if not rt.downloaded(spec):
+    files = spec.files if kind == "plate_models" else [spec]
+    if not any(rt.downloaded(f) for f in files):
         raise HTTPException(404, "This model is included in the app or not downloaded")
     if kind == "face_models":
         if rt.face_model is not None:
             await rt.faces_settled()  # let the unused face model go before its file
         await asyncio.to_thread(rt.delete_face_files, model_id)
+    elif kind == "plate_models":
+        await asyncio.to_thread(rt.delete_plate_files, model_id)
     else:
         await asyncio.to_thread((rt.settings.models_dir / spec.filename).unlink, missing_ok=True)
     return await asyncio.to_thread(get_settings, request)

@@ -2,7 +2,7 @@
   // The people (shared by every sensor that recognises faces): one card per person with the faces
   // taught and the camera of each, where they were last seen, whether they need more faces,
   // look-alikes and faces that may carry the wrong name; renaming and forgetting. On the People
-  // page, and on the Quality tab of a sensor that recognises faces (`sensor`: how faces look on
+  // page, and on the Dataset tab of a sensor that recognises faces (`sensor`: how faces look on
   // its camera, and links to it), reloaded with every poll of the sensor there.
   import { untrack } from 'svelte';
   import { api } from '../api';
@@ -95,7 +95,7 @@
     {#if sensor}<div class="card-title"><h3>People</h3></div>{/if}
     {#if sensor && !enabled}
       <div class="notice warn">
-        Face recognition is off for this sensor under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.
+        <span>Face recognition is off for this sensor under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Objects</a>.</span>
       </div>
     {:else if sensor?.objects}
       <FaceStats objects={sensor.objects} />
