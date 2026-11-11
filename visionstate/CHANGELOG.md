@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0b11
+
+The ESP32 guide, from a new device set up from start to finish:
+
+- **It keeps its choices and passwords** when you leave the page (to install in the ESPHome app)
+  and come back, so the check uses the password the device was made with.
+- **It finds a device Home Assistant has discovered** when the device has a friendly name too
+  (Home Assistant shows it as *Name (device-name)*).
+- **Clearer steps for Home Assistant:** where to add the device, and that it takes the key from its
+  ESPHome app itself; and what to do when a board that was set up before is ignored there.
+
 ## 0.15.0b10
 
 - **Install always builds the newest ESP32 firmware:** a device file from the guide (and the

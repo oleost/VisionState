@@ -17,21 +17,37 @@
   const cfg = app.config!.esphome;
   const boardIds = Object.keys(cfg.boards);
 
-  let board = $state(boardIds[0]);
-  let kind = $state(cfg.boards[boardIds[0]].kinds[0]);
-  let name = $state('');
-  let mute = $state(false);
+  // The choices, and the passwords and key this page made, kept for this browser tab: leaving the
+  // page (for the ESPHome app, to install) and coming back gives the same file and the same password
+  // for the check. Not the Wi-Fi password: it is only needed for the file.
+  const KEPT = 'visionstate.esp32-guide';
+  const kept: Record<string, unknown> = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(KEPT) ?? '{}') ?? {};
+    } catch {
+      return {};
+    }
+  })();
+  const keptText = (key: string) => (typeof kept[key] === 'string' ? (kept[key] as string) : null);
+  const keptBoard = keptText('board');
+
+  const firstBoard = keptBoard && keptBoard in cfg.boards ? keptBoard : boardIds[0];
+  const firstKinds = cfg.boards[firstBoard].kinds;
+  let board = $state(firstBoard);
+  let kind = $state(firstKinds.includes(keptText('kind') ?? '') ? keptText('kind')! : firstKinds[0]);
+  let name = $state(keptText('name') ?? '');
+  let mute = $state(kept.mute === true);
   const useIds = Object.keys(cfg.camera_uses);
   // A microphone that is a voice assistant too: the wake word heard by Home Assistant, the answer on
   // one of its media players ('' : chosen later, Answer on on the device).
-  let assistant = $state(false);
-  let answerOn = $state('');
+  let assistant = $state(kept.assistant === true);
+  let answerOn = $state(keptText('answerOn') ?? '');
   let players = $state<MediaPlayer[]>([]);
   api
     .mediaPlayers()
     .then((got) => (players = got.players))
     .catch(() => {}); // Home Assistant not reachable: chosen later
-  let cameraUse = $state(useIds[0]);
+  let cameraUse = $state(useIds.includes(keptText('cameraUse') ?? '') ? keptText('cameraUse')! : useIds[0]);
   let made = $state<EsphomeConfiguration | null>(null);
   let madeError = $state('');
 
@@ -46,9 +62,9 @@
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
     return Array.from(crypto.getRandomValues(new Uint32Array(count)), (n) => chars[n % chars.length]).join('');
   }
-  const apiKey = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
-  let password = $state(randomChars(cfg.password_chars));
-  const apPassword = randomChars(cfg.password_chars); // the fallback hotspot's: only in the file
+  const apiKey = keptText('apiKey') ?? btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+  let password = $state(keptText('password') ?? randomChars(cfg.password_chars));
+  const apPassword = keptText('apPassword') ?? randomChars(cfg.password_chars); // the fallback hotspot's: only in the file
 
   function pickBoard(id: string) {
     board = id;
@@ -74,7 +90,7 @@
   }
 
   // The user's values, filled into the file here in the browser: they never reach VisionState.
-  let wifiSsid = $state('');
+  let wifiSsid = $state(keptText('wifiSsid') ?? '');
   let wifiPassword = $state('');
   let showWifiPassword = $state(false);
   const values = $derived({
@@ -108,7 +124,15 @@
   let devices = $state<EsphomeDevice[]>([]);
   let waiting = $state<string[]>([]);
   let devicesError = $state('');
-  let host = $state('');
+  let host = $state(keptText('host') ?? '');
+  $effect(() => {
+    const keep = { board, kind, name, mute, cameraUse, assistant, answerOn, password, apPassword, apiKey, wifiSsid, host };
+    try {
+      sessionStorage.setItem(KEPT, JSON.stringify(keep));
+    } catch {
+      // storage refused (a private window): the page works, it only forgets on leaving
+    }
+  });
   let checking = $state(false);
   let checked = $state<EsphomeCheck | null>(null);
   let showKey = $state(false);
@@ -335,7 +359,13 @@
           <strong>Install</strong>: the first time over USB (ESPHome offers its web page for that), then over Wi-Fi. The
           first build takes several minutes.
         </li>
-        <li>Home Assistant finds the device: add it (Settings → Devices).</li>
+        <li>
+          Add it in Home Assistant: <strong>Settings → Devices &amp; services</strong>. Once the device is on the Wi-Fi it
+          shows at the top under <strong>Discovered</strong> (ESPHome, <span class="mono">{made?.name}</span>). Press
+          <strong>Add</strong>. With the file in this Home Assistant's ESPHome app it takes the encryption key from there;
+          otherwise it asks for it: in the file under <span class="mono">api: encryption: key:</span>, and shown below
+          once Home Assistant has found the device.
+        </li>
         {#if made?.assistant}
           <li data-testid="esp32-assistant-steps">
             The voice assistant: on the device in Home Assistant (<strong>Configure</strong>), switch on <strong>Allow
@@ -357,8 +387,8 @@
       <div class="notice warn col tight" data-testid="esp32-waiting">
         <strong class="small">Home Assistant has found {made?.name}: add it.</strong>
         <span class="small">
-          Settings → Devices &amp; services: it is under <strong>Discovered</strong>. Press <strong>Add</strong>; it asks for
-          the device's encryption key:
+          Settings → Devices &amp; services: it is under <strong>Discovered</strong>. Press <strong>Add</strong>. If it asks
+          for the device's encryption key (it does not when the file is in this Home Assistant's ESPHome app):
         </span>
         <div class="row wrap">
           <span class="mono xsmall key">{showKey ? apiKey : '•'.repeat(24)}</span>
@@ -378,6 +408,11 @@
           ? `Could not ask Home Assistant: ${devicesError}.`
           : 'Waiting for the device: once it is installed and on the Wi-Fi, Home Assistant finds it, and this page shows it.'}
         You can also type its address (in ESPHome's log: <span class="mono">IP Address</span>).
+      </p>
+      <p class="xsmall muted" data-testid="esp32-ignored-hint">
+        Installed and on the Wi-Fi, but not found? Home Assistant may have been told to ignore this board before (under
+        another name too): <strong>Settings → Devices &amp; services</strong>, the filter at the top, <strong>Show
+        ignored</strong>, and <strong>Stop ignoring</strong> it.
       </p>
     {/if}
     {#if devices.length && !ours}

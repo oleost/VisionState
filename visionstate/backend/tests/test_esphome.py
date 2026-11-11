@@ -271,13 +271,18 @@ def test_discovered_esphome_devices_are_read_from_home_assistants_flows(monkeypa
         return [
             [
                 {"handler": "esphome", "context": {"source": "zeroconf", "title_placeholders": {"name": "vs-hall"}}},
+                # With a friendly name ESPHome shows "Friendly (device-name)": the device name is what counts.
+                {
+                    "handler": "esphome",
+                    "context": {"source": "zeroconf", "title_placeholders": {"name": "Test cam (test-cam)"}},
+                },
                 {"handler": "hue", "context": {"source": "zeroconf", "title_placeholders": {"name": "Bridge"}}},
                 {"handler": "esphome", "context": {"source": "user"}},  # someone adding one by hand
             ]
         ]
 
     monkeypatch.setattr(ha_events, "ws_commands", commands)
-    assert asyncio.run(ha_events.discovered("ws://ha", "t", "esphome")) == ["vs-hall"]
+    assert asyncio.run(ha_events.discovered("ws://ha", "t", "esphome")) == ["vs-hall", "test-cam"]
 
 
 @in_repo

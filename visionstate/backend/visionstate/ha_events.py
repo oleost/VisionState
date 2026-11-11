@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from .settings import APP_SLUG, RUNTIME, SUPERVISOR_URL, TRIGGER_IGNORED_STATES, Settings
@@ -128,7 +129,9 @@ async def discovered(url: str, token: str, domain: str) -> list[str]:
         context = flow.get("context") or {}
         name = (context.get("title_placeholders") or {}).get("name")
         if name and context.get("source") != "user":
-            names.append(str(name))
+            # ESPHome shows "Friendly name (device-name)" when the device has a friendly name.
+            inner = re.fullmatch(r".*\(([^()]+)\)", str(name).strip())
+            names.append(inner[1] if inner else str(name))
     return names
 
 

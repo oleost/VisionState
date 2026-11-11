@@ -2418,6 +2418,13 @@ test('the ESP32 guide: a microphone that is a voice assistant too, its answer on
   await player.selectOption('media_player.kitchen');
   await expect(yaml).toHaveValue(/assistant_media_player: "media_player\.kitchen"[\s\S]*voice-assistant-ha-wake-word\.yaml/);
   await expect(guide.getByTestId('esp32-assistant-steps')).toContainText('Allow the device to perform Home Assistant actions');
+  // Leaving the page (for the ESPHome app) and coming back keeps the choices and the password the
+  // device was made with, so the check after installing uses the right one.
+  const streamPassword = await guide.getByLabel('Device password').inputValue();
+  await page.goto('#/sensors/new');
+  await page.goto('#/esp32');
+  await expect(guide.getByLabel('Device password')).toHaveValue(streamPassword);
+  await expect(guide.getByLabel('The answer plays on')).toHaveValue('media_player.kitchen');
   // A camera is not a voice assistant: the choice goes.
   await press(guide.getByText('ESP32-CAM', { exact: true }), info); // a camera (and microphone): no assistant
   await expect(guide.getByText('A voice assistant too', { exact: false })).toHaveCount(0);
