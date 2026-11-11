@@ -1,12 +1,16 @@
 # Changelog
 
-## 0.15.0b12
+## 0.15.0b13
 
 - **A person with the most faces can be answered about again** (#87): *Is this Kari?* about
   someone who already had 50 faces could not be answered. Now the answer replaces one of two faces
   that are nearly the same, so the faces stay varied, or is simply taken when the new face adds
   nothing new. Teaching a full person by hand or from photos says what to do, and the People page
   says when a person is full.
+- **A car known by its look keeps its name when its plate is read:** a car you taught by its look
+  but gave no plate lost its name as soon as its plate was read (*not one of your cars*), and made
+  *unknown_plate* events about your own car. Now a plate overrules the look only when that car has
+  a plate given; the Live tab shows the plate as that car's (*by its look, no plate given*).
 
 ## 0.15.0b11
 
