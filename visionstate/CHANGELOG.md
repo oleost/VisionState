@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0b12
+
+- **A person with the most faces can be answered about again** (#87): *Is this Kari?* about
+  someone who already had 50 faces could not be answered. Now the answer replaces one of two faces
+  that are nearly the same, so the faces stay varied, or is simply taken when the new face adds
+  nothing new. Teaching a full person by hand or from photos says what to do, and the People page
+  says when a person is full.
+
 ## 0.15.0b11
 
 The ESP32 guide, from a new device set up from start to finish:
