@@ -522,3 +522,18 @@ Where the build differs from §3–§9:
   moment's rows (*Taught: Ole*) and counts as last seen then; "last seen" is read back from the
   history at start. Each person has two entities: *Ole seen by* (the sensor that sees them now)
   and *Ole last seen* (a timestamp) — their own name alone was easily taken for Home Assistant's own person entity.
+- **A person with the most faces** (GitHub #87, 2026-11-11): questions kept coming about a person
+  who had `FACES["max_faces_per_person"]` faces, and every answer was refused. The limit stays: a
+  person's score is the mean of their closest faces, so more faces mean more chances that a
+  stranger comes close to one of them; what helps is faces that differ. Frigate, Immich, Double
+  Take and CompreFace were looked at first: none has a limit or replaces a taught face by itself
+  (Frigate compares with each person's mean, with outliers dropped, and advises at most 4–6
+  similar images per person), and the literature on keeping a limited set of examples per person
+  (Jain, Uludag and Ross 2004, and later work on self-update) finds a chosen set better than none
+  or a random or oldest-first one, with drift towards someone else the risk when nobody checks.
+  So, with every face confirmed by the user: a review answer about a full person replaces the
+  face whose closest other face of that person is closest, if that is closer than the new face
+  comes to any of them (`faces.to_replace`; a face whose picture is gone goes first, faces
+  taught from answers — origin `review` — before the ones taught by hand, faces that may have the
+  wrong name never); otherwise the answer stands without teaching anything. Teaching a full person
+  by hand or from photos is refused with what to do.

@@ -317,7 +317,9 @@ everyone.
   first, with a close-up of the face: tap a name, or **New person…**. Only a usable face can be
   taught, so a back or a jacket never becomes someone. A few faces per person, in other light, from
   other angles and on each camera, make it reliable; the message after teaching says how many a
-  person has. Someone who was only there for a moment (at a doorbell) can be named afterwards: a
+  person has (at most 50; a person who has them all gets a new face from the review only: it
+  replaces one of two that are nearly the same, or teaches nothing when it adds nothing new).
+  Someone who was only there for a moment (at a doorbell) can be named afterwards: a
   face nobody is named for keeps a frame in the history (*Face seen, not named*; at most one a
   minute, or a closer one).
 - **From photos**: on the **People** page, **Add a person** (a name, then **Add photos**) or

@@ -505,6 +505,31 @@ def identify(index: FaceIndex, vector: np.ndarray) -> Identity:
     return Identity(label, round(score, 3), round(margin, 3), example)
 
 
+def to_replace(index: FaceIndex, label: str, vector: np.ndarray, removable: dict[int, int]) -> int | None:
+    """Which taught face of a person who has FACES["max_faces_per_person"] a new face ``vector``
+    replaces, keeping the faces as varied as they can be (docs/FACE_RECOGNITION_PLAN.md §12).
+
+    A face whose closest other face of the person is closer than the new face comes to any of them
+    is a near copy: the new face adds more. ``removable`` maps the faces that may go to their order
+    (lower first: faces taught from review answers before the ones taught by hand); faces not in
+    it stay. Of those, the one with the closest copy goes, the older on a tie. None: the new face is
+    no newer than any of them, so nothing is replaced (and the new face not kept)."""
+    own = [i for i, key in enumerate(index.labels) if key == label]
+    if len(own) < 2 or not len(vector):
+        return None
+    vecs = index.vectors[own]
+    newest = float((vecs @ vector).max())  # how close the new face comes to the person's faces
+    sims = vecs @ vecs.T
+    np.fill_diagonal(sims, -np.inf)
+    nearest = sims.max(axis=1)
+    candidates = [
+        (removable[index.ids[i]], -float(nearest[n]), index.ids[i])
+        for n, i in enumerate(own)
+        if index.ids[i] in removable and nearest[n] > newest
+    ]
+    return min(candidates)[2] if candidates else None
+
+
 def decide(identity: Identity, limits: dict[str, float], kept: str | None = None) -> str:
     """What a usable face is: "match" (it is ``identity.label``), "ask" (maybe, not sure) or
     "unknown" (nobody taught). ``kept``: the name this person box had in the last check; it keeps

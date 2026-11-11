@@ -147,15 +147,16 @@ async def _face_model(rt: Runtime) -> faces.FaceModel:
 
 async def _find(
     rt: Runtime, sensor_id: int, body: FaceBoxIn, cfg: SensorConfig
-) -> tuple[Image.Image, str, faces.Face | None, str | None]:
-    """The frame, its origin, the face in the person box (frame pixels) and why it cannot be used."""
+) -> tuple[Image.Image, str, faces.Face | None, Image.Image | None, str | None]:
+    """The frame, its origin, the face in the person box (frame pixels), that face aligned and
+    why it cannot be used."""
     model = await _face_model(rt)
     image, origin = await frame_image(rt, sensor_id, body.frame_id, body.history_id)
     [(face, aligned)] = await rt.find_faces(model, image, [body.box])
     if face is None or aligned is None:
-        return image, origin, None, "none"
+        return image, origin, None, None, "none"
     min_px = rt.face_limits(cfg)["min_face_px"]
-    return image, origin, face, faces.problem(face, aligned, min_px, (image.width, image.height))
+    return image, origin, face, aligned, faces.problem(face, aligned, min_px, (image.width, image.height))
 
 
 def _config(rt: Runtime, sensor_id: int) -> SensorConfig:
@@ -172,7 +173,7 @@ async def check_face(sensor_id: int, body: FaceBoxIn, request: Request) -> dict:
     """Whether there is a face in a person box that can be taught: {face (normalised box), problem, message}."""
     rt = runtime(request)
     cfg = await asyncio.to_thread(_config, rt, sensor_id)
-    image, _origin, face, problem = await _find(rt, sensor_id, body, cfg)
+    image, _origin, face, _aligned, problem = await _find(rt, sensor_id, body, cfg)
     box = None
     if face is not None:
         w, h = image.width, image.height
@@ -185,41 +186,66 @@ async def check_face(sensor_id: int, body: FaceBoxIn, request: Request) -> dict:
     return {"face": box, "problem": problem, "message": PROBLEMS.get(problem or "", "")}
 
 
+def full_message(name: str) -> str:
+    """Why no more faces can be taught to a person by hand."""
+    most = FACES["max_faces_per_person"]
+    return f"{name} has {most} faces, the most a person can have: remove a few on the People page first"
+
+
 @router.post("/{sensor_id}/faces", status_code=201)
 async def teach_face(sensor_id: int, body: FaceTeachIn, request: Request) -> dict:
     """Teach the face in a person box as one of the people, or as a new person; every sensor
     that recognises faces knows it from then on.
 
     Only a face that passes the quality gate is taught: a back or a jacket never becomes someone."""
-    rt = runtime(request)
+    return await teach_face_from(runtime(request), sensor_id, body)
+
+
+async def teach_face_from(rt: Runtime, sensor_id: int, body: FaceTeachIn, answer: bool = False) -> dict:
+    """Teach a face (see teach_face). ``answer``: from a review answer ("Is this Kari?"), taught
+    as origin "review". A person who has FACES["max_faces_per_person"] faces then keeps that many:
+    the new face replaces a near copy among them (faces.to_replace), or, when it adds nothing, the
+    answer stands without it ("id" None). Taught by hand, a full person is refused."""
     cfg = await asyncio.to_thread(_config, rt, sensor_id)
     if not body.person and not body.new_person:
         raise HTTPException(400, "Say who it is: a person or a new person")
 
-    def check() -> None:
+    def check() -> bool:
         with rt.db.session() as s:
             if body.person:
                 person = person_by_key(s, body.person)
                 count = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
                 if count >= FACES["max_faces_per_person"]:
-                    raise HTTPException(400, f"A person can have at most {FACES['max_faces_per_person']} faces")
+                    if not answer:
+                        raise HTTPException(400, full_message(person.name))
+                    return True
             else:
                 # Checked now, made only once the face is good.
                 if (s.scalar(select(func.count()).select_from(Person)) or 0) >= FACES["max_people"]:
                     raise HTTPException(400, f"VisionState can know at most {FACES['max_people']} people")
                 _check_name(s, body.new_person or "")
+        return False
 
-    await asyncio.to_thread(check)
-    image, origin, face, problem = await _find(rt, sensor_id, body, cfg)
-    if problem or face is None:
+    full = await asyncio.to_thread(check)
+    image, origin, face, aligned, problem = await _find(rt, sensor_id, body, cfg)
+    if problem or face is None or aligned is None:
         raise HTTPException(400, PROBLEMS.get(problem or "none", PROBLEMS["none"]))
+    replace: list[int] = []
+    if full and body.person:
+        replace = await _make_room(rt, body.person, aligned)
+        if not replace:
+            return await _answer_stands(rt, sensor_id, body, body.person)
     crop, local = faces.face_crop(image, face)
     filename = await asyncio.to_thread(rt.storage.save_face, crop)
 
     def add() -> tuple[int, str, str, int]:
         with rt.db.session() as s:
             person = person_by_key(s, body.person) if body.person else new_person(s, body.new_person or "")
-            face_id = add_face_row(s, person.id, sensor_id, filename, crop, faces.face_to_dict(local), origin)
+            for old in s.scalars(select(Face).where(Face.id.in_(replace), Face.person_id == person.id)):
+                rt.db.after_commit(s, partial(rt.storage.delete_face, old.filename))
+                s.delete(old)
+            row_origin = "review" if answer else origin
+            face_id = add_face_row(s, person.id, sensor_id, filename, crop, faces.face_to_dict(local), row_origin)
             key, name = person.key, person.name
             n = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
             return face_id, key, name, n
@@ -232,7 +258,49 @@ async def teach_face(sensor_id: int, body: FaceTeachIn, request: Request) -> dic
     if body.history_id is not None:
         await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, key, "person", True)
         await rt.person_last_seen_changed(key)  # Home Assistant gets that last_seen too
-    return {"id": face_id, "label": key, "name": name, "faces": n}
+    return {"id": face_id, "label": key, "name": name, "faces": n, "replaced": len(replace)}
+
+
+async def _make_room(rt: Runtime, key: str, aligned: Image.Image) -> list[int]:
+    """The face a new face of a full person replaces: one whose picture is gone (it is no longer
+    compared with), or else the near copy faces.to_replace picks; [] when the new face adds
+    nothing. Faces that may have the wrong name are left for the user (the People page)."""
+    model = await _face_model(rt)
+    index = await rt.face_index_for(model)
+
+    def faces_of() -> list[tuple[int, str]]:
+        with rt.db.session() as s:
+            person = person_by_key(s, key)
+            rows = s.execute(select(Face.id, Face.origin).where(Face.person_id == person.id).order_by(Face.id))
+            return [(face_id, origin) for face_id, origin in rows.all()]
+
+    rows = await asyncio.to_thread(faces_of)
+    compared = set(index.ids)
+    gone = [face_id for face_id, _origin in rows if face_id not in compared]
+    if gone:
+        return gone[:1]
+    suspects, _pairs = _quality(index, rt.face_limits(None))
+    removable = {face_id: 0 if origin == "review" else 1 for face_id, origin in rows if face_id not in suspects}
+    vector = (await asyncio.to_thread(model.recogniser.embed, [aligned]))[0]
+    drop = faces.to_replace(index, key, vector, removable)
+    return [] if drop is None else [drop]
+
+
+async def _answer_stands(rt: Runtime, sensor_id: int, body: FaceTeachIn, key: str) -> dict:
+    """A review answer about a full person whose face adds nothing new: nothing is taught, but
+    the frame shows the name and the person counts as seen then."""
+
+    def read() -> tuple[str, int]:
+        with rt.db.session() as s:
+            person = person_by_key(s, key)
+            n = s.scalar(select(func.count()).select_from(Face).where(Face.person_id == person.id)) or 0
+            return person.name, n
+
+    name, n = await asyncio.to_thread(read)
+    if body.history_id is not None:
+        await asyncio.to_thread(remember_taught, rt, sensor_id, body.history_id, body.box, key, "person", True)
+        await rt.person_last_seen_changed(key)
+    return {"id": None, "label": key, "name": name, "faces": n, "replaced": 0}
 
 
 def add_face_row(
@@ -405,9 +473,7 @@ async def add_photos(
             added = 0
             for image, face in found:
                 if count >= FACES["max_faces_per_person"]:
-                    skipped.append(
-                        {"file": "", "message": f"A person has at most {FACES['max_faces_per_person']} faces."}
-                    )
+                    skipped.append({"file": "", "message": full_message(who.name) + "."})
                     break
                 crop, local = faces.face_crop(image, face)
                 filename = rt.storage.save_face(crop)

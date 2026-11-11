@@ -35,6 +35,7 @@
   });
 
   const suggest = $derived(app.config?.faces.suggest_faces ?? 0);
+  const most = $derived(app.config?.faces.max_faces_per_person ?? Infinity);
   const nameOf = (key: string) => people?.people.find((p) => p.key === key)?.name ?? key;
   const lookAlikes = (p: Person) =>
     (people?.look_alikes ?? []).filter((l) => l.a === p.key || l.b === p.key).map((l) => nameOf(l.a === p.key ? l.b : l.a));
@@ -127,7 +128,8 @@
           {/if}
           <span class="xsmall faint">
             {seen(p)}
-            {#if p.faces.length < suggest} · teach a few more faces{/if}
+            {#if p.faces.length < suggest} · teach a few more faces{:else if p.faces.length >= most} · full: a face
+              answered in the review replaces a near copy{/if}
           </span>
         </div>
         <div class="row wrap actions">

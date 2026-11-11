@@ -32,7 +32,7 @@ from .common import (
     runtime,
     state_id_for,
 )
-from .faces import FaceTeachIn, teach_face
+from .faces import FaceTeachIn, teach_face_from
 from .history import prediction_view
 from .teach import TeachIn, teach_box
 
@@ -313,7 +313,9 @@ async def _answer_object(rt: Runtime, request: Request, prediction_id: int, body
 async def _answer_face(
     rt: Runtime, request: Request, prediction_id: int, sensor_id: int, question: dict, score: float, body: ReviewIn
 ) -> None:
-    """Teach the face of a question when the answer says who it is (see _answer_object)."""
+    """Teach the face of a question when the answer says who it is (see _answer_object). A person
+    with the most faces keeps that many: the face replaces a near copy, or the answer stands
+    without it (faces.to_replace)."""
     person, new_person = None, None
     if body.action == "yes" and question["label"] != FACE_UNKNOWN_KEY:
         person = question["label"]
@@ -326,8 +328,9 @@ async def _answer_face(
     if person is None and new_person is None:
         return
     face = FaceTeachIn(history_id=prediction_id, box=question["box"], score=score, person=person, new_person=new_person)
-    result = await teach_face(sensor_id, face, request)
-    await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
+    result = await teach_face_from(rt, sensor_id, face, answer=True)
+    if result["id"] is not None:  # None: a full person's face that adds nothing; the answer stands
+        await asyncio.to_thread(_link_answer, rt, prediction_id, result["id"])
 
 
 def _sound_names(sensor: Sensor) -> list[dict]:
