@@ -121,6 +121,18 @@ def test_a_plate_decides_over_the_look():
     assert twice["plate"]["state"] == "unknown" and "label" not in twice
 
 
+def test_a_car_known_by_its_look_alone_keeps_its_name_when_a_plate_is_read():
+    """A car with no plate given has no plate to disagree with: a read that is no car's plate does
+    not make it another car, and is no unknown plate (no event about one's own car)."""
+    cars = [*CARS, {"key": "avensis", "name": "Avensis", "plate": ""}]
+    once = name_car(looks_like("avensis"), ["BR85853"], 1.0, cars=cars)
+    twice = name_car(looks_like("avensis"), ["BR85853"], 1.0, before=once["plate"], cars=cars)
+    assert twice["label"] == "avensis" and twice["plate"]["state"] == "look" and twice["plate"]["car"] == "avensis"
+    assert plates_identified([twice], "avensis") == "look"
+    # Another car's plate still decides.
+    assert name_car(looks_like("avensis"), ["VS12345"], 1.0, cars=cars)["label"] == "our_car"
+
+
 # Two white Teslas: the look of "tesla" is both, their plates tell them apart.
 TWINS = [
     {"key": "tesla", "name": "Tesla", "plate": ""},

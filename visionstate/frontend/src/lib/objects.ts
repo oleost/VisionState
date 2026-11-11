@@ -68,6 +68,7 @@ export function plateNote(d: Detection, own: OwnLabel[] = []): string {
     return `${plate.text} · ${objectName(plate.car, own)}${plate.kept ? ' (still here)' : plate.look ? ' (plate and look)' : ''}`;
   if (plate.state === 'pending') return `${plate.text} · checking whose car`;
   if (plate.state === 'unknown') return `${plate.text} · not one of your cars`;
+  if (plate.state === 'look' && plate.car) return `${plate.text} · ${objectName(plate.car, own)} by its look (no plate given)`;
   return `${plate.text} · reading`;
 }
 

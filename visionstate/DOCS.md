@@ -428,6 +428,9 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
   the car at once (*VS12845 · Our car (plate and look)*). *No* leaves the plate alone in charge.
   The plate still decides: read exactly as another of your cars it is that car, and a plate far
   from the car's read the same way twice is another car that only looks the same.
+  A car with no plate given keeps the name its look gives it whatever plate is read (*BR85853 ·
+  Our car by its look (no plate given)*), and that plate makes no *unknown_plate* event; give the car
+  its plate with the pencil to have it named by the plate too.
 - **How it was known**: on the **Live** tab a car that is there says so (*Detected by its
   plate*, *by its look*, *by its plate and look*). On a sensor that reads plates each car also has
   an entity **… identified by** (`plate`, `look` — parked side-on, its plate not seen —,

@@ -56,6 +56,10 @@ def _overlaps_vehicle(det: dict, found: list[dict]) -> bool:
     return False
 
 
+def _has_plate(car: dict) -> bool:
+    return any(plates.normalise(p) for p in str(car.get("plate", "")).split(","))
+
+
 def identified_by(found: list[dict], key: str) -> str | None:
     """How a car of the household is known in a check, for its entities: "plate_and_look" (its
     plate and its taught look agree), "plate", "look" (its taught look alone: parked side-on, the
@@ -273,16 +277,18 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         distance, state, sure, age, count, announced}); state is "match" (a car of the household,
         which becomes the box's own ``label`` so it counts for that car), "pending" (close to a
         car's plate: one more read must agree), "unknown" (read the same way on
-        PLATES["unknown_after"] checks, a car nobody named), "reading" (not yet) or "none" (no
-        plate read). A box that stays where it was keeps its car while its plate is not read.
+        PLATES["unknown_after"] checks, a car nobody named), "look" (no car's plate, on a box the look
+        names as a car with no plate given: that car, no unknown_plate event), "reading" (not yet) or
+        "none" (no plate read). A box that stays where it was keeps its car while its plate is not read.
 
         A car can also be taught by its look (teaching ran before this: the box's ``match``). When
         the look says it is a car and the plate is read at most ``look_distance`` from that car's
         plate (the sensor's setting), the plate agrees: the car is named at once (``look`` True).
         A plate read the same way on PLATES["unknown_after"] checks that is far from the car the
-        look says is another car: the plate decides, and the box loses the look's name. Cars that
-        share one car's look (``look``: the same model and colour) are told apart by their plates
-        only: the look names that car, a plate one of them (``grouped``).
+        look says is another car: the plate decides, and the box loses the look's name — unless no car
+        of that look has a plate given: then there is none to disagree with. Cars that share one
+        car's look (``look``: the same model and colour) are told apart by their plates only: the
+        look names that car, a plate one of them (``grouped``).
         """
         model = self.wanted_plates()
         if model is None:
@@ -398,7 +404,11 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         else:
             count = before.get("count", 0) + 1 if before.get("text") == read.text else 1
             entry.update({"state": "unknown" if count >= PLATES["unknown_after"] else "reading", "count": count})
-            if before.get("state") == "match" and before.get("car") and count < PLATES["unknown_after"]:
+            if look is not None and det.get("label") == look["key"] and not any(_has_plate(c) for c in same_look):
+                # The look names a car with no plate given (and no car that shares its look has one):
+                # a plate cannot say it is another car, and is most likely its own (no unknown_plate).
+                entry.update({"state": "look", "car": look["key"]})
+            elif before.get("state") == "match" and before.get("car") and count < PLATES["unknown_after"]:
                 entry.update({"state": "match", "car": before["car"], "kept": True})
                 det["label"] = before["car"]  # one other read does not make it another car
             elif look is not None and det.get("label") == look["key"] and count >= PLATES["unknown_after"]:

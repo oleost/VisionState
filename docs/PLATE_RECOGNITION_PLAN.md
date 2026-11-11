@@ -171,7 +171,10 @@ character off, should count; configurable). A car can be taught by its look like
 when the look says a car, a read within the sensor's look distance (up to two characters) of its
 plate names it at once. The plate still overrules the look: an exact read of another car, or a far
 plate read the same way `unknown_after` times. No new model or measurement: the look is the
-sensor's taught boxes, as before.
+sensor's taught boxes, as before. A far plate overrules only a look whose cars have a plate given
+(found 2026-11-11: a car taught by its look with no plate lost its name to its own plate, read as
+unknown, and made *unknown_plate* events): without one there is no plate to disagree with, and
+the read is shown as that car's (plate state `look`).
 
 **One list of cars** (asked for 2026-11-09: own labels such as *Tesla* and the plate cars did not
 hang together). Every named vehicle is a car of the household, shared by every sensor, with no

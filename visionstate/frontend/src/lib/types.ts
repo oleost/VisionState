@@ -460,13 +460,14 @@ export interface FaceStatus {
 
 /** A vehicle box's plate (backend engine/plates.py): the read, and whose car it is. `state`:
  * 'match' (a car of the household), 'pending' (close to one: one more read must agree), 'unknown'
- * (read the same way on two checks), 'reading' (not yet). `event`: this frame made a plate event. */
+ * (read the same way on two checks), 'look' (no car's plate, on a car its look names that has no plate
+ * given: that car), 'reading' (not yet). `event`: this frame made a plate event. */
 export interface PlateInfo {
   text: string;
   score: number;
   box: [number, number, number, number];
   car: string | null;
-  state: 'match' | 'pending' | 'unknown' | 'reading';
+  state: 'match' | 'pending' | 'unknown' | 'look' | 'reading';
   sure?: boolean;
   kept?: boolean;
   /** Named because the car's taught look agreed with a plate read a little off. */
