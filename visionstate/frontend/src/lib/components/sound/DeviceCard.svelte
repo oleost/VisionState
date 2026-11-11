@@ -7,7 +7,8 @@
   import { api } from '../../api';
   import { pollWhileVisible } from '../../poll';
   import { POLL } from '../../ui';
-  import type { HaEntity, SensorDevice } from '../../types';
+  import { playerLabel } from '../../esp32';
+  import type { MediaPlayer, SensorDevice } from '../../types';
 
   let { sensorId }: { sensorId: number } = $props();
 
@@ -30,13 +31,13 @@
   onDestroy(pollWhileVisible(POLL.device, load));
 
   // A voice assistant's Answer on: one of Home Assistant's media players, asked for once it shows.
-  let players = $state<HaEntity[] | null>(null);
+  let players = $state<MediaPlayer[] | null>(null);
   $effect(() => {
     if (players === null && controls.some((c) => c.kind === 'text')) {
       players = [];
       api
-        .entities()
-        .then((all) => (players = all.filter((e) => e.domain === 'media_player')))
+        .mediaPlayers()
+        .then((got) => (players = got.players))
         .catch(() => {}); // Home Assistant not reachable: only the current one is offered
     }
   });
@@ -71,22 +72,27 @@
     {/if}
     {#each controls as c (c.entity_id)}
       {#if c.kind === 'text'}
+        <!-- Home Assistant shows an empty text as "unknown": no speaker chosen. -->
+        {@const chosen = c.state === 'unknown' || c.state === 'unavailable' ? '' : (c.state ?? '')}
         <label class="field small">
           {c.name}
           <select
             class="input"
-            value={c.state ?? ''}
+            value={chosen}
             disabled={busy === c.entity_id || c.state === 'unavailable'}
             aria-label={c.name}
             onchange={(e) => set(c.entity_id, (e.currentTarget as HTMLSelectElement).value)}
           >
             <option value="">None: no answer played</option>
-            {#if c.state && c.state !== 'unavailable' && !players?.some((p) => p.entity_id === c.state)}
-              <option value={c.state}>{c.state}</option>
+            {#if chosen && !players?.some((p) => p.entity_id === chosen)}
+              <option value={chosen}>{chosen}</option>
             {/if}
-            {#each players ?? [] as p (p.entity_id)}<option value={p.entity_id}>{p.name}</option>{/each}
+            {#each players ?? [] as p (p.entity_id)}<option value={p.entity_id}>{playerLabel(p, players ?? [])}</option>{/each}
           </select>
-          <span class="xsmall faint">The voice assistant's answer plays here.</span>
+          <span class="xsmall faint">
+            The voice assistant's answer plays here{chosen ? ` (${chosen})` : ''}. One speaker is often there once for each
+            integration: pick the one you play music to it with.
+          </span>
         </label>
       {:else if c.kind === 'switch'}
         <label class="check small">

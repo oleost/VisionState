@@ -1265,6 +1265,15 @@ export interface SensorDevice {
   }[];
 }
 
+/** A media player in Home Assistant (GET esphome/media-players), for a voice assistant's Answer on. */
+export interface MediaPlayer {
+  entity_id: string;
+  name: string;
+  /** The integration it comes through (one speaker is often there several times). */
+  integration: string;
+  state: string | null;
+}
+
 export interface EsphomeDevice {
   entity_id: string;
   name: string;

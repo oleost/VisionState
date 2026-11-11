@@ -17,7 +17,7 @@ from typing import cast
 import httpx
 import numpy as np
 
-from .ha_events import camera_stream, discovered, fetch_registries, websocket_url
+from .ha_events import camera_stream, discovered, fetch_registries, integration_names, websocket_url
 from .redact import redact
 from .settings import CAMERA_USES, RUNTIME, SOUND, SUPERVISOR_URL, Settings
 
@@ -137,6 +137,12 @@ class HomeAssistant:
         if not self.enabled or not self._ws_url:
             return [], []
         return await fetch_registries(self._ws_url, self._token)
+
+    async def integration_names(self, domains: list[str]) -> dict[str, str]:
+        """The names Home Assistant shows for these integrations (empty without the WebSocket API)."""
+        if not self.enabled or not self._ws_url or not domains:
+            return {}
+        return await integration_names(self._ws_url, self._token, domains)
 
     async def raw_states(self) -> dict[str, dict]:
         """Every entity's state with its attributes, by entity ID."""

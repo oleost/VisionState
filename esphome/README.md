@@ -60,9 +60,8 @@ who can read the network's traffic can read it.
 
 A device's file names the firmware's line, `esphome-v1`. Each new version of v1 is put on that
 line, so updating is choosing **Install** for the device in the ESPHome app: nothing in the file
-changes. ESPHome fetches the firmware again only once a day (`refresh: 1d`): an Install less than a
-day after the last one may still build the version it had (*Clean build files* does not change that;
-`refresh: 0s` in the file, for one Install, does). VisionState says on a sound sensor's Live tab when the device has an older
+changes (`refresh: 0s`: ESPHome looks for the newest at every Install; without a network it builds
+the copy it has). VisionState says on a sound sensor's Live tab when the device has an older
 version than the app knows. Each version also has a tag of its own that never moves
 (`esphome-v1.0.0`, `esphome-v1.1.0` …): name one in the file instead to stay on it. A change that
 would break the files devices have gets a new line, `esphome-v2`, and stays out of v1.
@@ -302,7 +301,8 @@ packages:
       - esphome/packages/voice-assistant-ha-wake-word.yaml
 ```
 
-Compiled for an ESP32 DevKit, not yet tried on a board.
+Tried on an ESP32 D1 mini (WROOM-32) with an INMP441: the wake word heard by Home Assistant, the
+answer on a Google Cast speaker chosen with *Answer on*.
 
 ## When something is wrong
 

@@ -671,7 +671,8 @@ on the device in Home Assistant). After that VisionState sets it up itself befor
 pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
 still things — or as chosen under *Settings → General → Camera set-up* of the sensor, shown only for such a
 camera; sensors on one camera share the most demanding. Below it, *Picture orientation* turns the
-camera's picture upside down or mirrors it, on the camera at once. It shows the wiring and gives the device's file to download (the
+camera's picture upside down or mirrors it, on the camera at once (firmware 1.2.0 on; an older
+camera says there that a newer firmware is out). It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:

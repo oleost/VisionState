@@ -105,6 +105,12 @@ async def fetch_registries(url: str, token: str) -> tuple[list[dict], list[dict]
     return entities or [], devices or []
 
 
+async def integration_names(url: str, token: str, domains: list[str]) -> dict[str, str]:
+    """The names Home Assistant shows for integrations ("cast": "Google Cast")."""
+    manifests = (await ws_commands(url, token, [{"type": "manifest/list", "integrations": domains}]))[0] or []
+    return {m["domain"]: m.get("name") or m["domain"] for m in manifests if m.get("domain")}
+
+
 async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
     """Switch these entities on in Home Assistant."""
     update = "config/entity_registry/update"

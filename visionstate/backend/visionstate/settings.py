@@ -410,8 +410,9 @@ ESPHOME = {
     # The firmware's line (docs/RELEASING.md): it moves to each new version of v1, so a device gets it
     # at its next Install; esphome/examples name the same.
     "ref": "esphome-v1",
-    # How often ESPHome looks for a newer firmware on that line.
-    "refresh": "1d",
+    # How often ESPHome looks for a newer firmware on that line: at every Install, so Install always
+    # builds the newest (a shallow git fetch; without a network ESPHome builds the copy it has).
+    "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
     "firmware_version": "1.2.0",

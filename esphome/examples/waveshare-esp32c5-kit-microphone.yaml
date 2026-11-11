@@ -19,11 +19,13 @@ substitutions:
 
 external_components:
   - source: github://oleost/VisionState@esphome-v1
+    refresh: 0s  # the newest of the line at every Install
 
 packages:
   visionstate:
     url: https://github.com/oleost/VisionState
     ref: esphome-v1
+    refresh: 0s
     files:
       - esphome/packages/board-waveshare-esp32c5-kit.yaml
       - esphome/packages/common.yaml

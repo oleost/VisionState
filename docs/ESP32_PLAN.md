@@ -114,7 +114,10 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   built in firmware 1.2.0:** the guide offers *A voice assistant too* for a microphone, with a media
   player from Home Assistant (or one chosen later). The player is *Answer on* on the device (a text
   entity kept over restarts, `assistant_media_player` its first value), set in Home Assistant or on
-  the Live tab: a new speaker, or one renamed in Home Assistant, needs no new install.
+  the Live tab: a new speaker, or one renamed in Home Assistant, needs no new install. The list
+  names each player's integration (one speaker is often there through Google Cast, Music Assistant
+  and DLNA alike: the maintainer could not tell them apart by name). Tried 2026-11-11 on the
+  WROOM-32: "Okay Nabu" heard by Home Assistant, the answer played on the Google Cast speaker chosen.
 - **Picture orientation (the maintainer's wish, 2026-11-10), built in firmware 1.2.0:** a camera
   of ours turns its picture 180° and mirrors it on the chip (`camera-use.yaml`), chosen in Home
   Assistant or in a camera sensor's settings (through Home Assistant, like the microphone's
@@ -134,7 +137,10 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   Home Assistant's own network). The firmware is now a line that moves (`docs/RELEASING.md`, decided
   with the maintainer 2026-11-10): updating is *Install*, not editing the file.
   Tried 2026-11-10 on the WROOM-32: with ESPHome's fetch older than its refresh (a day), *Install*
-  fetched the moved `esphome-v1` (1.1.0) with the device's file unchanged.
+  fetched the moved `esphome-v1` (1.1.0) with the device's file unchanged. With `refresh: 1d` an
+  Install less than a day after the last fetch built the old version (the maintainer's devices,
+  2026-11-11, right after 1.2.0), so the guide and the examples write `refresh: 0s` since 0.15.0b10:
+  a shallow fetch at every Install, and the copy it has when GitHub cannot be reached.
 - ***Only when loud*** (the device sends only above VisionState's line, with a heartbeat): not
   built. On mains power the only gain is privacy; it costs the background VisionState learns and
   every sound below the line. Left until someone asks for it.

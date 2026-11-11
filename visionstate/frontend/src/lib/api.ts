@@ -22,6 +22,7 @@ import type {
   EsphomeCheck,
   EsphomeConfiguration,
   EsphomeDevice,
+  MediaPlayer,
   SensorDevice,
   HaEntity,
   HistoryFacets,
@@ -421,6 +422,8 @@ export const api = {
       send('POST', { board, kind, name, mute, camera_use: cameraUse, assistant }),
     ),
   /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
+  /** Home Assistant's media players with their integrations (a voice assistant's Answer on). */
+  mediaPlayers: () => request<{ players: MediaPlayer[]; error: string | null }>('esphome/media-players'),
   esphomeDevices: () =>
     request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
   /** Ask the device for its sound and its picture, as the sensor will. */

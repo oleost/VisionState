@@ -2167,12 +2167,19 @@ test('a sound sensor on an ESP32: its microphone set from the Live tab, and a ne
       { entity_id: 'text.hall_answer_on', kind: 'text', name: 'Answer on', state: 'media_player.kitchen' },
     ],
   };
-  await page.route('**/api/v1/entities', (route) =>
+  // One speaker through two integrations, and another seen twice through one: told apart.
+  const player = (entity_id: string, name: string, integration: string, state = 'idle') => ({ entity_id, name, integration, state });
+  await page.route('**/api/v1/esphome/media-players', (route) =>
     route.fulfill({
-      json: [
-        { entity_id: 'media_player.kitchen', name: 'Kitchen speaker', domain: 'media_player', state: 'idle' },
-        { entity_id: 'media_player.hall', name: 'Hall speaker', domain: 'media_player', state: 'idle' },
-      ],
+      json: {
+        players: [
+          player('media_player.hall', 'Hall speaker', 'Google Cast'),
+          player('media_player.hall_2', 'Hall speaker', 'Music Assistant'),
+          player('media_player.kitchen', 'Kitchen speaker', 'Google Cast'),
+          player('media_player.kitchen_2', 'Kitchen speaker', 'Google Cast', 'unavailable'),
+        ],
+        error: null,
+      },
     }),
   );
   const sent: unknown[] = [];
@@ -2201,8 +2208,19 @@ test('a sound sensor on an ESP32: its microphone set from the Live tab, and a ne
   // The voice assistant's speaker, from Home Assistant's media players.
   const answerOn = card.getByLabel('Answer on');
   await expect(answerOn).toHaveValue('media_player.kitchen');
+  await expect(answerOn.locator('option')).toHaveText([
+    'None: no answer played',
+    'Hall speaker · Google Cast',
+    'Hall speaker · Music Assistant',
+    'Kitchen speaker · Google Cast · media_player.kitchen',
+    'Kitchen speaker · Google Cast · media_player.kitchen_2 (unavailable)',
+  ]);
   await answerOn.selectOption('media_player.hall');
   await expect(answerOn).toHaveValue('media_player.hall');
+  // None chosen: Home Assistant shows the empty text as "unknown", which is no speaker, not an option.
+  device.controls.find((c) => c.kind === 'text')!.state = 'unknown';
+  await expect(answerOn).toHaveValue('', { timeout: 15_000 });
+  await expect(answerOn.locator('option', { hasText: 'unknown' })).toHaveCount(0);
   expect(sent).toEqual([
     { entity_id: 'switch.hall_microphone', value: false },
     { entity_id: 'number.hall_microphone_gain', value: 8 },
@@ -2380,12 +2398,12 @@ test('the ESP32 guide: a microphone that is a voice assistant too, its answer on
 }, info) => {
   const errors = watchErrors(page);
   // Home Assistant's media players (none in e2e).
-  await page.route('**/api/v1/entities', (route) =>
+  await page.route('**/api/v1/esphome/media-players', (route) =>
     route.fulfill({
-      json: [
-        { entity_id: 'media_player.kitchen', name: 'Kitchen speaker', domain: 'media_player', state: 'idle' },
-        { entity_id: 'light.hall', name: 'Hall light', domain: 'light', state: 'off' },
-      ],
+      json: {
+        players: [{ entity_id: 'media_player.kitchen', name: 'Kitchen speaker', integration: 'Google Cast', state: 'idle' }],
+        error: null,
+      },
     }),
   );
   await page.goto('#/esp32');
@@ -2395,7 +2413,8 @@ test('the ESP32 guide: a microphone that is a voice assistant too, its answer on
   await expect(yaml).not.toHaveValue(/voice-assistant/);
   await press(guide.getByText('A voice assistant too', { exact: false }), info);
   const player = guide.getByLabel('The answer plays on');
-  await expect(player.locator('option')).toHaveCount(2); // later, or the speaker (not the light)
+  await expect(player.locator('option')).toHaveCount(2); // later, or the speaker
+  await expect(player.locator('option').nth(1)).toHaveText('Kitchen speaker · Google Cast');
   await player.selectOption('media_player.kitchen');
   await expect(yaml).toHaveValue(/assistant_media_player: "media_player\.kitchen"[\s\S]*voice-assistant-ha-wake-word\.yaml/);
   await expect(guide.getByTestId('esp32-assistant-steps')).toContainText('Allow the device to perform Home Assistant actions');
@@ -2575,6 +2594,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     options: ['Normal', 'Mirrored', 'Upside down', 'Upside down, mirrored'],
   };
   const sent: unknown[] = [];
+  let firmware = '1.1.0'; // first an older firmware: no orientation yet, and a word to install the newer
   await page.route('**/api/v1/sensors/*/device', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { entity_id: string; value: string };
@@ -2582,8 +2602,8 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
       orientation.state = body.value;
       return route.fulfill({ json: { ok: true } });
     }
-    const device = { name: 'door', address: '127.0.0.1', ours: true, firmware: '1.2.0', latest: '1.2.0', outdated: false };
-    return route.fulfill({ json: { device: { ...device, controls: [orientation] }, error: null } });
+    const device = { name: 'door', address: '127.0.0.1', ours: true, firmware, latest: '1.2.0', outdated: firmware !== '1.2.0' };
+    return route.fulfill({ json: { device: { ...device, controls: firmware === '1.2.0' ? [orientation] : [] }, error: null } });
   });
   // The fake camera's /esp32/ answers as our firmware does (an X-VisionState-Camera header).
   const made = await request.post('api/v1/sensors', {
@@ -2605,6 +2625,10 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     const setup = page.getByLabel('Camera set-up');
     await expect(setup).toBeVisible();
     await expect(setup.locator('option').first()).toHaveText('Automatic: States');
+    await expect(page.getByTestId('camera-firmware-outdated')).toContainText('1.1.0');
+    await expect(page.getByLabel('Picture orientation')).toHaveCount(0);
+    firmware = '1.2.0'; // installed: the notice goes, the choice comes (polled)
+    await expect(page.getByTestId('camera-firmware-outdated')).toHaveCount(0, { timeout: 15_000 });
     const turn = page.getByLabel('Picture orientation');
     await expect(turn).toHaveValue('Normal');
     await turn.selectOption('Upside down, mirrored');

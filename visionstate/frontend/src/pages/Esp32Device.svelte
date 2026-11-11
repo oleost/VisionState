@@ -7,10 +7,10 @@
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
-  import { checkText } from '../lib/esp32';
+  import { checkText, playerLabel } from '../lib/esp32';
   import { prefill } from '../lib/prefill.svelte';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { EsphomeCheck, EsphomeConfiguration, EsphomeDevice, HaEntity } from '../lib/types';
+  import type { EsphomeCheck, EsphomeConfiguration, EsphomeDevice, MediaPlayer } from '../lib/types';
   import { pollWhileVisible } from '../lib/poll';
   import { INMP441_WIRING, POLL } from '../lib/ui';
 
@@ -26,10 +26,10 @@
   // one of its media players ('' : chosen later, Answer on on the device).
   let assistant = $state(false);
   let answerOn = $state('');
-  let players = $state<HaEntity[]>([]);
+  let players = $state<MediaPlayer[]>([]);
   api
-    .entities()
-    .then((all) => (players = all.filter((e) => e.domain === 'media_player')))
+    .mediaPlayers()
+    .then((got) => (players = got.players))
     .catch(() => {}); // Home Assistant not reachable: chosen later
   let cameraUse = $state(useIds[0]);
   let made = $state<EsphomeConfiguration | null>(null);
@@ -225,7 +225,7 @@
           The answer plays on
           <select class="input" bind:value={answerOn} aria-label="The answer plays on">
             <option value="">Choose later (Answer on, on the device)</option>
-            {#each players as p (p.entity_id)}<option value={p.entity_id}>{p.name}</option>{/each}
+            {#each players as p (p.entity_id)}<option value={p.entity_id}>{playerLabel(p, players)}</option>{/each}
           </select>
         </label>
       {/if}

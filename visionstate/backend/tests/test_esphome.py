@@ -65,6 +65,8 @@ def test_the_guide_writes_what_the_examples_use(board, kind):
     # OTA port takes any firmware from the network), and a password on the fallback hotspot (whose
     # captive portal takes firmware too).
     for text in (made["yaml"], example):
+        # The newest of the line at every Install (ESPHome's own default, a day, built an old one).
+        assert text.count(f"refresh: {ESPHOME['refresh']}") == 2
         assert "    encryption: {}" in text.split("\nota:\n", 1)[1]
         assert "  ap_password: " in text
     assert made["sound"] == ("microphone" in kind) and made["picture"] == ("camera" in kind)
@@ -437,3 +439,54 @@ def test_the_live_tab_sets_the_devices_controls_through_home_assistant(settings)
 
         rt.ha.registries = gone
         assert client.get(f"/api/v1/sensors/{sid}/device").json() == {"device": None, "error": "no route"}
+
+
+def test_media_players_say_which_integration_each_comes_through(settings):  # noqa: F811
+    # One speaker three times (Google Cast, Music Assistant, DLNA) is told apart by its integration.
+    entities = [
+        {"entity_id": "media_player.living_room", "platform": "cast"},
+        {"entity_id": "media_player.living_room_2", "platform": "music_assistant"},
+        {"entity_id": "media_player.living_room_3", "platform": "dlna_dmr"},
+        {"entity_id": "light.hall", "platform": "hue"},
+    ]
+    states = {
+        "media_player.living_room_3": {"state": "unavailable", "attributes": {"friendly_name": "Living room"}},
+        "media_player.living_room": {"state": "idle", "attributes": {"friendly_name": "Living room"}},
+        "media_player.living_room_2": {"state": "idle", "attributes": {"friendly_name": "Living room"}},
+        "media_player.kitchen": {"state": "off", "attributes": {}},  # not in the registry (YAML)
+        "light.hall": {"state": "on", "attributes": {"friendly_name": "Hall"}},
+    }
+    names = {"cast": "Google Cast", "music_assistant": "Music Assistant", "dlna_dmr": "DLNA Digital Media Renderer"}
+    players = esphome.media_players(entities, states, names)
+    assert [(p["name"], p["integration"]) for p in players] == [
+        ("Living room", "DLNA Digital Media Renderer"),
+        ("Living room", "Google Cast"),
+        ("Living room", "Music Assistant"),
+        ("media_player.kitchen", ""),
+    ]
+    assert players[0]["state"] == "unavailable"
+
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        asked = []
+
+        async def regs():
+            return entities, []
+
+        async def raw_states():
+            return states
+
+        async def integration_names(domains):
+            asked.append(domains)
+            return names
+
+        rt.ha.registries, rt.ha.raw_states, rt.ha.integration_names = regs, raw_states, integration_names
+        got = client.get("/api/v1/esphome/media-players").json()
+        assert got["error"] is None and len(got["players"]) == 4
+        assert asked == [["cast", "dlna_dmr", "music_assistant"]]  # only the media players' integrations
+
+        async def gone():
+            raise RuntimeError("no route")
+
+        rt.ha.registries = gone
+        assert client.get("/api/v1/esphome/media-players").json() == {"players": [], "error": "no route"}

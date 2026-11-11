@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0b10
+
+- **Install always builds the newest ESP32 firmware:** a device file from the guide (and the
+  examples) looks for the newest of its line at every Install (`refresh: 0s`). Before, an Install
+  less than a day after the last could build the old version again.
+- **Picking the voice assistant's speaker:** *Answer on* lists each speaker with the integration it
+  comes through (*Living room · Google Cast*, *Living room · Music Assistant*), so one speaker that is
+  there several times can be told apart; with none chosen it says so.
+- **A camera of ours says when its firmware is old,** under *Camera set-up* in a sensor's settings,
+  as a microphone does on its Live tab (*Picture orientation* shows once it has firmware 1.2.0).
+
 ## 0.15.0b9
 
 **ESP32 firmware 1.2.0: the picture turned the right way, your ESP32s offered as sources, and a

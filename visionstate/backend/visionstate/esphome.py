@@ -188,6 +188,27 @@ def device_parts(ip_entity_id: str, entities: list[dict], devices: list[dict]) -
     }
 
 
+def media_players(entities: list[dict], states: dict[str, dict], names: dict[str, str]) -> list[dict]:
+    """Home Assistant's media players, for a voice assistant's *Answer on*: each with the integration
+    it comes through (one speaker is often there several times: Google Cast, Music Assistant, DLNA…),
+    sorted by name, then integration."""
+    platform = {e["entity_id"]: e.get("platform") for e in entities}
+    found = []
+    for entity_id, state in states.items():
+        if not entity_id.startswith("media_player."):
+            continue
+        domain = platform.get(entity_id) or ""
+        found.append(
+            {
+                "entity_id": entity_id,
+                "name": (state.get("attributes") or {}).get("friendly_name") or entity_id,
+                "integration": names.get(domain, domain),
+                "state": state.get("state"),
+            }
+        )
+    return sorted(found, key=lambda p: (p["name"].lower(), p["integration"].lower(), p["entity_id"]))
+
+
 def device_controls(host: str, entities: list[dict], devices: list[dict], states: dict[str, dict]) -> dict | None:
     """The ESPHome device whose *IP address* entity shows this address, with the controls it has
     (settings.ESPHOME["controls"]) and, for our firmware, whether a newer one is out. None: no such

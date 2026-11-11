@@ -96,6 +96,22 @@ async def devices(request: Request) -> dict:
     return {"devices": found, "waiting": waiting, "error": None}
 
 
+@router.get("/esphome/media-players")
+async def media_players(request: Request) -> dict:
+    """Home Assistant's media players with their integrations, for a voice assistant's *Answer on*."""
+    ha = runtime(request).ha
+    try:
+        entities, _ = await ha.registries()
+        states = await ha.raw_states()
+        domains = sorted(
+            {e["platform"] for e in entities if e["entity_id"].startswith("media_player.") and e.get("platform")}
+        )
+        names = await ha.integration_names(domains)
+    except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: no players to offer
+        return {"players": [], "error": redact(str(err)) or type(err).__name__}
+    return {"players": esphome.media_players(entities, states, names), "error": None}
+
+
 async def _try(client: httpx.AsyncClient, url: str, magic: tuple[bytes, ...] | bytes, stream: bool) -> dict:
     try:
         if stream:

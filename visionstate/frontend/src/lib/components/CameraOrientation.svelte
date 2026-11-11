@@ -1,7 +1,8 @@
 <script lang="ts">
   // An ESP32 camera of ours: which way up its picture is (Picture orientation, kept on the device
-  // and set through Home Assistant at once, not with the sensor's settings). Shown only when Home
-  // Assistant has the device at the sensor's address and it has the choice (firmware 1.2.0 on).
+  // and set through Home Assistant at once, not with the sensor's settings), shown when Home
+  // Assistant has the device at the sensor's address and it has the choice; and a word when a newer
+  // firmware is out (the choice came with one).
   import { onDestroy } from 'svelte';
   import { toastError } from '../app.svelte';
   import { api } from '../api';
@@ -40,6 +41,14 @@
   }
 </script>
 
+{#if device?.outdated}
+  <div class="notice warn small" data-testid="camera-firmware-outdated">
+    <span>
+      A newer VisionState firmware is out ({device.latest}; this camera has {device.firmware}). In the ESPHome app,
+      choose <b>Install</b> for {device.name}: its file follows the firmware's line, so nothing in it needs changing.
+    </span>
+  </div>
+{/if}
 {#if control}
   <label class="field" data-testid="camera-orientation">
     {control.name}
