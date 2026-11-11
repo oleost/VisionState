@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.15.0b9
+
+**ESP32 firmware 1.2.0: the picture turned the right way, your ESP32s offered as sources, and a
+voice assistant from the guide.**
+
+- **Picture orientation:** a camera of ours turns its picture upside down or mirrors it itself
+  (*Normal*, *Mirrored*, *Upside down*, *Upside down, mirrored*). Chosen under *Camera set-up* in
+  a sensor's settings or in Home Assistant, kept over restarts, at once. A device whose own file set
+  `vertical_flip` or `horizontal_mirror` gives `camera_orientation` under `substitutions` instead.
+- **An ESP32 of ours as a source:** one that Home Assistant already has is offered first when you
+  make a sensor (a camera for pictures, a microphone for sound). Give its stream password and
+  VisionState takes the pictures or the sound straight from it, and offers its flash as the light;
+  no need to go through the guide again.
+- **A voice assistant from the guide:** for a microphone, *A voice assistant too* adds the wake
+  word (heard by Home Assistant) and plays the answer on a speaker you pick there. The speaker is
+  *Answer on* on the device, changed in Home Assistant or on the sound sensor's Live tab without
+  installing again.
+
+### Fixed
+
+- **ESP32 firmware locked down like ESPHome's own devices:** a device the guide makes takes
+  firmware over the air only from whoever has its API key, and its fallback hotspot has a password
+  (before, anyone on the network, or near a device that had lost its Wi-Fi, could install firmware
+  on it). For a device made before, add the two lines from *Locked* in `esphome/README.md`.
+- A light that could not be switched kept its warning in the sensor's settings after another light
+  was chosen, until the next check.
+
 ## 0.15.0b8
 
 **ESP32 firmware 1.1.0, and it updates without editing its file.** Asked for by @hruba202 in #75

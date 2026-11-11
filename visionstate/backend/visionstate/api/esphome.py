@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from .. import esphome
 from ..redact import redact
-from ..settings import ESPHOME, KIND_SOUND
+from ..settings import ESPHOME
 from .common import API_PREFIX, get_sensor, runtime
 
 router = APIRouter(prefix=API_PREFIX, tags=["esphome"])
@@ -30,11 +30,13 @@ class ConfigurationIn(BaseModel):
     name: str = Field(max_length=60)
     mute: bool = False
     camera_use: str | None = None  # settings.ESPHOME["camera_uses"]; None: the first
+    # A microphone that is a voice assistant too: the media player its answer plays on ("": later).
+    assistant: str | None = Field(None, max_length=100)
 
 
 class ControlIn(BaseModel):
     entity_id: str = Field(max_length=255)
-    value: bool | float
+    value: bool | float | str
 
 
 class CheckIn(BaseModel):
@@ -47,21 +49,26 @@ class CheckIn(BaseModel):
 @router.post("/esphome/configuration")
 def configuration(body: ConfigurationIn) -> dict:
     try:
-        return esphome.configuration(body.board, body.kind, body.name, body.mute, body.camera_use)
+        return esphome.configuration(body.board, body.kind, body.name, body.mute, body.camera_use, body.assistant)
     except esphome.ESPHomeError as err:
         raise HTTPException(400, str(err)) from err
 
 
 @router.get("/esphome/devices")
 async def devices(request: Request) -> dict:
-    """Devices whose IP address Home Assistant shows (ESPHome's *IP address* entity), and the ESPHome
-    devices it has found but not been told to add yet (they have no entities until then)."""
+    """Devices whose IP address Home Assistant shows (ESPHome's *IP address* entity), whether each is
+    an ESP32 of ours with a camera or a microphone (offered as a sensor's source), and the ESPHome
+    devices Home Assistant has found but not been told to add yet (they have no entities until then)."""
     ha = runtime(request).ha
     try:
         entities = await ha.entities()
     except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: the address is typed instead
         return {"devices": [], "waiting": [], "error": redact(str(err)) or type(err).__name__}
     ids = {e["entity_id"] for e in entities}
+    try:
+        registry, registered = await ha.registries()
+    except Exception:  # noqa: BLE001 - no WebSocket API: the devices are listed, none as ours
+        registry, registered = [], []
     found = []
     for e in entities:
         if not (e["entity_id"].startswith("sensor.") and e["entity_id"].endswith("_ip_address")):
@@ -74,7 +81,13 @@ async def devices(request: Request) -> dict:
         base = e["entity_id"].removeprefix("sensor.").removesuffix("_ip_address")
         light = f"light.{base}_flash"  # an ESP32-CAM's flash (esphome/packages/camera-esp32-cam.yaml)
         found.append(
-            {"entity_id": e["entity_id"], "name": name, "address": e["state"], "light": light if light in ids else None}
+            {
+                "entity_id": e["entity_id"],
+                "name": name,
+                "address": e["state"],
+                "light": light if light in ids else None,
+                **esphome.device_parts(e["entity_id"], registry, registered),
+            }
         )
     try:
         waiting = await ha.discovered("esphome")
@@ -132,9 +145,10 @@ async def check(body: CheckIn) -> dict:
 
 
 def _host(rt, sensor_id: int) -> str | None:  # noqa: ANN001 - the Runtime
-    """The host a sound sensor listens to (an ESP32 of ours is reached by its address)."""
+    """The host a sensor listens to or takes its pictures from (an ESP32 of ours is reached by its
+    address)."""
     with rt.db.session() as s:
-        sensor = get_sensor(s, sensor_id, KIND_SOUND)
+        sensor = get_sensor(s, sensor_id)
         return urlsplit(sensor.source).hostname if sensor.source_type in ("rtsp", "http") else None
 
 
@@ -150,8 +164,8 @@ async def _device(request: Request, sensor_id: int) -> dict | None:
 
 @router.get("/sensors/{sensor_id}/device")
 async def device(sensor_id: int, request: Request) -> dict:
-    """The ESPHome device a sound sensor listens to, if Home Assistant has it: its microphone's
-    controls and whether a newer firmware of ours is out."""
+    """The ESPHome device a sensor listens to or looks through, if Home Assistant has it: its
+    microphone's and camera's controls and whether a newer firmware of ours is out."""
     try:
         found = await _device(request, sensor_id)
     except HTTPException:
@@ -163,7 +177,8 @@ async def device(sensor_id: int, request: Request) -> dict:
 
 @router.post("/sensors/{sensor_id}/device")
 async def set_control(sensor_id: int, body: ControlIn, request: Request) -> dict:
-    """Switch the device's microphone or stream, or set its gain (only the device's own controls)."""
+    """Switch the device's microphone or stream, set its gain, or choose its picture's orientation
+    (only the device's own controls)."""
     found = await _device(request, sensor_id)
     control = next((c for c in (found or {}).get("controls", []) if c["entity_id"] == body.entity_id), None)
     if control is None:
@@ -172,7 +187,17 @@ async def set_control(sensor_id: int, body: ControlIn, request: Request) -> dict
     try:
         if control["kind"] == "switch":
             await ha.switch(body.entity_id, bool(body.value))
+        elif control["kind"] == "text":  # Answer on: a media player, or none
+            if not isinstance(body.value, str) or (body.value and not esphome.MEDIA_PLAYER.fullmatch(body.value)):
+                raise HTTPException(400, "A media player (media_player.…), or none")
+            await ha.call_service("text", "set_value", {"entity_id": body.entity_id, "value": body.value})
+        elif control["kind"] == "select":
+            if body.value not in control["options"]:
+                raise HTTPException(400, f"One of: {', '.join(control['options'])}")
+            await ha.call_service("select", "select_option", {"entity_id": body.entity_id, "option": body.value})
         else:
+            if isinstance(body.value, (bool, str)):
+                raise HTTPException(400, "A number")
             value = float(body.value)
             low, high = control.get("min"), control.get("max")
             if (low is not None and value < low) or (high is not None and value > high):

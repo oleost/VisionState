@@ -12,9 +12,15 @@
 #   a second), the exposure fixed and short (camera_motion_exposure, a number in Home Assistant:
 #   the sensor's lines, about 20 ms at 250) so something moving stays sharp, and the gain automatic
 #   up to 16x to keep it bright. Darker and noisier in poor light: a light helps.
+#
+# Picture orientation, also a choice kept over restarts: the camera chip turns the picture 180
+# degrees and mirrors it itself (VisionState straightens any other angle in a sensor's region).
+# Normal is ESPHome's default for the camera. A device that set vertical_flip or horizontal_mirror
+# in its own file names its orientation instead (camera_orientation): the choice overrides them.
 substitutions:
   camera_use: States
   camera_motion_exposure: "250"
+  camera_orientation: Normal
 
 esphome:
   on_boot:
@@ -23,6 +29,7 @@ esphome:
       - lambda: |-
           id(vs_stream).set_motion_exposure((int) id(vs_motion_exposure).state);
           id(vs_stream).set_camera_use(id(vs_camera_use).current_option());
+          id(vs_stream).set_orientation(id(vs_orientation).current_option());
 
 select:
   - platform: template
@@ -39,6 +46,22 @@ select:
     initial_option: ${camera_use}
     on_value:
       - lambda: id(vs_stream).set_camera_use(x);
+
+  - platform: template
+    id: vs_orientation
+    name: Picture orientation
+    icon: mdi:camera-flip
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    options:
+      - Normal
+      - Mirrored
+      - Upside down
+      - Upside down, mirrored
+    initial_option: ${camera_orientation}
+    on_value:
+      - lambda: id(vs_stream).set_orientation(x);
 
 number:
   - platform: template

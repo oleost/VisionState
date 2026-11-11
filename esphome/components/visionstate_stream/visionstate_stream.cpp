@@ -480,6 +480,29 @@ void VisionStateStream::set_motion_exposure(int lines) {
     s->set_aec_value(s, lines);
 }
 
+void VisionStateStream::set_orientation(const std::string &orientation) {
+  // "Normal" is ESPHome's default for the camera: vertical_flip and horizontal_mirror on.
+  bool mirror, flip;
+  if (orientation == "Normal") {
+    mirror = true, flip = true;
+  } else if (orientation == "Mirrored") {
+    mirror = false, flip = true;
+  } else if (orientation == "Upside down") {  // turned 180 degrees
+    mirror = false, flip = false;
+  } else if (orientation == "Upside down, mirrored") {
+    mirror = true, flip = false;
+  } else {
+    ESP_LOGW(TAG, "Unknown orientation: %s", orientation.c_str());
+    return;
+  }
+  sensor_t *s = esp_camera_sensor_get();
+  if (s == nullptr)
+    return;  // the camera has not started yet: set again at boot
+  s->set_hmirror(s, mirror);
+  s->set_vflip(s, flip);
+  ESP_LOGI(TAG, "Orientation: %s", orientation.c_str());
+}
+
 std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t timeout_ms) {
   xSemaphoreTake(this->image_ready_, 0);  // a give left over from an earlier picture
   this->image_ = nullptr;

@@ -104,6 +104,27 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   answer goes to a media player through a Home Assistant action. The stream pauses from the wake
   word (not from the pipeline's start: with the wake word in Home Assistant the pipeline runs all
   the time). *Not checked*: on a board.
+- **Locked (2026-11-11, found reviewing the firmware with the maintainer), firmware 1.2.0:** an
+  OTA port without `encryption:` took plaintext firmware from anyone on the network (ESPHome only
+  offers the API key's encryption then), and the fallback hotspot was open, its captive portal
+  taking firmware too. The guide and the examples now write `encryption: {}` under `ota:` and an
+  `ap_password` (`common.yaml` keeps it empty by default, and the encryption out, so files made
+  before still build, one with an OTA password among them).
+- **A voice assistant from the guide, its speaker on the device (the maintainer's wish, 2026-11-11),
+  built in firmware 1.2.0:** the guide offers *A voice assistant too* for a microphone, with a media
+  player from Home Assistant (or one chosen later). The player is *Answer on* on the device (a text
+  entity kept over restarts, `assistant_media_player` its first value), set in Home Assistant or on
+  the Live tab: a new speaker, or one renamed in Home Assistant, needs no new install.
+- **Picture orientation (the maintainer's wish, 2026-11-10), built in firmware 1.2.0:** a camera
+  of ours turns its picture 180° and mirrors it on the chip (`camera-use.yaml`), chosen in Home
+  Assistant or in a camera sensor's settings (through Home Assistant, like the microphone's
+  controls). Found switching the maintainer's water meter ESP32-CAM to our firmware: its own file
+  had `vertical_flip: false`, which the packages left at ESPHome's default. Tried on the test
+  ESP32-CAM (2026-11-11): *Upside down* and *Mirrored* set from a sensor's settings give the picture
+  turned 180° and mirrored (compared with the one before); the picture follows a few seconds after
+  the choice. On a weak power supply the same board dropped off the Wi-Fi for minutes without
+  restarting (60–100 % of pings lost, with VisionState listening or not); on a power bank 0 of 600
+  were lost, with ESPHome's own camera firmware and with ours alike.
 - **From #75 and #85 (hruba202, 2026-11-10), built in firmware 1.1.0:** microphones at 48 kHz
   filtered and taken down to 16 kHz on the device (`mic_sample_rate`; a 48-tap windowed sinc, edge at
   7.2 kHz), *VisionState stream* on a shared microphone (`stream-switch.yaml`), the stream's

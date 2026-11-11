@@ -2164,15 +2164,25 @@ test('a sound sensor on an ESP32: its microphone set from the Live tab, and a ne
     controls: [
       { entity_id: 'switch.hall_microphone', kind: 'switch', name: 'Microphone', state: 'on' },
       { entity_id: 'number.hall_microphone_gain', kind: 'number', name: 'Microphone gain', state: '4.0', min: 1, max: 64, step: 1 },
+      { entity_id: 'text.hall_answer_on', kind: 'text', name: 'Answer on', state: 'media_player.kitchen' },
     ],
   };
+  await page.route('**/api/v1/entities', (route) =>
+    route.fulfill({
+      json: [
+        { entity_id: 'media_player.kitchen', name: 'Kitchen speaker', domain: 'media_player', state: 'idle' },
+        { entity_id: 'media_player.hall', name: 'Hall speaker', domain: 'media_player', state: 'idle' },
+      ],
+    }),
+  );
   const sent: unknown[] = [];
   await page.route(`**/api/v1/sensors/${id}/device`, async (route) => {
     if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON() as { entity_id: string; value: boolean | number };
+      const body = route.request().postDataJSON() as { entity_id: string; value: boolean | number | string };
       sent.push(body);
       const c = device.controls.find((x) => x.entity_id === body.entity_id)!;
-      c.state = typeof body.value === 'boolean' ? (body.value ? 'on' : 'off') : `${body.value}.0`;
+      c.state =
+        typeof body.value === 'boolean' ? (body.value ? 'on' : 'off') : typeof body.value === 'string' ? body.value : `${body.value}.0`;
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ json: { device, error: null } });
@@ -2188,9 +2198,15 @@ test('a sound sensor on an ESP32: its microphone set from the Live tab, and a ne
   const gain = card.getByLabel('Microphone gain');
   await gain.fill('8'); // a range input: set and let go
   await expect(card.getByText('8', { exact: true })).toBeVisible();
+  // The voice assistant's speaker, from Home Assistant's media players.
+  const answerOn = card.getByLabel('Answer on');
+  await expect(answerOn).toHaveValue('media_player.kitchen');
+  await answerOn.selectOption('media_player.hall');
+  await expect(answerOn).toHaveValue('media_player.hall');
   expect(sent).toEqual([
     { entity_id: 'switch.hall_microphone', value: false },
     { entity_id: 'number.hall_microphone_gain', value: 8 },
+    { entity_id: 'text.hall_answer_on', value: 'media_player.hall' },
   ]);
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .card');
@@ -2359,6 +2375,38 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   errors.expectNone();
 });
 
+test('the ESP32 guide: a microphone that is a voice assistant too, its answer on a speaker in Home Assistant', async ({
+  page,
+}, info) => {
+  const errors = watchErrors(page);
+  // Home Assistant's media players (none in e2e).
+  await page.route('**/api/v1/entities', (route) =>
+    route.fulfill({
+      json: [
+        { entity_id: 'media_player.kitchen', name: 'Kitchen speaker', domain: 'media_player', state: 'idle' },
+        { entity_id: 'light.hall', name: 'Hall light', domain: 'light', state: 'off' },
+      ],
+    }),
+  );
+  await page.goto('#/esp32');
+  const guide = page.getByTestId('esp32-guide');
+  const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]');
+  await expect(yaml).toHaveValue(/microphone\.yaml/);
+  await expect(yaml).not.toHaveValue(/voice-assistant/);
+  await press(guide.getByText('A voice assistant too', { exact: false }), info);
+  const player = guide.getByLabel('The answer plays on');
+  await expect(player.locator('option')).toHaveCount(2); // later, or the speaker (not the light)
+  await player.selectOption('media_player.kitchen');
+  await expect(yaml).toHaveValue(/assistant_media_player: "media_player\.kitchen"[\s\S]*voice-assistant-ha-wake-word\.yaml/);
+  await expect(guide.getByTestId('esp32-assistant-steps')).toContainText('Allow the device to perform Home Assistant actions');
+  // A camera is not a voice assistant: the choice goes.
+  await press(guide.getByText('ESP32-CAM', { exact: true }), info); // a camera (and microphone): no assistant
+  await expect(guide.getByText('A voice assistant too', { exact: false })).toHaveCount(0);
+  await expect(yaml).not.toHaveValue(/voice-assistant/);
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
 test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a sensor from the device', async ({
   page,
 }, info) => {
@@ -2461,8 +2509,82 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   errors.expectNone();
 });
 
+test('an ESP32 of ours that Home Assistant has: offered first as the source, its password checked', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  // Home Assistant's devices (none in e2e): a camera of ours, a microphone of ours, another ESPHome device.
+  const device = (name: string, address: string, parts: object) => ({
+    entity_id: `sensor.${name}_ip_address`,
+    name,
+    address,
+    light: null,
+    ours: true,
+    camera: false,
+    microphone: false,
+    ...parts,
+  });
+  await page.route('**/api/v1/esphome/devices', (route) =>
+    route.fulfill({
+      json: {
+        devices: [
+          device('watermeter', '10.0.0.7', { camera: true, light: 'light.watermeter_flash' }),
+          device('hall', '10.0.0.8', { microphone: true }),
+          device('plug', '10.0.0.9', { ours: false }),
+        ],
+        waiting: [],
+        error: null,
+      },
+    }),
+  );
+  // No board here: the check is answered for it, first with a wrong password.
+  const picture = `${CAMERA_URL}/photo/beach.jpg`;
+  let password = '';
+  await page.route('**/api/v1/esphome/check', async (route) => {
+    password = (route.request().postDataJSON() as { password: string }).password;
+    const ok = password === 'right';
+    return route.fulfill({
+      json: { addresses: { picture }, picture: ok ? { ok, status: 200, bytes: 12000 } : { ok, status: 401 } },
+    });
+  });
+  await page.goto('#/sensors/new');
+  const offered = page.getByTestId('esp32-sources');
+  await expect(offered).toContainText('watermeter');
+  await expect(offered).not.toContainText('hall'); // a microphone: offered to a sound sensor
+  await expect(offered).not.toContainText('plug'); // not ours
+  await press(offered.getByText('watermeter'), info);
+  const field = page.getByLabel('Stream password');
+  await field.fill('wrong');
+  await press(page.getByRole('button', { name: 'Use it' }), info);
+  await expect(page.getByText('Wrong password')).toBeVisible();
+  await field.fill('right');
+  await press(page.getByRole('button', { name: 'Use it' }), info);
+  await expect(page.getByRole('textbox', { name: 'Source URL' })).toHaveValue(picture);
+  await expect(page.getByTestId('esp32-flash')).toContainText('light.watermeter_flash');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .cam');
+  errors.expectNone();
+});
+
 test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera follows', async ({ page, request }, info) => {
   const errors = watchErrors(page);
+  // Its device in Home Assistant (the e2e backend has none): the picture's orientation, set at once.
+  const orientation = {
+    entity_id: 'select.door_picture_orientation',
+    kind: 'select',
+    name: 'Picture orientation',
+    state: 'Normal',
+    options: ['Normal', 'Mirrored', 'Upside down', 'Upside down, mirrored'],
+  };
+  const sent: unknown[] = [];
+  await page.route('**/api/v1/sensors/*/device', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { entity_id: string; value: string };
+      sent.push(body);
+      orientation.state = body.value;
+      return route.fulfill({ json: { ok: true } });
+    }
+    const device = { name: 'door', address: '127.0.0.1', ours: true, firmware: '1.2.0', latest: '1.2.0', outdated: false };
+    return route.fulfill({ json: { device: { ...device, controls: [orientation] }, error: null } });
+  });
   // The fake camera's /esp32/ answers as our firmware does (an X-VisionState-Camera header).
   const made = await request.post('api/v1/sensors', {
     data: {
@@ -2483,6 +2605,11 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     const setup = page.getByLabel('Camera set-up');
     await expect(setup).toBeVisible();
     await expect(setup.locator('option').first()).toHaveText('Automatic: States');
+    const turn = page.getByLabel('Picture orientation');
+    await expect(turn).toHaveValue('Normal');
+    await turn.selectOption('Upside down, mirrored');
+    await expect.poll(() => sent).toEqual([{ entity_id: 'select.door_picture_orientation', value: 'Upside down, mirrored' }]);
+    await expect(turn).toHaveValue('Upside down, mirrored');
     await setup.selectOption('meter');
     await press(page.getByRole('button', { name: 'Save changes' }), info);
     await expect(page.getByText('Settings saved')).toBeVisible();
@@ -2493,6 +2620,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await page.goto(`#/sensors/${await seededSensorId(request)}/settings/general`);
     await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
     await expect(page.getByLabel('Camera set-up')).toHaveCount(0);
+    await expect(page.getByLabel('Picture orientation')).toHaveCount(0);
     errors.expectNone();
   } finally {
     await request.delete(`api/v1/sensors/${id}`);

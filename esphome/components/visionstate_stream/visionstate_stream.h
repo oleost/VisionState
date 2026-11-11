@@ -80,6 +80,9 @@ class VisionStateStream final : public Component
   void set_camera_use(const std::string &use);
   /// The fixed exposure of "People, cars and animals" (the sensor's lines, 0-1200).
   void set_motion_exposure(int lines);
+  /// The picture turned or mirrored on the camera chip (packages/camera-use.yaml): "Normal",
+  /// "Mirrored", "Upside down" or "Upside down, mirrored", from ESPHome's default for the camera.
+  void set_orientation(const std::string &orientation);
   /// Fired (in the main loop) when the camera use changed, with its name.
   Trigger<std::string> *get_camera_use_trigger() { return &this->camera_use_trigger_; }
 #endif

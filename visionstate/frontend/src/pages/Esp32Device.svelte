@@ -7,9 +7,10 @@
   import { api } from '../lib/api';
   import { app, toast, toastError } from '../lib/app.svelte';
   import Icon from '../lib/components/Icon.svelte';
+  import { checkText } from '../lib/esp32';
   import { prefill } from '../lib/prefill.svelte';
   import { go, href, paths } from '../lib/router.svelte';
-  import type { EsphomeCheck, EsphomeConfiguration, EsphomeDevice } from '../lib/types';
+  import type { EsphomeCheck, EsphomeConfiguration, EsphomeDevice, HaEntity } from '../lib/types';
   import { pollWhileVisible } from '../lib/poll';
   import { INMP441_WIRING, POLL } from '../lib/ui';
 
@@ -21,6 +22,15 @@
   let name = $state('');
   let mute = $state(false);
   const useIds = Object.keys(cfg.camera_uses);
+  // A microphone that is a voice assistant too: the wake word heard by Home Assistant, the answer on
+  // one of its media players ('' : chosen later, Answer on on the device).
+  let assistant = $state(false);
+  let answerOn = $state('');
+  let players = $state<HaEntity[]>([]);
+  api
+    .entities()
+    .then((all) => (players = all.filter((e) => e.domain === 'media_player')))
+    .catch(() => {}); // Home Assistant not reachable: chosen later
   let cameraUse = $state(useIds[0]);
   let made = $state<EsphomeConfiguration | null>(null);
   let madeError = $state('');
@@ -29,6 +39,7 @@
   const microphone = $derived(kind === 'microphone' || kind === 'camera_microphone');
   const canMute = $derived(microphone && 'mute_pin' in spec.pins);
   const camera = $derived(kind === 'camera' || kind === 'camera_microphone');
+  const canAssist = $derived(kind === 'microphone');
   const friendly = $derived(name.trim() || 'Hallway');
 
   function randomChars(count: number): string {
@@ -37,6 +48,7 @@
   }
   const apiKey = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
   let password = $state(randomChars(cfg.password_chars));
+  const apPassword = randomChars(cfg.password_chars); // the fallback hotspot's: only in the file
 
   function pickBoard(id: string) {
     board = id;
@@ -46,13 +58,13 @@
   // The configuration follows every choice; the last answer counts.
   let loadCount = 0;
   $effect(() => {
-    const args = [board, kind, friendly, canMute && mute, camera ? cameraUse : null] as const;
+    const args = [board, kind, friendly, canMute && mute, camera ? cameraUse : null, canAssist && assistant ? answerOn : null] as const;
     untrack(() => load(...args));
   });
-  async function load(b: string, k: string, n: string, m: boolean, u: string | null) {
+  async function load(b: string, k: string, n: string, m: boolean, u: string | null, a: string | null) {
     const mine = ++loadCount;
     try {
-      const got = await api.esphomeConfiguration(b, k, n, m, u);
+      const got = await api.esphomeConfiguration(b, k, n, m, u, a);
       if (mine !== loadCount) return;
       made = got;
       madeError = '';
@@ -65,7 +77,13 @@
   let wifiSsid = $state('');
   let wifiPassword = $state('');
   let showWifiPassword = $state(false);
-  const values = $derived({ wifi_ssid: wifiSsid, wifi_password: wifiPassword, stream_password: password, api_key: apiKey });
+  const values = $derived({
+    wifi_ssid: wifiSsid,
+    wifi_password: wifiPassword,
+    stream_password: password,
+    ap_password: apPassword,
+    api_key: apiKey,
+  });
   const fill = (yaml: string, mask: boolean) =>
     yaml.replace(/\{\{(\w+)\}\}/g, (_, k: keyof typeof values) =>
       k === 'wifi_password' && mask && values[k] ? '"••••••••"' : JSON.stringify(values[k] ?? ''),
@@ -126,15 +144,6 @@
     } finally {
       checking = false;
     }
-  }
-
-  function partText(part: EsphomeCheck['sound']): string {
-    if (!part) return '';
-    if (part.ok) return part.bytes ? `OK (a picture of ${Math.round(part.bytes / 1000)} kB)` : 'OK';
-    if (part.status === 401) return 'Wrong password: give the one in the device\'s file (stream_password)';
-    if (part.status === 409) return 'Busy: two listeners already (VLC, another VisionState)';
-    if (part.status === 404) return 'Not in this firmware (another kind of device?)';
-    return part.detail ?? `The device answered ${part.status}`;
   }
 
   function makeSensor(mode: 'sound' | 'picture') {
@@ -205,6 +214,21 @@
         <input type="checkbox" bind:checked={mute} />
         <span>A mute switch on a pin (unwired, the microphone is on; closed, it is muted)</span>
       </label>
+    {/if}
+    {#if canAssist}
+      <label class="check">
+        <input type="checkbox" bind:checked={assistant} />
+        <span>A voice assistant too: its wake word heard by Home Assistant, the answer played on a speaker there</span>
+      </label>
+      {#if assistant}
+        <label class="field small answer-on">
+          The answer plays on
+          <select class="input" bind:value={answerOn} aria-label="The answer plays on">
+            <option value="">Choose later (Answer on, on the device)</option>
+            {#each players as p (p.entity_id)}<option value={p.entity_id}>{p.name}</option>{/each}
+          </select>
+        </label>
+      {/if}
     {/if}
   </section>
 
@@ -312,6 +336,13 @@
           first build takes several minutes.
         </li>
         <li>Home Assistant finds the device: add it (Settings → Devices).</li>
+        {#if made?.assistant}
+          <li data-testid="esp32-assistant-steps">
+            The voice assistant: on the device in Home Assistant (<strong>Configure</strong>), switch on <strong>Allow
+            the device to perform Home Assistant actions</strong> (it plays the answer). Its Assist pipeline needs a wake
+            word engine, such as the openWakeWord app. The speaker can be changed later (<strong>Answer on</strong>).
+          </li>
+        {/if}
       </ol>
     {/if}
   </section>
@@ -376,10 +407,10 @@
     {#if checked}
       <div class="col tight" data-testid="esp32-check">
         {#if checked.sound}
-          <p class="small"><Icon name={checked.sound.ok ? 'check' : 'alert'} size={14} /> Sound: {partText(checked.sound)}</p>
+          <p class="small"><Icon name={checked.sound.ok ? 'check' : 'alert'} size={14} /> Sound: {checkText(checked.sound)}</p>
         {/if}
         {#if checked.picture}
-          <p class="small"><Icon name={checked.picture.ok ? 'check' : 'alert'} size={14} /> Picture: {partText(checked.picture)}</p>
+          <p class="small"><Icon name={checked.picture.ok ? 'check' : 'alert'} size={14} /> Picture: {checkText(checked.picture)}</p>
         {/if}
       </div>
       <div class="row wrap">
@@ -397,6 +428,9 @@
 <style>
   .page > section {
     margin-top: var(--space-4);
+  }
+  .answer-on {
+    max-width: 420px;
   }
   .tight {
     gap: var(--space-2);

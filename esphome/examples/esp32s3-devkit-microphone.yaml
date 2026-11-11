@@ -2,13 +2,15 @@
 #
 # In ESPHome: make a new device for an ESP32-S3 (it writes the name, the Wi-Fi and an API key), then
 # replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
-# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` and
+# `vs_ap_password: <8 characters or more>` (its fallback hotspot's) to ESPHome's secrets.
 substitutions:
   name: vs-office-microphone
   friendly_name: Office microphone
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   stream_password: !secret vs_stream_password
+  ap_password: !secret vs_ap_password
   # The wiring (esphome/README.md): change the pins here if you wired it differently.
   # mic_sck: GPIO4
   # mic_ws: GPIO5
@@ -32,3 +34,7 @@ packages:
 api:
   encryption:
     key: !secret vs_office_microphone_api_key  # or the key ESPHome wrote for the device
+
+ota:
+  - platform: esphome
+    encryption: {}  # firmware over the air only from whoever has the API key

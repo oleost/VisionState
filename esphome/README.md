@@ -21,7 +21,7 @@ exports, like a camera's. Two listeners at a time (VisionState and someone liste
 a third gets *409*.
 
 In Home Assistant the device has: *Microphone* (on/off, kept over restarts), *Microphone gain*,
-*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Camera use* and
+*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Camera use*, *Picture orientation* and
 *Exposure for moving things* (a camera), *IP address*, *Wi-Fi signal*, *Uptime* and *Restart*. The
 board's LED is on while someone listens or looks. VisionState shows a sound sensor's *Microphone*
 and gain on its **Live** tab and sets them through Home Assistant.
@@ -34,6 +34,27 @@ loud) and *Sound dropped* (ms the listener did not keep up with: Wi-Fi). For wir
 **A microphone at 48 kHz** (one that does not run at 16 kHz): `mic_sample_rate: "48000"` under
 `substitutions`. The device filters it and takes it down to 16 kHz itself, so the stream stays the
 same.
+
+## Locked
+
+Like ESPHome's own new devices: the Home Assistant API needs the device's encryption key,
+**firmware over the air** only comes from whoever has that key (`encryption: {}` under `ota:` in
+the device's file), and the **fallback hotspot** the device opens when it cannot reach its Wi-Fi
+has a password (`ap_password`): its captive portal takes Wi-Fi settings and firmware. The guide and
+the examples write all three. A file made before firmware 1.2.0 has neither of the last two: add
+them (an `ota:` that sets a `password:` keeps it instead, as the two cannot be combined):
+
+```yaml
+substitutions:
+  ap_password: <8 characters or more>
+
+ota:
+  - platform: esphome
+    encryption: {}
+```
+
+The stream and the snapshot are behind `stream_password`, over plain HTTP like a camera's: anyone
+who can read the network's traffic can read it.
 
 ## Updating the firmware
 
@@ -60,6 +81,13 @@ it starts with, and it can be changed in Home Assistant too:
 | *States* | still things: a door, a gate, a light | 800×600, exposure automatic |
 | *Meters and displays* | a water meter, a display: the digits | 1600×1200, less compression; the flash for the dark |
 | *People, cars and animals* | things that move | 800×600, a short fixed exposure (*Exposure for moving things*) with automatic gain: sharper, but darker in poor light |
+
+**Picture orientation** turns the picture 180° or mirrors it, on the camera itself: *Normal* (what
+ESPHome does by default), *Mirrored*, *Upside down* or *Upside down, mirrored*. It is kept over
+restarts, set in Home Assistant or in the sensor's settings in VisionState, and applies at once
+(any other angle is straightened in the sensor's region). `camera_orientation` under
+`substitutions` is the one a new device starts with; a file that set `vertical_flip` or
+`horizontal_mirror` itself gives its orientation there instead, as the choice overrides them.
 
 Switching takes a few pictures: a new picture size about 0.5 s, a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
 entity gives the picture the camera kept ready after the last fetch instead, as old as the time
@@ -250,14 +278,17 @@ assistant, with no speaker of its own:
   device sends its sound to Home Assistant all the time, next to VisionState's stream. The
   assist pipeline needs a wake word engine (such as the openWakeWord app).
 - **The answer plays on a media player in Home Assistant**: a Chromecast, a Music Assistant
-  player… On the device in Home Assistant (*Settings → Devices & services → ESPHome → the
+  player… Which one is *Answer on* on the device, kept over restarts and changed in Home Assistant or
+  on the sound sensor's Live tab in VisionState, without installing again (empty: no answer played);
+  `assistant_media_player` is the one it starts with. On the device in Home Assistant (*Settings → Devices & services → ESPHome → the
   device → Configure*), switch on *Allow the device to perform Home Assistant actions*. A
   Chromecast fetches the answer from Home Assistant's internal URL, so it must reach that.
 - From the wake word until the answer is done the stream carries silence (*VisionState pauses for
   the assistant* turns that off). *Microphone* and the mute switch mute both; *VisionState stream*
   switches off only VisionState's stream.
 
-Add the package after the microphone's, with the player:
+The ESP32 guide in VisionState writes it (*A voice assistant too*, for a microphone). By hand, add
+the package after the microphone's, with the player it starts with:
 
 ```yaml
 substitutions:
@@ -281,6 +312,7 @@ Compiled for an ESP32 DevKit, not yet tried on a board.
 | *409* | Two listeners are on already (VisionState and someone else): close one. |
 | *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND; on a XIAO, that the camera board is on), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
 | Very quiet sound | Raise the gain (on the sensor's Live tab, or *Microphone gain* in Home Assistant). *Sound level* (a diagnostic) says how loud it arrives. |
+| The device drops off the network for minutes, without restarting (its *Uptime* goes on) | Power: an ESP32-CAM on a weak USB supply does that when the camera and the Wi-Fi draw at once. A supply of at least 1 A, a short cable. |
 | *Samples clipped* above 0 | The gain is too high for what is heard: lower it. |
 | *Sound dropped* above 0 | The Wi-Fi does not keep up: a better signal (*Wi-Fi signal* above about −70 dBm). |
 | The ESP32-CAM restarts, or the picture fails | A weak 5 V supply (see above). |

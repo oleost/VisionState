@@ -134,7 +134,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if light.error:  # the check goes on without the light
             if light.error != live.light_error:
                 log.warning("Sensor %s: could not switch on %s: %s", cfg.slug, entity, light.error)
-            live.light_error = light.error
+            live.light_error, live.light_error_entity = light.error, entity
             return None
         live.light_error = ""
         return self.lights.wait_s(entity, cfg.triggers["light_delay_s"]) or 0.0

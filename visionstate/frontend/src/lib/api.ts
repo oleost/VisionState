@@ -407,14 +407,25 @@ export const api = {
     });
   },
   /** The ESP32 guide: the device's whole ESPHome file, with {{fields}} for the user's values (filled in the page). */
-  esphomeConfiguration: (board: string, kind: string, name: string, mute: boolean, cameraUse: string | null) =>
-    request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute, camera_use: cameraUse })),
+  /** `assistant`: a voice assistant too, its answer on that media player ('' later); null: only a microphone. */
+  esphomeConfiguration: (
+    board: string,
+    kind: string,
+    name: string,
+    mute: boolean,
+    cameraUse: string | null,
+    assistant: string | null,
+  ) =>
+    request<EsphomeConfiguration>(
+      'esphome/configuration',
+      send('POST', { board, kind, name, mute, camera_use: cameraUse, assistant }),
+    ),
   /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
   esphomeDevices: () =>
     request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
   /** Ask the device for its sound and its picture, as the sensor will. */
   sensorDevice: (id: number) => request<{ device: SensorDevice | null; error: string | null }>(`sensors/${id}/device`),
-  setSensorDevice: (id: number, entityId: string, value: boolean | number) =>
+  setSensorDevice: (id: number, entityId: string, value: boolean | number | string) =>
     request<{ ok: boolean }>(`sensors/${id}/device`, send('POST', { entity_id: entityId, value })),
   esphomeCheck: (host: string, password: string, sound: boolean, picture: boolean) =>
     request<EsphomeCheck>('esphome/check', send('POST', { host, password, sound, picture })),

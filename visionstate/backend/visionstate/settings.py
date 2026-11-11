@@ -414,14 +414,18 @@ ESPHOME = {
     "refresh": "1d",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.1.0",
-    # A device's entities shown on a sound sensor's Live tab, by their name in the firmware (the
-    # packages in esphome/) and kind: set there through Home Assistant.
+    "firmware_version": "1.2.0",
+    # A device's entities VisionState shows, by their name in the firmware (the packages in
+    # esphome/) and kind, set there through Home Assistant: the switches, numbers and texts (the
+    # microphone's and a voice assistant's, a text being a media player picked from Home Assistant's)
+    # on a sound sensor's Live tab, the selects (the camera's) in a camera sensor's settings.
     "controls": {
         "Microphone": "switch",
         "VisionState stream": "switch",
         "Microphone gain": "number",
         "VisionState microphone gain": "number",
+        "Picture orientation": "select",
+        "Answer on": "text",
     },
     # The device model our firmware reports (esphome/packages/common.yaml, project name).
     "model": "visionstate",

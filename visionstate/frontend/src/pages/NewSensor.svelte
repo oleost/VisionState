@@ -54,16 +54,19 @@
   let previewSize = $state<[number, number] | null>(null);
   // A small picture, or a source named like a sub-stream: maybe the camera's low-resolution stream.
   // An ESP32 from the guide has one picture size, its own: no word about a camera's low-resolution stream.
-  const fromGuide = (s: string) => given?.mode === 'picture' && s === given.source;
+  // An ESP32 of ours picked in the source picker: like the guide's, with its flash to offer.
+  let esp32 = $state<{ source: string; light: string | null } | null>(null);
+  const fromGuide = (s: string) => (given?.mode === 'picture' && s === given.source) || esp32?.source === s;
   const lowStream = $derived(
     !fromGuide(source) &&
       previewSize !== null &&
       (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)),
   );
-  // The guide's device has a flash: offered as the light (one tap), never switched on unasked.
+  // The device has a flash: offered as the light (one tap), never switched on unasked.
+  const flash = $derived(esp32 && esp32.source === source ? esp32.light : (given?.light ?? null));
   let lightKey = $state(0);
   function useFlash() {
-    triggers.light_entity = given!.light!;
+    triggers.light_entity = flash!;
     lightKey++;
   }
   let previewError = $state('');
@@ -313,10 +316,15 @@
             Sensor name
             <input class="input" bind:value={name} placeholder="Garage door" />
           </label>
-          <SourcePicker bind:sourceType bind:source ondone={urlTyped} />
-          {#if given?.light && triggers.light_entity !== given.light}
+          <SourcePicker
+            bind:sourceType
+            bind:source
+            ondone={urlTyped}
+            onesp32={(d, address) => (esp32 = { source: address, light: d.light })}
+          />
+          {#if flash && triggers.light_entity !== flash}
             <p class="small" data-testid="esp32-flash">
-              The device has a flash (<span class="mono">{given.light}</span>): it can light the picture for checks in the
+              The device has a flash (<span class="mono">{flash}</span>): it can light the picture for checks in the
               dark. <button class="btn sm" onclick={useFlash}>Use the flash</button>
             </p>
           {/if}

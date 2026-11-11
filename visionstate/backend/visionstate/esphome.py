@@ -10,7 +10,7 @@ import re
 
 from .settings import ESPHOME
 
-FIELDS = ("wifi_ssid", "wifi_password", "stream_password", "api_key")
+FIELDS = ("wifi_ssid", "wifi_password", "stream_password", "ap_password", "api_key")
 
 
 def field(name: str) -> str:
@@ -27,7 +27,10 @@ def device_name(friendly_name: str) -> str:
     return name[:31].rstrip("-") or "visionstate"
 
 
-def packages(board: str, kind: str, mute: bool) -> list[str]:
+MEDIA_PLAYER = re.compile(r"media_player\.[a-z0-9_]+")
+
+
+def packages(board: str, kind: str, mute: bool, assistant: bool = False) -> list[str]:
     """The package files, in the order they must be merged (the I2S port kept for the camera before
     the microphone)."""
     spec = ESPHOME["boards"][board]
@@ -40,11 +43,22 @@ def packages(board: str, kind: str, mute: bool) -> list[str]:
         files.append("microphone-pdm.yaml" if spec.get("microphone") == "built_in" else "microphone.yaml")
         if mute:
             files.append("mute-pin.yaml")
+        if assistant:
+            files.append("voice-assistant-ha-wake-word.yaml")
     return [f"esphome/packages/{f}" for f in files]
 
 
-def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_use: str | None = None) -> dict:
-    """The device's whole file for ESPHome, with the user's values as fields (FIELDS)."""
+def configuration(
+    board: str,
+    kind: str,
+    friendly_name: str,
+    mute: bool,
+    camera_use: str | None = None,
+    assistant: str | None = None,
+) -> dict:
+    """The device's whole file for ESPHome, with the user's values as fields (FIELDS). ``assistant``:
+    a microphone that is a voice assistant too, its answer played on that media player ("": one
+    chosen later, *Answer on* on the device); None: only a microphone."""
     spec = ESPHOME["boards"].get(board)
     if spec is None:
         raise ESPHomeError(f"Unknown board {board!r}")
@@ -61,6 +75,10 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
     uses = ESPHOME["camera_uses"]
     if camera_use is not None and camera_use not in uses:
         raise ESPHomeError(f"Unknown camera use {camera_use!r}")
+    if assistant is not None and kind != "microphone":
+        raise ESPHomeError("Only a microphone can be a voice assistant too")
+    if assistant and not MEDIA_PLAYER.fullmatch(assistant):
+        raise ESPHomeError("The answer plays on a media player (media_player.…)")
     lines = [
         f"# A {ESPHOME['kinds'][kind].lower()} for VisionState on a board: {spec['name']} (made by VisionState's ESP32 guide).",
         "substitutions:",
@@ -69,6 +87,8 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
         f"  wifi_ssid: {field('wifi_ssid')}",
         f"  wifi_password: {field('wifi_password')}",
         f"  stream_password: {field('stream_password')}",
+        "  # The fallback hotspot's, opened when it cannot reach the Wi-Fi.",
+        f"  ap_password: {field('ap_password')}",
     ]
     if camera:
         lines.append("  # What it looks at (Camera use in Home Assistant, which can change it later).")
@@ -80,6 +100,9 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
         if pins:
             lines.append("  # The wiring; change a pin here if you wired it differently.")
             lines += [f"  {k}: {spec['pins'][k]}" for k in pins]
+    if assistant is not None:
+        lines.append("  # The voice assistant's answer plays here (Answer on in Home Assistant, which can change it).")
+        lines.append(f'  assistant_media_player: "{assistant}"')
     lines += [
         "",
         "external_components:",
@@ -92,11 +115,15 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
         f"    ref: {ESPHOME['ref']}",
         f"    refresh: {ESPHOME['refresh']}",
         "    files:",
-        *(f"      - {f}" for f in packages(board, kind, mute)),
+        *(f"      - {f}" for f in packages(board, kind, mute, assistant is not None)),
         "",
         "api:",
         "  encryption:",
         f"    key: {field('api_key')}",
+        "",
+        "ota:",
+        "  - platform: esphome",
+        "    encryption: {}  # firmware over the air only from whoever has the API key",
         "",
     ]
     return {
@@ -108,6 +135,7 @@ def configuration(board: str, kind: str, friendly_name: str, mute: bool, camera_
         "username": ESPHOME["username"],
         "sound": microphone,
         "picture": camera,
+        "assistant": assistant is not None,
     }
 
 
@@ -145,6 +173,21 @@ def outdated(version: str | None, latest: str) -> bool:
     return version is not None and _version_key(version) < _version_key(latest)
 
 
+def device_parts(ip_entity_id: str, entities: list[dict], devices: list[dict]) -> dict:
+    """What the ESPHome device behind an *IP address* entity is, from Home Assistant's registries:
+    our firmware (offered as a source with its stream's password), with a camera, a microphone."""
+    device_id = next((e.get("device_id") for e in entities if e["entity_id"] == ip_entity_id), None)
+    if not device_id:
+        return {"ours": False, "camera": False, "microphone": False}
+    device = next((d for d in devices if d.get("id") == device_id), {})
+    own = [e for e in entities if e.get("device_id") == device_id]
+    return {
+        "ours": device.get("model") == ESPHOME["model"],
+        "camera": any(e["entity_id"].startswith("camera.") for e in own),
+        "microphone": any(e.get("original_name") == "Microphone" for e in own),
+    }
+
+
 def device_controls(host: str, entities: list[dict], devices: list[dict], states: dict[str, dict]) -> dict | None:
     """The ESPHome device whose *IP address* entity shows this address, with the controls it has
     (settings.ESPHOME["controls"]) and, for our firmware, whether a newer one is out. None: no such
@@ -177,6 +220,8 @@ def device_controls(host: str, entities: list[dict], devices: list[dict], states
         }
         if kind == "number":
             control.update(min=attrs.get("min"), max=attrs.get("max"), step=attrs.get("step"))
+        elif kind == "select":
+            control["options"] = list(attrs.get("options") or [])
         found.append((list(ESPHOME["controls"]).index(e["original_name"]), control))
     controls = [c for _, c in sorted(found, key=lambda ic: ic[0])]  # in the order of settings
     ours = device.get("model") == ESPHOME["model"]

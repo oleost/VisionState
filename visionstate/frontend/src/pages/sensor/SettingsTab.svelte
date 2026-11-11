@@ -3,6 +3,7 @@
   import { api } from '../../lib/api';
   import { app, toast, toastError } from '../../lib/app.svelte';
   import AdviceCard from '../../lib/components/AdviceCard.svelte';
+  import CameraOrientation from '../../lib/components/CameraOrientation.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import CounterDialsSwitch from '../../lib/components/CounterDialsSwitch.svelte';
   import DialsEditor from '../../lib/components/DialsEditor.svelte';
@@ -287,6 +288,7 @@
               {#if sensor.camera.now}Now: {uses[sensor.camera.now] ?? sensor.camera.now}.{/if}
             </span>
           </label>
+          <CameraOrientation sensorId={sensor.id} />
         {/if}
       {/if}
     </section>

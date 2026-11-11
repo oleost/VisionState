@@ -61,6 +61,12 @@ def test_the_guide_writes_what_the_examples_use(board, kind):
     for name in made["fields"]:
         assert "{{" + name + "}}" in made["yaml"]
     assert "!secret" not in made["yaml"]
+    # Locked like ESPHome's own new devices: firmware over the air only with the API key (an open
+    # OTA port takes any firmware from the network), and a password on the fallback hotspot (whose
+    # captive portal takes firmware too).
+    for text in (made["yaml"], example):
+        assert "    encryption: {}" in text.split("\nota:\n", 1)[1]
+        assert "  ap_password: " in text
     assert made["sound"] == ("microphone" in kind) and made["picture"] == ("camera" in kind)
 
 
@@ -119,6 +125,22 @@ def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
     assert "mute_pin: GPIO7" in esphome.configuration("esp32s3-devkit", "microphone", "Hall", mute=True)["yaml"]
     assert esphome.device_name("  Garasje / Bod 2 ") == "garasje-bod-2"
     assert esphome.device_name("???") == "visionstate"
+
+
+def test_a_microphone_can_be_a_voice_assistant_too_its_answer_on_a_media_player():
+    made = esphome.configuration("esp32-devkit", "microphone", "Hall", mute=True, assistant="media_player.kitchen")
+    files = files_of(made["yaml"])
+    # After the microphone and its mute switch, so they are there for it.
+    assert files[-2:] == ["esphome/packages/mute-pin.yaml", "esphome/packages/voice-assistant-ha-wake-word.yaml"]
+    assert 'assistant_media_player: "media_player.kitchen"' in made["yaml"] and made["assistant"]
+    later = esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False, assistant="")
+    assert 'assistant_media_player: ""' in later["yaml"]  # chosen later: Answer on
+    only = esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False)
+    assert "voice-assistant" not in only["yaml"] and not only["assistant"]
+    with pytest.raises(esphome.ESPHomeError, match="Only a microphone"):
+        esphome.configuration("esp32-cam", "camera_microphone", "Hall", mute=False, assistant="")
+    with pytest.raises(esphome.ESPHomeError, match="media player"):
+        esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False, assistant='x"\nevil: 1')
 
 
 def test_the_addresses_carry_the_login_and_refuse_what_would_break_them():
@@ -206,8 +228,16 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
             assert domain == "esphome"
             return ["vs-garage"]
 
+        async def registries():
+            # The front door is a camera of ours (offered as a sensor's source with its password).
+            return [
+                {"entity_id": "sensor.front_door_ip_address", "device_id": "d1", "original_name": "IP address"},
+                {"entity_id": "camera.front_door_camera", "device_id": "d1", "original_name": "Camera"},
+            ], [{"id": "d1", "model": ESPHOME["model"]}]
+
         rt.ha.entities = entities
         rt.ha.discovered = discovered
+        rt.ha.registries = registries
         got = client.get("/api/v1/esphome/devices").json()
         assert got["waiting"] == ["vs-garage"]  # found, not added yet
         assert got["devices"] == [
@@ -216,8 +246,17 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
                 "name": "Front door",
                 "address": "10.0.0.7",
                 "light": "light.front_door_flash",
+                "ours": True,
+                "camera": True,
+                "microphone": False,
             }
         ]
+
+        async def no_websocket():
+            raise RuntimeError("no WebSocket")
+
+        rt.ha.registries = no_websocket  # listed all the same, none as ours
+        assert not client.get("/api/v1/esphome/devices").json()["devices"][0]["ours"]
 
 
 def test_discovered_esphome_devices_are_read_from_home_assistants_flows(monkeypatch):
@@ -263,6 +302,9 @@ def test_firmware_versions_compare_with_dev_before_the_release():
     assert not esphome.outdated(None, "1.1.0")
 
 
+ORIENTATIONS = ["Normal", "Mirrored", "Upside down", "Upside down, mirrored"]
+
+
 def registries(sw_version="1.0.0-dev (ESPHome 2026.10.2)", model="visionstate"):
     """Home Assistant's registries and states for one ESP32 microphone of ours, and another device."""
 
@@ -280,6 +322,8 @@ def registries(sw_version="1.0.0-dev (ESPHome 2026.10.2)", model="visionstate"):
         entity("sensor.hall_ip_address", "IP address"),
         entity("number.hall_microphone_gain", "Microphone gain"),
         entity("switch.hall_microphone", "Microphone"),
+        entity("select.hall_picture_orientation", "Picture orientation"),
+        entity("text.hall_answer_on", "Answer on"),
         entity("sensor.hall_uptime", "Uptime"),
         entity("switch.hall_visionstate_stream", "VisionState stream", disabled_by="user"),
         entity("sensor.other_ip_address", "IP address", device="dev2"),
@@ -293,6 +337,8 @@ def registries(sw_version="1.0.0-dev (ESPHome 2026.10.2)", model="visionstate"):
         "sensor.hall_ip_address": {"state": "10.0.0.9"},
         "number.hall_microphone_gain": {"state": "4.0", "attributes": {"min": 1, "max": 64, "step": 1}},
         "switch.hall_microphone": {"state": "on"},
+        "select.hall_picture_orientation": {"state": "Normal", "attributes": {"options": ORIENTATIONS}},
+        "text.hall_answer_on": {"state": "media_player.kitchen"},
         "sensor.other_ip_address": {"state": "10.0.0.10"},
         "switch.other_microphone": {"state": "off"},
     }
@@ -305,7 +351,13 @@ def test_a_sound_sensors_device_is_found_by_its_address_with_its_own_controls():
     assert found["name"] == "hall" and found["ours"] and found["firmware"] == "1.0.0-dev"
     assert found["outdated"] and found["latest"] == ESPHOME["firmware_version"]
     # Its own controls only (not the other device's, not one switched off in Home Assistant), in order.
-    assert [c["entity_id"] for c in found["controls"]] == ["switch.hall_microphone", "number.hall_microphone_gain"]
+    assert [c["entity_id"] for c in found["controls"]] == [
+        "switch.hall_microphone",
+        "number.hall_microphone_gain",
+        "select.hall_picture_orientation",
+        "text.hall_answer_on",
+    ]
+    assert found["controls"][2]["options"] == ORIENTATIONS
     assert found["controls"][1] | {} == {
         "entity_id": "number.hall_microphone_gain", "kind": "number", "name": "Microphone gain",
         "state": "4.0", "min": 1, "max": 64, "step": 1,
@@ -332,7 +384,7 @@ def test_the_live_tab_sets_the_devices_controls_through_home_assistant(settings)
             calls.append(("switch", entity_id, on))
 
         async def call_service(domain, service, data):
-            calls.append((f"{domain}.{service}", data["entity_id"], data["value"]))
+            calls.append((f"{domain}.{service}", data["entity_id"], data.get("value", data.get("option"))))
 
         rt.ha.registries, rt.ha.raw_states, rt.ha.switch, rt.ha.call_service = regs, raw_states, switch, call_service
         body = {
@@ -344,19 +396,31 @@ def test_the_live_tab_sets_the_devices_controls_through_home_assistant(settings)
         sid = client.post("/api/v1/sensors", json=body).json()["id"]
         got = client.get(f"/api/v1/sensors/{sid}/device").json()
         assert got["error"] is None and got["device"]["outdated"]
-        assert len(got["device"]["controls"]) == 2
+        assert len(got["device"]["controls"]) == 4
         url = f"/api/v1/sensors/{sid}/device"
         assert client.post(url, json={"entity_id": "switch.hall_microphone", "value": False}).status_code == 200
         assert client.post(url, json={"entity_id": "number.hall_microphone_gain", "value": 8}).status_code == 200
+        orientation = {"entity_id": "select.hall_picture_orientation", "value": "Upside down, mirrored"}
+        assert client.post(url, json=orientation).status_code == 200
+        answer = {"entity_id": "text.hall_answer_on", "value": "media_player.living_room"}
+        assert client.post(url, json=answer).status_code == 200
         assert calls == [
             ("switch", "switch.hall_microphone", False),
             ("number.set_value", "number.hall_microphone_gain", 8.0),
+            ("select.select_option", "select.hall_picture_orientation", "Upside down, mirrored"),
+            ("text.set_value", "text.hall_answer_on", "media_player.living_room"),
         ]
         # Only this device's controls, and the gain within its range.
         assert client.post(url, json={"entity_id": "switch.other_microphone", "value": True}).status_code == 404
         assert client.post(url, json={"entity_id": "light.kitchen", "value": True}).status_code == 404
         assert client.post(url, json={"entity_id": "number.hall_microphone_gain", "value": 99}).status_code == 400
-        # A state sensor has no such device; Home Assistant gone: no controls, not an error page.
+        assert client.post(url, json={"entity_id": "number.hall_microphone_gain", "value": "8"}).status_code == 400
+        assert client.post(url, json={**orientation, "value": "Sideways"}).status_code == 400
+        assert client.post(url, json={**answer, "value": "light.kitchen"}).status_code == 400
+        assert client.post(url, json={**answer, "value": True}).status_code == 400
+        # A camera's device is found by its address too (the picture's orientation in its settings);
+        # a camera Home Assistant has no ESPHome device for has none. Home Assistant gone: no
+        # controls, not an error page.
         state = client.post(
             "/api/v1/sensors",
             json={
@@ -366,7 +430,7 @@ def test_the_live_tab_sets_the_devices_controls_through_home_assistant(settings)
                 "states": [{"name": "Open"}, {"name": "Closed"}],
             },
         ).json()["id"]
-        assert client.get(f"/api/v1/sensors/{state}/device").status_code == 400
+        assert client.get(f"/api/v1/sensors/{state}/device").json() == {"device": None, "error": None}
 
         async def gone():
             raise RuntimeError("no route")

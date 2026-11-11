@@ -659,7 +659,10 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
 - a microphone of its own: an ESP32 with an I2S microphone (such as an INMP441) sending its sound
   as an HTTP stream of WAV, for a room without a camera.
 
-**An ESP32 of your own.** *Set one up with ESPHome*, under the sound or image source, opens a
+**An ESP32 of your own.** One with VisionState's firmware that Home Assistant already has is
+offered first among the sources (its name and address): give its stream password (`stream_password`
+in its file), and VisionState takes the pictures or the sound straight from it, and offers its flash
+as the light. A new one: *Set one up with ESPHome*, under the sound or image source, opens a
 guide for an ESP32 or ESP32-S3 DevKit with an INMP441 microphone, an ESP32-CAM with its camera
 (and a microphone too, if you like), a Seeed Studio XIAO ESP32-S3 Sense, whose camera and
 microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or
@@ -667,13 +670,16 @@ things that move — which sets the camera's picture size, compression and expos
 on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
 pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
 still things — or as chosen under *Settings → General → Camera set-up* of the sensor, shown only for such a
-camera; sensors on one camera share the most demanding. It shows the wiring and gives the device's file to download (the
+camera; sensors on one camera share the most demanding. Below it, *Picture orientation* turns the
+camera's picture upside down or mirrors it, on the camera at once. It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the
 device. Once the device is installed it tells you to add it in Home Assistant (and shows the
 encryption key that asks for), checks that it answers, and makes the sensor with its address. The firmware, its boards and how it is built:
 `esphome/README.md` in the repository; there too how such a microphone can also be a voice
-assistant, its wake word heard by Home Assistant and its answer played on a media player. On the
-sound sensor's **Live** tab, VisionState shows the device's *Microphone* switch and gain (set on the
+assistant, its wake word heard by Home Assistant and its answer played on a media player (*A voice
+assistant too* in the guide, for a microphone). On the
+sound sensor's **Live** tab, VisionState shows the device's *Microphone* switch and gain (and on a
+voice assistant *Answer on*, the speaker its answer plays on) (set on the
 device through Home Assistant: watch the level while you change it), and says when a newer
 firmware is out: choose *Install* for the device in the ESPHome app, nothing in its file changes.
 

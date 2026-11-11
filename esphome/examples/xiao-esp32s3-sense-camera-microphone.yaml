@@ -3,13 +3,15 @@
 #
 # In ESPHome: make a new device for an ESP32-S3 (it writes the name, the Wi-Fi and an API key), then
 # replace what it wrote below `esphome:` … `captive_portal:` with the lines from `substitutions:`
-# down, keeping its `api:` key. Add `vs_stream_password: <a password>` to ESPHome's secrets.
+# down, keeping its `api:` key. Add `vs_stream_password: <a password>` and
+# `vs_ap_password: <8 characters or more>` (its fallback hotspot's) to ESPHome's secrets.
 substitutions:
   name: vs-living-room
   friendly_name: Living room
   wifi_ssid: !secret wifi_ssid
   wifi_password: !secret wifi_password
   stream_password: !secret vs_stream_password
+  ap_password: !secret vs_ap_password
   camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
   # mute_pin: GPIO1
 
@@ -30,3 +32,7 @@ packages:
 api:
   encryption:
     key: !secret vs_living_room_api_key  # or the key ESPHome wrote for the device
+
+ota:
+  - platform: esphome
+    encryption: {}  # firmware over the air only from whoever has the API key

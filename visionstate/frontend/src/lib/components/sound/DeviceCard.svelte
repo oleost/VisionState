@@ -7,11 +7,13 @@
   import { api } from '../../api';
   import { pollWhileVisible } from '../../poll';
   import { POLL } from '../../ui';
-  import type { SensorDevice } from '../../types';
+  import type { HaEntity, SensorDevice } from '../../types';
 
   let { sensorId }: { sensorId: number } = $props();
 
   let device = $state<SensorDevice | null>(null);
+  // The microphone's controls; a camera's (its picture's orientation) are in the sensor's settings.
+  const controls = $derived(device?.controls.filter((c) => c.kind !== 'select') ?? []);
   let busy = $state<string | null>(null);
   // A gain being moved: shown as it is dragged, sent when it is let go.
   let dragging = $state<Record<string, number>>({});
@@ -27,7 +29,19 @@
   load();
   onDestroy(pollWhileVisible(POLL.device, load));
 
-  async function set(entityId: string, value: boolean | number) {
+  // A voice assistant's Answer on: one of Home Assistant's media players, asked for once it shows.
+  let players = $state<HaEntity[] | null>(null);
+  $effect(() => {
+    if (players === null && controls.some((c) => c.kind === 'text')) {
+      players = [];
+      api
+        .entities()
+        .then((all) => (players = all.filter((e) => e.domain === 'media_player')))
+        .catch(() => {}); // Home Assistant not reachable: only the current one is offered
+    }
+  });
+
+  async function set(entityId: string, value: boolean | number | string) {
     busy = entityId;
     try {
       await api.setSensorDevice(sensorId, entityId, value);
@@ -41,7 +55,7 @@
   }
 </script>
 
-{#if device && (device.controls.length || device.outdated)}
+{#if device && (controls.length || device.outdated)}
   <section class="card pad col device" data-testid="sound-device">
     <div class="card-title">
       <h3>The microphone</h3>
@@ -55,8 +69,26 @@
         </span>
       </div>
     {/if}
-    {#each device.controls as c (c.entity_id)}
-      {#if c.kind === 'switch'}
+    {#each controls as c (c.entity_id)}
+      {#if c.kind === 'text'}
+        <label class="field small">
+          {c.name}
+          <select
+            class="input"
+            value={c.state ?? ''}
+            disabled={busy === c.entity_id || c.state === 'unavailable'}
+            aria-label={c.name}
+            onchange={(e) => set(c.entity_id, (e.currentTarget as HTMLSelectElement).value)}
+          >
+            <option value="">None: no answer played</option>
+            {#if c.state && c.state !== 'unavailable' && !players?.some((p) => p.entity_id === c.state)}
+              <option value={c.state}>{c.state}</option>
+            {/if}
+            {#each players ?? [] as p (p.entity_id)}<option value={p.entity_id}>{p.name}</option>{/each}
+          </select>
+          <span class="xsmall faint">The voice assistant's answer plays here.</span>
+        </label>
+      {:else if c.kind === 'switch'}
         <label class="check small">
           <input
             type="checkbox"
@@ -84,7 +116,7 @@
         </label>
       {/if}
     {/each}
-    {#if device.controls.length}
+    {#if controls.length}
       <span class="xsmall faint">Set on the device through Home Assistant. Watch the level above while you change the gain.</span>
     {/if}
   </section>

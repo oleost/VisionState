@@ -364,6 +364,7 @@ class LiveState:
     last_trigger: dict | None = None  # {"source": ..., "detail": ..., "at": epoch seconds}
     light_off_task: asyncio.Task | None = None  # lets go of the light after a burst of checks
     light_error: str = ""  # why the light could not be switched (shown in the sensor's settings)
+    light_error_entity: str = ""  # the light that error was about (a light chosen since: not shown)
     frame_id: str | None = None  # the frame the last check analysed (still in ``frames`` for a while)
     tracks: dict[str, ObjectTrack] = field(default_factory=dict)  # object sensors, per class
     detections: list[dict] = field(default_factory=list)  # object sensors, last check

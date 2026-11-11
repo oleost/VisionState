@@ -407,6 +407,11 @@ def test_only_triggered_checks_with_a_light(tmp_path, model_dir):
         fire("x", "Flow finished")
         assert wait_for(lambda: log.count("grab") == 7, timeout=10)
         assert view()["live"]["light_error"] == "no connection"
+        # Another light chosen (a camera's new firmware renamed its flash): the error was about the
+        # old one, so it is not shown until the new one has been tried.
+        rt.live_state(sid).light_error_entity = "light.old_flash"
+        assert view()["live"]["light_error"] == ""
+        rt.live_state(sid).light_error_entity = "light.flash"
 
         # During the burst after a trigger the light stays on: one on, several frames, one off.
         rt.ha.fail = False

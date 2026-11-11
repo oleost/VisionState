@@ -775,7 +775,10 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "burst_interval_s": pace,
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
-            "light_error": live.light_error if live else "",
+            # Only about the light chosen now: one changed since is not tried until the next check.
+            "light_error": live.light_error
+            if live and live.light_error_entity == merge_triggers(sensor.triggers)["light_entity"]
+            else "",
             "frame_id": live.frame_id if live else None,
         },
         "model": {

@@ -1226,6 +1226,8 @@ export interface EsphomeConfiguration {
   username: string;
   sound: boolean;
   picture: boolean;
+  /** A voice assistant too (its answer on a media player in Home Assistant). */
+  assistant: boolean;
 }
 
 export interface EsphomeCheckPart {
@@ -1252,12 +1254,14 @@ export interface SensorDevice {
   outdated: boolean;
   controls: {
     entity_id: string;
-    kind: 'switch' | 'number';
+    /** switch, number, text (a media player): the microphone's and assistant's (Live tab); select: the camera's (its settings). */
+    kind: 'switch' | 'number' | 'select' | 'text';
     name: string;
     state: string | null;
     min?: number | null;
     max?: number | null;
     step?: number | null;
+    options?: string[];
   }[];
 }
 
@@ -1267,4 +1271,8 @@ export interface EsphomeDevice {
   address: string;
   /** Its flash (an ESP32-CAM), offered as the light for checks in the dark. */
   light: string | null;
+  /** Our firmware (settings.ESPHOME["model"]), with a camera or a microphone: offered as a sensor's source. */
+  ours: boolean;
+  camera: boolean;
+  microphone: boolean;
 }
