@@ -104,6 +104,15 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   answer goes to a media player through a Home Assistant action. The stream pauses from the wake
   word (not from the pipeline's start: with the wake word in Home Assistant the pipeline runs all
   the time). *Not checked*: on a board.
+- **The guide from start to finish on a real Home Assistant (2026-11-11, 0.15.0b11):** a new
+  ESP32-CAM made with the guide, imported into the ESPHome app (*Import from file*), installed over
+  USB from the browser, added in Home Assistant and found by the guide. Found and fixed: the guide
+  forgot its stream password when the page was left to install (it is kept for the tab now), a
+  discovered device with a friendly name shows as *Name (device)* in Home Assistant (the device
+  name is taken from the parentheses), Home Assistant takes the key from its own ESPHome app without
+  asking, and a board Home Assistant was once told to ignore stays ignored under a new name (it
+  matches by MAC; the guide now says where to stop ignoring it). Direction from the maintainer:
+  build for new devices; what older ones need goes in an issue, not into the code or the docs.
 - **Locked (2026-11-11, found reviewing the firmware with the maintainer), firmware 1.2.0:** an
   OTA port without `encryption:` took plaintext firmware from anyone on the network (ESPHome only
   offers the API key's encryption then), and the fallback hotspot was open, its captive portal
