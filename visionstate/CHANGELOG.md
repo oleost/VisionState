@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.15.0b14
+
+**ESP32 firmware 1.3.0: no stream password to look for, and a voice assistant that waits for its
+answer to be played.**
+
+- **No stream password to type:** pick an ESP32 of yours as a sensor's source, and VisionState asks
+  the device for its stream password through Home Assistant. Only a device with an older firmware
+  still asks you for it.
+- **The voice assistant no longer hears its own answer.** When an answer ends with a question, Home Assistant
+  continues the conversation, and a microphone of ours listened again the moment the answer's text
+  was ready, before the speaker had even started: it took its own answer for the next command,
+  round after round. Now it follows the speaker chosen in *Answer on* and listens for the follow-up
+  only when the answer has been played, so the whole time to answer is yours.
+- **The voice assistant in Home Assistant no longer stays *responding*** after an answer: the device says
+  when the answer is done.
+- **A conversation ends when something goes wrong:** if the answer cannot be played, or speech
+  recognition fails, the assistant goes back to waiting for its wake word instead of taking
+  whatever is said in the room as the next command.
+- **A speaker whose state shows no start or end of the answer** is waited for as long as the
+  answer takes to say.
+
+Choose *Install* for the device in the ESPHome app to get it; a sound sensor's Live tab and a camera
+sensor's settings say when a device has an older firmware.
+
 ## 0.15.0b13
 
 - **A person with the most faces can be answered about again** (#87): *Is this Kari?* about

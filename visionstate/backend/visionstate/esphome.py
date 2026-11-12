@@ -155,6 +155,17 @@ def addresses(host: str, password: str, *, sound: bool, picture: bool) -> dict[s
     return found
 
 
+def password_services(ip_entity_id: str, services: list[str]) -> list[str]:
+    """The ESPHome services that may answer with this device's stream password: every device's
+    (settings.ESPHOME["password_action"]), the one named like its *IP address* entity first. Home
+    Assistant names it after the device's name in its file, which the entity often shares; the
+    answer's address says which device answered."""
+    suffix = f"_{ESPHOME['password_action']}"
+    own = ip_entity_id.removeprefix("sensor.").removesuffix("_ip_address") + suffix
+    found = [name for name in services if name.endswith(suffix)]
+    return sorted(found, key=lambda name: name != own)
+
+
 def firmware_version(sw_version: str | None) -> str | None:
     """Our firmware's version from what the device reports ("1.1.0 (ESPHome 2026.10.2)")."""
     if not sw_version:

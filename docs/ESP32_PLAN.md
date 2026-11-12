@@ -127,6 +127,47 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   names each player's integration (one speaker is often there through Google Cast, Music Assistant
   and DLNA alike: the maintainer could not tell them apart by name). Tried 2026-11-11 on the
   WROOM-32: "Okay Nabu" heard by Home Assistant, the answer played on the Google Cast speaker chosen.
+- **The assistant heard its own answer (the maintainer, 2026-11-12):** when the answer ends with a
+  question, Home Assistant continues the conversation, and the device listened again 0.1 s after the
+  answer's text was ready, seconds before the Google Cast speaker started playing it: the answer
+  was taken for a new command, round after round. It is the device that starts listening again
+  (ESPHome's `voice_assistant` with no output of its own goes straight on), and the device never
+  said when the answer was played, so the satellite stayed *responding*. Muting the microphone
+  meanwhile was not chosen: Home Assistant's time to answer (about 15 s) would run while the
+  speaker plays. Built instead: an answer player on the device (`components/visionstate_answer`),
+  the voice assistant's `media_player`. It plays the answer on *Answer on* and stays announcing
+  until that player in Home Assistant has gone from playing to anything else (it follows the
+  player's state, also after *Answer on* names another; limits for a player that never starts or
+  plays on). `voice_assistant` waits for it, tells Home Assistant the answer is done and only then
+  listens for the follow-up. VisionState's stream stays paused until then too, and pauses again for
+  the follow-up (it starts without a wake word). A player that plays an announcement over its music
+  (Sonos, Music Assistant) may show no start or end in its state: then the answer's length, guessed
+  from its text, says when it is done. The player tells Home Assistant of a new *Answer on* through
+  ESPHome's API from the inside (`active_clients`, a subscription message): ESPHome sends its list of
+  subscriptions only once a connection, so a change in ESPHome there shows in the weekly CI build
+  against the latest ESPHome. Found trying it: an error in a continued conversation (speech-to-text
+  failed) left ESPHome starting one follow-up after another without a wake word, each taking
+  whatever was said in the room; and an answer the player could not play (its integration was
+  down) let the conversation go on unheard. Both now end the conversation and go back to the wake
+  word (built, not yet seen happen on the device). Tried 2026-11-12 on the WROOM-32 with a Google Cast speaker: answers in a row, follow-ups
+  without the wake word, none of them heard back; *Answer on* changed while running (Home
+  Assistant sends the new player's state at once); a player that never started (the guess from the
+  text ended the wait). Speech-to-text that makes words out of silence at the end of a follow-up
+  (Whisper: "what are you doing?") keeps a conversation going, which no firmware can tell from
+  speech. *Not checked*: a player that plays over its music, other boards than the WROOM-32
+  (built for the ESP32-CAM with its camera, the S3 and the C5).
+- **The stream password told through Home Assistant (the maintainer's wish, 2026-11-12), built in
+  firmware 1.3.0:** looking for `stream_password` in a device's file to make a sensor from it was
+  the worst step. An entity holding it was not chosen: Home Assistant records every state, keeps it
+  in its backups and shows it to every user. The device has an action instead
+  (`esphome/packages/stream-password.yaml`, `esphome.<device>_stream_password`) that answers with the
+  password and its address; VisionState calls it when the device is picked as a source and takes
+  the answer only when the address is that device's (Home Assistant names the action after the
+  device's name in its file, not shown anywhere VisionState can match, so the one named like its
+  *IP address* entity is asked first). A device with an older firmware asks for the password as
+  before. Anyone who may call actions in Home Assistant can ask for it; anyone who may install the
+  firmware can read it already. Tried 2026-11-12 on the WROOM-32 through the main Home Assistant:
+  the password and address came back, and the stream answered with it.
 - **Picture orientation (the maintainer's wish, 2026-11-10), built in firmware 1.2.0:** a camera
   of ours turns its picture 180° and mirrors it on the chip (`camera-use.yaml`), chosen in Home
   Assistant or in a camera sensor's settings (through Home Assistant, like the microphone's

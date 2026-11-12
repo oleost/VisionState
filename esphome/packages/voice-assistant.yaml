@@ -6,6 +6,7 @@
 packages:
   diagnostics: !include diagnostics.yaml
   stream_switch: !include stream-switch.yaml
+  stream_password: !include stream-password.yaml
 
 substitutions:
   stream_port: "8081"

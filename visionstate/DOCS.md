@@ -665,9 +665,11 @@ seconds after (*A sound stays heard for*). In the wizard, choose **Listen** firs
   as an HTTP stream of WAV, for a room without a camera.
 
 **An ESP32 of your own.** One with VisionState's firmware that Home Assistant already has is
-offered first among the sources (its name and address): give its stream password (`stream_password`
-in its file), and VisionState takes the pictures or the sound straight from it, and offers its flash
-as the light. A new one: *Set one up with ESPHome*, under the sound or image source, opens a
+offered first among the sources (its name and address): pick it, and VisionState asks it for its
+stream password through Home Assistant (firmware 1.3.0 on; an older one's is typed: `stream_password`
+in its file) and takes the pictures or the sound straight from it, and offers its flash as the
+light. Anyone who may use actions in Home Assistant can ask a device for that password, as anyone
+who may install its firmware can read it in its file. A new one: *Set one up with ESPHome*, under the sound or image source, opens a
 guide for an ESP32 or ESP32-S3 DevKit with an INMP441 microphone, an ESP32-CAM with its camera
 (and a microphone too, if you like), a Seeed Studio XIAO ESP32-S3 Sense, whose camera and
 microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or

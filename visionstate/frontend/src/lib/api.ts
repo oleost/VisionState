@@ -432,6 +432,12 @@ export const api = {
     request<{ ok: boolean }>(`sensors/${id}/device`, send('POST', { entity_id: entityId, value })),
   esphomeCheck: (host: string, password: string, sound: boolean, picture: boolean) =>
     request<EsphomeCheck>('esphome/check', send('POST', { host, password, sound, picture })),
+  /** The same check, with the stream's password the device tells through Home Assistant (firmware 1.3.0 on). */
+  esphomeConnect: (entityId: string, sound: boolean, picture: boolean) =>
+    request<EsphomeCheck & { told: boolean; detail?: string }>(
+      'esphome/connect',
+      send('POST', { entity_id: entityId, sound, picture }),
+    ),
   /** Each threshold the sensor decides by, with how the review answers fare and a suggested one. */
   sensorAdvice: (id: number) => request<{ items: AdviceItem[] }>(`sensors/${id}/advice`),
   /** Set one of them (an AdviceItem's key). */

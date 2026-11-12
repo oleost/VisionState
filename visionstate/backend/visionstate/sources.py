@@ -203,6 +203,24 @@ class HomeAssistant:
         if resp.status_code >= 400:
             raise SourceError(f"{domain}.{service}: HTTP {resp.status_code}")
 
+    async def call_service_response(self, domain: str, service: str, data: dict) -> dict:
+        """Call a Home Assistant service that answers (an ESPHome device's action with a response)."""
+        if not self.enabled:
+            raise SourceError("Home Assistant API is not configured")
+        resp = await self._client.post(f"{self.base}/services/{domain}/{service}?return_response", json=data)
+        if resp.status_code >= 400:
+            raise SourceError(f"{domain}.{service}: HTTP {resp.status_code}")
+        answer = resp.json().get("service_response")
+        return answer if isinstance(answer, dict) else {}
+
+    async def service_names(self, domain: str) -> list[str]:
+        """The services of one domain ("espvroom_stream_password", …), without the domain."""
+        if not self.enabled:
+            return []
+        resp = await self._client.get(f"{self.base}/services")
+        resp.raise_for_status()
+        return sorted(name for d in resp.json() if d.get("domain") == domain for name in d.get("services", {}))
+
     async def notify_services(self) -> list[str]:
         """The notify services that push somewhere ("notify.mobile_app_pixel", …), phones first."""
         if not self.enabled:

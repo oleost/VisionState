@@ -51,6 +51,9 @@ class VisionStateStream final : public Component
   void set_buffer_duration(uint32_t ms) { this->buffer_ms_ = ms; }
   void set_fresh_snapshot(bool fresh) { this->fresh_snapshot_ = fresh; }
   void set_credentials(const std::string &username, const std::string &password);
+  // The stream's password, for the stream_password action (packages/stream-password.yaml): VisionState
+  // asks for it through Home Assistant, so nobody has to look for it in the device's file.
+  const std::string &get_password() const { return this->password_; }
   void set_listeners_sensor(sensor::Sensor *sensor) { this->listeners_sensor_ = sensor; }
 #ifdef USE_VISIONSTATE_MICROPHONE
   void set_microphone_source(microphone::MicrophoneSource *source) { this->microphone_source_ = source; }
@@ -101,6 +104,7 @@ class VisionStateStream final : public Component
   uint32_t buffer_ms_{1000};
   bool fresh_snapshot_{true};
   std::string expected_auth_;  // "Basic <base64>", empty: no login
+  std::string password_;
   sensor::Sensor *listeners_sensor_{nullptr};
   void *httpd_{nullptr};
 

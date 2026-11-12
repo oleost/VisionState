@@ -2535,7 +2535,7 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   errors.expectNone();
 });
 
-test('an ESP32 of ours that Home Assistant has: offered first as the source, its password checked', async ({ page }, info) => {
+test('an ESP32 of ours that Home Assistant has: offered first as the source, its password asked of it or typed', async ({ page }, info) => {
   const errors = watchErrors(page);
   // Home Assistant's devices (none in e2e): a camera of ours, a microphone of ours, another ESPHome device.
   const device = (name: string, address: string, parts: object) => ({
@@ -2553,6 +2553,7 @@ test('an ESP32 of ours that Home Assistant has: offered first as the source, its
       json: {
         devices: [
           device('watermeter', '10.0.0.7', { camera: true, light: 'light.watermeter_flash' }),
+          device('garage', '10.0.0.6', { camera: true }),
           device('hall', '10.0.0.8', { microphone: true }),
           device('plug', '10.0.0.9', { ours: false }),
         ],
@@ -2571,11 +2572,25 @@ test('an ESP32 of ours that Home Assistant has: offered first as the source, its
       json: { addresses: { picture }, picture: ok ? { ok, status: 200, bytes: 12000 } : { ok, status: 401 } },
     });
   });
+  // Firmware 1.3.0 tells its password through Home Assistant (the garage); an older one does not (the
+  // water meter), and its password is typed.
+  const garagePicture = `${CAMERA_URL}/photo/demo_garage.jpg`;
+  await page.route('**/api/v1/esphome/connect', (route) => {
+    const { entity_id } = route.request().postDataJSON() as { entity_id: string };
+    if (entity_id !== 'sensor.garage_ip_address')
+      return route.fulfill({ json: { told: false, detail: 'It did not tell its stream password', addresses: {} } });
+    return route.fulfill({
+      json: { told: true, addresses: { picture: garagePicture }, picture: { ok: true, status: 200, bytes: 12000 } },
+    });
+  });
   await page.goto('#/sensors/new');
   const offered = page.getByTestId('esp32-sources');
   await expect(offered).toContainText('watermeter');
   await expect(offered).not.toContainText('hall'); // a microphone: offered to a sound sensor
   await expect(offered).not.toContainText('plug'); // not ours
+  await press(offered.getByText('garage'), info);
+  await expect(page.getByRole('textbox', { name: 'Source URL' })).toHaveValue(garagePicture);
+  await expect(page.getByLabel('Stream password')).toHaveCount(0); // nothing to type
   await press(offered.getByText('watermeter'), info);
   const field = page.getByLabel('Stream password');
   await field.fill('wrong');

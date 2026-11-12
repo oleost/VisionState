@@ -1,6 +1,7 @@
 """The ESP32 guide (docs/ESP32_PLAN.md): the ESPHome configuration for a board and a kind of device,
 the devices Home Assistant knows the address of, and a check that the device answers with its
-sound and its pictures before a sensor is made from it. And a sound sensor's device: its
+sound and its pictures before a sensor is made from it (with the stream's password the device
+tells through Home Assistant, or one typed). And a sound sensor's device: its
 microphone's controls on the Live tab, set through Home Assistant, and whether a newer firmware is out."""
 
 from __future__ import annotations
@@ -37,6 +38,12 @@ class ConfigurationIn(BaseModel):
 class ControlIn(BaseModel):
     entity_id: str = Field(max_length=255)
     value: bool | float | str
+
+
+class ConnectIn(BaseModel):
+    entity_id: str = Field(max_length=255)  # the device's IP address entity
+    sound: bool = True
+    picture: bool = False
 
 
 class CheckIn(BaseModel):
@@ -144,11 +151,9 @@ async def _try(client: httpx.AsyncClient, url: str, magic: tuple[bytes, ...] | b
     return out
 
 
-@router.post("/esphome/check")
-async def check(body: CheckIn) -> dict:
-    """Asks the device for its sound and its picture, as the sensor will."""
+async def _check(host: str, password: str, sound: bool, picture: bool) -> dict:
     try:
-        found = esphome.addresses(body.host, body.password, sound=body.sound, picture=body.picture)
+        found = esphome.addresses(host, password, sound=sound, picture=picture)
     except esphome.ESPHomeError as err:
         raise HTTPException(400, str(err)) from err
     result: dict = {"addresses": found}
@@ -158,6 +163,39 @@ async def check(body: CheckIn) -> dict:
         if "picture" in found:
             result["picture"] = await _try(client, found["picture"], JPEG_MAGIC, stream=False)
     return result
+
+
+@router.post("/esphome/check")
+async def check(body: CheckIn) -> dict:
+    """Asks the device for its sound and its picture, as the sensor will."""
+    return await _check(body.host, body.password, body.sound, body.picture)
+
+
+@router.post("/esphome/connect")
+async def connect(body: ConnectIn, request: Request) -> dict:
+    """The check, with the stream's password asked of the device through Home Assistant (firmware
+    1.3.0 on: esphome/packages/stream-password.yaml), so it need not be typed. told false: no device
+    answered with this one's address (an older firmware, or not reachable): it is typed instead."""
+    ha = runtime(request).ha
+    try:
+        host = str((await ha.raw_states()).get(body.entity_id, {}).get("state"))
+        ipaddress.ip_address(host)
+        services = await ha.service_names("esphome")
+    except Exception as err:  # noqa: BLE001 - Home Assistant not reachable, or no address shown
+        return {"told": False, "detail": redact(str(err)) or type(err).__name__, "addresses": {}}
+    for service in esphome.password_services(body.entity_id, services):
+        try:
+            answer = await ha.call_service_response("esphome", service, {})
+        except Exception:  # noqa: BLE001 - that device is off or refused: try the next
+            continue
+        password = answer.get("password")
+        if answer.get("address") == host and isinstance(password, str) and password:
+            return {"told": True, **await _check(host, password, body.sound, body.picture)}
+    return {
+        "told": False,
+        "detail": "The device did not tell its stream password (firmware 1.3.0 does)",
+        "addresses": {},
+    }
 
 
 def _host(rt, sensor_id: int) -> str | None:  # noqa: ANN001 - the Runtime

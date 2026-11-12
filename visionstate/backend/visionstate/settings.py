@@ -415,7 +415,10 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.2.0",
+    "firmware_version": "1.3.0",
+    # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
+    # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
+    "password_action": "stream_password",
     # A device's entities VisionState shows, by their name in the firmware (the packages in
     # esphome/) and kind, set there through Home Assistant: the switches, numbers and texts (the
     # microphone's and a voice assistant's, a text being a media player picked from Home Assistant's)

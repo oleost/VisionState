@@ -214,6 +214,53 @@ def test_the_check_tells_a_right_password_from_a_wrong_one(settings, device):  #
         assert set(client.get("/api/v1/config").json()["esphome"]["boards"]) == set(ESPHOME["boards"])
 
 
+def test_the_password_is_asked_of_the_device_named_like_its_address_entity_first():
+    services = ["garage_cam_stream_password", "hall_stream_password", "hall_restart", "front_door_stream_password"]
+    assert esphome.password_services("sensor.front_door_ip_address", services) == [
+        "front_door_stream_password",
+        "garage_cam_stream_password",
+        "hall_stream_password",
+    ]
+    assert esphome.password_services("sensor.cellar_ip_address", ["hall_restart"]) == []
+
+
+def test_the_device_tells_its_password_through_home_assistant(settings, device):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        asked = []
+        answers = {
+            # Another device of ours, named alike: its address shows it is not this one.
+            "front_door_stream_password": {"password": "other", "address": "10.0.0.8"},
+            "front_door_2_stream_password": {"password": "secret", "address": "127.0.0.1"},
+        }
+
+        async def raw_states():
+            return {"sensor.front_door_ip_address": {"state": "127.0.0.1"}}
+
+        async def service_names(domain):
+            assert domain == "esphome"
+            return ["front_door_restart", *answers]
+
+        async def call_service_response(domain, service, data):
+            asked.append(service)
+            return answers[service]
+
+        rt.ha.raw_states, rt.ha.service_names, rt.ha.call_service_response = (
+            raw_states,
+            service_names,
+            call_service_response,
+        )
+        body = {"entity_id": "sensor.front_door_ip_address", "sound": True, "picture": True}
+        got = client.post("/api/v1/esphome/connect", json=body).json()
+        assert asked == ["front_door_stream_password", "front_door_2_stream_password"]
+        assert got["told"] and got["sound"]["ok"] and got["picture"]["ok"], got
+        assert "visionstate:secret@127.0.0.1" in got["addresses"]["sound"]
+
+        answers.clear()  # an older firmware: nothing tells it, so it is typed
+        missing = client.post("/api/v1/esphome/connect", json=body).json()
+        assert not missing["told"] and "1.3.0" in missing["detail"] and missing["addresses"] == {}
+
+
 def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # noqa: F811
     with TestClient(create_app(settings)) as client:
         rt = client.app.state.runtime

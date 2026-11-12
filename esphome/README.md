@@ -54,7 +54,10 @@ ota:
 ```
 
 The stream and the snapshot are behind `stream_password`, over plain HTTP like a camera's: anyone
-who can read the network's traffic can read it.
+who can read the network's traffic can read it. The device tells it to VisionState through Home
+Assistant (the action `esphome.<device>_stream_password`, which answers with it and the device's
+address), so a sensor is made from the device without looking for it; anyone who may call actions
+in Home Assistant can ask for it the same way.
 
 ## Updating the firmware
 
@@ -282,9 +285,16 @@ assistant, with no speaker of its own:
   `assistant_media_player` is the one it starts with. On the device in Home Assistant (*Settings → Devices & services → ESPHome → the
   device → Configure*), switch on *Allow the device to perform Home Assistant actions*. A
   Chromecast fetches the answer from Home Assistant's internal URL, so it must reach that.
-- From the wake word until the answer is done the stream carries silence (*VisionState pauses for
-  the assistant* turns that off). *Microphone* and the mute switch mute both; *VisionState stream*
-  switches off only VisionState's stream.
+- **It waits for the answer to be played**: the device follows that player's state in Home Assistant,
+  and listens again only when it has stopped playing. When Home Assistant continues the conversation
+  (the answer asked something), the follow-up is heard after the answer, not the answer itself. A
+  player whose state shows no start or end of an announcement (one that plays it over its music) is
+  waited for as long as the answer's text takes to say, guessed on the long side. When the answer
+  cannot be played, or the assistant fails, a conversation ends and the wake word is needed again.
+- While the assistant listens (after the wake word, and for a follow-up) and until its answer has
+  been played the stream carries silence (*VisionState pauses for the assistant* turns that off).
+  *Microphone* and the mute switch mute both; *VisionState stream* switches off only VisionState's
+  stream.
 
 The ESP32 guide in VisionState writes it (*A voice assistant too*, for a microphone). By hand, add
 the package after the microphone's, with the player it starts with:
@@ -302,13 +312,14 @@ packages:
 ```
 
 Tried on an ESP32 D1 mini (WROOM-32) with an INMP441: the wake word heard by Home Assistant, the
-answer on a Google Cast speaker chosen with *Answer on*.
+answer on a Google Cast speaker chosen with *Answer on*, follow-ups heard after the answer and
+*Answer on* changed while it runs.
 
 ## When something is wrong
 
 | What you see | Why |
 |---|---|
-| *401* in the guide's check, or the sensor gets no sound | The password is not the one in the device's file (`stream_password`). |
+| *401* in the guide's check, or the sensor gets no sound | The password is not the one in the device's file (`stream_password`). A device with firmware 1.3.0 or newer tells VisionState its password itself. |
 | *409* | Two listeners are on already (VisionState and someone else): close one. |
 | *Pure silence* on the sound sensor | The stream is nothing but zeros: the microphone is not wired (check SD, SCK, WS and L/R to GND; on a XIAO, that the camera board is on), is broken, or is muted (the *Microphone* switch is off, or the mute switch is closed). |
 | Very quiet sound | Raise the gain (on the sensor's Live tab, or *Microphone gain* in Home Assistant). *Sound level* (a diagnostic) says how loud it arrives. |
@@ -328,6 +339,7 @@ answer on a Google Cast speaker chosen with *Answer on*.
 | [`packages/microphone-pdm.yaml`](packages/microphone-pdm.yaml) | the XIAO ESP32-S3 Sense's PDM microphone as `/audio.wav` |
 | [`packages/microphone-controls.yaml`](packages/microphone-controls.yaml) | what both microphone packages include: the *Microphone* switch, the gain and the diagnostics |
 | [`packages/diagnostics.yaml`](packages/diagnostics.yaml) | the stream's level, peak, clipped samples and dropped sound (off in Home Assistant until switched on) |
+| [`packages/stream-password.yaml`](packages/stream-password.yaml) | the action that tells VisionState the stream's password and the device's address, through Home Assistant (in `common.yaml` and `voice-assistant.yaml`) |
 | [`packages/stream-switch.yaml`](packages/stream-switch.yaml) | *VisionState stream*: the stream on and off on its own, on a device whose microphone is shared |
 | [`packages/mute-pin.yaml`](packages/mute-pin.yaml) | a mute switch on a pin: unwired, the microphone is on |
 | [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light |
@@ -337,6 +349,7 @@ answer on a Google Cast speaker chosen with *Answer on*.
 | [`packages/voice-assistant.yaml`](packages/voice-assistant.yaml) | what both include: one listener, silence while the assistant listens, the gain, *VisionState stream*, the diagnostics |
 | [`packages/voice-assistant-ha-wake-word.yaml`](packages/voice-assistant-ha-wake-word.yaml) | a microphone of ours as a voice assistant too: the wake word in Home Assistant, the answer on a media player |
 | [`components/visionstate_stream`](components/visionstate_stream) | the server: the stream, the snapshot and the login |
+| [`components/visionstate_answer`](components/visionstate_answer) | the voice assistant's answer player: plays the answer on *Answer on* and waits until it is played |
 
 [`tests/`](tests) holds the configurations CI compiles (`.github/workflows/esphome.yml`), built from the
 packages in this folder. `tests/voice-pe.yaml` and `tests/atom-voices3r.yaml` pull in the devices'

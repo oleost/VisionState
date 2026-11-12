@@ -96,6 +96,7 @@ static void wav_header(uint8_t *h) {
 }
 
 void VisionStateStream::set_credentials(const std::string &username, const std::string &password) {
+  this->password_ = password;
   std::string pair = username + ":" + password;
   this->expected_auth_ = "Basic " + base64_encode(reinterpret_cast<const uint8_t *>(pair.data()), pair.size());
 }
