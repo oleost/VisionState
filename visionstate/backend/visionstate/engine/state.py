@@ -385,7 +385,7 @@ class LiveState:
     face_frame: tuple[int, int] | None = None  # the size of the last frame looked at for faces
     face_min_px: float | None = None  # the smallest face (its width) it was looked at with
     face_logged: tuple[float, float] = (0.0, 0.0)  # when a face nobody is named for was last kept, and its width
-    plate_events: dict[str, float] = field(default_factory=dict)  # car key or plate -> when its last event was sent
+    plate_events: dict[str, float] = field(default_factory=dict)  # car key or plate announced -> when last seen
     # car key -> how it is known (plates.identified_by), and when its look was last learned or checked
     car_identified: dict[str, str | None] = field(default_factory=dict)
     plate_learned: dict[str, float] = field(default_factory=dict)

@@ -708,7 +708,11 @@ PLATES = {
     "unknown_after": 2,
     "recheck_every": 3,  # a car named by an exact read is carried over this many checks without reading
     "max_cars": 50,  # cars the household can name
-    "event_cooldown_s": 300,  # the same car or plate makes one event per this many seconds per sensor
+    # The same car or plate makes no new event on a sensor until it was gone this many seconds; an
+    # unknown plate read at most same_plate_distance from one announced is that plate (a parked car
+    # read a character off: BR85853, B85853, 885853, 18885853).
+    "event_cooldown_s": 300,
+    "same_plate_distance": 2.0,
     # Learning a car's look from its plate (objects["plates"]["learn"]): a vehicle whose plate was
     # read exactly as a car's, at least this sure, that its look does not know yet, is taught as
     # that car on this sensor; at most once per learn_every_s per car and sensor (other light,

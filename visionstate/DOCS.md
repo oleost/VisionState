@@ -421,7 +421,8 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
   character off (a reader takes O for 0, I for 1, B for 8) names it when the next check agrees. A
   car that stays keeps its name while its plate is not seen (from the side, too far). A plate
   that is not yours counts as unknown after it was read the same way twice. Each car or plate
-  makes one event per visit, and not again within five minutes on the same sensor.
+  makes one event per visit: a car parked in view makes no new one until it has been gone for five
+  minutes, and a plate read a character or two off while it stays counts as the same plate.
 - **A car's look helps its plate.** Tap one of your cars on the **Live** tab and choose it (*one of
   your cars*) to teach how it looks on this camera, as with own labels. The car is then also named
   by its look while its plate cannot be read, and **Let a car's look help** (on the same card) decides how far off a plate may be read when the look says it is that car: then it names

@@ -54,6 +54,58 @@ def test_the_closest_car_wins_and_a_car_may_have_several_plates():
     assert plates.match("AB12345", []).key is None
 
 
+def test_a_parked_car_makes_one_event_however_its_plate_is_misread(monkeypatch):
+    """Dev's doorbell camera: a parked car read as BR85853, then B85853, 885853 and 18885853, and its
+    box now and then not found, made an unknown_plate event for each misread and again every 10-20
+    minutes. It is announced once, and again only after it was gone for event_cooldown_s."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from visionstate.engine.state import LiveState
+
+    clock = [1000.0]
+    monkeypatch.setattr("visionstate.engine.plates.time.time", lambda: clock[0])
+    live = LiveState()
+    sent: list[dict] = []
+
+    async def send(cfg, topic, payload):
+        sent.append(payload)
+
+    rt = SimpleNamespace(live_state=lambda sid: live, _send=send)
+    cfg = SimpleNamespace(id=1, slug="drive", custom_labels=[], objects={"plates": {"unknown": True}})
+    box: dict = {}
+
+    def check(text: str | None, *, seconds: float = 10) -> list:
+        """One check: the car's box with an unknown plate read as ``text``, or no box (None)."""
+        nonlocal box
+        clock[0] += seconds
+        if text is None:
+            box = {}
+            found = []
+        else:
+            box = {
+                "key": "car",
+                "plate": {
+                    "text": text,
+                    "score": 0.9,
+                    "state": "unknown",
+                    "announced": (box.get("plate") or {}).get("announced"),
+                },
+            }
+            found = [box]
+        return asyncio.run(PlatesMixin.announce_plates(rt, cfg, found))  # type: ignore[arg-type]
+
+    assert check("BR85853") and [p["plate"] for p in sent] == ["BR85853"]
+    for text in ["B85853", "885853", "BR85853", "18885853"] * 30:  # 20 minutes parked
+        assert not check(text)
+    assert not check(None) and not check("885853")  # the box was lost for a check: still the same car
+    assert not check(None, seconds=PLATES["event_cooldown_s"] - 20)  # gone, but not for long
+    assert not check("BR85853")
+    assert check("ZX98765")  # another car
+    check(None, seconds=PLATES["event_cooldown_s"] + 1)  # gone long enough: it comes again
+    assert check("B85853") and [p["plate"] for p in sent] == ["BR85853", "ZX98765", "B85853"]
+
+
 def test_only_a_read_with_a_digit_and_the_right_length_can_be_a_plate():
     assert plates.looks_like_plate("G756") and plates.looks_like_plate("AB 12345")
     assert not plates.looks_like_plate("EUROPE")  # no digit

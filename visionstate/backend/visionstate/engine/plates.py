@@ -484,11 +484,18 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
     async def announce_plates(self, cfg: SensorConfig, found: list[dict]) -> list[tuple[str, float]]:
         """An event in Home Assistant when a car of the household comes, and when an unknown plate
         is read (when the sensor reports those), once per vehicle while it stays, and not again for
-        the same plate within PLATES["event_cooldown_s"]. Returns what to keep in the history: the
-        car (or the vehicle's class) and the read's confidence, per event."""
+        the same car or plate until it was gone for PLATES["event_cooldown_s"]: a parked car is
+        read again and again, now and then a character off, and its box is now and then not found.
+        An unknown plate counts as one already announced when it is at most
+        PLATES["same_plate_distance"] from it. Returns what to keep in the history: the car (or the
+        vehicle's class) and the read's confidence, per event."""
         live = self.live_state(cfg.id)
         names = {c["key"]: c["name"] for c in cfg.custom_labels}
         now = time.time()
+        for d in found:  # what is still here is not gone: its time runs from now
+            announced = (d.get("plate") or {}).get("announced")
+            if announced in live.plate_events:
+                live.plate_events[announced] = now
         events: list[tuple[str, float]] = []
         for d in found:
             plate = d.get("plate")
@@ -502,9 +509,21 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 continue
             if plate.get("announced") == what:
                 continue
-            plate["announced"] = what
-            if now - live.plate_events.get(what, 0.0) < PLATES["event_cooldown_s"]:
+            recent = [w for w, at in live.plate_events.items() if now - at < PLATES["event_cooldown_s"]]
+            same = next(
+                (
+                    w
+                    for w in recent
+                    if w == what
+                    or (event == "unknown_plate" and plates.distance(w, what) <= PLATES["same_plate_distance"])
+                ),
+                None,
+            )
+            if same is not None:
+                plate["announced"] = same  # the plate (or car) announced already, read again
+                live.plate_events[same] = now
                 continue
+            plate["announced"] = what
             live.plate_events[what] = now
             payload = {
                 "event_type": event,
