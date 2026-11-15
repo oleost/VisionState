@@ -4,6 +4,7 @@ camera is asked as it always was."""
 
 import io
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -148,6 +149,12 @@ class FlashHa:
     async def state(self, entity_id):
         return "off"
 
+    dark = False  # a Home Assistant camera's picture: dark until the lamp is on
+
+    async def snapshot(self, entity_id):
+        lit = any(on for _, on in self.switched[-1:])
+        return DARK.getvalue() if self.dark and not lit else JPEG.getvalue()
+
     async def switch(self, entity_id, on):
         self.switched.append((entity_id, on))
 
@@ -227,3 +234,18 @@ def test_another_light_only_when_it_is_dark(settings, camera):  # noqa: F811
             json={"source_type": "http", "source": url, "name": "X", "triggers": {"light_when": "sometimes"}},
         )
         assert bad.status_code == 422
+
+
+def test_a_lamp_only_when_it_is_dark_on_a_home_assistant_camera(settings):  # noqa: F811
+    """Not an ESP32 of ours: a Home Assistant camera and a lamp switched there, only when it is dark."""
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.ha = rt.grabber.ha = ha = FlashHa("127.0.0.1")
+        triggers = {"light_entity": "light.hall", "light_delay_s": 0.2, "light_when": "dark", "burst_duration_s": 0}
+        body = {"source_type": "ha_camera", "source": "camera.door", "interval_s": 1, "name": "Door"}
+        client.post("/api/v1/sensors", json={**body, "triggers": triggers, "states": [{"name": "A"}, {"name": "B"}]})
+        time.sleep(4)  # a few checks, light enough: the lamp never switched on
+        assert ("light.hall", True) not in ha.switched
+        ha.dark = True
+        assert wait_for(lambda: ("light.hall", True) in ha.switched, timeout=20)
+        assert wait_for(lambda: ("light.hall", False) in ha.switched, timeout=20)  # and off again
