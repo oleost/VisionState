@@ -148,12 +148,20 @@ export function objectCount(n: number, key: string, own: OwnLabel[] = []): strin
 
 export const isObjectSensor = (sensor: Pick<Sensor, 'kind'>) => sensor.kind === 'objects';
 
-/** "2 people, 1 dog" for what an object sensor currently reports; "Nothing detected" when all are off. */
+/** "2 people, 1 dog" for what an object sensor currently reports; "Nothing detected" when all are off.
+ * Each car says the surest name it was known by: a car named by its plate is not counted again for the
+ * look it shares with another car (that look counts only the cars of it no plate named). */
 export function objectSummary(sensor: Sensor): string {
   const own = sensor.objects?.custom ?? [];
   const on = (sensor.objects?.live ?? []).filter((o) => o.on);
   if (!on.length) return 'Nothing detected';
-  const text = on.map((o) => objectCount(o.count, o.key, own)).join(', ');
+  const named = new Map<string, number>();
+  for (const o of on) if (o.group) named.set(o.group, (named.get(o.group) ?? 0) + o.count);
+  const text = on
+    .map((o) => ({ ...o, count: o.count - (named.get(o.key) ?? 0) }))
+    .filter((o) => o.count > 0)
+    .map((o) => objectCount(o.count, o.key, own))
+    .join(', ');
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

@@ -198,6 +198,7 @@
   .pill-pos {
     position: absolute;
     left: 12px;
+    right: 12px;
     bottom: 12px;
   }
   .body {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0b17
+
+**Two cars that look the same, said once, and no page to push sideways on a phone.**
+
+- **Each car once, by its surest name:** with a car known by its plate in view, a sensor's summary
+  on the dashboard also counted it for the look it shares with your other car ("1 Tesla, 1 Tesla
+  EJ86876"), as if there were two. Now the look counts only the cars of it no plate named.
+- **The summary on a sensor's card ends in "…"** when it is longer than the card, instead of running
+  out of it.
+- **A light with a long entity id** (an ESP32 camera's flash, named after its room) breaks inside its
+  card in the sensor's settings: on a phone it made the whole page move sideways.
+
 ## 0.15.0b16
 
 **Licence plates tried on a real doorbell, with two cars parked in front of it.**

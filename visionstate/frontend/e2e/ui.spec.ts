@@ -381,7 +381,14 @@ test('a light for the camera: picked with the camera, held on while framing', as
 
 test('the wizard shows the whole list of entities for a light', async ({ page }, info) => {
   const errors = watchErrors(page);
-  const lights = Array.from({ length: 12 }, (_, i) => ({ entity_id: `light.lamp_${i}`, name: `Lamp ${i}`, domain: 'light', state: 'off' }));
+  // The last one has a long entity id (an ESP32 camera's flash, named after its room): it breaks inside its chip.
+  const flash = 'light.garasje_bod_1_etg_esp32cam_watermeter_flash';
+  const lights = Array.from({ length: 12 }, (_, i) => ({
+    entity_id: i === 11 ? flash : `light.lamp_${i}`,
+    name: `Lamp ${i}`,
+    domain: 'light',
+    state: 'off',
+  }));
   await page.route('**/api/v1/entities*', (route) => route.fulfill({ json: lights }));
   await page.goto('#/sensors/new');
   await press(page.getByText('HTTP snapshot URL'), info);
@@ -401,7 +408,7 @@ test('the wizard shows the whole list of entities for a light', async ({ page },
   const last = list.getByRole('button', { name: /Lamp 11/ });
   await last.scrollIntoViewIfNeeded();
   await press(last, info);
-  await expect(page.getByText('light.lamp_11')).toBeVisible();
+  await expect(page.getByText(flash)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   errors.expectNone();
 });
@@ -2767,6 +2774,11 @@ test('licence plates: turned on after a sheet, a car added, named by its plate o
   await expect(card.getByTestId('car').filter({ hasText: `${carName} ${plate}` })).toBeVisible();
   await expect(card.getByTestId('car').filter({ hasText: `${carName} 2` })).toContainText(`looks like ${carName}`);
   await expectNoClipping(page, '.btn, .card');
+
+  // The dashboard says the car once, by the surest name: the car its plate names, not the look it shares as well.
+  await page.goto('#/');
+  const tile = page.locator('article.sensor').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  await expect(tile.locator('.pill.overlay')).toHaveText(`1 car, 1 ${carName} ${plate}`, { timeout: 60_000 });
 
   await request.delete(`api/v1/sensors/${id}`);
   for (const c of await (await request.get('api/v1/cars')).json()) {
