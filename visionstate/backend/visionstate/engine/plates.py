@@ -43,6 +43,12 @@ def same_vehicle(previous: list[dict], box: Sequence[float]) -> dict | None:
     return best if best is not None and _iou(best["box"], box) >= TEACH["keep_iou"] else None
 
 
+def carried(plate: dict) -> dict:
+    """A box's plate from the last check, kept for this one: without the event it made then (an
+    event belongs to the check it was sent at, and the history shows a plate event by it)."""
+    return {k: v for k, v in plate.items() if k != "event"}
+
+
 def _overlaps_vehicle(det: dict, found: list[dict]) -> bool:
     """Whether another vehicle box covers part of this one: its plate may be that vehicle's, so the
     box is not learned from it."""
@@ -305,7 +311,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 and before.get("sure")
                 and before.get("age", 0) + 1 < PLATES["recheck_every"]
             ):
-                result[i]["plate"] = {**before, "age": before.get("age", 0) + 1}
+                result[i]["plate"] = {**carried(before), "age": before.get("age", 0) + 1}
                 result[i]["label"] = before["car"]
                 continue
             todo.append((i, before))
@@ -333,7 +339,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
         """No plate read this check: a box keeps the car it was (and what it already announced)."""
         if not before:
             return
-        det["plate"] = {**before, "age": before.get("age", 0) + 1, "kept": True}
+        det["plate"] = {**carried(before), "age": before.get("age", 0) + 1, "kept": True}
         if before.get("state") == "match" and before.get("car"):
             det["label"] = before["car"]
 

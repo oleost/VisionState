@@ -220,6 +220,20 @@ before reading: its text finder finds the turned text badly (the plate cut too s
 found). Measuring the text's own direction for the cut (as PP-OCR's own pipeline does) was tried
 and read fewer plates, also straight on; left out.
 
-**Left:** real cameras at night (infrared on a reflecting plate), the open model's text finder on
+**On a real doorbell** (2026-11-15, the maintainer's own car parked about 4 m away, dev app). On
+the doorbell's sub-stream (640×480) its plate was about 42 px wide: in 12 frames none of the three
+models read it right (*accurate* came within one character twice), and each check read it
+differently. On its main stream (2560×1920) every model read it right in 8 of 8 frames, and in
+the app, three minutes per model, *fast* and *accurate* read it right at all 19 checks and the open
+model at 18 (one read with an extra letter counted as the same plate); a second car parked
+there was named by its plate and read again only every `recheck_every` checks. DOCS' "about 80 pixels, the main stream" stands. A
+parked car read differently at every check had made an *unknown_plate* event per new misreading
+(217 in nine hours); now a plate or car stays announced while it is seen, a read within
+`PLATES["same_plate_distance"]` of it counts as the same, and a new event comes only after it was
+gone `event_cooldown_s`. At night the doorbell's infrared made the plate a white blob that no
+model read (sub-stream). An unknown plate is read at every check; only a sure match with a car of
+the household is carried over (`recheck_every`).
+
+**Left:** real cameras at night on a main stream (infrared on a reflecting plate), the open model's text finder on
 plates at an angle, a plate reader that is open *and* made for plates (trained on plates drawn by
 our own code, like the wheel reader), and letters outside A–Z (Ü, Ø).

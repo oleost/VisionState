@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.15.0b16
+
+**Licence plates tried on a real doorbell, with two cars parked in front of it.**
+
+- **A parked car makes one event per visit:** a car standing in view was read a little
+  differently at every check, and each new misreading made an *unknown_plate* event (217 in nine
+  hours). Now a car or plate stays announced while it is seen, a plate read a character or two off
+  counts as the same plate, and a new event comes only when it has been gone for five minutes.
+- **The History shows each plate event's own plate:** with two cars in view, the row of one car's
+  event could show the other car's plate.
+- **Good to know:** on the doorbell's sub-stream (640×480) the plate was about 40 pixels wide and no
+  plate model read it; on its main stream every model read both cars at every check. Use the
+  camera's main stream for plates, as the *Documentation* tab says.
+
 ## 0.15.0b15
 
 **ESP32 firmware 1.4.0: an ESP32-CAM that takes its picture with its own flash.** Found in a water

@@ -41,8 +41,12 @@
     ask: '? (asked in Review)',
     face: '· face seen (tap the person to name them)',
   };
-  // A plate event: the plate read on the frame (a car of the household, or one it does not know).
-  const plate = $derived((p.detections ?? []).find((d) => d.plate?.event)?.plate);
+  // A plate event: the plate read on the frame (a car of the household, or one it does not know). The row is
+  // the car's (or the vehicle's class, for an unknown plate): with two events in one check, each row its own.
+  const plate = $derived(
+    (p.detections ?? []).find((d) => d.plate?.event && (d.plate.car ?? d.key) === p.state_key)?.plate ??
+      (p.detections ?? []).find((d) => d.plate?.event)?.plate,
+  );
 </script>
 
 <div class="card item">

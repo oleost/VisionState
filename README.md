@@ -42,6 +42,8 @@ Click a few examples of each state; it learns in about a second.
 *Tom is home*, *our car is in the driveway*, a cat and a bicycle on it, an unknown person at the door.
 
 Pick from 80 objects — no training. Name people by their face once; every camera knows them.
+Your own cars are known by their look, their licence plate or both — and a car that is not yours
+can be reported with its plate.
 
 <p align="center">
   <img src="docs/promo/objects.png" alt="An object sensor recognising Tom by his face and telling our car from any car" width="900"><br>
@@ -72,14 +74,15 @@ Draw a box around the number. Counters only go up and land in the Energy dashboa
 
 ## Read a water, gas or power meter with an ESP32-CAM
 
-Put an ESP32-CAM (or any camera) above the meter, add it to Home Assistant with ESPHome or use its
-snapshot URL, and draw a box around the digits — a camera that cannot hang straight sees the
-meter turned or at an angle: put the box's corners on it, and it is read upright. VisionState reads the rolling wheels of a
+Put an ESP32-CAM (or any camera) above the meter — the app's own guide sets one up with
+VisionState's ESPHome firmware, or use any camera's snapshot URL — and draw a box around the
+digits — a camera that cannot hang straight sees the meter turned or at an angle: put the box's corners on it, and it is read upright. VisionState reads the rolling wheels of a
 mechanical water or gas meter — down to the litre with the small pointer dials many water meters
 have — and the digits of an LCD or LED power meter, checks every value
 before it is published (a counter never goes down or jumps), and the total lands in the Energy
 dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
-on for each reading; a battery camera can trigger a check when it has a new picture.
+on for each reading (or the ESP32-CAM's own flash); a battery camera can trigger a check when it
+has a new picture.
 
 <p align="center">
   <img src="docs/promo/reading.png" alt="A reading sensor reading the wheels of a real water meter" width="900"><br>
@@ -155,6 +158,8 @@ Home Assistant
   vector; a tiny classifier per sensor, trained on *your* examples, picks the state.
 - **Objects:** [D-FINE](https://github.com/Peterande/D-FINE) finds the COCO objects; boxes you
   corrected or gave an own label teach it your camera.
+- **Plates:** a text finder and reader ([PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s,
+  or two models made for plates) read the plate of each vehicle, matched with your cars' plates.
 - **Faces:** [YuNet](https://github.com/opencv/opencv_zoo) finds a face on each person, and only a
   clear one is compared ([SFace](https://github.com/opencv/opencv_zoo), or
   [AuraFace](https://huggingface.co/fal/AuraFace-v1) on a fast PC) with the faces you named.
@@ -174,6 +179,8 @@ Home Assistant
   tick it.
 - Face recognition is off until you turn it on for a camera; faces are kept in the app's own
   storage and exported only if you tick it (a backup holds them unless you untick it).
+- Licence plates are off until you turn them on for a camera; a plate that is not one of your cars
+  is forgotten at once unless you choose to report unknown plates.
 - A sound sensor hears what kind of sound it is, never what is said: there is no speech
   recognition. Clips are off until you turn them on, and the seconds in which someone talks are
   silenced before a clip is kept.
@@ -190,7 +197,9 @@ locally against a fake camera, checks, UI tests on desktop and phones) and
 [Apache-2.0](LICENSE). Bundled models: DINOv2 (Meta), D-FINE, PaddleOCR PP-OCRv6 and the
 VisionState wheel reader, all Apache-2.0. Face models, downloaded only when a camera recognises
 faces: YuNet (MIT), SFace or AuraFace (Apache-2.0). The sound model, downloaded when the first sound
-sensor is made: CED-Tiny (Apache-2.0, trained on AudioSet). The screenshots use CC0 and public-domain
+sensor is made: CED-Tiny (Apache-2.0, trained on AudioSet). The plate model, downloaded when a camera
+first reads plates: PP-OCRv6 small (Apache-2.0), or one of two models made for plates whose weights
+state no licence, offered only after you accept that. The screenshots use CC0 and public-domain
 images.
 
 If VisionState is useful to you, you can [buy me a coffee](https://buymeacoffee.com/o1ep) ☕

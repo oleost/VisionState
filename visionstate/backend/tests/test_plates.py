@@ -414,7 +414,12 @@ def test_a_car_is_named_by_its_plate_and_unknown_plates_make_events(settings, mo
         assert rows["total"] == 1 and rows["items"][0]["state_key"] == car["key"]
         # Once per visit: the car staying makes no more events.
         before = len(events)
-        wait_for(lambda: False, timeout=3)
+        # The event belongs to the check it was sent at: the box carried over to the next checks
+        # (a sure match is read again only every PLATES["recheck_every"] checks) does not show it,
+        # or the history would show this car's plate on another vehicle's event.
+        seen: list[dict] = []
+        wait_for(lambda: seen.append(plate_of(client, sid)) and False, timeout=3)
+        assert any(p.get("age") for p in seen) and not any(p.get("age") and p.get("event") for p in seen)
         assert len([p for t, p in sent if t.endswith("/drive/plate")]) == before
 
         # Another plate: not the car's, so after two reads an unknown plate; an event only when the
