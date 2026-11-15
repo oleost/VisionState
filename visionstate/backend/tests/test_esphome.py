@@ -279,9 +279,11 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
 
         async def registries():
             # The front door is a camera of ours (offered as a sensor's source with its password).
+            # Its flash is named after its room, not after its IP address entity: found by its device.
             return [
                 {"entity_id": "sensor.front_door_ip_address", "device_id": "d1", "original_name": "IP address"},
                 {"entity_id": "camera.front_door_camera", "device_id": "d1", "original_name": "Camera"},
+                {"entity_id": "light.hall_1_front_door_flash", "device_id": "d1", "original_name": "Flash"},
             ], [{"id": "d1", "model": ESPHOME["model"]}]
 
         rt.ha.entities = entities
@@ -294,7 +296,7 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
                 "entity_id": "sensor.front_door_ip_address",
                 "name": "Front door",
                 "address": "10.0.0.7",
-                "light": "light.front_door_flash",
+                "light": "light.hall_1_front_door_flash",
                 "ours": True,
                 "camera": True,
                 "microphone": False,
@@ -304,8 +306,9 @@ def test_devices_are_the_ip_address_entities_home_assistant_has(settings):  # no
         async def no_websocket():
             raise RuntimeError("no WebSocket")
 
-        rt.ha.registries = no_websocket  # listed all the same, none as ours
-        assert not client.get("/api/v1/esphome/devices").json()["devices"][0]["ours"]
+        rt.ha.registries = no_websocket  # listed all the same, none as ours, the flash by its name
+        device = client.get("/api/v1/esphome/devices").json()["devices"][0]
+        assert not device["ours"] and device["light"] == "light.front_door_flash"
 
 
 def test_discovered_esphome_devices_are_read_from_home_assistants_flows(monkeypatch):
@@ -337,6 +340,11 @@ def test_the_firmwares_version_and_controls_are_the_apps():
     # The version a device reports is the one the app compares with (settings.ESPHOME).
     common = (ESPHOME_DIR / "packages" / "common.yaml").read_text(encoding="utf-8")
     assert re.search(r'^    version: "([^"]+)"', common, re.MULTILINE)[1] == ESPHOME["firmware_version"]
+    # The flash: its light's name in the camera package, and how long the camera keeps it on at most.
+    camera = (ESPHOME_DIR / "packages" / "camera-esp32-cam.yaml").read_text(encoding="utf-8")
+    assert re.search(r"id: vs_flash\n\s+name: (\S+)", camera)[1] == ESPHOME["flash_name"]
+    stream = (ESPHOME_DIR / "components" / "visionstate_stream" / "visionstate_stream.cpp").read_text(encoding="utf-8")
+    assert int(re.search(r"FLASH_SETTLE_MAX_MS = (\d+);", stream)[1]) == ESPHOME["flash_max_s"] * 1000
     project = re.search(r"^    name: (\S+)", common, re.MULTILINE)[1]
     assert project.split(".")[-1] == ESPHOME["model"]
     # Every control the Live tab shows is an entity of that name and kind in a package.
@@ -542,3 +550,86 @@ def test_media_players_say_which_integration_each_comes_through(settings):  # no
 
         rt.ha.registries = gone
         assert client.get("/api/v1/esphome/media-players").json() == {"players": [], "error": "no route"}
+
+
+def camera_registries(sw_version="1.4.0 (ESPHome 2026.10.2)"):
+    """A camera of ours with its flash at 10.0.0.7 (and its camera entity), and a lamp elsewhere."""
+
+    def entity(entity_id, name, device="cam", platform="esphome"):
+        return {"entity_id": entity_id, "original_name": name, "platform": platform, "device_id": device}
+
+    entities = [
+        entity("sensor.cam_ip_address", "IP address"),
+        entity("camera.cam_camera", "Camera"),
+        entity("light.garage_cam_flash", "Flash"),
+        entity("light.garage_lamp", "Lamp", device="lamp", platform="hue"),
+    ]
+    devices = [
+        {
+            "id": "cam",
+            "name": "cam",
+            "name_by_user": "Water meter",
+            "model": ESPHOME["model"],
+            "sw_version": sw_version,
+        },
+        {"id": "lamp", "name": "Garage lamp", "model": "Hue"},
+    ]
+    return entities, devices, {"sensor.cam_ip_address": {"state": "10.0.0.7"}}
+
+
+def test_a_sensors_light_says_whether_its_camera_takes_the_picture_with_it():
+    """The light in a sensor's settings: its camera's flash offered, and whether the light chosen is
+    switched by the camera itself or through Home Assistant, and why."""
+    entities, devices, states = camera_registries()
+
+    def light(source_type="http", host="10.0.0.7", camera=None, chosen="light.garage_cam_flash", **registries):
+        e, d, s = registries.get("reg") or (entities, devices, states)
+        return esphome.camera_light(source_type, host, camera, chosen, e, d, s)
+
+    # The camera's own flash, on a firmware that takes the picture with it.
+    own = light()
+    assert own["flash"] == "light.garage_cam_flash" and own["device"] == "Water meter"
+    assert own["light"] == "own" and own["light_device"] == "Water meter"
+    # No light yet: the flash is offered.
+    assert light(chosen="") == {"flash": "light.garage_cam_flash", "device": "Water meter", "light": None}
+    # A lamp is a light like any other.
+    assert light(chosen="light.garage_lamp")["light"] is None
+    # An older firmware switches it through Home Assistant.
+    old = light(reg=camera_registries("1.3.0 (ESPHome 2026.10.2)"))
+    assert old["light"] == "firmware" and old["firmware"] == "1.3.0"
+    # Looking through the device's camera entity: through Home Assistant too.
+    through = light(source_type="ha_camera", host=None, camera="camera.cam_camera")
+    assert through["light"] == "camera_entity" and through["flash"] == "light.garage_cam_flash"
+    # Pictures from another address (a name that did not resolve, another camera): not that camera.
+    other = light(host="watermeter.local")
+    assert other["light"] == "other_source" and other["flash"] is None and other["light_device"] == "Water meter"
+    # Not a camera of ours: no flash offered.
+    foreign = [{**d, "model": "esp32cam"} if d["id"] == "cam" else d for d in devices]
+    assert light(chosen="", reg=(entities, foreign, states))["flash"] is None
+
+
+def test_a_camera_reached_by_its_name_is_found_by_its_address():
+    import asyncio
+
+    assert asyncio.run(esphome.address_of("10.0.0.7")) == "10.0.0.7"
+    assert asyncio.run(esphome.address_of("localhost")) in ("127.0.0.1", "::1")
+    assert asyncio.run(esphome.address_of("no-such-camera.invalid")) == "no-such-camera.invalid"
+
+
+def test_the_light_endpoint_looks_the_source_up_in_home_assistant(settings):  # noqa: F811
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        entities, devices, states = camera_registries()
+
+        async def registries():
+            return entities, devices
+
+        async def raw_states():
+            return states
+
+        rt.ha.registries, rt.ha.raw_states = registries, raw_states
+        body = {"source_type": "http", "source": "http://visionstate:secret@10.0.0.7:8081/snapshot.jpg"}
+        got = client.post("/api/v1/camera-light", json={**body, "light_entity": "light.garage_cam_flash"}).json()
+        assert got["light"] == "own" and got["flash"] == "light.garage_cam_flash" and got["error"] is None
+        none = client.post("/api/v1/camera-light", json={"source_type": "rtsp", "source": "", "light_entity": ""})
+        assert none.json()["flash"] is None

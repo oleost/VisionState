@@ -85,14 +85,18 @@ async def devices(request: Request) -> dict:
         except ValueError:
             continue
         name = str(e.get("name") or e["entity_id"]).removesuffix(" IP address").removesuffix(" IP Address")
+        # Its flash (an ESP32-CAM's, esphome/packages/camera-esp32-cam.yaml) from the registry; without
+        # it, by the name Home Assistant gives it from the device's.
+        device_id = next((r.get("device_id") for r in registry if r["entity_id"] == e["entity_id"]), None)
         base = e["entity_id"].removeprefix("sensor.").removesuffix("_ip_address")
-        light = f"light.{base}_flash"  # an ESP32-CAM's flash (esphome/packages/camera-esp32-cam.yaml)
+        guessed = f"light.{base}_flash"
+        light = esphome.flash_of(device_id, registry) if registry else (guessed if guessed in ids else None)
         found.append(
             {
                 "entity_id": e["entity_id"],
                 "name": name,
                 "address": e["state"],
-                "light": light if light in ids else None,
+                "light": light,
                 **esphome.device_parts(e["entity_id"], registry, registered),
             }
         )
@@ -101,6 +105,33 @@ async def devices(request: Request) -> dict:
     except Exception:  # noqa: BLE001 - not allowed or not reachable: only the added devices are listed
         waiting = []
     return {"devices": found, "waiting": waiting, "error": None}
+
+
+class CameraLightIn(BaseModel):
+    source_type: str = Field(max_length=20)
+    source: str = Field(max_length=2048)
+    light_entity: str = Field("", max_length=255)
+
+
+@router.post("/camera-light")
+async def camera_light(body: CameraLightIn, request: Request) -> dict:
+    """What a sensor's light is to its camera, for the light in its settings (and the wizard): the
+    flash of the ESP32 of ours it takes its pictures from (offered), and whether the light chosen is
+    a camera's flash the camera takes its picture with itself, or one switched through Home
+    Assistant, and why (esphome.camera_light). A POST: the source may hold a password."""
+    host = urlsplit(body.source).hostname if body.source_type == "http" else None
+    camera = body.source if body.source_type == "ha_camera" else None
+    if not host and not camera and not body.light_entity:
+        return {"flash": None, "device": None, "light": None, "error": None}
+    ha = runtime(request).ha
+    try:
+        entities, devices = await ha.registries()
+        states = await ha.raw_states()
+        address = await esphome.address_of(host) if host else None
+    except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: nothing to say about the light
+        return {"flash": None, "device": None, "light": None, "error": redact(str(err)) or type(err).__name__}
+    found = esphome.camera_light(body.source_type, address, camera, body.light_entity, entities, devices, states)
+    return {**found, "error": None}
 
 
 @router.get("/esphome/media-players")
@@ -213,7 +244,7 @@ async def _device(request: Request, sensor_id: int) -> dict | None:
         return None
     entities, devices = await rt.ha.registries()
     states = await rt.ha.raw_states()
-    return esphome.device_controls(host, entities, devices, states)
+    return esphome.device_controls(await esphome.address_of(host), entities, devices, states)
 
 
 @router.get("/sensors/{sensor_id}/device")

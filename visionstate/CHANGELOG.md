@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.15.0b18
+
+**The camera's own flash, offered and explained in a sensor's settings.** VisionState found out
+by itself whether a sensor's light was the flash of the ESP32 camera it looks through, but nothing
+said so, and outside the wizard nothing offered it.
+
+- **Use the camera's flash:** a sensor that takes its pictures from an ESP32 camera of ours offers
+  its flash above the light, in the settings as in the wizard.
+- **It says how the light is switched:** under the light, *The camera's own flash* when the camera
+  takes the picture with it itself. When the flash is switched through Home Assistant instead, it
+  says why: an older firmware (install 1.4.0 or newer), the sensor looking through the device's
+  camera entity (pick the device itself as the source), or pictures from another address than
+  the one Home Assistant shows for the device.
+- **A camera reached by its name** (`watermeter.local`) is found by its address: its own flash, its
+  firmware and its controls work as with the address.
+- **The flash is found by its device**, also when Home Assistant named it after its room
+  (`light.garage_…_flash`).
+- **Flash on before the picture:** for the camera's own flash the wait is named for what it is,
+  and kept within the camera's limit (10 s).
+
 ## 0.15.0b17
 
 **Two cars that look the same, said once, and no page to push sideways on a phone.**

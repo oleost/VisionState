@@ -6,7 +6,10 @@ the browser: they never reach VisionState."""
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import re
+import socket
 
 from .settings import ESPHOME
 
@@ -155,18 +158,121 @@ def addresses(host: str, password: str, *, sound: bool, picture: bool) -> dict[s
     return found
 
 
+def device_at(host: str, entities: list[dict], states: dict[str, dict]) -> str | None:
+    """The ESPHome device whose *IP address* entity shows ``host`` (an address: resolve a host name
+    with ``address_of`` first), from Home Assistant's registry."""
+    return next(
+        (
+            e["device_id"]
+            for e in entities
+            if e.get("platform") == "esphome"
+            and e.get("original_name") == "IP address"
+            and e.get("device_id")
+            and (states.get(e["entity_id"]) or {}).get("state") == host
+        ),
+        None,
+    )
+
+
+def flash_of(device_id: str | None, entities: list[dict]) -> str | None:
+    """A device's flash: its light named *Flash* by our firmware (esphome/packages/camera-*.yaml)."""
+    if not device_id:
+        return None
+    return next(
+        (
+            e["entity_id"]
+            for e in entities
+            if e.get("device_id") == device_id
+            and e["entity_id"].startswith("light.")
+            and e.get("original_name") == ESPHOME["flash_name"]
+            and not e.get("disabled_by")
+        ),
+        None,
+    )
+
+
 def own_flash(host: str, light: str, entities: list[dict], states: dict[str, dict]) -> bool:
-    """Whether ``light`` is an entity of the ESPHome device at ``host`` (its *IP address* entity shows
-    it), from Home Assistant's entity registry: a camera of ours with a flash then takes its picture
-    with it (?flash=), no light switched through Home Assistant."""
-    devices = {
-        e.get("device_id")
-        for e in entities
-        if e.get("platform") == "esphome"
-        and e.get("original_name") == "IP address"
-        and (states.get(e["entity_id"]) or {}).get("state") == host
-    } - {None}
-    return any(e["entity_id"] == light and e.get("device_id") in devices for e in entities)
+    """Whether ``light`` is the flash of the ESPHome device at ``host``: a camera of ours with a flash
+    then takes its picture with it (?flash=), no light switched through Home Assistant."""
+    return bool(light) and flash_of(device_at(host, entities, states), entities) == light
+
+
+async def address_of(host: str) -> str:
+    """The address of a host name (an ESP32 is often reached as watermeter.local), for finding its
+    device in Home Assistant, which shows its address; an address, or a name that does not resolve
+    in ESPHOME["resolve_timeout_s"], as it is."""
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    try:
+        found = await asyncio.wait_for(
+            asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM), ESPHOME["resolve_timeout_s"]
+        )
+    except OSError, TimeoutError:
+        return host
+    # Home Assistant shows an ESPHome device's IPv4 address: that one first.
+    found = sorted(found, key=lambda info: info[0] != socket.AF_INET)
+    return str(found[0][4][0]) if found else host
+
+
+def camera_light(
+    source_type: str,
+    host: str | None,
+    camera_entity: str | None,
+    light: str,
+    entities: list[dict],
+    devices: list[dict],
+    states: dict[str, dict],
+) -> dict:
+    """What a sensor's light is to the camera it takes its pictures from, for its settings:
+
+    - ``flash``: the flash of the ESP32 of ours that is the sensor's source (offered as its light),
+      and ``device`` its name;
+    - ``light``: when the light chosen is the flash of an ESPHome device, how it is switched —
+      ``own`` (the camera takes the picture with it itself), ``firmware`` (that camera, but its
+      firmware is older than ESPHOME["flash_firmware"]: through Home Assistant), ``camera_entity``
+      (the sensor looks through that device's camera entity in Home Assistant: through Home
+      Assistant), ``other_source`` (the sensor's pictures come from another address); None for any
+      other light. ``light_device``: the device whose flash it is."""
+    by_id = {d.get("id"): d for d in devices}
+
+    def name(device_id: str | None) -> str | None:
+        device = by_id.get(device_id) or {}
+        return device.get("name_by_user") or device.get("name")
+
+    def ours(device_id: str | None) -> bool:
+        return (by_id.get(device_id) or {}).get("model") == ESPHOME["model"]
+
+    if source_type == "http" and host:
+        source_device = device_at(host, entities, states)
+    elif source_type == "ha_camera" and camera_entity:
+        source_device = next((e.get("device_id") for e in entities if e["entity_id"] == camera_entity), None)
+    else:
+        source_device = None
+    flash = flash_of(source_device, entities) if source_device and ours(source_device) else None
+    found: dict = {"flash": flash, "device": name(source_device) if flash else None, "light": None}
+    light_device = next(
+        (
+            e.get("device_id")
+            for e in entities
+            if light and e["entity_id"] == light and e.get("platform") == "esphome" and e.get("device_id")
+        ),
+        None,
+    )
+    if light_device is None or flash_of(light_device, entities) != light:
+        return found  # not the flash of an ESPHome device: a light like any other
+    found["light_device"] = name(light_device)
+    if light_device != source_device:
+        found["light"] = "other_source"
+    elif source_type == "ha_camera":
+        found["light"] = "camera_entity"
+    else:
+        version = firmware_version((by_id.get(light_device) or {}).get("sw_version")) if ours(light_device) else None
+        found["light"] = "firmware" if version is None or outdated(version, ESPHOME["flash_firmware"]) else "own"
+        found["firmware"] = version
+    return found
 
 
 def password_services(ip_entity_id: str, services: list[str]) -> list[str]:
@@ -238,16 +344,9 @@ def device_controls(host: str, entities: list[dict], devices: list[dict], states
     """The ESPHome device whose *IP address* entity shows this address, with the controls it has
     (settings.ESPHOME["controls"]) and, for our firmware, whether a newer one is out. None: no such
     device in Home Assistant."""
-    ip_entities = [
-        e
-        for e in entities
-        if e.get("platform") == "esphome"
-        and e.get("original_name") == "IP address"
-        and (states.get(e["entity_id"]) or {}).get("state") == host
-    ]
-    if not ip_entities or not ip_entities[0].get("device_id"):
+    device_id = device_at(host, entities, states)
+    if device_id is None:
         return None
-    device_id = ip_entities[0]["device_id"]
     device = next((d for d in devices if d.get("id") == device_id), {})
     found: list[tuple[int, dict]] = []
     for e in entities:

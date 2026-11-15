@@ -62,13 +62,8 @@
       previewSize !== null &&
       (Math.max(...previewSize) < SMALL_FRAME_PX || LOW_STREAM_NAME.test(source)),
   );
-  // The device has a flash: offered as the light (one tap), never switched on unasked.
+  // The device has a flash: offered as the light (one tap, LightEditor), never switched on unasked.
   const flash = $derived(esp32 && esp32.source === source ? esp32.light : (given?.light ?? null));
-  let lightKey = $state(0);
-  function useFlash() {
-    triggers.light_entity = flash!;
-    lightKey++;
-  }
   let previewError = $state('');
   let previewBusy = $state(false);
   let previewLoad = 0; // the load that counts: a slow answer from the camera picked before is dropped
@@ -322,13 +317,7 @@
             ondone={urlTyped}
             onesp32={(d, address) => (esp32 = { source: address, light: d.light })}
           />
-          {#if flash && triggers.light_entity !== flash}
-            <p class="small" data-testid="esp32-flash">
-              The device has a flash (<span class="mono">{flash}</span>): it can light the picture for checks in the
-              dark. <button class="btn sm" onclick={useFlash}>Use the flash</button>
-            </p>
-          {/if}
-          <div style="max-width:640px">{#key lightKey}<LightEditor bind:triggers />{/key}</div>
+          <div style="max-width:640px"><LightEditor bind:triggers {sourceType} {source} offered={flash} /></div>
           <div class="after-hold">
             <CameraPreview
               url={previewUrl}

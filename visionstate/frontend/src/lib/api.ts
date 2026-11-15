@@ -1,5 +1,6 @@
 // Typed client for the backend. Every URL the UI uses is built here.
 import type {
+  CameraLight,
   AppConfig,
   BackupInfo,
   BackupPart,
@@ -426,6 +427,10 @@ export const api = {
   mediaPlayers: () => request<{ players: MediaPlayer[]; error: string | null }>('esphome/media-players'),
   esphomeDevices: () =>
     request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
+  /** What a sensor's light is to its camera: the flash of the ESP32 of ours it looks through (offered), and how the
+   * light chosen is switched (by the camera itself or through Home Assistant). A POST: the source may hold a password. */
+  cameraLight: (sourceType: string, source: string, lightEntity: string) =>
+    request<CameraLight>('camera-light', send('POST', { source_type: sourceType, source, light_entity: lightEntity })),
   /** Ask the device for its sound and its picture, as the sensor will. */
   sensorDevice: (id: number) => request<{ device: SensorDevice | null; error: string | null }>(`sensors/${id}/device`),
   setSensorDevice: (id: number, entityId: string, value: boolean | number | string) =>

@@ -861,10 +861,16 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   frame without the light first, and switches the light on only when that frame is dark (a meter
   in daylight needs none);
 - **an ESP32 camera of ours with its own flash** (firmware 1.4.0 on) takes the picture with the
-  flash itself, that long after it came on, and switches it off again: nothing goes through Home
-  Assistant for it, so the picture is lit even while the device is away from Home Assistant. With
-  *Only when it is dark*, the camera decides from what it sees anyway (it keeps a picture ready),
-  in the same request. The first check finds out that the camera can;
+  flash itself, that long after it came on (*Flash on before the picture*, at most 10 s), and
+  switches it off again: nothing goes through Home Assistant for it, so the picture is lit even
+  while the device is away from Home Assistant. With *Only when it is dark*, the camera decides
+  from what it sees anyway (it keeps a picture ready), in the same request. The first check finds
+  out that the camera can. When a sensor takes its pictures from such a camera, its flash is
+  offered above the light (**Use the camera's flash**), and under the light the settings say
+  whether the camera switches it itself. It is switched through Home Assistant instead, and the
+  settings say why, when the firmware is older, when the sensor looks through the device's camera
+  entity (pick the device itself as the source), or when the sensor's address is not the one Home
+  Assistant shows for that device (a name such as `watermeter.local` is looked up and works);
 - **while you look at live frames**: in the wizard (from when both a camera and a light are chosen), when you draw the region
   under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
   label are taken in the same light as the checks. A note above the frame says so; its **Light**

@@ -15,7 +15,7 @@ from .. import backbones, esphome, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import CAMERA_USE_BY_KIND, RUNTIME, UNKNOWN_STATE
+from ..settings import CAMERA_USE_BY_KIND, ESPHOME, RUNTIME, UNKNOWN_STATE
 from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
@@ -133,7 +133,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             return known[0]
         try:
             entities, _ = await self.ha.registries()
-            own = esphome.own_flash(host, entity, entities, await self.ha.raw_states())
+            address = await esphome.address_of(host)  # a camera reached by its name: found by its address
+            own = esphome.own_flash(address, entity, entities, await self.ha.raw_states())
         except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: as it was
             log.debug("Sensor %s: could not look up its light: %s", cfg.slug, redact(str(err)))
             own = known[0] if known is not None else False
@@ -145,7 +146,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         when the picture it keeps ready is dark (it looks all the time). Whether it was lit."""
         timing.captured()
         with timing.step("grab"):
-            flash_ms = round(cfg.triggers["light_delay_s"] * 1000)
+            flash_ms = round(min(cfg.triggers["light_delay_s"], ESPHOME["flash_max_s"]) * 1000)  # the camera's limit
             dark = RUNTIME["light_dark_below"] if only_dark else None
             data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark)
         lit = self.camera_uses.flashed.get(cfg.source, True) if only_dark else True

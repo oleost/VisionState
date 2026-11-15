@@ -851,6 +851,9 @@ export interface AppConfig {
     /** What a camera looks at (Camera use on the device): its option, and what it is for. */
     camera_uses: Record<string, string>;
     boards: Record<string, EsphomeBoard>;
+    /** The first firmware that takes a picture with its own flash, and the longest it keeps it on before it. */
+    flash_firmware: string;
+    flash_max_s: number;
   };
   sound: {
     hop_s: number;
@@ -1246,6 +1249,20 @@ export interface EsphomeCheck {
   addresses: { sound?: string; picture?: string };
   sound?: EsphomeCheckPart;
   picture?: EsphomeCheckPart;
+}
+
+/** What a sensor's light is to its camera (POST camera-light). */
+export interface CameraLight {
+  /** The flash of the ESP32 of ours the sensor takes its pictures from, offered as its light; `device` its name. */
+  flash: string | null;
+  device: string | null;
+  /** The light chosen is a device's flash: 'own' the camera takes the picture with it itself; switched through Home
+   * Assistant: 'firmware' (older than settings.ESPHOME flash_firmware), 'camera_entity' (looked at through the
+   * device's camera entity), 'other_source' (the pictures come from another address). Null: a light like any other. */
+  light: 'own' | 'firmware' | 'camera_entity' | 'other_source' | null;
+  light_device?: string | null;
+  firmware?: string | null;
+  error: string | null;
 }
 
 /** A sound sensor's ESPHome device (GET sensors/{id}/device): its microphone's controls. */

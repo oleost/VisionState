@@ -2611,7 +2611,22 @@ test('an ESP32 of ours that Home Assistant has: offered first as the source, its
   await field.fill('right');
   await press(page.getByRole('button', { name: 'Use it' }), info);
   await expect(page.getByRole('textbox', { name: 'Source URL' })).toHaveValue(picture);
-  await expect(page.getByTestId('esp32-flash')).toContainText('light.watermeter_flash');
+  // Its flash is offered as the light; chosen, the editor says the camera takes the picture with it itself
+  // (Home Assistant's answer, which the e2e backend has no Home Assistant for).
+  await page.route('**/api/v1/camera-light', async (route) => {
+    const chosen = route.request().postDataJSON().light_entity;
+    const own = chosen === 'light.watermeter_flash';
+    await route.fulfill({
+      json: { flash: 'light.watermeter_flash', device: 'watermeter', light: own ? 'own' : null, light_device: own ? 'watermeter' : null, error: null },
+    });
+  });
+  const offer = page.getByTestId('camera-flash-offer');
+  await expect(offer).toContainText('light.watermeter_flash');
+  await press(offer.getByRole('button', { name: "Use the camera's flash" }), info);
+  await expect(page.getByRole('button', { name: 'Remove light.watermeter_flash' })).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect(page.getByTestId('light-status')).toContainText("The camera's own flash");
+  await expect(page.getByLabel('Flash on before the picture')).toHaveAttribute('max', '10');
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .cam');
   errors.expectNone();
@@ -2674,6 +2689,34 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await expect.poll(cameraUse, { timeout: 30_000 }).toBe('meter');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
+
+    // Its flash (named after its room: a long id) is offered as the light, and the editor says how a light is
+    // switched: by the camera itself, or through Home Assistant and why (Home Assistant's answer, mocked).
+    const flash = 'light.garasje_bod_1_etg_esp32cam_watermeter_flash';
+    await page.route('**/api/v1/camera-light', async (route) => {
+      const chosen = route.request().postDataJSON().light_entity as string;
+      const light = chosen === flash ? 'own' : chosen === 'light.other_cam_flash' ? 'other_source' : null;
+      await route.fulfill({
+        json: { flash, device: 'door', light, light_device: chosen === flash ? 'door' : 'other cam', error: null },
+      });
+    });
+    await page.reload();
+    const offer = page.getByTestId('camera-flash-offer');
+    await expect(offer).toContainText(flash);
+    await expectNoHorizontalOverflow(page);
+    await press(offer.getByRole('button', { name: "Use the camera's flash" }), info);
+    await expect(page.getByTestId('light-status')).toContainText('the camera switches it on for each picture itself');
+    await expect(page.getByLabel('Flash on before the picture')).toBeVisible();
+    await expectNoHorizontalOverflow(page); // the long id breaks inside its chip
+    await press(page.getByRole('button', { name: `Remove ${flash}` }), info);
+    const pick = page.getByLabel('Light to switch on');
+    await pick.fill('light.other_cam_flash');
+    await pick.press('Enter');
+    await expect(page.getByTestId('light-status')).toContainText('does not take its pictures from that device');
+    await expect(page.getByLabel('Wait before taking the frame')).toBeVisible();
+    await expect(offer).toContainText(flash); // its own flash still offered
+    await expectNoHorizontalOverflow(page);
+    await page.unroute('**/api/v1/camera-light');
     // Any other camera has no such choice.
     await page.goto(`#/sensors/${await seededSensorId(request)}/settings/general`);
     await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();

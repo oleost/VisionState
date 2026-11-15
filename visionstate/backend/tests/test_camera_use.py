@@ -193,6 +193,14 @@ def test_a_camera_of_ours_takes_its_picture_with_its_own_flash(settings, camera)
         asked = sum("flash=500" in p for p in Camera.asked)
         assert wait_for(lambda: sum("flash=500" in p for p in Camera.asked) >= asked + 3, timeout=20)
         assert ("light.cam_flash", True) not in ha.switched
+        # The camera reached by its name: found by its address all the same.
+        Camera.asked.clear()
+        named = url.replace("127.0.0.1", "localhost")
+        flash_sensor(client, named, "light.cam_flash")
+        assert wait_for(lambda: named in client.app.state.runtime.camera_uses.flash, timeout=20)  # its first picture
+        ha.switched.clear()
+        assert wait_for(lambda: sum("flash=500" in p for p in Camera.asked) >= 4, timeout=20)
+        assert ("light.cam_flash", True) not in ha.switched
         # A lamp of its own is not the camera's flash: switched through Home Assistant.
         Camera.asked.clear()
         flash_sensor(client, url, "light.hall")

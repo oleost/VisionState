@@ -272,7 +272,7 @@
         <SourcePicker sound bind:sourceType bind:source />
       {:else}
         <SourcePicker bind:sourceType bind:source />
-        <LightEditor bind:triggers lightError={sensor.live.light_error} />
+        <LightEditor bind:triggers lightError={sensor.live.light_error} {sourceType} {source} />
         {#if sensor.camera}
           {@const uses = app.config?.camera_uses ?? {}}
           {@const byKind = sensor.camera.by_kind}

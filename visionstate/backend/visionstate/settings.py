@@ -433,6 +433,15 @@ ESPHOME = {
     },
     # The device model our firmware reports (esphome/packages/common.yaml, project name).
     "model": "visionstate",
+    # A camera's flash: its light's name in the firmware (esphome/packages/camera-*.yaml), the first
+    # firmware that takes a picture with it itself (?flash=<ms>), and the longest the camera keeps it
+    # on before the picture (FLASH_SETTLE_MAX_MS in visionstate_stream.cpp; a sensor's wait is cut
+    # to it).
+    "flash_name": "Flash",
+    "flash_firmware": "1.4.0",
+    "flash_max_s": 10.0,
+    # How long a camera's host name (watermeter.local) may take to resolve, to find its device.
+    "resolve_timeout_s": 2.0,
     "port": 8081,  # visionstate_stream's port
     "username": "visionstate",
     "password_chars": 20,  # a password the guide makes up
