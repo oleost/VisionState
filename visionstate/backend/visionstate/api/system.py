@@ -34,6 +34,7 @@ from ..settings import (
     HISTORY,
     HISTORY_EVENTS,
     LIGHT_DOMAINS,
+    LIGHT_WHEN,
     MAX_STATES,
     NONE_LABEL,
     OBJECT_DEFAULTS,
@@ -173,6 +174,7 @@ def ui_config() -> dict:
         "sound_levels": SOUND_LEVELS,
         "advice": ADVICE,
         "camera_uses": CAMERA_USES,  # what an ESP32 camera of ours is set up as, most demanding first
+        "light_when": LIGHT_WHEN,  # when a sensor's light is switched on, with the names shown
         "esphome": {k: ESPHOME[k] for k in ("port", "username", "password_chars", "kinds", "camera_uses", "boards")},
         "sound": {
             k: SOUND[k]

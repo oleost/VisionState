@@ -39,6 +39,12 @@ _ORIGINALS: dict[int, bytes] = {}
 EXIF_ORIENTATION = 0x0112
 
 
+def brightness(image: Image.Image) -> float:
+    """How light a frame is: the mean of its grey (0-255), from a small copy."""
+    small = image.reduce(8) if min(image.size) >= 64 else image
+    return float(np.asarray(small.convert("L"), dtype=np.float32).mean())
+
+
 def decode(data: bytes, at_least: tuple[int, int] | None = None) -> Image.Image:
     """An image (RGB). ``at_least``: a JPEG may be decoded smaller, down to this size (its decoder
     scales by 1/2, 1/4 or 1/8 while decoding, several times faster than decoding it whole).

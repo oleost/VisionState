@@ -156,6 +156,27 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   (Whisper: "what are you doing?") keeps a conversation going, which no firmware can tell from
   speech. *Not checked*: a player that plays over its music, other boards than the WROOM-32
   (built for the ESP32-CAM with its camera, the S3 and the C5).
+- **Dark pictures and a colour cast with the flash (#86, pedromfa's export, 2026-11-12), firmware
+  1.4.0:** after moving his water meter to our firmware, some checks were rejected: pictures
+  black because the flash could not be switched on through Home Assistant (the device was away
+  from it for a moment), and pictures pink or purple in the dark, the dial then read the other way
+  round now and then. His log showed the flash fading in over a second (ESPHome's default
+  transition): pictures taken meanwhile had a light that kept changing. A longer wait helped him.
+  Not seen on the maintainer's two ESP32-CAMs, close up and in the dark (colours steady from the
+  first lit picture). Built: the flash full at once (`default_transition_length: 0s`; with Home
+  Assistant switching it, lit 0.6 s after instead of 1.0-1.1 s), and `/snapshot.jpg?flash=<ms>`:
+  the camera switches its own flash for the picture, throws away the pictures of that time, and
+  switches it off again (the `X-VisionState-Flash` header says it can). VisionState asks so when a
+  sensor's light is that camera's own flash, and a sensor's light can be switched on only when it
+  is dark (the maintainer's wish: flash off, on or auto). For the camera's own flash the camera
+  decides that itself (`&dark=<0-255>`, the maintainer's idea: it looks all the time): from the
+  picture it keeps ready, decoded at 1/8 of its size, or from the next one after a snapshot with
+  the flash (the one kept then was taken while it was still on, and made a dark place look light).
+  Another light is judged by VisionState from a frame taken without it first. Measured on the test ESP32-CAM: lit
+  pictures from `flash=0` on (the fresh snapshot's thrown-away picture is time enough), a flash
+  already on left on. The dial reader no longer fails on a needle it loses when it looks round its
+  hub (it raised an error on one of his pictures). Not hidden in the dial reader (the
+  maintainer's choice): numbers that pass for red in a colour cast.
 - **The stream password told through Home Assistant (the maintainer's wish, 2026-11-12), built in
   firmware 1.3.0:** looking for `stream_password` in a device's file to make a sensor from it was
   the worst step. An entity holding it was not chosen: Home Assistant records every state, keeps it

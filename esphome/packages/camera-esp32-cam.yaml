@@ -32,6 +32,7 @@ esp32_camera:
 
 visionstate_stream:
   camera: vs_camera
+  flash: vs_flash  # a snapshot can ask for the flash (?flash=<ms>): VisionState does, for a sensor lit by it
 
 output:
   - platform: ledc
@@ -47,3 +48,6 @@ light:
     name: Flash
     output: vs_flash_output
     restore_mode: ALWAYS_OFF
+    # Full at once: ESPHome fades a light in over a second, and pictures taken meanwhile were dark or
+    # had a colour cast (the exposure and the white balance followed a light that kept changing).
+    default_transition_length: 0s

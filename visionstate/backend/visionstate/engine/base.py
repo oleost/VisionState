@@ -46,6 +46,8 @@ class RuntimeBase:
             lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
         )
         self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
+        # (light, camera host) -> (whether the light is that camera's own flash, when looked up)
+        self._own_flashes: dict[tuple[str, str], tuple[bool, float]] = {}
         # The speed test (engine/benchmark.py): the last one, and while it runs no sensor checks.
         self.benchmark = None
         self.benchmark_paused = False

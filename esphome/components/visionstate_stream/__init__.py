@@ -2,12 +2,13 @@
 HTTP on a port of its own, behind a user name and password like a camera's.
 
     GET /audio.wav     16 kHz mono PCM16, chunked, until the listener goes away
-    GET /snapshot.jpg  a picture taken after the request (one thrown away first, see fresh_snapshot)
+    GET /snapshot.jpg  a picture taken after the request (one thrown away first, see fresh_snapshot);
+                       ?flash=<ms>: with the camera's flash, that long after it came on
 """
 
 from esphome import automation
 import esphome.codegen as cg
-from esphome.components import esp32_camera, microphone, sensor
+from esphome.components import esp32_camera, light, microphone, sensor
 from esphome.components.esp32 import include_builtin_idf_component
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_MICROPHONE, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
@@ -17,6 +18,7 @@ DEPENDENCIES = ["network"]
 CODEOWNERS = ["@oleost"]
 
 CONF_CAMERA = "camera"
+CONF_FLASH = "flash"
 CONF_MAX_LISTENERS = "max_listeners"
 CONF_BUFFER_DURATION = "buffer_duration"
 CONF_FRESH_SNAPSHOT = "fresh_snapshot"
@@ -69,6 +71,8 @@ CONFIG_SCHEMA = cv.All(
                 min_bits_per_sample=16, max_bits_per_sample=16
             ),
             cv.Optional(CONF_CAMERA): cv.use_id(esp32_camera.ESP32Camera),
+            # The camera's flash: a snapshot may ask for it (?flash=<ms>), switched on and off here.
+            cv.Optional(CONF_FLASH): cv.use_id(light.LightState),
             cv.Optional(CONF_MAX_LISTENERS, default=2): cv.int_range(min=1, max=4),
             # Kept per listener: a listener that falls behind (Wi-Fi) loses the oldest sound, not the newest.
             cv.Optional(CONF_BUFFER_DURATION, default="1s"): cv.All(
@@ -139,6 +143,9 @@ async def to_code(config):
         cg.add_define("USE_VISIONSTATE_CAMERA")
         cam = await cg.get_variable(config[CONF_CAMERA])
         cg.add(var.set_camera(cam))
+        if CONF_FLASH in config:
+            cg.add_define("USE_VISIONSTATE_FLASH")
+            cg.add(var.set_flash(await cg.get_variable(config[CONF_FLASH])))
     if CONF_ON_CAMERA_USE in config:
         await automation.build_automation(
             var.get_camera_use_trigger(), [(cg.std_string, "x")], config[CONF_ON_CAMERA_USE]

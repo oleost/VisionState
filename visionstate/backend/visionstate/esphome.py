@@ -155,6 +155,20 @@ def addresses(host: str, password: str, *, sound: bool, picture: bool) -> dict[s
     return found
 
 
+def own_flash(host: str, light: str, entities: list[dict], states: dict[str, dict]) -> bool:
+    """Whether ``light`` is an entity of the ESPHome device at ``host`` (its *IP address* entity shows
+    it), from Home Assistant's entity registry: a camera of ours with a flash then takes its picture
+    with it (?flash=), no light switched through Home Assistant."""
+    devices = {
+        e.get("device_id")
+        for e in entities
+        if e.get("platform") == "esphome"
+        and e.get("original_name") == "IP address"
+        and (states.get(e["entity_id"]) or {}).get("state") == host
+    } - {None}
+    return any(e["entity_id"] == light and e.get("device_id") in devices for e in entities)
+
+
 def password_services(ip_entity_id: str, services: list[str]) -> list[str]:
     """The ESPHome services that may answer with this device's stream password: every device's
     (settings.ESPHOME["password_action"]), the one named like its *IP address* entity first. Home

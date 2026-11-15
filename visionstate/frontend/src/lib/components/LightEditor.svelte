@@ -1,6 +1,7 @@
 <script lang="ts">
   // The light for the camera (part of the image source): a lamp or the camera's flash for a dark
-  // place. Stored in the sensor's triggers (light_entity, light_delay_s); limits from GET /config.
+  // place, for every check or only when the frame is dark. Stored in the sensor's triggers
+  // (light_entity, light_delay_s, light_when); limits and choices from GET /config.
   import { app } from '../app.svelte';
   import type { Triggers } from '../types';
   import EntityPicker from './EntityPicker.svelte';
@@ -9,6 +10,7 @@
 
   const limits = $derived(app.config?.trigger_limits);
   const lightDomains = $derived(app.config?.light_domains ?? []);
+  const lightWhen = $derived(Object.entries(app.config?.light_when ?? {}));
   // The picker works with a list; the light is at most one entity.
   let light = $state(triggers.light_entity ? [triggers.light_entity] : []);
   $effect(() => {
@@ -20,12 +22,19 @@
   <span class="col" style="gap:2px">
     <strong class="small">Light for the camera <span class="faint">(optional)</span></strong>
     <span class="xsmall faint">
-      A lamp or the camera's flash, for a dark place. It is switched on for each check and while you look at live frames
-      here (region, labelling), and off again afterwards; a light that is already on is left alone.
+      A lamp or the camera's flash, for a dark place. It is switched on for each check (or only when the picture is
+      dark) and while you look at live frames here (region, labelling), and off again afterwards; a light that is
+      already on is left alone. An ESP32 camera of ours switches its own flash for the picture.
     </span>
   </span>
   <EntityPicker bind:value={light} max={1} domains={lightDomains} label="Light to switch on" placeholder="Search lights and switches" />
   {#if light.length && limits}
+    <label class="line">
+      <span class="small">Switch it on</span>
+      <select class="input sm" bind:value={triggers.light_when} aria-label="When the light is switched on">
+        {#each lightWhen as [key, name] (key)}<option value={key}>{name}</option>{/each}
+      </select>
+    </label>
     <label class="line">
       <span class="small">Wait before taking the frame</span>
       <span class="row"
@@ -56,6 +65,10 @@
     justify-content: space-between;
     gap: var(--space-4);
     color: var(--c-text-2);
+  }
+  .line select {
+    width: auto;
+    min-width: 0;
   }
   p {
     margin: 0;

@@ -7,10 +7,11 @@ import logging
 import math
 import random
 import time
+from urllib.parse import urlsplit
 
 from PIL import Image
 
-from .. import backbones, imaging, timing
+from .. import backbones, esphome, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
@@ -116,6 +117,53 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             heard = self.live_state(cfg.id).sound
             if heard is not None:
                 await self._nothing_heard(cfg, heard)
+
+    async def _own_flash(self, cfg: SensorConfig) -> bool:
+        """The sensor's light is the flash of the ESP32 camera of ours it takes its pictures from, and
+        the camera takes a picture with it itself (firmware 1.4.0 on): then the picture is asked for
+        with the flash (?flash=), and the light is not switched through Home Assistant (switched
+        there, it could not be switched while the device was away from Home Assistant, and the
+        picture was dark). Looked up in Home Assistant's registry once in RUNTIME["own_flash_check_s"]."""
+        entity = cfg.triggers["light_entity"]
+        if not entity or cfg.source_type != "http" or cfg.source not in self.camera_uses.flash:
+            return False
+        host = urlsplit(cfg.source).hostname or ""
+        known = self._own_flashes.get((entity, host))
+        if known is not None and time.time() - known[1] < RUNTIME["own_flash_check_s"]:
+            return known[0]
+        try:
+            entities, _ = await self.ha.registries()
+            own = esphome.own_flash(host, entity, entities, await self.ha.raw_states())
+        except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: as it was
+            log.debug("Sensor %s: could not look up its light: %s", cfg.slug, redact(str(err)))
+            own = known[0] if known is not None else False
+        self._own_flashes[(entity, host)] = (own, time.time())
+        return own
+
+    async def _grab_flashed(self, cfg: SensorConfig, only_dark: bool) -> tuple[str, bytes, bool]:
+        """A frame from the camera with its own flash; ``only_dark``: the camera switches it on only
+        when the picture it keeps ready is dark (it looks all the time). Whether it was lit."""
+        timing.captured()
+        with timing.step("grab"):
+            flash_ms = round(cfg.triggers["light_delay_s"] * 1000)
+            dark = RUNTIME["light_dark_below"] if only_dark else None
+            data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark)
+        lit = self.camera_uses.flashed.get(cfg.source, True) if only_dark else True
+        return self.live_state(cfg.id).remember(data), data, lit
+
+    async def _grab_lit(self, cfg: SensorConfig) -> tuple[str, bytes] | None:
+        """A frame taken in the sensor's light: by its camera's own flash, or with the light switched
+        on through Home Assistant. None when that light could not be switched on."""
+        if await self._own_flash(cfg):
+            frame_id, data, _ = await self._grab_flashed(cfg, only_dark=False)
+            return frame_id, data
+        wait = await self._light_before(cfg)
+        try:
+            if wait is None:
+                return None
+            return await self._grab_in_light(cfg, wait)
+        finally:
+            self._light_after(cfg)
 
     async def _light_before(self, cfg: SensorConfig) -> float | None:
         """Hold the sensor's light on for a check (see lights.py).
@@ -288,16 +336,27 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         lit = False  # the frame was taken with the sensor's light on
         shared = None
         try:
-            if data is None:
-                wait = await self._light_before(cfg)
-                try:
-                    if wait is None:
-                        frame_id, data, shared = await self._grab_for_check(cfg)
-                    else:
-                        frame_id, data = await self._grab_in_light(cfg, wait)
-                        lit = True
-                finally:
-                    self._light_after(cfg)
+            if data is None and cfg.triggers["light_when"] == "dark" and await self._own_flash(cfg):
+                # The camera's own flash only when it is dark: the camera decides from what it sees.
+                frame_id, data, lit = await self._grab_flashed(cfg, only_dark=True)
+            elif data is None and cfg.triggers["light_entity"] and cfg.triggers["light_when"] == "dark":
+                # Another light only when it is dark: a frame without it first, decoded here (the
+                # check uses it as it is when it is light enough).
+                frame_id, data = await self.grab(cfg)
+                with timing.step("decode"):
+                    image = await asyncio.to_thread(imaging.decode, data)
+                if imaging.brightness(image) < RUNTIME["light_dark_below"]:
+                    got = await self._grab_lit(cfg)
+                    if got is not None:
+                        (frame_id, data), image, lit = got, None, True
+            elif data is None and cfg.triggers["light_entity"]:
+                got = await self._grab_lit(cfg)
+                if got is None:  # the light could not be switched on: the check goes on without it
+                    frame_id, data, shared = await self._grab_for_check(cfg)
+                else:
+                    (frame_id, data), lit = got, True
+            elif data is None:
+                frame_id, data, shared = await self._grab_for_check(cfg)
             if image is None:
                 with timing.step("decode"):
                     image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)

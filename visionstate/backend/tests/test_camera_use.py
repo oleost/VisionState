@@ -18,12 +18,17 @@ from .test_storage import settings  # noqa: F401 (fixture)
 
 JPEG = io.BytesIO()
 Image.new("RGB", (64, 48), (90, 90, 90)).save(JPEG, "JPEG")
+DARK = io.BytesIO()
+Image.new("RGB", (64, 48), (4, 4, 4)).save(DARK, "JPEG")
 
 
 class Camera(BaseHTTPRequestHandler):
     ours = True
     asked: list[str] = []  # noqa: RUF012 - shared by the server's threads on purpose
     use = "states"
+    flash = False  # takes a picture with its own flash (?flash=<ms>, firmware 1.4.0 on)
+    dark = False  # the place is dark: a picture without the flash is (nearly) black
+    flashed = 0  # pictures answered with the flash
 
     def log_message(self, *args):  # noqa: ANN002
         pass
@@ -32,19 +37,28 @@ class Camera(BaseHTTPRequestHandler):
         type(self).asked.append(self.path)
         if "use=" in self.path:
             type(self).use = self.path.split("use=", 1)[1].split("&", 1)[0]
-        body = JPEG.getvalue()
+        asked_flash = self.flash and "flash=" in self.path
+        # With dark=: the flash only when the picture it keeps ready is dark (as the firmware does).
+        lit = asked_flash and (self.dark or "dark=" not in self.path)
+        body = DARK.getvalue() if self.dark and not lit else JPEG.getvalue()
+        type(self).flashed += lit
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(body)))
         if self.ours:
             self.send_header("X-VisionState-Camera", type(self).use)
+            if self.flash:
+                self.send_header("X-VisionState-Flash", "1")
+            if asked_flash:
+                self.send_header("X-VisionState-Flashed", "1" if lit else "0")
         self.end_headers()
         self.wfile.write(body)
 
 
 @pytest.fixture
 def camera():
-    Camera.asked, Camera.use, Camera.ours = [], "states", True
+    Camera.asked, Camera.use, Camera.ours, Camera.flash, Camera.dark = [], "states", True, False, False
+    Camera.flashed = 0
     server = ThreadingHTTPServer(("127.0.0.1", 0), Camera)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield server
@@ -104,3 +118,112 @@ def test_any_other_camera_is_asked_as_it_was(settings, camera):  # noqa: F811
         assert wait_for(lambda: len(Camera.asked) >= 3, timeout=20)
         assert all(p == "/snapshot.jpg" for p in Camera.asked)
         assert client.get(f"/api/v1/sensors/{sid}").json()["camera"] is None
+
+
+class FlashHa:
+    """Home Assistant with the camera's device: its IP address entity and its flash."""
+
+    enabled = True
+
+    def __init__(self, host: str):
+        self.host = host
+        self.switched: list[tuple[str, bool]] = []
+
+    async def registries(self):
+        entities = [
+            {
+                "entity_id": "sensor.cam_ip_address",
+                "platform": "esphome",
+                "original_name": "IP address",
+                "device_id": "d",
+            },
+            {"entity_id": "light.cam_flash", "platform": "esphome", "original_name": "Flash", "device_id": "d"},
+            {"entity_id": "light.hall", "platform": "hue", "device_id": "h"},
+        ]
+        return entities, [{"id": "d"}, {"id": "h"}]
+
+    async def raw_states(self):
+        return {"sensor.cam_ip_address": {"state": self.host}}
+
+    async def state(self, entity_id):
+        return "off"
+
+    async def switch(self, entity_id, on):
+        self.switched.append((entity_id, on))
+
+    async def ping(self):
+        return True
+
+    async def entities(self):
+        return []
+
+    async def cameras(self):
+        return []
+
+    async def close(self):
+        pass
+
+
+def flash_sensor(client, url: str, light: str, when: str = "always") -> int:
+    triggers = {"light_entity": light, "light_delay_s": 0.5, "light_when": when, "burst_duration_s": 0}
+    body = {"source_type": "http", "source": url, "interval_s": 1, "name": "Door", "triggers": triggers}
+    return client.post("/api/v1/sensors", json={**body, "states": [{"name": "Open"}, {"name": "Closed"}]}).json()["id"]
+
+
+def test_a_camera_of_ours_takes_its_picture_with_its_own_flash(settings, camera):  # noqa: F811
+    """The sensor's light is the camera's own flash, and the camera can take a picture with it: the
+    picture is asked for with the flash (?flash=, the light's wait in ms), and nothing is switched
+    through Home Assistant. Another light is switched there as before."""
+    Camera.flash = True
+    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.ha = ha = FlashHa("127.0.0.1")
+        flash_sensor(client, url, "light.cam_flash")
+        # The first picture says the camera can (before it, the light was switched as before).
+        assert wait_for(lambda: any("flash=500" in p for p in Camera.asked), timeout=20)
+        ha.switched.clear()
+        asked = sum("flash=500" in p for p in Camera.asked)
+        assert wait_for(lambda: sum("flash=500" in p for p in Camera.asked) >= asked + 3, timeout=20)
+        assert ("light.cam_flash", True) not in ha.switched
+        # A lamp of its own is not the camera's flash: switched through Home Assistant.
+        Camera.asked.clear()
+        flash_sensor(client, url, "light.hall")
+        assert wait_for(lambda: ("light.hall", True) in ha.switched, timeout=20)
+
+
+def test_the_flash_only_when_it_is_dark_is_the_cameras_choice(settings, camera):  # noqa: F811
+    """The camera's own flash only when it is dark: one request (?flash=&dark=), the camera decides
+    from the picture it keeps ready, and says whether it used the flash."""
+    Camera.flash = True
+    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.ha = FlashHa("127.0.0.1")
+        sid = flash_sensor(client, url, "light.cam_flash", when="dark")
+        assert wait_for(lambda: any("dark=" in p for p in Camera.asked), timeout=20)
+        Camera.asked.clear()
+        assert wait_for(lambda: len(Camera.asked) >= 3, timeout=20)
+        assert all("flash=500" in p and "dark=" in p for p in Camera.asked)  # no picture without it first
+        assert Camera.flashed == 0  # light enough: the camera did not use it
+        Camera.dark = True
+        assert wait_for(lambda: Camera.flashed >= 2, timeout=20)
+        assert client.get(f"/api/v1/sensors/{sid}").status_code == 200
+
+
+def test_another_light_only_when_it_is_dark(settings, camera):  # noqa: F811
+    """A lamp switched through Home Assistant only when it is dark: a frame without it first."""
+    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.ha = ha = FlashHa("127.0.0.1")
+        flash_sensor(client, url, "light.hall", when="dark")
+        # Light enough without it: never switched on.
+        assert wait_for(lambda: len(Camera.asked) >= 4, timeout=20)
+        assert ("light.hall", True) not in ha.switched
+        # Dark: switched on for the picture.
+        Camera.dark = True
+        assert wait_for(lambda: ("light.hall", True) in ha.switched, timeout=20)
+        bad = client.post(
+            "/api/v1/sensors",
+            json={"source_type": "http", "source": url, "name": "X", "triggers": {"light_when": "sometimes"}},
+        )
+        assert bad.status_code == 422

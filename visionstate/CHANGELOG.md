@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.15.0b15
+
+**ESP32 firmware 1.4.0: an ESP32-CAM that takes its picture with its own flash.** Found in a water
+meter's export (#86): some pictures at night were black, or pink, after moving to our firmware.
+
+- **The flash comes on at once:** it faded in over a second, and pictures taken meanwhile could be
+  dark or have a colour cast.
+- **The camera takes its picture with its own flash:** when a sensor's light is the flash of the
+  ESP32 camera it looks through, VisionState asks the camera for a picture with the flash, and the
+  camera switches it on and off itself. Nothing goes through Home Assistant for it, so the picture is
+  lit even while the device is away from Home Assistant for a moment.
+- **A light only when it is dark:** a sensor's light (any light, or the flash) can be switched on
+  for every check or only when the picture is dark, under the light in the sensor's settings. The
+  ESP32 camera decides that for its own flash from what it sees, in the same request.
+- **A pointer dial the reader could not find a needle in** no longer stops the check with an
+  error.
+
+Choose *Install* for the device in the ESPHome app to get the firmware.
+
 ## 0.15.0b14
 
 **ESP32 firmware 1.3.0: no stream password to look for, and a voice assistant that waits for its

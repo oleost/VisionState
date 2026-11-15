@@ -28,6 +28,7 @@ from ..settings import (
     KIND_READING,
     KIND_SOUND,
     LIGHT_DOMAINS,
+    LIGHT_WHEN,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
@@ -177,6 +178,7 @@ class Triggers(BaseModel):
     )
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
+    light_when: str = TRIGGER_DEFAULTS["light_when"]  # settings.LIGHT_WHEN
     camera_use: str = TRIGGER_DEFAULTS["camera_use"]  # settings.CAMERA_USES, or "" (by the kind)
 
     @field_validator("camera_use")
@@ -199,6 +201,13 @@ class Triggers(BaseModel):
     @classmethod
     def _valid_light(cls, value: str) -> str:
         return valid_light(value)
+
+    @field_validator("light_when")
+    @classmethod
+    def _valid_light_when(cls, value: str) -> str:
+        if value not in LIGHT_WHEN:
+            raise ValueError(f"One of: {', '.join(LIGHT_WHEN)}")
+        return value
 
     @model_validator(mode="after")
     def _valid_only_states(self) -> Triggers:

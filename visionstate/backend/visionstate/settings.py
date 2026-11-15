@@ -415,7 +415,7 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.3.0",
+    "firmware_version": "1.4.0",
     # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
     # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
     "password_action": "stream_password",
@@ -765,6 +765,9 @@ TRIGGER_DEFAULTS = {
     # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
     # threw away only the stale one and the frame read was often dark.
     "light_delay_s": 2.0,
+    # When the light is switched on: one of LIGHT_WHEN. "dark": a frame is taken without it first,
+    # and the light switched on only when that frame is darker than RUNTIME["light_dark_below"].
+    "light_when": "always",
     # How an ESP32 camera of ours (esphome/) is set up before this sensor's pictures: one of
     # CAMERA_USES, or "" to choose by the sensor's kind (CAMERA_USE_BY_KIND). Only for a camera that
     # answers as ours (an X-VisionState-Camera header); ignored for any other.
@@ -779,6 +782,8 @@ CAMERA_USES = {
     "states": "States",
 }
 CAMERA_USE_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
+# When a sensor's light is switched on for a check (triggers.light_when), with the names shown.
+LIGHT_WHEN = {"always": "For every check", "dark": "Only when it is dark"}
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),
@@ -1014,6 +1019,12 @@ RUNTIME = {
     # While a check's light warms up, a frame is fetched (and thrown away) this often: a camera
     # that hands out a picture it took earlier (ESP32) gives a fresh one, and adjusts its exposure.
     "light_warmup_interval_s": 1.0,
+    # A frame darker than this (its mean brightness, 0-255) is "dark" for a light switched on only
+    # when it is dark. Measured on ESP32-CAMs at night: 3-10 without the light, 40-150 with it.
+    "light_dark_below": 25,
+    # How long it is trusted that a sensor's light is (or is not) its ESP32 camera's own flash, as
+    # Home Assistant's registry said (engine/checks.py _own_flash).
+    "own_flash_check_s": 600,
     # A light VisionState switched off this recently may still be reported "on" by Home Assistant;
     # the next check switches it on (and waits) anyway instead of taking it for somebody else's.
     "light_off_settle_s": 10.0,

@@ -30,6 +30,8 @@ export interface Triggers {
   /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
   light_entity: string;
   light_delay_s: number;
+  /** When the light is switched on (config light_when): 'always', or 'dark' (only for a dark frame). */
+  light_when: string;
   /** How an ESP32 camera of ours is set up for this sensor (config camera_uses); '' = by its kind. */
   camera_use: string;
 }
@@ -838,6 +840,8 @@ export interface AppConfig {
   advice: { min_answers: number };
   /** What an ESP32 camera of ours is set up as: key → name, most demanding first. */
   camera_uses: Record<string, string>;
+  /** When a sensor's light is switched on: key → name. */
+  light_when: Record<string, string>;
   /** The ESP32 guide (settings.ESPHOME). */
   esphome: {
     port: number;

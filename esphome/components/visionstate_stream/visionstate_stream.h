@@ -21,6 +21,11 @@
 #ifdef USE_VISIONSTATE_CAMERA
 #include "esphome/components/camera/camera.h"
 #endif
+#ifdef USE_VISIONSTATE_FLASH
+#include <atomic>
+
+#include "esphome/components/light/light_state.h"
+#endif
 
 struct httpd_req;  // NOLINT(readability-identifier-naming)
 
@@ -89,6 +94,11 @@ class VisionStateStream final : public Component
   /// Fired (in the main loop) when the camera use changed, with its name.
   Trigger<std::string> *get_camera_use_trigger() { return &this->camera_use_trigger_; }
 #endif
+#ifdef USE_VISIONSTATE_FLASH
+  /// The camera's flash: a snapshot can ask for it (?flash=<ms>), switched on and off here, so the
+  /// picture and its light are one request (no light switched through Home Assistant meanwhile).
+  void set_flash(light::LightState *flash) { this->flash_ = flash; }
+#endif
 
   uint8_t listener_count() const { return this->listener_count_; }
 
@@ -151,6 +161,16 @@ class VisionStateStream final : public Component
   int motion_exposure_{250};
   volatile bool camera_use_changed_{false};
   Trigger<std::string> camera_use_trigger_;
+#endif
+#ifdef USE_VISIONSTATE_FLASH
+  light::LightState *flash_{nullptr};
+  std::atomic<int> flash_holders_{0};   // snapshots that want the flash on now
+  bool flash_ours_{false};              // switched on here, so switched off here again
+  std::atomic<bool> flash_lit_{false};  // the main loop has it on for the snapshots
+  // The last snapshot used the flash: the picture kept ready after it was taken while it was still
+  // on, so it says nothing about whether it is dark.
+  std::atomic<bool> kept_lit_{false};
+  void apply_flash_();
 #endif
 };
 

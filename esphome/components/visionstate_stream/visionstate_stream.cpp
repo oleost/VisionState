@@ -16,6 +16,10 @@
 #ifdef USE_VISIONSTATE_CAMERA
 #include <esp_camera.h>
 #endif
+#ifdef USE_VISIONSTATE_FLASH
+#include <esp_heap_caps.h>
+#include <jpeg_decoder.h>
+#endif
 
 namespace esphome::visionstate_stream {
 
@@ -49,6 +53,43 @@ static const uint8_t USE_MOVEMENT = 2;
 // a new picture size needs a few (measured on an ESP32-CAM, 2026-11-05).
 static const uint8_t SETTLE_PICTURES = 1;
 static const uint8_t SETTLE_PICTURES_RESIZED = 3;
+#endif
+#ifdef USE_VISIONSTATE_FLASH
+// A snapshot with the flash (?flash=<ms>): pictures are taken and thrown away for that long after it
+// came on, so the exposure and the white balance have caught up with it (one taken while the light
+// still changed was dark or had a colour cast), at most this long. On an ESP32-CAM at 1600x1200 a
+// picture takes 0.2-0.5 s, and the first one after the flash came on was lit already (2026-11-15).
+static const uint32_t FLASH_SETTLE_MAX_MS = 10000;
+static const uint32_t FLASH_ON_TIMEOUT_MS = 1000;  // the main loop switches it on
+
+// How light a picture is: the mean of its pixels (0-255), decoded at 1/8 of its size (a 1600x1200
+// picture as 200x150: quick, and little memory). -1 when it cannot be decoded.
+static int picture_brightness(const uint8_t *jpeg, size_t length) {
+  esp_jpeg_image_cfg_t cfg = {};
+  cfg.indata = const_cast<uint8_t *>(jpeg);
+  cfg.indata_size = length;
+  cfg.out_format = JPEG_IMAGE_FORMAT_RGB888;
+  cfg.out_scale = JPEG_IMAGE_SCALE_1_8;
+  esp_jpeg_image_output_t info = {};
+  if (esp_jpeg_get_image_info(&cfg, &info) != ESP_OK || info.output_len == 0)
+    return -1;
+  auto *out = static_cast<uint8_t *>(heap_caps_malloc(info.output_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (out == nullptr)
+    out = static_cast<uint8_t *>(malloc(info.output_len));  // NOLINT(cppcoreguidelines-no-malloc)
+  if (out == nullptr)
+    return -1;
+  cfg.outbuf = out;
+  cfg.outbuf_size = info.output_len;
+  int brightness = -1;
+  if (esp_jpeg_decode(&cfg, &info) == ESP_OK) {
+    uint64_t sum = 0;
+    for (size_t i = 0; i < info.output_len; i++)
+      sum += out[i];
+    brightness = static_cast<int>(sum / info.output_len);
+  }
+  free(out);  // NOLINT(cppcoreguidelines-no-malloc)
+  return brightness;
+}
 #endif
 // Sockets beside the listeners' (as __init__.py counts them): a snapshot, and an answer to a third
 // listener, at the same time.
@@ -265,6 +306,9 @@ void VisionStateStream::loop() {
     this->camera_use_trigger_.trigger(std::string(CAMERA_USE_NAMES[this->camera_use_]));
   }
 #endif
+#ifdef USE_VISIONSTATE_FLASH
+  this->apply_flash_();
+#endif
   uint8_t count = this->listener_count_;
 #ifdef USE_VISIONSTATE_MICROPHONE
   // The microphone runs only while someone listens.
@@ -427,6 +471,28 @@ void VisionStateStream::listener_task_(void *arg) {
   vTaskDelete(nullptr);
 }
 
+#ifdef USE_VISIONSTATE_FLASH
+// In the main loop: the flash on while a snapshot wants it, and off when none does any more, only
+// if it was switched on here (one already on, switched by someone else, is left alone).
+void VisionStateStream::apply_flash_() {
+  if (this->flash_ == nullptr)
+    return;
+  bool wanted = this->flash_holders_.load() > 0;
+  if (wanted && !this->flash_lit_.load()) {
+    if (!this->flash_->remote_values.is_on()) {
+      this->flash_->turn_on().set_brightness(1.0f).set_transition_length(0).perform();
+      this->flash_ours_ = true;
+    }
+    this->flash_lit_.store(true);
+  } else if (!wanted && this->flash_lit_.load()) {
+    if (this->flash_ours_)
+      this->flash_->turn_off().set_transition_length(0).perform();
+    this->flash_ours_ = false;
+    this->flash_lit_.store(false);
+  }
+}
+#endif
+
 #ifdef USE_VISIONSTATE_CAMERA
 void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImage> &image) {
   if (image->was_requested_by(camera::WEB_REQUESTER))
@@ -561,11 +627,60 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
                      this->camera_use_ < CAMERA_USES ? CAMERA_USE_KEYS[this->camera_use_] : "none");
   // The camera keeps a picture ready, taken right after the last one was fetched (up to its idle
   // interval ago, and before a light was switched on): with fresh_snapshot, that one is thrown away.
+  bool kept_taken = false;
+#ifdef USE_VISIONSTATE_FLASH
+  // ?flash=<ms>: the picture taken with the flash, that long after it came on (the pictures taken
+  // meanwhile thrown away); the flash goes off again after it. With &dark=<0-255>, only when the
+  // picture the camera keeps ready is darker than that (its mean brightness): the camera looks all
+  // the time, so it knows whether it is dark without a picture taken for it. Said to VisionState,
+  // which asks so (X-VisionState-Flash), and whether the flash was used (X-VisionState-Flashed).
+  bool flashed = false;
+  if (this->flash_ != nullptr) {
+    httpd_resp_set_hdr(req, "X-VisionState-Flash", "1");
+    char dark[8];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "flash", value, sizeof(value)) == ESP_OK) {
+      uint32_t settle = std::min<uint32_t>(strtoul(value, nullptr, 10), FLASH_SETTLE_MAX_MS);
+      bool wanted = true;
+      if (httpd_query_key_value(query, "dark", dark, sizeof(dark)) == ESP_OK) {
+        if (this->kept_lit_.exchange(false))
+          this->take_image_(IMAGE_TIMEOUT_MS);  // taken in the last snapshot's flash: the next one says
+        std::shared_ptr<camera::CameraImage> kept = this->take_image_(IMAGE_TIMEOUT_MS);
+        kept_taken = true;
+        int brightness = kept != nullptr ? picture_brightness(kept->get_data_buffer(), kept->get_data_length()) : -1;
+        wanted = brightness < 0 || brightness < static_cast<int>(strtoul(dark, nullptr, 10));
+        ESP_LOGD(TAG, "The picture kept ready: brightness %d, flash %s", brightness, wanted ? "on" : "not needed");
+      }
+      httpd_resp_set_hdr(req, "X-VisionState-Flashed", wanted ? "1" : "0");
+      if (wanted) {
+        this->flash_holders_++;
+        flashed = true;
+        uint32_t asked = millis();
+        while (!this->flash_lit_.load() && millis() - asked < FLASH_ON_TIMEOUT_MS) {
+          App.wake_loop_threadsafe();
+          delay(WAKE_EVERY_MS);
+        }
+        uint32_t lit = millis();
+        do {
+          this->take_image_(IMAGE_TIMEOUT_MS);  // thrown away: taken before the camera caught up
+        } while (millis() - lit < settle);
+        kept_taken = false;  // the one after these is thrown away as well (taken as the light came)
+      }
+    }
+  }
+#endif
   std::shared_ptr<camera::CameraImage> image = this->take_image_(IMAGE_TIMEOUT_MS);
-  if (image != nullptr && this->fresh_snapshot_) {
+  if (image != nullptr && this->fresh_snapshot_ && !kept_taken) {
     image = nullptr;
     image = this->take_image_(IMAGE_TIMEOUT_MS);
   }
+#ifdef USE_VISIONSTATE_FLASH
+  if (flashed) {
+    this->flash_holders_--;
+    this->kept_lit_.store(true);
+    App.wake_loop_threadsafe();
+  }
+#endif
   if (image == nullptr) {
     ESP_LOGW(TAG, "No picture from the camera");
     httpd_resp_set_hdr(req, "Connection", "close");

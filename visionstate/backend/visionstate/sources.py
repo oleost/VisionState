@@ -273,6 +273,12 @@ class CameraUses:
         # Snapshot address -> how the camera is set up now (the X-VisionState-Camera header of its
         # last picture).
         self.ours: dict[str, str] = {}
+        # Snapshot addresses of ours that take a picture with their own flash (?flash=<ms>, firmware
+        # 1.4.0 on: the X-VisionState-Flash header).
+        self.flash: set[str] = set()
+        # Whether the last picture from an address was taken with its flash (X-VisionState-Flashed:
+        # asked to flash only when dark, the camera decides).
+        self.flashed: dict[str, bool] = {}
         self._wants: dict[int, tuple[str, str]] = {}  # sensor -> (its address, the use it wants)
 
     def want(self, sensor_id: int, source: str, use: str | None) -> None:
@@ -330,32 +336,46 @@ class FrameGrabber:
             stream = self._streams[url] = RtspStream(url, keep_open)
         return stream.grab()
 
-    async def grab(self, source_type: str, source: str) -> bytes:
+    async def grab(self, source_type: str, source: str, flash_ms: int | None = None, dark: int | None = None) -> bytes:
+        """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
+        came on (only for one that said it can: CameraUses.flash); with ``dark``, only when the
+        picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was)."""
         check_source(source_type, source)
         try:
             if source_type == "ha_camera":
                 return await self.ha.snapshot(source)
             if source_type == "http":
-                return await self._get_limited(source)
+                return await self._get_limited(source, flash_ms, dark)
             return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
         except httpx.HTTPError as err:
             raise SourceError(describe(err)) from err
 
-    async def _get_limited(self, url: str) -> bytes:
+    async def _get_limited(self, url: str, flash_ms: int | None = None, dark: int | None = None) -> bytes:
         """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]. A
         camera of ours (one that answered with X-VisionState-Camera) is asked to be set up for its
-        sensors first (?use=...)."""
+        sensors first (?use=...), and for the picture with its own flash (?flash=<ms>) when asked."""
         asked = url
         uses = self.camera_uses
         use = uses.use_for(url) if url in uses.ours else None
         if use is not None:
-            asked = f"{url}{'&' if '?' in url else '?'}use={use}"
+            asked = f"{asked}{'&' if '?' in asked else '?'}use={use}"
             if uses.ours.get(url) != use:  # the camera switches: worth a line when looking into it
                 log.info("Asking the ESP32 camera at %s to be set up for %s", redact(url), CAMERA_USES[use])
-        async with self._http.stream("GET", asked) as resp:
+        timeout = RUNTIME["http_timeout_s"]
+        if flash_ms is not None and url in uses.flash:
+            asked = f"{asked}{'&' if '?' in asked else '?'}flash={flash_ms}"
+            if dark is not None:
+                asked = f"{asked}&dark={dark}"
+            timeout += flash_ms / 1000  # the camera takes the picture that much later
+        async with self._http.stream("GET", asked, timeout=timeout) as resp:
             if resp.status_code != 200:
                 raise SourceError(f"HTTP {resp.status_code}")
             camera = resp.headers.get("x-visionstate-camera")
+            if resp.headers.get("x-visionstate-flash") == "1":
+                uses.flash.add(url)
+            else:
+                uses.flash.discard(url)
+            uses.flashed[url] = resp.headers.get("x-visionstate-flashed") == "1"
             if camera is not None:
                 if url not in uses.ours:
                     log.info("The camera at %s is a VisionState ESP32 (set up for %s)", redact(url), camera)

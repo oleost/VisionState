@@ -13,7 +13,7 @@ what is still to check are in [`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md).
 | Address | What |
 |---|---|
 | `http://visionstate:<password>@<device>:8081/audio.wav` | the microphone: an endless WAV stream, 16 kHz, mono, 16 bits |
-| `http://visionstate:<password>@<device>:8081/snapshot.jpg` | the camera: a picture taken after the request |
+| `http://visionstate:<password>@<device>:8081/snapshot.jpg` | the camera: a picture taken after the request; `?flash=<ms>`: with the ESP32-CAM's flash, that long after it came on, and the flash off again after it (one already on is left on); `&dark=<0-255>`: only when the picture the camera keeps ready is darker than that (its mean brightness), said in `X-VisionState-Flashed` |
 
 In VisionState, a sound sensor takes the first as its *RTSP or stream* source, and an image
 sensor the second as its *HTTP snapshot URL*. The password is hidden in VisionState's logs and
@@ -342,7 +342,7 @@ answer on a Google Cast speaker chosen with *Answer on*, follow-ups heard after 
 | [`packages/stream-password.yaml`](packages/stream-password.yaml) | the action that tells VisionState the stream's password and the device's address, through Home Assistant (in `common.yaml` and `voice-assistant.yaml`) |
 | [`packages/stream-switch.yaml`](packages/stream-switch.yaml) | *VisionState stream*: the stream on and off on its own, on a device whose microphone is shared |
 | [`packages/mute-pin.yaml`](packages/mute-pin.yaml) | a mute switch on a pin: unwired, the microphone is on |
-| [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light |
+| [`packages/camera-esp32-cam.yaml`](packages/camera-esp32-cam.yaml) | the OV2640 and `/snapshot.jpg`, the flash as a light (full at once, no fade) that a snapshot can ask for |
 | [`packages/camera-xiao-esp32s3-sense.yaml`](packages/camera-xiao-esp32s3-sense.yaml) | the XIAO's camera and `/snapshot.jpg` (it has no flash) |
 | [`packages/esp32-cam-microphone.yaml`](packages/esp32-cam-microphone.yaml) | camera and microphone on a plain ESP32: keeps the camera's I2S port free |
 | [`packages/voice-pe.yaml`](packages/voice-pe.yaml), [`packages/atom-voices3r.yaml`](packages/atom-voices3r.yaml) | the stream added to a voice assistant's own configuration, on its microphone |

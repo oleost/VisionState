@@ -98,6 +98,14 @@ export async function doubleTap(page: Page, info: TestInfo, at: Point) {
 export async function press(locator: Locator, info: TestInfo) {
   if (isTouch(info)) {
     await locator.scrollIntoViewIfNeeded();
+    // Where a person would tap it: "if needed" can leave it under the sticky top bar (the tap then
+    // landed on the bar once the page above had grown a line taller), so it is brought to the
+    // middle when something else covers its centre.
+    await locator.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (hit && !el.contains(hit) && !hit.contains(el)) el.scrollIntoView({ block: 'center' });
+    });
     await expect(locator).toBeEnabled();
     await touch(locator.page(), await center(locator), await center(locator), 0);
   } else await locator.click();

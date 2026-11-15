@@ -855,7 +855,15 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   frame* (default 2 s; longer if the frames still come out dark) gives the light and the camera time; meanwhile VisionState fetches a frame
   every second and throws it away. Many cameras (an ESP32 camera, for one) hand out a picture
   they took earlier, and only adjust their exposure between pictures: this way the frame that is
-  read is a fresh one, taken in the light. It stays on during the checks that follow a trigger;
+  read is a fresh one, taken in the light. It stays on during the checks that follow a trigger.
+  *Switch it on* chooses **For every check** or **Only when it is dark**: then each check takes a
+  frame without the light first, and switches the light on only when that frame is dark (a meter
+  in daylight needs none);
+- **an ESP32 camera of ours with its own flash** (firmware 1.4.0 on) takes the picture with the
+  flash itself, that long after it came on, and switches it off again: nothing goes through Home
+  Assistant for it, so the picture is lit even while the device is away from Home Assistant. With
+  *Only when it is dark*, the camera decides from what it sees anyway (it keeps a picture ready),
+  in the same request. The first check finds out that the camera can;
 - **while you look at live frames**: in the wizard (from when both a camera and a light are chosen), when you draw the region
   under **Settings**, and on the **Label** tab — so you see what you frame, and the images you
   label are taken in the same light as the checks. A note above the frame says so; its **Light**

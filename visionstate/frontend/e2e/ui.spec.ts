@@ -1180,6 +1180,10 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   await light.press('Enter');
   await expect(page.getByText('Wait before taking the frame')).toBeVisible();
   await expect(page.getByLabel('Light to switch on')).toHaveCount(0); // one light at most
+  // For every check, or only when the picture is dark.
+  const when = page.getByLabel('When the light is switched on');
+  await expect(when).toHaveValue('always');
+  await when.selectOption('dark');
 
   await press(page.getByRole('button', { name: 'Save changes' }), info);
   await expect(page.getByText('Settings saved')).toBeVisible();
@@ -1191,6 +1195,7 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   expect(saved.regular).toBe(false);
   expect(saved.only_states).toEqual({ 'sensor.watermeter_status': 'Flow finished' });
   expect(saved.light_entity).toBe('light.meter_flash');
+  expect(saved.light_when).toBe('dark');
   await page.reload();
   await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible(); // General
   await page.goto(`#/sensors/${id}/settings/checks`);

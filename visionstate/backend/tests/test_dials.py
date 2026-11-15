@@ -125,6 +125,23 @@ def test_a_needle_is_not_taken_for_a_wide_pointer(position):
     assert dials.read_needle(cut(render_dial(position, 92))).ends == 1
 
 
+def test_a_needle_lost_when_looked_for_round_its_hub_is_none_not_a_crash(monkeypatch):
+    """Found far off the centre (beside a red mark), the needle looked for again round that hub can
+    be nothing at all: the dial is not read then (it once raised an IndexError and lost the check)."""
+    first = dials._needle_mask
+    calls = []
+
+    def mask(rgb, dist, radius):
+        calls.append(1)
+        found, area = first(rgb, dist, radius)
+        return (found, area) if len(calls) == 1 else (np.zeros_like(found), area)
+
+    monkeypatch.setattr(dials, "_needle_mask", mask)
+    monkeypatch.setattr(dials, "_hub", lambda *args: (-10.0, 0.0))
+    needle = dials.read_needle(cut(render_dial(2.8, 92)))
+    assert len(calls) == 2 and needle.position is None and needle.certainty == 0.0
+
+
 class StubWheels(readers.WheelReader):
     """A wheel reader whose model sees the given positions, and that is not loaded from a file."""
 

@@ -127,6 +127,8 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     hx, hy = _hub(mask, dx, dy, radius)
     if hx or hy:  # looked for again round the hub, so a circle placed off it does not cut the tip off
         mask, _ = _needle_mask(rgb, np.hypot(dx - hx, dy - hy), radius)
+    if not mask.any():  # nothing red enough round the hub (a dark picture): no needle, not a crash
+        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
     ax, ay = dx[mask] - hx, dy[mask] - hy
     away = np.maximum(np.hypot(ax, ay), 1e-9)
     tip = away >= max(0.2 * radius, float(np.quantile(away, 1 - READING["dial_tip_share"])))
