@@ -5,8 +5,10 @@ import io
 import json
 import logging
 import zipfile
+from pathlib import Path
 
 import httpx
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -350,3 +352,63 @@ def test_mqtt_bridge_reconnects_after_an_unexpected_error(tmp_path, monkeypatch,
     assert asyncio.run(run()) is True
     assert len(connects) == 2
     assert any("MQTT bridge failed" in r.message for r in caplog.records)
+
+
+def noisy(seed: int) -> bytes:
+    """A camera-like picture: noise, so its scan data is long and full of 0xFF bytes."""
+    pixels = np.random.default_rng(seed).integers(0, 256, (240, 320, 3), dtype=np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(pixels).save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
+def broken_jpeg() -> bytes:
+    """An ESP32-CAM's broken picture, drawn: the camera stopped part way (an end marker after a
+    third of the scan data), and the buffer went on with the rest of an older picture, end and all."""
+    whole = noisy(1)
+    older = noisy(2)
+    end = imaging.jpeg_end(whole)
+    assert end is not None
+    scan = whole.index(b"\xff\xda")
+    cut = scan + (end - scan) // 3
+    while whole[cut - 1] == 0xFF:  # not inside a stuffed byte
+        cut += 1
+    return whole[:cut] + b"\xff\xd9" + older[len(older) // 2 :]
+
+
+def with_exif_thumbnail(data: bytes) -> bytes:
+    """A JPEG with an EXIF segment holding a thumbnail (a JPEG of its own, end marker and all),
+    before its scan data — as many IP cameras and phones write them."""
+    thumbnail = jpeg((32, 24))
+    body = b"Exif\x00\x00" + b"\x00" * 16 + thumbnail
+    return data[:2] + b"\xff\xe1" + (len(body) + 2).to_bytes(2, "big") + body + data[2:]
+
+
+def test_a_broken_picture_is_known_and_a_valid_one_is_not():
+    good = noisy(1)
+    assert not imaging.jpeg_broken(good)
+    assert not imaging.jpeg_broken(with_exif_thumbnail(good))  # the thumbnail's end comes before the scan
+    assert imaging.jpeg_end(with_exif_thumbnail(good)) == len(with_exif_thumbnail(good))
+    assert not imaging.jpeg_broken(good + jpeg((64, 48)))  # several pictures in one file (MPO)
+    assert not imaging.jpeg_broken(good + b"\x00" * 300)  # padding after the end
+    assert not imaging.jpeg_broken(good + b"\xff" * 30)
+    assert not imaging.jpeg_broken(good[: len(good) // 2])  # cut off: the decoder refuses it itself
+    assert not imaging.jpeg_broken(b"\x89PNG\r\n\x1a\n" + b"\xff\xd9" * 3)  # not a JPEG
+    assert not imaging.jpeg_broken(b"")
+    broken = broken_jpeg()
+    assert imaging.jpeg_broken(broken)
+    assert imaging.jpeg_broken(with_exif_thumbnail(broken))
+    # Every JPEG in the tests' assets is whole.
+    for path in (Path(__file__).parent / "assets").rglob("*.jp*g"):
+        assert not imaging.jpeg_broken(path.read_bytes()), path
+
+
+def test_a_broken_picture_is_asked_for_again_and_never_read(tmp_path, caplog):
+    good, broken = noisy(1), broken_jpeg()
+    answers = [broken, good]
+    grabber = grabber_with(tmp_path, lambda request: httpx.Response(200, content=answers.pop(0)))
+    assert asyncio.run(grabber.grab("http", "http://user:pw@cam/snap.jpg")) == good
+    assert "sent a broken picture (it ends early), asked again" in caplog.text and "pw" not in caplog.text
+    always = grabber_with(tmp_path, lambda request: httpx.Response(200, content=broken))
+    with pytest.raises(SourceError, match="broken picture"):
+        asyncio.run(always.grab("http", "http://cam/snap.jpg"))

@@ -88,6 +88,8 @@ restarts, set in Home Assistant or in the sensor's settings in VisionState, and 
 `substitutions` is the one a new device starts with; a file that set `vertical_flip` or
 `horizontal_mirror` itself gives its orientation there instead, as the choice overrides them.
 
+A picture that came out broken (the camera stopped sending part way, and the driver handed out
+the rest of an older one with it: a strip of picture over grey) is taken again before it is sent.
 Switching takes a few pictures: a new picture size or clock about 0.5 s (1600×1200 at 10 MHz
 about 1 s), a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
 entity gives the picture the camera kept ready after the last fetch instead, as old as the time

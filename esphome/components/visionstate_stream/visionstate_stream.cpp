@@ -501,6 +501,73 @@ void VisionStateStream::apply_flash_() {
 #endif
 
 #ifdef USE_VISIONSTATE_CAMERA
+// A broken picture is taken again this often at most (then sent as it is: VisionState knows it too).
+static const uint8_t BROKEN_RETRIES = 2;
+
+/// Where a JPEG's picture ends: just after the end marker that closes its scan data (an EXIF
+/// thumbnail's, before the scan, does not count); 0 when there is none. As imaging.jpeg_end in the app.
+static size_t jpeg_end(const uint8_t *data, size_t size) {
+  size_t i = 2;
+  while (i + 1 < size) {
+    if (data[i] != 0xFF)
+      return 0;
+    uint8_t marker = data[i + 1];
+    if (marker == 0xFF) {  // fill bytes before a marker
+      i += 1;
+      continue;
+    }
+    if (marker == 0xD9)
+      return i + 2;
+    if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (i + 3 >= size)
+      return 0;
+    i += 2 + ((static_cast<size_t>(data[i + 2]) << 8) | data[i + 3]);
+    if (marker != 0xDA)
+      continue;
+    // Scan data up to the next marker: an 0xFF in it is followed by 0x00, a restart marker or more 0xFF.
+    while (true) {
+      const auto *found = static_cast<const uint8_t *>(i < size ? memchr(data + i, 0xFF, size - i) : nullptr);
+      if (found == nullptr)
+        return 0;
+      i = found - data;
+      if (i + 1 >= size)
+        return 0;
+      uint8_t following = data[i + 1];
+      if (following == 0x00 || (following >= 0xD0 && following <= 0xD7)) {
+        i += 2;
+      } else if (following == 0xFF) {
+        i += 1;
+      } else {
+        break;
+      }
+    }
+  }
+  return 0;
+}
+
+static bool contains(const uint8_t *data, size_t size, uint8_t first, uint8_t second) {
+  for (size_t i = 0; i + 1 < size; i++) {
+    if (data[i] == first && data[i + 1] == second)
+      return true;
+  }
+  return false;
+}
+
+/// A JPEG whose picture ends early and is followed by the rest of an older one: the camera stopped
+/// sending part way, and the driver handed out the buffer up to the end of what was in it before.
+/// As imaging.jpeg_broken in the app (a thumbnail, several pictures or padding are not broken).
+static bool jpeg_broken(const uint8_t *data, size_t size) {
+  if (size < 4 || data[0] != 0xFF || data[1] != 0xD8)
+    return false;
+  size_t end = jpeg_end(data, size);
+  if (end == 0)
+    return false;
+  return contains(data + end, size - end, 0xFF, 0xD9) && !contains(data + end, size - end, 0xFF, 0xD8);
+}
+
 /// What a snapshot asks for: ?size=1600x1200&quality=8&clock=20&exposure=auto|<ms>&gain=4 (each
 /// may be left out). Values it does not know are left out, with a warning.
 static CameraSettings asked_settings(const char *query) {
@@ -783,6 +850,14 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
 #endif
   std::shared_ptr<camera::CameraImage> image = this->take_image_(IMAGE_TIMEOUT_MS);
   if (image != nullptr && this->fresh_snapshot_ && !kept_taken) {
+    image = nullptr;
+    image = this->take_image_(IMAGE_TIMEOUT_MS);
+  }
+  // A broken picture (it ends early, the rest an older one's) is taken again, so it is never sent.
+  for (uint8_t again = 0; again < BROKEN_RETRIES && image != nullptr; again++) {
+    if (!jpeg_broken(image->get_data_buffer(), image->get_data_length()))
+      break;
+    ESP_LOGW(TAG, "The camera gave a broken picture (it ends early): taken again");
     image = nullptr;
     image = this->take_image_(IMAGE_TIMEOUT_MS);
   }

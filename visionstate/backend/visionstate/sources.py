@@ -17,6 +17,7 @@ from typing import cast
 import httpx
 import numpy as np
 
+from . import imaging
 from .ha_events import camera_stream, discovered, fetch_registries, integration_names, websocket_url
 from .redact import redact
 from .settings import CAMERA_SETTING_KEYS, RUNTIME, SOUND, SUPERVISOR_URL, Settings, camera_preset
@@ -378,14 +379,27 @@ class FrameGrabber:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
         came on (only for one that said it can: CameraUses.flash); with ``dark``, only when the
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
-        ``camera``: the sensor's settings for a camera of ours (settings.camera_settings)."""
+        ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
+
+        A broken picture (imaging.jpeg_broken: it ends early, the rest an older one's) is asked for
+        again once, and is an error the second time: it would be read as grey."""
         check_source(source_type, source)
         try:
-            if source_type == "ha_camera":
-                return await self.ha.snapshot(source)
-            if source_type == "http":
-                return await self._get_limited(source, flash_ms, dark, camera)
-            return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
+            if source_type == "rtsp":  # frames VisionState encodes itself
+                return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
+            for attempt in (1, 2):
+                if source_type == "ha_camera":
+                    data = await self.ha.snapshot(source)
+                else:
+                    data = await self._get_limited(source, flash_ms, dark, camera)
+                if not imaging.jpeg_broken(data):
+                    return data
+                log.warning(
+                    "The camera at %s sent a broken picture (it ends early)%s",
+                    redact(source),
+                    ", asked again" if attempt == 1 else "",
+                )
+            raise SourceError("The camera sent a broken picture (it ends early)")
         except httpx.HTTPError as err:
             raise SourceError(describe(err)) from err
 

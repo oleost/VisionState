@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0b21
+
+**A broken camera picture is taken again, never read** (firmware 1.5.1).
+
+- **Broken pictures:** an ESP32 camera sometimes stops sending part way through a picture, and its
+  driver hands out the rest of an older one with it: a strip of picture over grey. A reading sensor
+  read it as 99999999 and asked about it in Review. VisionState now knows such a picture, from any
+  camera, asks for it again once, and never reads it.
+- **Firmware 1.5.1** takes such a picture again itself before sending it: choose *Install* for the
+  device in the ESPHome app.
+
 ## 0.15.0b20
 
 **Meters and displays at JPEG quality 10**, the value Espressif's own camera example uses (it was 8:

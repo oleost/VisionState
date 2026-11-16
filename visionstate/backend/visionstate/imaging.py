@@ -39,6 +39,59 @@ _ORIGINALS: dict[int, bytes] = {}
 EXIF_ORIENTATION = 0x0112
 
 
+def jpeg_end(data: bytes) -> int | None:
+    """Where a JPEG's picture ends: just after the end-of-image marker that closes its scan data
+    (an EXIF thumbnail's, before the scan, does not count), or None when there is none."""
+    i = 2
+    size = len(data)
+    while i + 1 < size:
+        if data[i] != 0xFF:
+            return None  # not a marker where one belongs: not a JPEG this can read
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill bytes before a marker
+            i += 1
+            continue
+        if marker == 0xD9:
+            return i + 2
+        if marker == 0x01 or 0xD0 <= marker <= 0xD7:  # markers without a length
+            i += 2
+            continue
+        if i + 3 >= size:
+            return None
+        i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
+        if marker != 0xDA:
+            continue
+        # Scan data up to the next marker: an 0xFF in it is followed by 0x00 (stuffed), a restart
+        # marker or more fill bytes.
+        while True:
+            i = data.find(b"\xff", i)
+            if i < 0 or i + 1 >= size:
+                return None
+            following = data[i + 1]
+            if following == 0x00 or 0xD0 <= following <= 0xD7:
+                i += 2
+            elif following == 0xFF:
+                i += 1
+            else:
+                break
+    return None
+
+
+def jpeg_broken(data: bytes) -> bool:
+    """A JPEG whose picture ends early and is followed by the rest of another (older) one: the
+    camera stopped sending part way, and its driver handed out the buffer up to the end of what was
+    in it before — seen from an ESP32-CAM, which then decodes as a strip of picture over grey.
+    Not broken: anything that is not a JPEG, a JPEG with an EXIF thumbnail, several pictures in one
+    file (MPO: the next begins with its own start marker) or padding after its end."""
+    if not data.startswith(b"\xff\xd8"):
+        return False
+    end = jpeg_end(data)
+    if end is None:
+        return False  # no end at all: the decoder says it is truncated
+    tail = data[end:]
+    return b"\xff\xd9" in tail and b"\xff\xd8" not in tail
+
+
 def brightness(image: Image.Image) -> float:
     """How light a frame is: the mean of its grey (0-255), from a small copy."""
     small = image.reduce(8) if min(image.size) >= 64 else image
