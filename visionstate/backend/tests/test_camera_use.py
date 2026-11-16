@@ -1,18 +1,21 @@
 """An ESP32 camera of ours (esphome/): known by the X-VisionState-Camera header of its snapshots, it
-is asked to be set up for what its sensors look at (?use=...), the most demanding of them; any other
-camera is asked as it always was."""
+is set up with each sensor's camera settings before its picture (firmware 1.5.0 on: ?size=&quality=
+&clock=&exposure=&gain=; older firmware: ?use=, the preset they are); any other camera is asked as it
+always was."""
 
 import io
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from visionstate.main import create_app
-from visionstate.settings import CAMERA_USE_BY_KIND, CAMERA_USES
+from visionstate.settings import CAMERA_PRESET_BY_KIND, CAMERA_PRESETS, camera_preset, camera_settings, merge_triggers
+from visionstate.sources import CameraUses, said_settings
 
 from .test_sound import wait_for
 from .test_storage import settings  # noqa: F401 (fixture)
@@ -22,10 +25,16 @@ Image.new("RGB", (64, 48), (90, 90, 90)).save(JPEG, "JPEG")
 DARK = io.BytesIO()
 Image.new("RGB", (64, 48), (4, 4, 4)).save(DARK, "JPEG")
 
+METER = CAMERA_PRESETS["meter"]["settings"]
+STATES_QUERY = "size=800x600&quality=10&clock=20&exposure=auto&gain=4"
+METER_QUERY = "size=1600x1200&quality=8&clock=20&exposure=auto&gain=4"
+
 
 class Camera(BaseHTTPRequestHandler):
     ours = True
+    firmware = "settings"  # 1.5.0 on; an older firmware says the preset it is set up as
     asked: list[str] = []  # noqa: RUF012 - shared by the server's threads on purpose
+    now = ""  # how it is set up (X-VisionState-Camera-Settings), as the firmware keeps it
     use = "states"
     flash = False  # takes a picture with its own flash (?flash=<ms>, firmware 1.4.0 on)
     dark = False  # the place is dark: a picture without the flash is (nearly) black
@@ -35,19 +44,28 @@ class Camera(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):  # noqa: N802
-        type(self).asked.append(self.path)
+        cls = type(self)
+        cls.asked.append(self.path)
+        query = parse_qs(urlparse(self.path).query)
         if "use=" in self.path:
-            type(self).use = self.path.split("use=", 1)[1].split("&", 1)[0]
+            cls.use = query["use"][0]
+        if "size" in query:
+            keys = ("size", "quality", "clock", "exposure", "gain")
+            cls.now = "&".join(f"{k}={query[k][0]}" for k in keys if k in query)
         asked_flash = self.flash and "flash=" in self.path
         # With dark=: the flash only when the picture it keeps ready is dark (as the firmware does).
         lit = asked_flash and (self.dark or "dark=" not in self.path)
         body = DARK.getvalue() if self.dark and not lit else JPEG.getvalue()
-        type(self).flashed += lit
+        cls.flashed += lit
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(body)))
         if self.ours:
-            self.send_header("X-VisionState-Camera", type(self).use)
+            self.send_header("X-VisionState-Camera", "settings" if cls.firmware == "settings" else cls.use)
+            if cls.firmware == "settings":
+                self.send_header("X-VisionState-Camera-Settings", cls.now or "size=unknown&quality=-1")
+                self.send_header("X-VisionState-Frame-Ms", "70")
+                self.send_header("X-VisionState-Camera-Chip", "OV2640")
             if self.flash:
                 self.send_header("X-VisionState-Flash", "1")
             if asked_flash:
@@ -59,18 +77,39 @@ class Camera(BaseHTTPRequestHandler):
 @pytest.fixture
 def camera():
     Camera.asked, Camera.use, Camera.ours, Camera.flash, Camera.dark = [], "states", True, False, False
-    Camera.flashed = 0
+    Camera.firmware, Camera.now, Camera.flashed = "settings", "", 0
     server = ThreadingHTTPServer(("127.0.0.1", 0), Camera)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield server
     server.shutdown()
 
 
-def test_the_most_demanding_kind_is_used_first():
-    assert list(CAMERA_USES)[0] == "meter" and CAMERA_USE_BY_KIND["reading"] == "meter"
+def test_each_kind_starts_from_a_preset_and_the_name_follows_the_values():
+    assert set(CAMERA_PRESET_BY_KIND.values()) <= set(CAMERA_PRESETS)
+    assert camera_settings(None, "reading") == METER
+    assert camera_preset(METER) == "meter"
+    assert camera_preset({**METER, "clock_mhz": 10}) is None  # custom
+    # A sensor's own settings, and a camera use from before them (0.15.0b18 and older).
+    assert camera_settings({"camera": {**METER, "quality": 12}}, "states")["quality"] == 12
+    assert merge_triggers({"camera_use": "meter"})["camera"] == METER
+    assert "camera_use" not in merge_triggers({"camera_use": "meter"})
+    assert merge_triggers({})["camera"] is None
 
 
-def test_a_camera_of_ours_is_set_up_for_its_sensors_and_shared_by_the_most_demanding(settings, camera, caplog):  # noqa: F811
+def test_what_a_camera_says_and_what_it_is_asked():
+    said = said_settings("size=1600x1200&quality=8&clock=20&exposure=auto&gain=4")
+    assert said == METER
+    assert said_settings("size=unknown&quality=-1&clock=-1&exposure=unknown&gain=-1") is None
+    uses = CameraUses()
+    assert uses.query("http://cam/snapshot.jpg", METER) is None  # not known as ours yet
+    uses.ours["http://cam/snapshot.jpg"] = "settings"
+    assert uses.query("http://cam/snapshot.jpg", METER) == METER_QUERY
+    uses.ours["http://cam/snapshot.jpg"] = "states"  # an older firmware: only presets
+    assert uses.query("http://cam/snapshot.jpg", METER) == "use=meter"
+    assert uses.query("http://cam/snapshot.jpg", {**METER, "clock_mhz": 10}) is None
+
+
+def test_a_camera_of_ours_is_set_up_with_each_sensors_settings(settings, camera, caplog):  # noqa: F811
     caplog.set_level("INFO", logger="visionstate.sources")
     url = f"http://visionstate:secret-pw@127.0.0.1:{camera.server_address[1]}/snapshot.jpg"  # as the guide writes it
     with TestClient(create_app(settings)) as client:
@@ -82,30 +121,54 @@ def test_a_camera_of_ours_is_set_up_for_its_sensors_and_shared_by_the_most_deman
         def view(sid: int) -> dict:
             return client.get(f"/api/v1/sensors/{sid}").json()
 
-        # Known as ours from its first picture; a state sensor asks for "states".
+        # Known as ours from its first picture; a state sensor sends its kind's preset.
         assert wait_for(lambda: view(door)["camera"] is not None, timeout=20)
-        assert view(door)["camera"]["wanted"] == "states" and view(door)["camera"]["automatic"]
-        assert wait_for(lambda: any("use=states" in p for p in Camera.asked), timeout=20)
-        # A meter on the same camera: both now ask for it, so the camera is not switched back and forth.
+        assert view(door)["camera"]["settings"] and view(door)["triggers"]["camera"] is None
+        assert wait_for(lambda: any(STATES_QUERY in p for p in Camera.asked), timeout=20)
+        assert wait_for(lambda: view(door)["camera"]["now"] == CAMERA_PRESETS["states"]["settings"], timeout=20)
+        assert view(door)["camera"]["frame_ms"] == 70 and view(door)["camera"]["chip"] == "OV2640"
+        # A meter on the same camera: each sensor's pictures with its own settings, and each says so.
         meter = client.post(
             "/api/v1/sensors", json={**base, "name": "Meter", "kind": "reading", "reading": {"mode": "counter"}}
         ).json()["id"]
-        assert wait_for(lambda: view(door)["camera"]["asked"] == "meter", timeout=20)
-        Camera.asked.clear()
-        assert wait_for(lambda: len(Camera.asked) >= 4, timeout=20)
-        assert all("use=meter" in p for p in Camera.asked)
-        # Chosen by hand: a sensor's own choice counts, an unknown one is refused.
-        triggers = view(door)["triggers"]
-        assert client.patch(f"/api/v1/sensors/{meter}", json={"enabled": False}).status_code == 200
-        patched = client.patch(f"/api/v1/sensors/{door}", json={"triggers": {**triggers, "camera_use": "movement"}})
-        assert patched.status_code == 200
-        assert wait_for(lambda: view(door)["camera"]["asked"] == "movement", timeout=20)
-        assert not view(door)["camera"]["automatic"]
-        bad = client.patch(f"/api/v1/sensors/{door}", json={"triggers": {**triggers, "camera_use": "fish"}})
-        assert bad.status_code == 422
+        assert wait_for(lambda: any(METER_QUERY in p for p in Camera.asked), timeout=20)
+        assert wait_for(lambda: view(door)["camera"]["others"] == ["Meter"], timeout=20)
+        assert view(meter)["camera"]["others"] == ["Door"]
+        # Its own settings: the meter at the door's, so they are the same again.
+        triggers = view(meter)["triggers"]
+        same = {**triggers, "camera": CAMERA_PRESETS["states"]["settings"]}
+        assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": same}).status_code == 200
+        assert wait_for(lambda: view(door)["camera"]["others"] == [], timeout=20)
+        # A custom setting goes along as it is; one the camera cannot take is refused.
+        custom = {**triggers, "camera": {**METER, "clock_mhz": 10, "exposure_ms": 15}}
+        assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": custom}).status_code == 200
+        assert wait_for(lambda: any("clock=10&exposure=15" in p for p in Camera.asked), timeout=20)
+        for bad in ({"size": "4000x3000"}, {"clock_mhz": 13}, {"gain": 3}, {"quality": 2}, {"exposure_ms": 9999}):
+            refused = {**triggers, "camera": {**METER, **bad}}
+            assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": refused}).status_code == 422
     # Said in the log, to look into it later; never with the camera's password.
-    assert "is a VisionState ESP32" in caplog.text and "set up for Meters and displays" in caplog.text
+    assert "is a VisionState ESP32" in caplog.text
     assert "secret-pw" not in caplog.text
+
+
+def test_an_older_firmware_is_asked_for_the_preset(settings, camera):  # noqa: F811
+    Camera.firmware = "states"
+    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+    with TestClient(create_app(settings)) as client:
+        base = {"source_type": "http", "source": url, "interval_s": 1}
+        meter = client.post(
+            "/api/v1/sensors", json={**base, "name": "Meter", "kind": "reading", "reading": {"mode": "counter"}}
+        ).json()["id"]
+        assert wait_for(lambda: any("use=meter" in p for p in Camera.asked), timeout=20)
+        view = client.get(f"/api/v1/sensors/{meter}").json()
+        assert view["camera"]["settings"] is False and view["camera"]["now"] is None
+        # A custom setting an older firmware cannot take: nothing asked, the camera stays as it is.
+        triggers = {**view["triggers"], "camera": {**METER, "clock_mhz": 10}}
+        assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": triggers}).status_code == 200
+        time.sleep(1.5)
+        Camera.asked.clear()
+        assert wait_for(lambda: len(Camera.asked) >= 3, timeout=20)
+        assert not any("use=" in p or "size=" in p for p in Camera.asked)
 
 
 def test_any_other_camera_is_asked_as_it_was(settings, camera):  # noqa: F811

@@ -2,10 +2,10 @@
 # board has no flash LED. On the S3 the camera has a peripheral of its own (not I2S), so the
 # microphone needs no port kept for it.
 packages:
-  camera_use: !include camera-use.yaml  # what it looks at: the picture size, quality and exposure
+  camera_orientation: !include camera-orientation.yaml  # which way up the picture is
 
 substitutions:
-  # The largest picture it can give: what Camera use (camera-use.yaml) chooses from fits in it.
+  # The largest picture it can give: every size a sensor asks for fits in it.
   camera_resolution: 1600x1200
 
 esp32_camera:

@@ -63,7 +63,7 @@ def test_without_a_check_nothing_is_timed():
 
 
 def test_a_shared_frame_knows_when_the_camera_was_asked():
-    async def grab(kind: str, source: str) -> bytes:
+    async def grab(kind: str, source: str, camera: dict | None = None) -> bytes:
         await asyncio.sleep(0.03)  # a slow camera: the time is when it was asked, not when it answered
         return b"jpeg"
 

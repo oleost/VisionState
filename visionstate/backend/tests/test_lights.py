@@ -66,7 +66,7 @@ class Camera:
     def __init__(self):
         self.grabs = 0
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.grabs += 1
         from io import BytesIO
 

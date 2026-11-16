@@ -4,6 +4,7 @@
   import { app, toast, toastError } from '../../lib/app.svelte';
   import AdviceCard from '../../lib/components/AdviceCard.svelte';
   import CameraOrientation from '../../lib/components/CameraOrientation.svelte';
+  import CameraSettingsEditor from '../../lib/components/CameraSettingsEditor.svelte';
   import ConfirmButton from '../../lib/components/ConfirmButton.svelte';
   import CounterDialsSwitch from '../../lib/components/CounterDialsSwitch.svelte';
   import DialsEditor from '../../lib/components/DialsEditor.svelte';
@@ -274,20 +275,7 @@
         <SourcePicker bind:sourceType bind:source />
         <LightEditor bind:triggers lightError={sensor.live.light_error} {sourceType} {source} />
         {#if sensor.camera}
-          {@const uses = app.config?.camera_uses ?? {}}
-          {@const byKind = sensor.camera.by_kind}
-          <label class="field" data-testid="camera-use">
-            Camera set-up
-            <select class="input" bind:value={triggers.camera_use} aria-label="Camera set-up">
-              <option value="">Automatic{byKind ? `: ${uses[byKind] ?? byKind}` : ''}</option>
-              {#each Object.entries(uses) as [key, label] (key)}<option value={key}>{label}</option>{/each}
-            </select>
-            <span class="xsmall muted">
-              A VisionState ESP32 camera: before this sensor's pictures it is set up for what the sensor looks at (picture
-              size, compression, exposure). Sensors on one camera share the most demanding.
-              {#if sensor.camera.now}Now: {uses[sensor.camera.now] ?? sensor.camera.now}.{/if}
-            </span>
-          </label>
+          <CameraSettingsEditor bind:triggers kind={sensor.kind} camera={sensor.camera} />
           <CameraOrientation sensorId={sensor.id} />
         {/if}
       {/if}

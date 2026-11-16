@@ -37,7 +37,6 @@
   let kind = $state(firstKinds.includes(keptText('kind') ?? '') ? keptText('kind')! : firstKinds[0]);
   let name = $state(keptText('name') ?? '');
   let mute = $state(kept.mute === true);
-  const useIds = Object.keys(cfg.camera_uses);
   // A microphone that is a voice assistant too: the wake word heard by Home Assistant, the answer on
   // one of its media players ('' : chosen later, Answer on on the device).
   let assistant = $state(kept.assistant === true);
@@ -47,7 +46,6 @@
     .mediaPlayers()
     .then((got) => (players = got.players))
     .catch(() => {}); // Home Assistant not reachable: chosen later
-  let cameraUse = $state(useIds.includes(keptText('cameraUse') ?? '') ? keptText('cameraUse')! : useIds[0]);
   let made = $state<EsphomeConfiguration | null>(null);
   let madeError = $state('');
 
@@ -74,13 +72,13 @@
   // The configuration follows every choice; the last answer counts.
   let loadCount = 0;
   $effect(() => {
-    const args = [board, kind, friendly, canMute && mute, camera ? cameraUse : null, canAssist && assistant ? answerOn : null] as const;
+    const args = [board, kind, friendly, canMute && mute, canAssist && assistant ? answerOn : null] as const;
     untrack(() => load(...args));
   });
-  async function load(b: string, k: string, n: string, m: boolean, u: string | null, a: string | null) {
+  async function load(b: string, k: string, n: string, m: boolean, a: string | null) {
     const mine = ++loadCount;
     try {
-      const got = await api.esphomeConfiguration(b, k, n, m, u, a);
+      const got = await api.esphomeConfiguration(b, k, n, m, a);
       if (mine !== loadCount) return;
       made = got;
       madeError = '';
@@ -126,7 +124,7 @@
   let devicesError = $state('');
   let host = $state(keptText('host') ?? '');
   $effect(() => {
-    const keep = { board, kind, name, mute, cameraUse, assistant, answerOn, password, apPassword, apiKey, wifiSsid, host };
+    const keep = { board, kind, name, mute, assistant, answerOn, password, apPassword, apiKey, wifiSsid, host };
     try {
       sessionStorage.setItem(KEPT, JSON.stringify(keep));
     } catch {
@@ -201,7 +199,12 @@
       {#each boardIds as id (id)}
         <label class="check">
           <input type="radio" name="board" checked={board === id} onchange={() => pickBoard(id)} />
-          <span><strong>{cfg.boards[id].name}</strong> <span class="muted small">{cfg.boards[id].description}</span></span>
+          <span
+            ><strong>{cfg.boards[id].name}</strong> <span class="muted small">{cfg.boards[id].description}</span
+            >{#if !cfg.boards[id].tried}{' '}<span class="faint small" data-testid="board-untried"
+                >· built, not tried on a board yet</span
+              >{/if}</span
+          >
         </label>
       {/each}
     </div>
@@ -218,21 +221,6 @@
       Device name
       <input class="input" bind:value={name} placeholder="Hallway" aria-label="Device name" />
     </label>
-    {#if camera}
-      <div class="col tight" role="radiogroup" aria-label="What the camera looks at">
-        <span class="small">What the camera looks at</span>
-        {#each useIds as id (id)}
-          <label class="check">
-            <input type="radio" name="camera-use" checked={cameraUse === id} onchange={() => (cameraUse = id)} />
-            <span><strong>{id}</strong> <span class="muted small">{cfg.camera_uses[id]}</span></span>
-          </label>
-        {/each}
-        <span class="xsmall muted">
-          One camera for several sensors: pick what the most demanding one needs (a meter, then things that move).
-          It can be changed later on the device in Home Assistant (Camera use).
-        </span>
-      </div>
-    {/if}
     {#if canMute}
       <label class="check">
         <input type="checkbox" bind:checked={mute} />

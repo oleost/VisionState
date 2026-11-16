@@ -56,7 +56,6 @@ def configuration(
     kind: str,
     friendly_name: str,
     mute: bool,
-    camera_use: str | None = None,
     assistant: str | None = None,
 ) -> dict:
     """The device's whole file for ESPHome, with the user's values as fields (FIELDS). ``assistant``:
@@ -75,9 +74,6 @@ def configuration(
     name = device_name(friendly)
     microphone = kind in ("microphone", "camera_microphone")
     camera = kind in ("camera", "camera_microphone")
-    uses = ESPHOME["camera_uses"]
-    if camera_use is not None and camera_use not in uses:
-        raise ESPHomeError(f"Unknown camera use {camera_use!r}")
     if assistant is not None and kind != "microphone":
         raise ESPHomeError("Only a microphone can be a voice assistant too")
     if assistant and not MEDIA_PLAYER.fullmatch(assistant):
@@ -93,9 +89,6 @@ def configuration(
         "  # The fallback hotspot's, opened when it cannot reach the Wi-Fi.",
         f"  ap_password: {field('ap_password')}",
     ]
-    if camera:
-        lines.append("  # What it looks at (Camera use in Home Assistant, which can change it later).")
-        lines.append(f'  camera_use: "{camera_use or next(iter(uses))}"')
     if microphone:
         pins = [k for k in ("mic_sck", "mic_ws", "mic_sd") if k in spec["pins"]]
         if mute:

@@ -32,8 +32,23 @@ export interface Triggers {
   light_delay_s: number;
   /** When the light is switched on (config light_when): 'always', or 'dark' (only for a dark frame). */
   light_when: string;
-  /** How an ESP32 camera of ours is set up for this sensor (config camera_uses); '' = by its kind. */
-  camera_use: string;
+  /** How an ESP32 camera of ours is set up for this sensor's pictures; null = its kind's preset. */
+  camera: CameraSettings | null;
+}
+
+/** An ESP32 camera's settings for a sensor (config camera); exposure_ms 0 is automatic exposure. */
+export interface CameraSettings {
+  size: string;
+  quality: number;
+  clock_mhz: number;
+  exposure_ms: number;
+  gain: number;
+}
+
+export interface CameraPreset {
+  name: string;
+  description: string;
+  settings: CameraSettings;
 }
 
 export interface ReviewRules {
@@ -685,15 +700,15 @@ export interface Counts {
 
 /** An ESP32 camera of ours behind a sensor's snapshot address (settings.CAMERA_USES keys). */
 export interface SensorCamera {
-  /** How the camera is set up now (its last picture said so). */
-  now: string | null;
-  /** What this sensor asks for: its own choice, or by its kind (`automatic`). */
-  wanted: string | null;
-  automatic: boolean;
-  /** What its kind asks for (Automatic). */
-  by_kind: string | null;
-  /** What the camera is asked for: the most demanding of the sensors on it. */
-  asked: string | null;
+  /** Its firmware takes a sensor's settings (1.5.0 on); older firmware only a preset. */
+  settings: boolean;
+  /** How the camera said it is set up with its last picture, and the time between its pictures. */
+  now: CameraSettings | null;
+  frame_ms: number | null;
+  /** Its camera chip (OV2640, OV3660 …), firmware 1.5.0 on. */
+  chip: string | null;
+  /** The other sensors on the camera that want it set up otherwise: it switches between them. */
+  others: string[];
 }
 
 export interface Sensor {
@@ -838,8 +853,15 @@ export interface AppConfig {
   sound_levels: SoundLevel[];
   /** Thresholds suggested from review answers: from at least `min_answers` answers. */
   advice: { min_answers: number };
-  /** What an ESP32 camera of ours is set up as: key → name, most demanding first. */
-  camera_uses: Record<string, string>;
+  /** An ESP32 camera of ours: a sensor's settings, their choices and the presets that fill them in. */
+  camera: {
+    presets: Record<string, CameraPreset>;
+    preset_by_kind: Record<string, string>;
+    sizes: string[];
+    clocks_mhz: number[];
+    gains: number[];
+    limits: Record<'quality' | 'exposure_ms', [number, number]>;
+  };
   /** When a sensor's light is switched on: key → name. */
   light_when: Record<string, string>;
   /** The ESP32 guide (settings.ESPHOME). */
@@ -848,8 +870,6 @@ export interface AppConfig {
     username: string;
     password_chars: number;
     kinds: Record<string, string>;
-    /** What a camera looks at (Camera use on the device): its option, and what it is for. */
-    camera_uses: Record<string, string>;
     boards: Record<string, EsphomeBoard>;
     /** The first firmware that takes a picture with its own flash, and the longest it keeps it on before it. */
     flash_firmware: string;
@@ -1212,6 +1232,8 @@ export interface EsphomeBoard {
   kinds: string[];
   /** What lights while VisionState listens or looks; null on a board without an LED. */
   light: string | null;
+  /** The firmware has run on one; otherwise only built, not tried on a board yet. */
+  tried: boolean;
   /** The board's pins; a board without mute_pin takes no mute switch. */
   pins: Record<string, string>;
   /** About the wiring, below its table. */

@@ -21,7 +21,7 @@ class CountingCamera:
         Image.new("RGB", (64, 48), (120, 120, 120)).save(buf, format="JPEG")
         self.jpeg, self.grabs = buf.getvalue(), 0
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.grabs += 1
         return self.jpeg
 

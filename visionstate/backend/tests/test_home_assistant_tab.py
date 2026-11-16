@@ -156,7 +156,7 @@ def jpeg() -> bytes:
 
 
 class StillCamera:
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         return jpeg()
 
     async def close(self):

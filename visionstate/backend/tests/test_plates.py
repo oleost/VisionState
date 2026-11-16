@@ -330,7 +330,7 @@ class PlateCamera:
     def __init__(self, text: str):
         self.text = text
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         with Image.open(ASSETS / "plate_car.jpg") as photo:
             buf = io.BytesIO()
             car_with_plate(self.text, photo).save(buf, format="JPEG", quality=92)

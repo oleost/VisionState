@@ -41,12 +41,9 @@ Assistant or a test before anything is built on them).
 The component `visionstate_stream` and the packages in `esphome/`: the microphone as an endless
 WAV over HTTP (16 kHz, mono, 16 bits), the camera's picture as a snapshot taken after the request,
 both behind HTTP Basic auth on one port; the *Microphone* switch, the gain, the mute pin, the
-listeners, the light while someone listens, the flash as a light, and *Camera use* (what the camera
-looks at: its picture size, quality and exposure). VisionState sets it before a sensor's pictures
-(`?use=` on the snapshot, decided with the maintainer 2026-11-05): by the sensor's kind or its own
-choice (`settings.TRIGGER_DEFAULTS["camera_use"]`), the most demanding of the sensors on one camera
-(`settings.CAMERA_USES`), so a camera shared by a meter and a door is not switched at every picture
-(a new size costs about 0.5 s). Compiled for both boards and all
+listeners, the light while someone listens, the flash as a light, and each sensor's camera settings
+(§7: picture size, quality, clock, exposure and gain, sent with its snapshot; until firmware 1.5.0 a
+*Camera use* on the device that VisionState set with `?use=`). Compiled for both boards and all
 three kinds (CI: `.github/workflows/esphome.yml`). What has been tried on a board is in §5.
 
 In VisionState: the ESP32 guide (*Set one up with ESPHome*; the files are in
@@ -190,7 +187,7 @@ ESPHome sends a microphone to Home Assistant only for its voice assistant.
   firmware can read it already. Tried 2026-11-12 on the WROOM-32 through the main Home Assistant:
   the password and address came back, and the stream answered with it.
 - **Picture orientation (the maintainer's wish, 2026-11-10), built in firmware 1.2.0:** a camera
-  of ours turns its picture 180° and mirrors it on the chip (`camera-use.yaml`), chosen in Home
+  of ours turns its picture 180° and mirrors it on the chip (`camera-orientation.yaml`), chosen in Home
   Assistant or in a camera sensor's settings (through Home Assistant, like the microphone's
   controls). Found switching the maintainer's water meter ESP32-CAM to our firmware: its own file
   had `vertical_flip: false`, which the packages left at ESPHome's default. Tried on the test
@@ -307,3 +304,41 @@ ways); the guide does nothing until opened.
       fixed firmware. A later fix that needs a change in users' files gets `esphome-v2`.
 - [x] The usual checks, the changelog entry shown to the maintainer, and their "go" (2026-11-10:
       released in 0.15.0b7).
+
+## 7. Camera settings per sensor (the maintainer, 2026-11-16)
+
+Prompted by issue #86 (pink pictures from one ESP32-CAM, and the wish to try a slower camera
+clock): *Camera use* on the device is replaced by six settings that belong to each sensor.
+
+- **The sensor owns them:** picture size, JPEG quality, camera clock (20 or 10 MHz), exposure
+  (automatic, or fixed in milliseconds), and the gain ceiling. They are kept in the sensor's
+  triggers and sent with each snapshot; the firmware changes only what differs from the last
+  picture and throws away the pictures taken while the camera settles.
+- **Presets only fill them in:** *States*, *Meters and displays*, *People, cars and animals*. A new
+  sensor starts from its kind's preset. The name shown is worked out from the values: a preset's
+  name when they match one, *Custom* when they do not; nothing else is stored.
+- **Not in Home Assistant:** *Camera use* and *Exposure for moving things* go; *Picture
+  orientation* stays (how the camera hangs, not what a sensor wants). Breaking inside the 0.15.0
+  betas is fine (the maintainer).
+- **Two sensors on one camera with other settings:** the camera switches between them before each
+  picture (correct, a little slower); they share a picture only when their settings are the same,
+  and the sensor's settings say so when another sensor on the camera differs.
+- **Milliseconds:** the firmware turns them into the sensor's lines by the picture size and clock;
+  shown as "about", since only one chip (the test ESP32-CAM's OV3660) is measured.
+- **Older firmware** (1.0–1.4): asked with `?use=` as before, when the values are a preset's; a
+  custom one is not sent (the camera stays as it is) and the sensor's settings say it needs 1.5.0.
+- **When:** before the stable 0.15.0 (the maintainer).
+- **Tried on the test ESP32-CAM (2026-11-16, firmware 1.5.0 built from the working copy; its chip
+  is an OV3660, which the snapshot now says: `X-VisionState-Camera-Chip`):** every
+  setting taken, the clock switched 20 → 10 → 20 MHz and the size back and forth twelve times while
+  it ran, every picture whole and its colour unchanged, nothing in its log. A 1600×1200 picture
+  every 70 ms at 20 MHz and every 143 ms at 10 MHz (the line time the milliseconds are worked out
+  by). Right after a change the camera hands out the one or two pictures it kept from before (after
+  7 and 42 ms): they are thrown away as well. With the flash, the same exposure in milliseconds was
+  about two thirds as bright at 10 MHz as at 20 MHz, so the milliseconds stay "about".
+- **Issue #86:** the maintainer's two ESP32-CAMs and the water meter's own history showed no pink
+  pictures (2026-11-16: 80 flash pictures in the dark, 268 readings since October). The user whose
+  camera does (an OV2640, they believe; not the test camera's OV3660) had run it at 20 MHz before
+  our firmware, at 1024×768, JPEG quality 12, `ae_level: 1` and ESPHome's single frame buffer (ours
+  keeps two, so the camera takes pictures all the time). The first three are now their sensor's to
+  try; the frame buffers are not a setting.

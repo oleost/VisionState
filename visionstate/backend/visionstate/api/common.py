@@ -16,8 +16,10 @@ from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, car_looks, with_shared
 from ..mqtt import entity_options, main_entities
 from ..settings import (
-    CAMERA_USE_BY_KIND,
-    CAMERA_USES,
+    CAMERA_CLOCKS_MHZ,
+    CAMERA_GAINS,
+    CAMERA_LIMITS,
+    CAMERA_SIZES,
     COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
@@ -57,6 +59,7 @@ from ..settings import (
     TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
     active_custom,
+    camera_settings,
     faces_on,
     merge_objects,
     merge_reading,
@@ -157,6 +160,28 @@ def valid_light(value: str) -> str:
     return value
 
 
+class CameraSettingsIn(BaseModel):
+    """How an ESP32 camera of ours is set up for a sensor's pictures (settings.CAMERA_*)."""
+
+    size: str
+    quality: int = Field(ge=CAMERA_LIMITS["quality"][0], le=CAMERA_LIMITS["quality"][1])
+    clock_mhz: int
+    exposure_ms: int = Field(ge=0, le=CAMERA_LIMITS["exposure_ms"][1])  # 0: automatic
+    gain: int
+
+    @model_validator(mode="after")
+    def _known(self) -> CameraSettingsIn:
+        if self.size not in CAMERA_SIZES:
+            raise ValueError(f"Picture size: one of {', '.join(CAMERA_SIZES)}")
+        if self.clock_mhz not in CAMERA_CLOCKS_MHZ:
+            raise ValueError(f"Camera clock: one of {', '.join(map(str, CAMERA_CLOCKS_MHZ))} MHz")
+        if self.gain not in CAMERA_GAINS:
+            raise ValueError(f"Gain ceiling: one of {', '.join(map(str, CAMERA_GAINS))}")
+        if 0 < self.exposure_ms < CAMERA_LIMITS["exposure_ms"][0]:
+            raise ValueError(f"A fixed exposure is at least {CAMERA_LIMITS['exposure_ms'][0]} ms")
+        return self
+
+
 class Triggers(BaseModel):
     """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
 
@@ -179,14 +204,8 @@ class Triggers(BaseModel):
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
     light_when: str = TRIGGER_DEFAULTS["light_when"]  # settings.LIGHT_WHEN
-    camera_use: str = TRIGGER_DEFAULTS["camera_use"]  # settings.CAMERA_USES, or "" (by the kind)
-
-    @field_validator("camera_use")
-    @classmethod
-    def _valid_camera_use(cls, value: str) -> str:
-        if value and value not in CAMERA_USES:
-            raise ValueError(f"Not a camera use: {value!r}")
-        return value
+    # An ESP32 camera of ours: its settings for this sensor; None: its kind's preset.
+    camera: CameraSettingsIn | None = None
 
     @field_validator("entities")
     @classmethod
@@ -705,6 +724,30 @@ def limit_view(settings: dict, watch: change_limit.Watch) -> dict:
     }
 
 
+def camera_view(rt: Runtime, session: Session, sensor: Sensor) -> dict | None:
+    """An ESP32 camera of ours (esphome/): whether its firmware takes a sensor's settings (1.5.0 on),
+    how it said it is set up, how fast it takes pictures and its camera chip, and the other sensors on it that want
+    it set up otherwise (it switches between them). None for any other camera."""
+    ours = rt.camera_uses.ours.get(sensor.source) if sensor.source_type == "http" else None
+    if ours is None or sensor.kind == KIND_SOUND:
+        return None
+    mine = camera_settings(sensor.triggers, sensor.kind)
+    others = session.scalars(
+        select(Sensor).where(Sensor.source_type == "http", Sensor.source == sensor.source, Sensor.id != sensor.id)
+    ).all()
+    return {
+        "settings": ours == "settings",
+        "now": rt.camera_uses.now.get(sensor.source),
+        "frame_ms": rt.camera_uses.frame_ms.get(sensor.source),
+        "chip": rt.camera_uses.chip.get(sensor.source),
+        "others": [
+            other.name
+            for other in others
+            if other.enabled and other.kind != KIND_SOUND and camera_settings(other.triggers, other.kind) != mine
+        ],
+    }
+
+
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     """A sensor as the UI shows it: settings, status, live state, model and the parts of its kind."""
     live = rt.live.get(sensor.id)
@@ -731,18 +774,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     if live and live.face_burst.until > now:
         paces.append(FACES["burst_interval_s"])
     pace = min(paces) if paces else None
-    # An ESP32 camera of ours (esphome/): how it is set up now, and what this sensor asks of it.
-    ours = rt.camera_uses.ours.get(sensor.source) if sensor.source_type == "http" else None
-    camera = None
-    if ours is not None:
-        wanted = merge_triggers(sensor.triggers)["camera_use"]
-        camera = {
-            "now": ours if ours in CAMERA_USES else None,
-            "wanted": wanted or CAMERA_USE_BY_KIND.get(sensor.kind),
-            "automatic": not wanted,
-            "by_kind": CAMERA_USE_BY_KIND.get(sensor.kind),
-            "asked": rt.camera_uses.use_for(sensor.source),  # the most demanding of the sensors on it
-        }
+    camera = camera_view(rt, session, sensor)
     return {
         "id": sensor.id,
         "slug": sensor.slug,

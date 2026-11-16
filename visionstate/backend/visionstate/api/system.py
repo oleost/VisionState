@@ -22,7 +22,12 @@ from ..settings import (
     ADVICE,
     BACKUP,
     BACKUP_PARTS,
-    CAMERA_USES,
+    CAMERA_CLOCKS_MHZ,
+    CAMERA_GAINS,
+    CAMERA_LIMITS,
+    CAMERA_PRESET_BY_KIND,
+    CAMERA_PRESETS,
+    CAMERA_SIZES,
     COUNTER_LIMIT,
     COUNTER_READERS,
     ESPHOME,
@@ -173,7 +178,15 @@ def ui_config() -> dict:
         "sound_limits": SOUND_LIMITS,
         "sound_levels": SOUND_LEVELS,
         "advice": ADVICE,
-        "camera_uses": CAMERA_USES,  # what an ESP32 camera of ours is set up as, most demanding first
+        # An ESP32 camera of ours: a sensor's settings, their choices and the presets that fill them in.
+        "camera": {
+            "presets": CAMERA_PRESETS,
+            "preset_by_kind": CAMERA_PRESET_BY_KIND,
+            "sizes": CAMERA_SIZES,
+            "clocks_mhz": CAMERA_CLOCKS_MHZ,
+            "gains": CAMERA_GAINS,
+            "limits": CAMERA_LIMITS,
+        },
         "light_when": LIGHT_WHEN,  # when a sensor's light is switched on, with the names shown
         "esphome": {
             k: ESPHOME[k]
@@ -182,7 +195,6 @@ def ui_config() -> dict:
                 "username",
                 "password_chars",
                 "kinds",
-                "camera_uses",
                 "boards",
                 "flash_firmware",
                 "flash_max_s",

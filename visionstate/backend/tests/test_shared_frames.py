@@ -35,7 +35,7 @@ class Camera:
         self.error = None
         self.data = jpeg()
 
-    async def grab(self, kind, source):
+    async def grab(self, kind, source, camera=None):
         self.calls.append((kind, source))
         if self.error:
             raise self.error
@@ -245,7 +245,7 @@ def test_late_waiter_never_receives_a_frame_from_inflight_capture():
         release = asyncio.Event()
         camera = Camera()
 
-        async def slow_grab(kind, source):
+        async def slow_grab(kind, source, settings=None):
             started.set()
             await release.wait()
             return await camera.grab(kind, source)
@@ -283,7 +283,7 @@ def test_close_cancels_an_inflight_capture():
         cancelled = asyncio.Event()
         camera = Camera()
 
-        async def grab(kind, source):
+        async def grab(kind, source, camera=None):
             started.set()
             try:
                 await asyncio.Future()

@@ -26,7 +26,7 @@ class Camera:
         Image.new("RGB", (320, 240), (90, 110, 130)).save(buf, "JPEG")
         self.jpeg, self.grabs, self.error = buf.getvalue(), 0, None
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.grabs += 1
         if self.error:
             raise self.error

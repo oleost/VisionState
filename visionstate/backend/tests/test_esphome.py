@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from visionstate import esphome
 from visionstate.main import create_app
-from visionstate.settings import CAMERA_USES, ESPHOME
+from visionstate.settings import CAMERA_CLOCKS_MHZ, CAMERA_GAINS, CAMERA_LIMITS, CAMERA_SIZES, ESPHOME
 
 from .test_storage import settings  # noqa: F401 (fixture)
 
@@ -73,6 +73,12 @@ def test_the_guide_writes_what_the_examples_use(board, kind):
 
 
 @in_repo
+def test_every_board_says_whether_the_firmware_has_run_on_one():
+    tried = {board: spec["tried"] for board, spec in ESPHOME["boards"].items()}
+    assert all(isinstance(t, bool) for t in tried.values())
+    assert tried["esp32-devkit"] and tried["esp32-cam"]  # the boards checked in docs/ESP32_PLAN.md §5
+
+
 @pytest.mark.parametrize("board", list(ESPHOME["boards"]))
 def test_the_boards_pins_are_the_packages_defaults(board):
     package = (ESPHOME_DIR / "packages" / f"board-{board}.yaml").read_text(encoding="utf-8")
@@ -82,20 +88,23 @@ def test_the_boards_pins_are_the_packages_defaults(board):
 
 
 @in_repo
-def test_the_camera_uses_are_the_devices_options():
-    # What the guide offers is what Camera use (esphome/packages/camera-use.yaml) can be set to.
-    package = (ESPHOME_DIR / "packages" / "camera-use.yaml").read_text(encoding="utf-8")
-    options = re.findall(r"^      - (.+)$", package.split("options:", 1)[1].split("initial_option", 1)[0], re.MULTILINE)
-    assert options == list(ESPHOME["camera_uses"])
-    assert substitutions(package)["camera_use"] == next(iter(ESPHOME["camera_uses"]))
-    # The firmware's keys (?use=) and names are the app's (settings.CAMERA_USES).
+def test_the_firmware_takes_every_camera_setting_the_app_offers():
+    # A sensor's settings (settings.CAMERA_*) are what the snapshot can ask for (visionstate_stream.cpp).
     component = (ESPHOME_DIR / "components" / "visionstate_stream" / "visionstate_stream.cpp").read_text(
         encoding="utf-8"
     )
-    names = re.findall(r'"([^"]+)"', re.search(r"CAMERA_USE_NAMES\[CAMERA_USES\] = \{([^}]*)\}", component)[1])
-    keys = re.findall(r'"([^"]+)"', re.search(r"CAMERA_USE_KEYS\[CAMERA_USES\] = \{([^}]*)\}", component)[1])
-    assert dict(zip(keys, names, strict=True)) == {k: CAMERA_USES[k] for k in keys}
-    assert set(keys) == set(CAMERA_USES) and set(names) == set(ESPHOME["camera_uses"])
+    sizes = re.findall(r'\{"(\d+x\d+)", FRAMESIZE_', component)
+    assert sizes == list(CAMERA_SIZES)
+    clocks = {int(mhz) for mhz in re.findall(r"mhz == (\d+)", component)}
+    assert clocks == set(CAMERA_CLOCKS_MHZ)
+    assert re.search(r"quality >= (\d+) && quality <= (\d+)", component).groups() == ("6", "63")
+    assert CAMERA_LIMITS["quality"][0] >= 6 and CAMERA_LIMITS["quality"][1] <= 63
+    assert max(CAMERA_GAINS) == 128 and all(g & (g - 1) == 0 for g in CAMERA_GAINS)  # 2 << GAINCEILING_*
+    assert int(re.search(r"ms >= 0 && ms <= (\d+)", component)[1]) >= CAMERA_LIMITS["exposure_ms"][1]
+    # The camera starts at its largest size, so every size asked for fits its buffers.
+    for package in ("camera-esp32-cam.yaml", "camera-xiao-esp32s3-sense.yaml"):
+        text = (ESPHOME_DIR / "packages" / package).read_text(encoding="utf-8")
+        assert substitutions(text)["camera_resolution"] == CAMERA_SIZES[-1]
 
 
 def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
@@ -112,13 +121,8 @@ def test_a_mute_switch_only_where_asked_and_a_board_only_for_what_it_can_be():
     assert "microphone-pdm.yaml" in xiao and "mic_" not in xiao and "The wiring" not in xiao
     both = files_of(esphome.configuration("xiao-esp32s3-sense", "camera_microphone", "Hall", mute=True)["yaml"])
     assert not any(f.endswith("-microphone.yaml") for f in both)
-    # A camera says what it looks at (Camera use on the device); a microphone has none.
-    assert 'camera_use: "States"' in esphome.configuration("esp32-cam", "camera", "Hall", mute=False)["yaml"]
-    meter = esphome.configuration("esp32-cam", "camera", "Hall", mute=False, camera_use="Meters and displays")
-    assert 'camera_use: "Meters and displays"' in meter["yaml"]
-    assert "camera_use" not in esphome.configuration("esp32-devkit", "microphone", "Hall", mute=False)["yaml"]
-    with pytest.raises(esphome.ESPHomeError):
-        esphome.configuration("esp32-cam", "camera", "Hall", mute=False, camera_use="Fish")
+    # How a camera is set up is each sensor's (its settings in VisionState), not the device's file.
+    assert "camera_use" not in esphome.configuration("esp32-cam", "camera", "Hall", mute=False)["yaml"]
     # A board with no pin for a mute switch takes none; its wiring is the user's (an INMP441 on its headers).
     with pytest.raises(esphome.ESPHomeError):
         esphome.configuration("waveshare-esp32s3-lcd2", "microphone", "Hall", mute=True)

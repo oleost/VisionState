@@ -11,7 +11,6 @@ substitutions:
   wifi_password: !secret wifi_password
   stream_password: !secret vs_stream_password
   ap_password: !secret vs_ap_password
-  camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
 
 external_components:
   - source: github://oleost/VisionState@esphome-v1

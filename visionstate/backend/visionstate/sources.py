@@ -19,7 +19,7 @@ import numpy as np
 
 from .ha_events import camera_stream, discovered, fetch_registries, integration_names, websocket_url
 from .redact import redact
-from .settings import CAMERA_USES, RUNTIME, SOUND, SUPERVISOR_URL, Settings
+from .settings import CAMERA_SETTING_KEYS, RUNTIME, SOUND, SUPERVISOR_URL, Settings, camera_preset
 
 log = logging.getLogger(__name__)
 
@@ -265,34 +265,65 @@ class HomeAssistant:
 
 
 class CameraUses:
-    """ESP32 cameras of ours (esphome/) and what their sensors want them set up as
-    (settings.CAMERA_USES). The grabber tells it which addresses answered as ours and asks it what
-    to ask them for; the engine tells it what each sensor wants."""
+    """ESP32 cameras of ours (esphome/), known by the X-VisionState-Camera header of their snapshots:
+    whether they take a sensor's settings (firmware 1.5.0 on: "settings") or only a preset (older:
+    the preset they are set up as), how they say they are set up, and their own flash."""
 
     def __init__(self) -> None:
-        # Snapshot address -> how the camera is set up now (the X-VisionState-Camera header of its
-        # last picture).
+        # Snapshot address -> its X-VisionState-Camera header: "settings", or an older firmware's preset.
         self.ours: dict[str, str] = {}
+        # Snapshot address -> how the camera said it is set up (X-VisionState-Camera-Settings), and
+        # the time between two of its pictures when it last measured it (X-VisionState-Frame-Ms).
+        self.now: dict[str, dict] = {}
+        self.frame_ms: dict[str, int] = {}
+        self.chip: dict[str, str] = {}  # its camera chip (X-VisionState-Camera-Chip: OV2640, OV3660 …)
         # Snapshot addresses of ours that take a picture with their own flash (?flash=<ms>, firmware
         # 1.4.0 on: the X-VisionState-Flash header).
         self.flash: set[str] = set()
         # Whether the last picture from an address was taken with its flash (X-VisionState-Flashed:
         # asked to flash only when dark, the camera decides).
         self.flashed: dict[str, bool] = {}
-        self._wants: dict[int, tuple[str, str]] = {}  # sensor -> (its address, the use it wants)
 
-    def want(self, sensor_id: int, source: str, use: str | None) -> None:
-        """What a sensor wants its camera set up as (None: nothing)."""
-        if use is None:
-            self._wants.pop(sensor_id, None)
+    def query(self, url: str, settings: dict | None) -> str | None:
+        """What a snapshot asks the camera at ``url`` for a sensor with these settings
+        (settings.camera_settings): the settings themselves (firmware 1.5.0 on), the preset they
+        are (older firmware: ?use=), or nothing (not ours, not known yet, or a custom setting an
+        older firmware cannot take)."""
+        if settings is None or url not in self.ours:
+            return None
+        if self.ours[url] == "settings":
+            return "&".join(
+                f"{q}={camera_value(k, settings[k])}" for k, q in CAMERA_SETTING_KEYS.items() if k in settings
+            )
+        preset = camera_preset(settings)
+        return f"use={preset}" if preset else None
+
+
+def camera_value(key: str, value: object) -> str:
+    """A camera setting as a snapshot asks for it (an exposure of 0 is automatic)."""
+    return "auto" if key == "exposure_ms" and value == 0 else str(value)
+
+
+def said_settings(header: str) -> dict | None:
+    """How a camera of ours says it is set up (X-VisionState-Camera-Settings), as a sensor's settings;
+    None for a value it does not know yet (the first picture after it started)."""
+    said = dict(part.split("=", 1) for part in header.split("&") if "=" in part)
+    names = {query: key for key, query in CAMERA_SETTING_KEYS.items()}
+    settings: dict = {}
+    for query, value in said.items():
+        key = names.get(query)
+        if key is None:
+            continue
+        if key == "size":
+            settings[key] = value if value != "unknown" else None
+        elif key == "exposure_ms" and value == "auto":
+            settings[key] = 0
         else:
-            self._wants[sensor_id] = (source, use)
-
-    def use_for(self, source: str) -> str | None:
-        """The use asked of a camera: the most demanding the sensors on it want (so pictures for
-        two sensors do not switch it back and forth), or None when none wants one."""
-        wanted = {use for address, use in self._wants.values() if address == source}
-        return next((use for use in CAMERA_USES if use in wanted), None)
+            try:
+                settings[key] = int(value) if int(value) >= 0 else None
+            except ValueError:
+                settings[key] = None
+    return settings if settings and None not in settings.values() else None
 
 
 class FrameGrabber:
@@ -336,31 +367,40 @@ class FrameGrabber:
             stream = self._streams[url] = RtspStream(url, keep_open)
         return stream.grab()
 
-    async def grab(self, source_type: str, source: str, flash_ms: int | None = None, dark: int | None = None) -> bytes:
+    async def grab(
+        self,
+        source_type: str,
+        source: str,
+        flash_ms: int | None = None,
+        dark: int | None = None,
+        camera: dict | None = None,
+    ) -> bytes:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
         came on (only for one that said it can: CameraUses.flash); with ``dark``, only when the
-        picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was)."""
+        picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
+        ``camera``: the sensor's settings for a camera of ours (settings.camera_settings)."""
         check_source(source_type, source)
         try:
             if source_type == "ha_camera":
                 return await self.ha.snapshot(source)
             if source_type == "http":
-                return await self._get_limited(source, flash_ms, dark)
+                return await self._get_limited(source, flash_ms, dark, camera)
             return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
         except httpx.HTTPError as err:
             raise SourceError(describe(err)) from err
 
-    async def _get_limited(self, url: str, flash_ms: int | None = None, dark: int | None = None) -> bytes:
+    async def _get_limited(
+        self, url: str, flash_ms: int | None = None, dark: int | None = None, camera: dict | None = None
+    ) -> bytes:
         """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]. A
-        camera of ours (one that answered with X-VisionState-Camera) is asked to be set up for its
-        sensors first (?use=...), and for the picture with its own flash (?flash=<ms>) when asked."""
+        camera of ours (one that answered with X-VisionState-Camera) is asked to be set up with the
+        sensor's settings first (CameraUses.query), and for the picture with its own flash
+        (?flash=<ms>) when asked."""
         asked = url
         uses = self.camera_uses
-        use = uses.use_for(url) if url in uses.ours else None
-        if use is not None:
-            asked = f"{asked}{'&' if '?' in asked else '?'}use={use}"
-            if uses.ours.get(url) != use:  # the camera switches: worth a line when looking into it
-                log.info("Asking the ESP32 camera at %s to be set up for %s", redact(url), CAMERA_USES[use])
+        query = uses.query(url, camera)
+        if query:
+            asked = f"{asked}{'&' if '?' in asked else '?'}{query}"
         timeout = RUNTIME["http_timeout_s"]
         if flash_ms is not None and url in uses.flash:
             asked = f"{asked}{'&' if '?' in asked else '?'}flash={flash_ms}"
@@ -370,17 +410,29 @@ class FrameGrabber:
         async with self._http.stream("GET", asked, timeout=timeout) as resp:
             if resp.status_code != 200:
                 raise SourceError(f"HTTP {resp.status_code}")
-            camera = resp.headers.get("x-visionstate-camera")
+            ours = resp.headers.get("x-visionstate-camera")
             if resp.headers.get("x-visionstate-flash") == "1":
                 uses.flash.add(url)
             else:
                 uses.flash.discard(url)
             uses.flashed[url] = resp.headers.get("x-visionstate-flashed") == "1"
-            if camera is not None:
+            if ours is not None:
                 if url not in uses.ours:
-                    log.info("The camera at %s is a VisionState ESP32 (set up for %s)", redact(url), camera)
-                uses.ours[url] = camera
+                    log.info("The camera at %s is a VisionState ESP32", redact(url))
+                uses.ours[url] = ours
+                said = said_settings(resp.headers.get("x-visionstate-camera-settings", ""))
+                if said is not None:
+                    uses.now[url] = said
+                else:
+                    uses.now.pop(url, None)
+                chip = resp.headers.get("x-visionstate-camera-chip", "")[:20]
+                if chip:
+                    uses.chip[url] = chip
+                frame_ms = resp.headers.get("x-visionstate-frame-ms", "")
+                if frame_ms.isdigit():
+                    uses.frame_ms[url] = int(frame_ms)
             elif uses.ours.pop(url, None) is not None:
+                uses.now.pop(url, None)
                 log.info("The camera at %s no longer answers as a VisionState ESP32", redact(url))
             return await read_limited(resp)
 

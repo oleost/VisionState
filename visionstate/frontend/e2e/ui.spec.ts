@@ -2455,6 +2455,12 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await expect(guide.getByRole('heading', { name: 'An ESP32 microphone or camera of your own' })).toBeVisible();
   const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]'); // under "What is in it" (closed)
   await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
+  // The boards the firmware has not run on yet say so; the ones it has, do not.
+  const untried = guide.getByTestId('board-untried');
+  await expect(untried).toHaveCount(4);
+  await expect(guide.locator('label', { hasText: 'ESP32-CAM' }).getByTestId('board-untried')).toHaveCount(0);
+  await expect(guide.locator('label', { hasText: 'XIAO ESP32-S3 Sense' }).getByTestId('board-untried')).toHaveCount(1);
+  await expectNoHorizontalOverflow(page);
 
   // A XIAO ESP32-S3 Sense: its own microphone (PDM), nothing to wire.
   await press(guide.getByText('XIAO ESP32-S3 Sense', { exact: true }), info);
@@ -2484,10 +2490,8 @@ test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a
   await guide.getByRole('textbox', { name: 'Device name' }).fill('Front door');
   await press(guide.getByText(/A mute switch on a pin/), info);
   await expect(yaml).toHaveValue(/esp32-cam-microphone\.yaml[\s\S]*microphone\.yaml[\s\S]*mute-pin\.yaml/);
-  // What the camera looks at: written for the device's Camera use.
-  await expect(yaml).toHaveValue(/camera_use: "States"/);
-  await press(guide.getByText('Meters and displays', { exact: true }), info);
-  await expect(yaml).toHaveValue(/camera_use: "Meters and displays"/);
+  // How the camera is set up is each sensor's, not the device file's.
+  await expect(yaml).not.toHaveValue(/camera_use/);
   await expect(yaml).toHaveValue(/name: front-door/);
   await expect(guide.locator('table')).toContainText('GPIO14');
   await expect(guide.locator('table')).toContainText('GPIO12 to GND');
@@ -2665,15 +2669,16 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     },
   });
   const id = (await made.json()).id as number;
-  const cameraUse = async () => (await (await request.get(`${CAMERA_URL}/esp32/state`)).json()).use as string;
+  const cameraState = async () =>
+    (await (await request.get(`${CAMERA_URL}/esp32/state`)).json()) as Record<string, string>;
   try {
-    await expect
-      .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now, { timeout: 30_000 })
-      .toBe('states'); // a state sensor: still things
+    const nowSize = async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now?.size;
+    await expect.poll(nowSize, { timeout: 30_000 }).toBe('800x600'); // a state sensor: its kind's preset, States
     await page.goto(`#/sensors/${id}/settings/general`); // on a phone Settings opens as a list of its sections
-    const setup = page.getByLabel('Camera set-up');
+    const setup = page.getByLabel('Camera preset');
     await expect(setup).toBeVisible();
-    await expect(setup.locator('option').first()).toHaveText('Automatic: States');
+    await expect(setup).toHaveValue('states');
+    await expect(page.getByTestId('camera-settings-now')).toContainText('800×600');
     await expect(page.getByTestId('camera-firmware-outdated')).toContainText('1.1.0');
     await expect(page.getByLabel('Picture orientation')).toHaveCount(0);
     firmware = '1.2.0'; // installed: the notice goes, the choice comes (polled)
@@ -2683,10 +2688,23 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await turn.selectOption('Upside down, mirrored');
     await expect.poll(() => sent).toEqual([{ entity_id: 'select.door_picture_orientation', value: 'Upside down, mirrored' }]);
     await expect(turn).toHaveValue('Upside down, mirrored');
+    // A preset fills the settings in; one changed by hand makes them Custom, and the camera gets them all.
     await setup.selectOption('meter');
+    await expect(page.getByLabel('Picture size')).toHaveValue('1600x1200');
+    await page.getByLabel('Camera clock').selectOption('10');
+    await expect(setup).toHaveValue('');
+    await expect(setup.locator('option:checked')).toHaveText('Custom');
+    await page.getByLabel('Exposure', { exact: true }).selectOption('fixed');
+    await page.getByLabel('Exposure time').fill('25');
+    await page.getByLabel('Exposure time').blur();
     await press(page.getByRole('button', { name: 'Save changes' }), info);
     await expect(page.getByText('Settings saved')).toBeVisible();
-    await expect.poll(cameraUse, { timeout: 30_000 }).toBe('meter');
+    await expect
+      .poll(async () => {
+        const s = await cameraState();
+        return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain}`;
+      }, { timeout: 30_000 })
+      .toBe('1600x1200 8 10 25 4');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
 

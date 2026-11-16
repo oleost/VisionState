@@ -43,7 +43,9 @@ class RuntimeBase:
         self.camera_uses = CameraUses()  # ESP32 cameras of ours, set up for their sensors (sources.py)
         self.grabber = FrameGrabber(self.ha, self.camera_uses)
         self.shared_frames = SharedFrames(
-            lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
+            lambda kind, source, camera: self.grabber.grab(kind, source, camera=camera),
+            imaging.decode,
+            RUNTIME["shared_frame_window_s"],
         )
         self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
         # (light, camera host) -> (whether the light is that camera's own flash, when looked up)

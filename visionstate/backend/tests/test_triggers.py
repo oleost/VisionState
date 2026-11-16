@@ -325,7 +325,7 @@ class LoggingCamera:
     def __init__(self, log: list[str]):
         self.log = log
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.log.append("grab")
         buf = io.BytesIO()
         render("00500").save(buf, format="JPEG", quality=92)
@@ -440,7 +440,7 @@ class EspCamera:
             Image.new("RGB", (400, 160), (6, 6, 8)).save(buf, format="JPEG")  # dark: nothing to read
         return buf.getvalue()
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         picture, self.ready = self.ready, self.take()
         return picture
 
@@ -454,7 +454,7 @@ class DimCamera:
     def __init__(self, ha: FakeHa, log: list[str]):
         self.ha, self.log, self.text = ha, log, "00500"
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         lit = self.ha.states.get("light.flash") == "on"
         self.log.append("grab lit" if lit else "grab dark")
         image = render(self.text)

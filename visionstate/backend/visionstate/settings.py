@@ -415,7 +415,7 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.4.0",
+    "firmware_version": "1.5.0",
     # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
     # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
     "password_action": "stream_password",
@@ -451,13 +451,6 @@ ESPHOME = {
         "camera": "Camera",
         "camera_microphone": "Camera and microphone",
     },
-    # What a camera looks at: Camera use in esphome/packages/camera-use.yaml (its option, written
-    # as camera_use), which sets the picture size, quality and exposure. The first is the default.
-    "camera_uses": {
-        "States": "Still things: a door, a gate, a light (states)",
-        "Meters and displays": "A meter or a display: every pixel, less compression (readings)",
-        "People, cars and animals": "Things that move: a short exposure, so they stay sharp (objects)",
-    },
     "boards": {
         "esp32-devkit": {
             "name": "ESP32 DevKit",
@@ -465,6 +458,7 @@ ESPHOME = {
             "wifi": "2.4 GHz",
             "kinds": ["microphone"],
             "light": "The blue LED",
+            "tried": True,
             "pins": {"mic_sck": "GPIO26", "mic_ws": "GPIO25", "mic_sd": "GPIO33", "mute_pin": "GPIO32"},
         },
         "esp32-cam": {
@@ -473,6 +467,7 @@ ESPHOME = {
             "wifi": "2.4 GHz",
             "kinds": ["camera", "camera_microphone"],
             "light": "The small red LED on the back",
+            "tried": True,
             "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
             # Its camera driver takes the first I2S port: esp32-cam-microphone.yaml keeps it.
             "camera_i2s": True,
@@ -483,6 +478,7 @@ ESPHOME = {
             "wifi": "2.4 GHz",
             "kinds": ["microphone", "camera", "camera_microphone"],
             "light": "The orange LED",
+            "tried": False,
             "pins": {"mute_pin": "GPIO1"},
             "microphone": "built_in",  # a PDM microphone (microphone-pdm.yaml), not an INMP441
         },
@@ -492,6 +488,7 @@ ESPHOME = {
             "wifi": "2.4 GHz",
             "kinds": ["microphone"],
             "light": "The RGB LED",
+            "tried": False,
             "pins": {"mic_sck": "GPIO4", "mic_ws": "GPIO5", "mic_sd": "GPIO6", "mute_pin": "GPIO7"},
         },
         "waveshare-esp32s3-lcd2": {
@@ -501,6 +498,7 @@ ESPHOME = {
             "kinds": ["microphone"],
             # No LED of its own: its display shows a red dot instead. No pin known to be free for a mute switch.
             "light": "Its display (a red dot)",
+            "tried": False,
             "pins": {"mic_sck": "GPIO43", "mic_ws": "GPIO44", "mic_sd": "GPIO12"},
             "wiring_note": "SCK and WS on the P2 header's TX and RX, SD on its pin 10. With a camera in the "
             "socket, SD goes to GPIO18 (P1 header, pin 6) instead: change mic_sd in the file.",
@@ -511,6 +509,7 @@ ESPHOME = {
             "wifi": "2.4 or 5 GHz",
             "kinds": ["microphone"],
             "light": "The RGB LED",
+            "tried": False,
             "pins": {"mic_sck": "GPIO8", "mic_ws": "GPIO9", "mic_sd": "GPIO10", "mute_pin": "GPIO4"},
         },
     },
@@ -781,20 +780,45 @@ TRIGGER_DEFAULTS = {
     # When the light is switched on: one of LIGHT_WHEN. "dark": a frame is taken without it first,
     # and the light switched on only when that frame is darker than RUNTIME["light_dark_below"].
     "light_when": "always",
-    # How an ESP32 camera of ours (esphome/) is set up before this sensor's pictures: one of
-    # CAMERA_USES, or "" to choose by the sensor's kind (CAMERA_USE_BY_KIND). Only for a camera that
-    # answers as ours (an X-VisionState-Camera header); ignored for any other.
-    "camera_use": "",
+    # How an ESP32 camera of ours (esphome/) is set up for this sensor's pictures: the keys of
+    # CAMERA_SETTING_KEYS, sent with each snapshot. None: its kind's preset (CAMERA_PRESET_BY_KIND).
+    # Only for a camera that answers as ours (an X-VisionState-Camera header); ignored for any other.
+    "camera": None,
 }
-# What an ESP32 camera of ours looks at (esphome/packages/camera-use.yaml): the key a snapshot asks
-# with, and its name, most demanding first: sensors on one camera share the most demanding of them,
-# so the camera is not switched back and forth between their pictures.
-CAMERA_USES = {
-    "meter": "Meters and displays",
-    "movement": "People, cars and animals",
-    "states": "States",
+# An ESP32 camera's settings for a sensor (firmware 1.5.0 on), and the query key each is sent with.
+# exposure_ms 0 is automatic exposure; more is a fixed exposure that long (about: the firmware turns
+# it into the sensor's lines).
+CAMERA_SETTING_KEYS = {
+    "size": "size",
+    "quality": "quality",
+    "clock_mhz": "clock",
+    "exposure_ms": "exposure",
+    "gain": "gain",
 }
-CAMERA_USE_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
+CAMERA_SIZES = ("640x480", "800x600", "1024x768", "1280x1024", "1600x1200")
+CAMERA_CLOCKS_MHZ = (20, 10)
+CAMERA_GAINS = (2, 4, 8, 16, 32, 64, 128)  # the gain ceiling
+CAMERA_LIMITS = {"quality": (6, 40), "exposure_ms": (1, 500)}  # JPEG quality: lower is better
+# Presets fill a sensor's settings in; the name shown is the preset's whose values a sensor has, or
+# Custom. The keys are what firmware before 1.5.0 is asked for (?use=).
+CAMERA_PRESETS = {
+    "meter": {
+        "name": "Meters and displays",
+        "description": "Every pixel and less compression, for the digits; the subject stands still",
+        "settings": {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+    },
+    "movement": {
+        "name": "People, cars and animals",
+        "description": "A short fixed exposure, so what moves stays sharp; the gain keeps it bright",
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16},
+    },
+    "states": {
+        "name": "States",
+        "description": "Still things: a door, a gate, a light",
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+    },
+}
+CAMERA_PRESET_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 # When a sensor's light is switched on for a check (triggers.light_when), with the names shown.
 LIGHT_WHEN = {"always": "For every check", "dark": "Only when it is dark"}
 TRIGGER_LIMITS = {
@@ -1137,11 +1161,28 @@ def merge_reading(stored: dict | None) -> dict:
 
 
 def merge_triggers(stored: dict | None) -> dict:
-    """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS."""
+    """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS. A camera use from
+    before the camera settings (0.15.0b18 and older: "camera_use") becomes its preset's settings."""
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
     merged["only_states"] = dict(merged.get("only_states") or {})
+    old_use = merged.pop("camera_use", "")
+    camera = dict(merged.get("camera") or {})
+    if not camera and old_use in CAMERA_PRESETS:
+        camera = dict(CAMERA_PRESETS[old_use]["settings"])
+    merged["camera"] = camera or None
     return merged
+
+
+def camera_settings(triggers: dict | None, kind: str) -> dict:
+    """The settings an ESP32 camera of ours is set up with for a sensor: its own, or its kind's preset."""
+    preset = CAMERA_PRESETS[CAMERA_PRESET_BY_KIND.get(kind, "states")]["settings"]
+    return {**preset, **(merge_triggers(triggers)["camera"] or {})}
+
+
+def camera_preset(settings: dict) -> str | None:
+    """The preset whose values these are (CAMERA_PRESETS), or None: custom."""
+    return next((key for key, preset in CAMERA_PRESETS.items() if preset["settings"] == settings), None)
 
 
 # --- Privacy -----------------------------------------------------------------

@@ -552,7 +552,7 @@ class BenchmarkMixin(ChecksMixin):
         for number in range(BENCHMARK["warmup_rounds"] + BENCHMARK["rounds"]):
             run.round = max(0, number - BENCHMARK["warmup_rounds"] + 1)
             t0 = time.perf_counter()
-            data = await self.grabber.grab(cfg.source_type, cfg.source)
+            data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
             t1 = time.perf_counter()
             image = await asyncio.to_thread(imaging.decode, data)
             t2 = time.perf_counter()

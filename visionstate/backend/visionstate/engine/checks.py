@@ -15,7 +15,7 @@ from .. import backbones, esphome, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import CAMERA_USE_BY_KIND, ESPHOME, RUNTIME, UNKNOWN_STATE
+from ..settings import ESPHOME, RUNTIME, UNKNOWN_STATE, camera_settings
 from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
@@ -99,10 +99,6 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         does not: its frames are taken in the light, a frame without it would be no baseline. One
         alone on its camera takes its frames and keeps its moments as if nothing was shared."""
         key = (cfg.source_type, cfg.source)
-        # What an ESP32 camera of ours should be set up as for it (the grabber asks it, sources.py).
-        wants = cfg.enabled and cfg.source_type == "http" and not cfg.is_sound
-        use = cfg.triggers.get("camera_use") or CAMERA_USE_BY_KIND.get(cfg.kind) if wants else None
-        self.camera_uses.want(cfg.id, cfg.source, use)
         if cfg.enabled and not cfg.triggers["light_entity"]:
             self._camera_of[cfg.id] = key
         else:
@@ -148,7 +144,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         with timing.step("grab"):
             flash_ms = round(min(cfg.triggers["light_delay_s"], ESPHOME["flash_max_s"]) * 1000)  # the camera's limit
             dark = RUNTIME["light_dark_below"] if only_dark else None
-            data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark)
+            data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark, self.camera_for(cfg))
         lit = self.camera_uses.flashed.get(cfg.source, True) if only_dark else True
         return self.live_state(cfg.id).remember(data), data, lit
 
@@ -203,7 +199,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             return await self.grab(cfg)
         deadline = time.time() + wait
         while True:
-            await self.grabber.grab(cfg.source_type, cfg.source)  # thrown away
+            await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))  # thrown away
             remaining = deadline - time.time()
             if remaining <= 0:
                 break
@@ -291,10 +287,18 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             else:
                 await self.run_once(cfg, data=data, frame_id=frame_id)
 
+    @staticmethod
+    def camera_for(cfg: SensorConfig) -> dict | None:
+        """How an ESP32 camera of ours is set up for this sensor's pictures (the grabber sends it to
+        a camera that answered as ours; settings.camera_settings). None: not a snapshot address."""
+        if cfg.source_type != "http" or cfg.is_sound:
+            return None
+        return camera_settings(cfg.triggers, cfg.kind)
+
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         timing.captured()
         with timing.step("grab"):
-            data = await self.grabber.grab(cfg.source_type, cfg.source)
+            data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
         return self.live_state(cfg.id).remember(data), data
 
     async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
@@ -303,7 +307,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if not live.shares_camera:
             return *(await self.grab(cfg)), None
         with timing.step("grab"):
-            frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+            frame = await self.shared_frames.get(cfg.source_type, cfg.source, self.camera_for(cfg))
         check = timing.current()
         if check is not None:
             check.captured_at = frame.taken_at

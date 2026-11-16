@@ -21,8 +21,8 @@ exports, like a camera's. Two listeners at a time (VisionState and someone liste
 a third gets *409*.
 
 In Home Assistant the device has: *Microphone* (on/off, kept over restarts), *Microphone gain*,
-*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Camera use*, *Picture orientation* and
-*Exposure for moving things* (a camera), *IP address*, *Wi-Fi signal*, *Uptime* and *Restart*. The
+*Mute switch* (if one is wired), *Listeners*, *Camera* and *Flash* (ESP32-CAM), *Picture orientation* (a camera),
+*IP address*, *Wi-Fi signal*, *Uptime* and *Restart*. The
 board's LED is on while someone listens or looks. VisionState shows a sound sensor's *Microphone*
 and gain on its **Live** tab and sets them through Home Assistant.
 
@@ -69,20 +69,17 @@ version than the app knows. Each version also has a tag of its own that never mo
 (`esphome-v1.0.0`, `esphome-v1.1.0` …): name one in the file instead to stay on it. A change that
 would break the files devices have gets a new line, `esphome-v2`, and stays out of v1.
 
-**Camera use** says what the camera looks at, and sets its picture size, JPEG quality and exposure
-([`packages/camera-use.yaml`](packages/camera-use.yaml)). VisionState sets it itself: a snapshot can
-ask for one (`/snapshot.jpg?use=states`, `meter` or `movement`), the camera is set up so first
-(the pictures before it settled thrown away) and stays so, and every snapshot says how it is set
-up (an `X-VisionState-Camera` header, by which VisionState knows the camera is ours). Each sensor
-asks for what its kind needs, or what is chosen in its settings (*Camera set-up*); sensors on one
-camera share the most demanding, so it is not switched back and forth. The guide writes the use
-it starts with, and it can be changed in Home Assistant too:
-
-| Camera use | For | Picture |
-|---|---|---|
-| *States* | still things: a door, a gate, a light | 800×600, exposure automatic |
-| *Meters and displays* | a water meter, a display: the digits | 1600×1200, less compression; the flash for the dark |
-| *People, cars and animals* | things that move | 800×600, a short fixed exposure (*Exposure for moving things*) with automatic gain: sharper, but darker in poor light |
+**How the camera is set up** is each VisionState sensor's: its *Camera set-up* (picture size, JPEG
+quality, the camera's clock, exposure and gain ceiling, filled in by a preset) goes with every
+snapshot, `/snapshot.jpg?size=1600x1200&quality=8&clock=20&exposure=auto&gain=4` (`exposure` is
+`auto` or a time in milliseconds, about; `clock` is 20 or 10 MHz; any of them may be left out). The
+camera is set up so first, throwing away the pictures it kept from before and those taken while it
+settles, and stays so until a snapshot asks otherwise. Every snapshot says that the camera is ours
+and takes these (`X-VisionState-Camera: settings`), how it is set up now
+(`X-VisionState-Camera-Settings`), how often it took a picture the last time it was measured
+(`X-VisionState-Frame-Ms`), and its camera chip (`X-VisionState-Camera-Chip`: OV2640, OV3660 …;
+boards are sold with different ones). Firmware before 1.5.0 took only a preset (`?use=states`, `meter` or
+`movement`, then *Camera use* in Home Assistant); VisionState still asks such a camera so.
 
 **Picture orientation** turns the picture 180° or mirrors it, on the camera itself: *Normal* (what
 ESPHome does by default), *Mirrored*, *Upside down* or *Upside down, mirrored*. It is kept over
@@ -91,11 +88,16 @@ restarts, set in Home Assistant or in the sensor's settings in VisionState, and 
 `substitutions` is the one a new device starts with; a file that set `vertical_flip` or
 `horizontal_mirror` itself gives its orientation there instead, as the choice overrides them.
 
-Switching takes a few pictures: a new picture size about 0.5 s, a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
+Switching takes a few pictures: a new picture size or clock about 0.5 s (1600×1200 at 10 MHz
+about 1 s), a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
 entity gives the picture the camera kept ready after the last fetch instead, as old as the time
 since then.
 
 ## Boards and wiring
+
+The guide in the app marks the boards the firmware is built for but has not run on yet
+(`settings.ESPHOME["boards"]`, *tried*); if you have one, tell us how it went in
+[#86](https://github.com/oleost/VisionState/issues/86).
 
 **ESP32 DevKit (ESP32-WROOM-32) + INMP441** — [`examples/esp32-devkit-microphone.yaml`](examples/esp32-devkit-microphone.yaml)
 

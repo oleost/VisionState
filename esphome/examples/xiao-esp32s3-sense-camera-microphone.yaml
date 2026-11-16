@@ -12,7 +12,6 @@ substitutions:
   wifi_password: !secret wifi_password
   stream_password: !secret vs_stream_password
   ap_password: !secret vs_ap_password
-  camera_use: States  # or "Meters and displays", or "People, cars and animals" (Camera use)
   # mute_pin: GPIO1
 
 external_components:

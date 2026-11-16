@@ -6,7 +6,6 @@ HTTP on a port of its own, behind a user name and password like a camera's.
                        ?flash=<ms>: with the camera's flash, that long after it came on
 """
 
-from esphome import automation
 import esphome.codegen as cg
 from esphome.components import esp32_camera, light, microphone, sensor
 from esphome.components.esp32 import include_builtin_idf_component
@@ -23,7 +22,6 @@ CONF_MAX_LISTENERS = "max_listeners"
 CONF_BUFFER_DURATION = "buffer_duration"
 CONF_FRESH_SNAPSHOT = "fresh_snapshot"
 CONF_LISTENERS = "listeners"
-CONF_ON_CAMERA_USE = "on_camera_use"
 CONF_MICROPHONE_SAMPLE_RATE = "microphone_sample_rate"
 CONF_LEVEL = "level"
 CONF_PEAK = "peak"
@@ -98,7 +96,6 @@ CONFIG_SCHEMA = cv.All(
                 cv.positive_time_period_milliseconds, cv.Range(min=cv.TimePeriod(seconds=1))
             ),
             # The camera use changed (by Home Assistant, or a snapshot that asked for another), with its name.
-            cv.Optional(CONF_ON_CAMERA_USE): automation.validate_automation(single=True),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     _both_or_neither,
@@ -146,10 +143,6 @@ async def to_code(config):
         if CONF_FLASH in config:
             cg.add_define("USE_VISIONSTATE_FLASH")
             cg.add(var.set_flash(await cg.get_variable(config[CONF_FLASH])))
-    if CONF_ON_CAMERA_USE in config:
-        await automation.build_automation(
-            var.get_camera_use_trigger(), [(cg.std_string, "x")], config[CONF_ON_CAMERA_USE]
-        )
     if CONF_LISTENERS in config:
         sens = await sensor.new_sensor(config[CONF_LISTENERS])
         cg.add(var.set_listeners_sensor(sens))

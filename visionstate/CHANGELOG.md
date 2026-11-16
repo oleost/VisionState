@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.15.0b19
+
+**An ESP32 camera set up for each sensor, as you choose it** (firmware 1.5.0).
+
+- **Camera set-up** in a sensor's settings (*Settings → General*, for an ESP32 camera of ours): the
+  picture size, JPEG quality, the camera's clock (20 or 10 MHz), the exposure (automatic, or fixed
+  for a time in milliseconds) and the gain ceiling. A preset fills them in: *Meters and displays*,
+  *People, cars and animals* or *States*, the one for the sensor's kind to start with. Change any
+  setting and it is *Custom*.
+- **Each sensor gets its own:** the camera is set up with a sensor's settings before its picture.
+  Two sensors on one camera with other settings no longer share the most demanding; the camera
+  switches between them, and their settings say so.
+- **What the camera says:** under the settings, how it is set up, how often it takes a picture, and
+  its camera chip (OV2640, OV3660 …: boards are sold with different ones).
+- **Firmware 1.5.0:** choose *Install* for the device in the ESPHome app. *Camera use* and
+  *Exposure for moving things* are gone from the device in Home Assistant (delete them there; a
+  sensor's own choice became its settings), and the guide no longer asks what a camera looks at. An
+  older firmware still gets the presets.
+- **Boards not tried yet:** the ESP32 guide marks the boards the firmware is built for but has not
+  run on yet (the XIAO ESP32-S3 Sense, the ESP32-S3 DevKit and both Waveshare boards). Tried one?
+  Say so in issue #86.
+
 ## 0.15.0b18
 
 **The camera's own flash, offered and explained in a sensor's settings.** VisionState found out

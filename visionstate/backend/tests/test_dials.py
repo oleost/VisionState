@@ -294,7 +294,7 @@ class MeterCamera:
         image.save(buf, format="JPEG", quality=92)
         self.jpeg = buf.getvalue()
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         return self.jpeg
 
     async def close(self):
@@ -316,7 +316,7 @@ def test_a_real_meter_with_pale_needles(settings, off):
     placed = [{"x": (cx + off[0] * r - x0) / h, "y": (cy + off[1] * r - y0) / h, "r": r / h} for cx, cy in centres]
 
     class Camera:
-        async def grab(self, source_type, source):
+        async def grab(self, source_type, source, camera=None):
             return jpeg
 
         async def close(self):
@@ -357,7 +357,7 @@ def test_the_last_wheel_is_rounded_without_dials(settings):
     class Camera:
         value = 89931.6
 
-        async def grab(self, source_type, source):
+        async def grab(self, source_type, source, camera=None):
             buf = io.BytesIO()
             render_counter(self.value).save(buf, format="JPEG", quality=92)
             return buf.getvalue()
@@ -392,7 +392,7 @@ def test_a_wheel_on_its_digit_does_not_make_a_meter_jump(settings):
     class Camera:
         jpeg = picture(187.79)
 
-        async def grab(self, source_type, source):
+        async def grab(self, source_type, source, camera=None):
             return self.jpeg
 
         async def close(self):

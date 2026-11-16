@@ -12,7 +12,6 @@
 #include "esphome/components/ring_buffer/ring_buffer.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
-#include "esphome/core/automation.h"
 #include "esphome/core/helpers.h"
 
 #ifdef USE_VISIONSTATE_MICROPHONE
@@ -30,6 +29,18 @@
 struct httpd_req;  // NOLINT(readability-identifier-naming)
 
 namespace esphome::visionstate_stream {
+
+#ifdef USE_VISIONSTATE_CAMERA
+/// How a sensor wants the camera set up for its picture (?size=&quality=&clock=&exposure=&gain= on a
+/// snapshot, VisionState's settings for the sensor); -1: not asked for, or not known yet.
+struct CameraSettings {
+  int size{-1};         // framesize_t
+  int quality{-1};      // JPEG quality, 6-63 (lower is better)
+  int clock_mhz{-1};    // the camera's clock (XCLK): 20 or 10 MHz
+  int exposure_ms{-1};  // 0: automatic, more: fixed this long (about)
+  int gain{-1};         // gainceiling_t: 0 is 2x, 6 is 128x
+};
+#endif
 
 /// One client of /audio.wav: the sound waits in its own ring buffer, and a task of its own sends it.
 struct Listener {
@@ -83,16 +94,9 @@ class VisionStateStream final : public Component
 #ifdef USE_VISIONSTATE_CAMERA
   void set_camera(camera::Camera *camera) { this->camera_ = camera; }
   void on_camera_image(const std::shared_ptr<camera::CameraImage> &image) override;
-  /// What the camera looks at (packages/camera-use.yaml): "States", "Meters and displays" or
-  /// "People, cars and animals". A snapshot can ask for one too (?use=states|meter|movement).
-  void set_camera_use(const std::string &use);
-  /// The fixed exposure of "People, cars and animals" (the sensor's lines, 0-1200).
-  void set_motion_exposure(int lines);
-  /// The picture turned or mirrored on the camera chip (packages/camera-use.yaml): "Normal",
+  /// The picture turned or mirrored on the camera chip (packages/camera-orientation.yaml): "Normal",
   /// "Mirrored", "Upside down" or "Upside down, mirrored", from ESPHome's default for the camera.
   void set_orientation(const std::string &orientation);
-  /// Fired (in the main loop) when the camera use changed, with its name.
-  Trigger<std::string> *get_camera_use_trigger() { return &this->camera_use_trigger_; }
 #endif
 #ifdef USE_VISIONSTATE_FLASH
   /// The camera's flash: a snapshot can ask for it (?flash=<ms>), switched on and off here, so the
@@ -156,11 +160,14 @@ class VisionStateStream final : public Component
   std::shared_ptr<camera::CameraImage> image_;
   volatile bool waiting_for_image_{false};
   std::shared_ptr<camera::CameraImage> take_image_(uint32_t timeout_ms);
-  bool apply_camera_use_(uint8_t use);
-  uint8_t camera_use_{255};  // none set yet
-  int motion_exposure_{250};
-  volatile bool camera_use_changed_{false};
-  Trigger<std::string> camera_use_trigger_;
+  /// Sets the camera up as asked (what is not asked for stays); the pictures to throw away after it.
+  uint8_t apply_settings_(const CameraSettings &asked);
+  /// Throws away the pictures kept from before a change and this many more; frame_ms_ is the time
+  /// between the latter.
+  void settle_(uint8_t pictures);
+  CameraSettings settings_;  // how the camera is set up now
+  int largest_{-1};          // the largest picture it can give (its buffers were made for it at boot)
+  uint32_t frame_ms_{0};     // the time between two pictures, the last time it was measured
 #endif
 #ifdef USE_VISIONSTATE_FLASH
   light::LightState *flash_{nullptr};

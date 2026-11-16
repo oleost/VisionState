@@ -30,7 +30,6 @@ class ConfigurationIn(BaseModel):
     kind: str
     name: str = Field(max_length=60)
     mute: bool = False
-    camera_use: str | None = None  # settings.ESPHOME["camera_uses"]; None: the first
     # A microphone that is a voice assistant too: the media player its answer plays on ("": later).
     assistant: str | None = Field(None, max_length=100)
 
@@ -56,7 +55,7 @@ class CheckIn(BaseModel):
 @router.post("/esphome/configuration")
 def configuration(body: ConfigurationIn) -> dict:
     try:
-        return esphome.configuration(body.board, body.kind, body.name, body.mute, body.camera_use, body.assistant)
+        return esphome.configuration(body.board, body.kind, body.name, body.mute, body.assistant)
     except esphome.ESPHomeError as err:
         raise HTTPException(400, str(err)) from err
 

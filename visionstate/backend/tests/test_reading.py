@@ -549,7 +549,7 @@ class CounterCamera:
         self.value = value
         self.wider = 0  # pixels added on the right: a camera that came back with another picture size
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         image = render_counter(self.value)
         if self.wider:
             wide = Image.new("RGB", (image.width + self.wider, image.height), (40, 40, 40))
@@ -569,7 +569,7 @@ class DisplayCamera:
     def __init__(self, text: str, style: str = "lcd"):
         self.text, self.style = text, style
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         buf = io.BytesIO()
         render(self.text, self.style).save(buf, format="JPEG", quality=92)
         return buf.getvalue()
@@ -1350,7 +1350,7 @@ class TurnedCounter:
         image.save(buf, format="JPEG", quality=92)
         self.jpeg = buf.getvalue()
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         return self.jpeg
 
     async def close(self):

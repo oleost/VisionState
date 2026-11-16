@@ -42,17 +42,30 @@ static const size_t DECIMATE_TAPS = 48;
 static const float DECIMATE_CUTOFF_HZ = 7200.0f;
 static const int32_t CLIP_LEVEL = 32700;  // a sample this loud counts as clipped
 #ifdef USE_VISIONSTATE_CAMERA
-// Camera use (packages/camera-use.yaml): the names Home Assistant shows, and the keys a snapshot
-// asks with (?use=...). VisionState asks for the one its sensor needs; it stays until changed.
-static const uint8_t CAMERA_USES = 3;
-static const char *const CAMERA_USE_NAMES[CAMERA_USES] = {"States", "Meters and displays", "People, cars and animals"};
-static const char *const CAMERA_USE_KEYS[CAMERA_USES] = {"states", "meter", "movement"};
-static const uint8_t USE_METER = 1;
-static const uint8_t USE_MOVEMENT = 2;
 // Pictures thrown away after a change, before the snapshot: the exposure is right in the next one,
-// a new picture size needs a few (measured on an ESP32-CAM, 2026-11-05).
+// a new picture size needs a few (measured on an ESP32-CAM, 2026-11-05), and so does a new clock.
 static const uint8_t SETTLE_PICTURES = 1;
 static const uint8_t SETTLE_PICTURES_RESIZED = 3;
+static const uint8_t SETTLE_PICTURES_CLOCK = 3;
+// Before those, the pictures the camera took before the change and keeps in its buffers
+// (frame_buffer_count in camera-*.yaml): they come at once (2026-11-16: after 7 and 42 ms).
+static const uint8_t KEPT_PICTURES = 2;
+// The picture sizes a snapshot can ask for (?size=), up to the one the camera's buffers were made for.
+struct PictureSize {
+  const char *name;
+  framesize_t size;
+};
+static const PictureSize PICTURE_SIZES[] = {{"640x480", FRAMESIZE_VGA},
+                                            {"800x600", FRAMESIZE_SVGA},
+                                            {"1024x768", FRAMESIZE_XGA},
+                                            {"1280x1024", FRAMESIZE_SXGA},
+                                            {"1600x1200", FRAMESIZE_UXGA}};
+// How long one of the sensor's lines takes at a 20 MHz clock (twice as long at 10 MHz), in µs: an
+// exposure in milliseconds becomes lines by it. Measured on an ESP32-CAM with an OV3660 (2026-11-16):
+// a 1600x1200 picture every 70 ms at 20 MHz and every 143 ms at 10 MHz, 1248 lines each. Other
+// chips, and smaller pictures: about.
+static const float LINE_US_20MHZ = 56.0f;
+static const int MAX_EXPOSURE_LINES = 1200;
 #endif
 #ifdef USE_VISIONSTATE_FLASH
 // A snapshot with the flash (?flash=<ms>): pictures are taken and thrown away for that long after it
@@ -300,12 +313,6 @@ void VisionStateStream::publish_diagnostics_() {
 #endif
 
 void VisionStateStream::loop() {
-#ifdef USE_VISIONSTATE_CAMERA
-  if (this->camera_use_changed_ && this->camera_use_ < CAMERA_USES) {
-    this->camera_use_changed_ = false;
-    this->camera_use_trigger_.trigger(std::string(CAMERA_USE_NAMES[this->camera_use_]));
-  }
-#endif
 #ifdef USE_VISIONSTATE_FLASH
   this->apply_flash_();
 #endif
@@ -494,6 +501,74 @@ void VisionStateStream::apply_flash_() {
 #endif
 
 #ifdef USE_VISIONSTATE_CAMERA
+/// What a snapshot asks for: ?size=1600x1200&quality=8&clock=20&exposure=auto|<ms>&gain=4 (each
+/// may be left out). Values it does not know are left out, with a warning.
+static CameraSettings asked_settings(const char *query) {
+  CameraSettings asked;
+  char value[16];
+  if (httpd_query_key_value(query, "size", value, sizeof(value)) == ESP_OK) {
+    for (const auto &size : PICTURE_SIZES) {
+      if (strcmp(value, size.name) == 0)
+        asked.size = size.size;
+    }
+    if (asked.size < 0)
+      ESP_LOGW(TAG, "Unknown picture size: %s", value);
+  }
+  if (httpd_query_key_value(query, "quality", value, sizeof(value)) == ESP_OK) {
+    int quality = atoi(value);
+    if (quality >= 6 && quality <= 63) {
+      asked.quality = quality;
+    } else {
+      ESP_LOGW(TAG, "JPEG quality out of 6-63: %s", value);
+    }
+  }
+  if (httpd_query_key_value(query, "clock", value, sizeof(value)) == ESP_OK) {
+    int mhz = atoi(value);
+    if (mhz == 20 || mhz == 10) {
+      asked.clock_mhz = mhz;
+    } else {
+      ESP_LOGW(TAG, "Unknown camera clock: %s MHz", value);
+    }
+  }
+  if (httpd_query_key_value(query, "exposure", value, sizeof(value)) == ESP_OK) {
+    int ms = strcmp(value, "auto") == 0 ? 0 : atoi(value);
+    if (ms >= 0 && ms <= 1000) {
+      asked.exposure_ms = ms;
+    } else {
+      ESP_LOGW(TAG, "Unknown exposure: %s", value);
+    }
+  }
+  if (httpd_query_key_value(query, "gain", value, sizeof(value)) == ESP_OK) {
+    int gain = atoi(value);
+    for (int i = 0; i <= GAINCEILING_128X; i++) {
+      if (gain == (2 << i))
+        asked.gain = i;
+    }
+    if (asked.gain < 0)
+      ESP_LOGW(TAG, "Unknown gain ceiling: %s", value);
+  }
+  return asked;
+}
+
+/// How the camera is set up, written as a snapshot asks for it (X-VisionState-Camera-Settings).
+static std::string settings_text(const CameraSettings &now) {
+  const char *size = "unknown";
+  for (const auto &s : PICTURE_SIZES) {
+    if (s.size == now.size)
+      size = s.name;
+  }
+  char exposure[12] = "unknown";
+  if (now.exposure_ms > 0) {
+    snprintf(exposure, sizeof(exposure), "%d", now.exposure_ms);
+  } else if (now.exposure_ms == 0) {
+    snprintf(exposure, sizeof(exposure), "auto");
+  }
+  char text[112];
+  snprintf(text, sizeof(text), "size=%s&quality=%d&clock=%d&exposure=%s&gain=%d", size, now.quality, now.clock_mhz,
+           exposure, now.gain >= 0 ? 2 << now.gain : -1);
+  return text;
+}
+
 void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImage> &image) {
   if (image->was_requested_by(camera::WEB_REQUESTER))
     ESP_LOGD(TAG, "A picture for the snapshot: %u bytes%s", (unsigned) image->get_data_length(),
@@ -505,46 +580,77 @@ void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImag
   }
 }
 
-bool VisionStateStream::apply_camera_use_(uint8_t use) {
+uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
   sensor_t *s = esp_camera_sensor_get();
-  if (s == nullptr || use >= CAMERA_USES)
-    return false;  // the camera has not started yet: set again at boot
-  bool resized = this->camera_use_ >= CAMERA_USES || (use == USE_METER) != (this->camera_use_ == USE_METER);
-  s->set_framesize(s, use == USE_METER ? FRAMESIZE_UXGA : FRAMESIZE_SVGA);
-  s->set_quality(s, use == USE_METER ? 8 : 10);
-  if (use == USE_MOVEMENT) {
-    // Short and fixed, so something moving stays sharp; the gain keeps it bright.
-    s->set_exposure_ctrl(s, 0);
-    s->set_aec_value(s, this->motion_exposure_);
-    s->set_gainceiling(s, GAINCEILING_16X);
-  } else {
-    s->set_exposure_ctrl(s, 1);
-    s->set_ae_level(s, 0);
-    s->set_gainceiling(s, GAINCEILING_4X);
+  if (s == nullptr)
+    return 0;  // the camera has not started yet
+  if (this->largest_ < 0)
+    this->largest_ = s->status.framesize;  // as it started: its buffers were made for this size
+  CameraSettings &now = this->settings_;
+  uint8_t settle = 0;
+  bool timing = false;  // the clock changed, and with it the length of a line: a fixed exposure is set again
+  if (asked.clock_mhz > 0 && asked.clock_mhz != now.clock_mhz) {
+    // The clock runs on the camera's own LEDC timer (0); the flash has a timer of its own.
+    s->set_xclk(s, LEDC_TIMER_0, asked.clock_mhz);
+    now.clock_mhz = asked.clock_mhz;
+    settle = std::max(settle, SETTLE_PICTURES_CLOCK);
+    timing = true;
   }
-  s->set_gain_ctrl(s, 1);
-  this->camera_use_ = use;
-  this->camera_use_changed_ = true;
-  ESP_LOGI(TAG, "Camera use: %s", CAMERA_USE_NAMES[use]);
-  return resized;
-}
-
-void VisionStateStream::set_camera_use(const std::string &use) {
-  for (uint8_t i = 0; i < CAMERA_USES; i++) {
-    if (use == CAMERA_USE_NAMES[i]) {
-      if (i != this->camera_use_)
-        this->apply_camera_use_(i);
-      return;
+  if (asked.size >= 0 && asked.size != now.size) {
+    int size = asked.size;
+    if (size > this->largest_) {
+      ESP_LOGW(TAG, "The camera's buffers were made for a smaller picture: the largest it can give is taken");
+      size = this->largest_;
+    }
+    if (size != now.size) {
+      s->set_framesize(s, static_cast<framesize_t>(size));
+      now.size = size;
+      settle = std::max(settle, SETTLE_PICTURES_RESIZED);
     }
   }
-  ESP_LOGW(TAG, "Unknown camera use: %s", use.c_str());
+  if (asked.quality > 0 && asked.quality != now.quality) {
+    s->set_quality(s, asked.quality);
+    now.quality = asked.quality;
+    settle = std::max(settle, SETTLE_PICTURES);
+  }
+  if (asked.gain >= 0 && asked.gain != now.gain) {
+    s->set_gainceiling(s, static_cast<gainceiling_t>(asked.gain));
+    now.gain = asked.gain;
+    settle = std::max(settle, SETTLE_PICTURES);
+  }
+  if (asked.exposure_ms >= 0 && (asked.exposure_ms != now.exposure_ms || (timing && asked.exposure_ms > 0))) {
+    if (asked.exposure_ms == 0) {
+      s->set_exposure_ctrl(s, 1);
+      s->set_ae_level(s, 0);
+    } else {
+      // Fixed, so something moving stays sharp; the automatic gain keeps it bright.
+      float line_us = LINE_US_20MHZ * 20.0f / static_cast<float>(now.clock_mhz > 0 ? now.clock_mhz : 20);
+      int lines = static_cast<int>(lroundf(static_cast<float>(asked.exposure_ms) * 1000.0f / line_us));
+      s->set_exposure_ctrl(s, 0);
+      s->set_aec_value(s, std::max(1, std::min(lines, MAX_EXPOSURE_LINES)));
+    }
+    now.exposure_ms = asked.exposure_ms;
+    settle = std::max(settle, SETTLE_PICTURES);
+  }
+  if (settle > 0) {
+    s->set_gain_ctrl(s, 1);
+    ESP_LOGI(TAG, "Camera set up: %s", settings_text(now).c_str());
+  }
+  return settle;
 }
 
-void VisionStateStream::set_motion_exposure(int lines) {
-  this->motion_exposure_ = lines;
-  sensor_t *s = esp_camera_sensor_get();
-  if (s != nullptr && this->camera_use_ == USE_MOVEMENT)
-    s->set_aec_value(s, lines);
+void VisionStateStream::settle_(uint8_t pictures) {
+  App.wake_loop_threadsafe();
+  for (uint8_t n = 0; n < KEPT_PICTURES; n++)
+    this->take_image_(IMAGE_TIMEOUT_MS);
+  uint32_t first = 0;
+  for (uint8_t n = 0; n < pictures; n++) {
+    this->take_image_(IMAGE_TIMEOUT_MS);
+    if (n == 0)
+      first = millis();
+  }
+  if (pictures >= 2)
+    this->frame_ms_ = (millis() - first) / (pictures - 1);
 }
 
 void VisionStateStream::set_orientation(const std::string &orientation) {
@@ -607,24 +713,25 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
 #else
   if (this->camera_ == nullptr)
     return not_found(req, HTTPD_404_NOT_FOUND);
-  // ?use=states|meter|movement: the camera set up for that first (it stays so), and the pictures
-  // taken before it settled thrown away.
-  char query[48];
+  // The sensor's settings (?size=&quality=&clock=&exposure=&gain=): the camera set up so first (it
+  // stays so until a snapshot asks otherwise), and the pictures taken before it settled thrown away.
+  char query[160];
   char value[16];
-  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
-      httpd_query_key_value(query, "use", value, sizeof(value)) == ESP_OK) {
-    for (uint8_t i = 0; i < CAMERA_USES; i++) {
-      if (strcmp(value, CAMERA_USE_KEYS[i]) == 0 && i != this->camera_use_) {
-        uint8_t settle = this->apply_camera_use_(i) ? SETTLE_PICTURES_RESIZED : SETTLE_PICTURES;
-        App.wake_loop_threadsafe();
-        for (uint8_t n = 0; n < settle; n++)
-          this->take_image_(IMAGE_TIMEOUT_MS);
-      }
-    }
+  bool has_query = httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK;
+  if (has_query) {
+    uint8_t settle = this->apply_settings_(asked_settings(query));
+    if (settle > 0)
+      this->settle_(settle);
   }
-  // Says it is our firmware, and how the camera is set up (VisionState shows Camera use for it).
-  httpd_resp_set_hdr(req, "X-VisionState-Camera",
-                     this->camera_use_ < CAMERA_USES ? CAMERA_USE_KEYS[this->camera_use_] : "none");
+  // Says it is our firmware and takes a sensor's settings, and how the camera is set up now.
+  httpd_resp_set_hdr(req, "X-VisionState-Camera", "settings");
+  std::string now = settings_text(this->settings_);
+  httpd_resp_set_hdr(req, "X-VisionState-Camera-Settings", now.c_str());
+  // Which camera chip it is (OV2640, OV3660 …): cameras of one board are sold with different ones.
+  sensor_t *chip = esp_camera_sensor_get();
+  camera_sensor_info_t *info = chip != nullptr ? esp_camera_sensor_get_info(&chip->id) : nullptr;
+  if (info != nullptr && info->name != nullptr)
+    httpd_resp_set_hdr(req, "X-VisionState-Camera-Chip", info->name);
   // The camera keeps a picture ready, taken right after the last one was fetched (up to its idle
   // interval ago, and before a light was switched on): with fresh_snapshot, that one is thrown away.
   bool kept_taken = false;
@@ -638,8 +745,7 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
   if (this->flash_ != nullptr) {
     httpd_resp_set_hdr(req, "X-VisionState-Flash", "1");
     char dark[8];
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
-        httpd_query_key_value(query, "flash", value, sizeof(value)) == ESP_OK) {
+    if (has_query && httpd_query_key_value(query, "flash", value, sizeof(value)) == ESP_OK) {
       uint32_t settle = std::min<uint32_t>(strtoul(value, nullptr, 10), FLASH_SETTLE_MAX_MS);
       bool wanted = true;
       if (httpd_query_key_value(query, "dark", dark, sizeof(dark)) == ESP_OK) {
@@ -661,9 +767,15 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
           delay(WAKE_EVERY_MS);
         }
         uint32_t lit = millis();
+        uint32_t taken = 0;
+        uint32_t first = 0;
         do {
           this->take_image_(IMAGE_TIMEOUT_MS);  // thrown away: taken before the camera caught up
+          if (taken++ == 0)
+            first = millis();
         } while (millis() - lit < settle);
+        if (taken >= 2)
+          this->frame_ms_ = (millis() - first) / (taken - 1);
         kept_taken = false;  // the one after these is thrown away as well (taken as the light came)
       }
     }
@@ -686,6 +798,12 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No picture from the camera");
     return answered(req);
+  }
+  // The time between two pictures when it was last measured (settling): how fast the camera is.
+  char frame[12];
+  if (this->frame_ms_ > 0) {
+    snprintf(frame, sizeof(frame), "%" PRIu32, this->frame_ms_);
+    httpd_resp_set_hdr(req, "X-VisionState-Frame-Ms", frame);
   }
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");

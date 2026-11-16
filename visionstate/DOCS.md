@@ -673,12 +673,19 @@ light. Anyone who may use actions in Home Assistant can ask a device for that pa
 who may install its firmware can read it in its file. A new one: *Set one up with ESPHome*, under the sound or image source, opens a
 guide for an ESP32 or ESP32-S3 DevKit with an INMP441 microphone, an ESP32-CAM with its camera
 (and a microphone too, if you like), a Seeed Studio XIAO ESP32-S3 Sense, whose camera and
-microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. For a camera it asks what it looks at — still things, a meter or display, or
-things that move — which sets the camera's picture size, compression and exposure (*Camera use*
-on the device in Home Assistant). After that VisionState sets it up itself before each sensor's
-pictures — a reading sensor for a meter, an object sensor for things that move, a state sensor for
-still things — or as chosen under *Settings → General → Camera set-up* of the sensor, shown only for such a
-camera; sensors on one camera share the most demanding. Below it, *Picture orientation* turns the
+microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIFI6-KIT with an INMP441. VisionState sets
+such a camera up itself before each sensor's pictures, with the sensor's own settings under
+*Settings → General → Camera set-up* (shown only for such a camera): the picture size, the JPEG
+quality (lower is sharper and larger), the camera's clock (20 MHz, or 10 MHz: fewer pictures a
+second and longer exposures, worth a try when its pictures have a colour cast), the exposure
+(automatic, or fixed for a time in milliseconds, about: short keeps what moves sharp) and the gain
+ceiling (higher is brighter in poor light, and noisier). A *Preset* fills them in — *Meters and
+displays* for a reading sensor, *People, cars and animals* for an object sensor, *States* for a
+state sensor, which is where a new sensor starts — and a setting changed by hand makes them
+*Custom*. Below them is how the camera said it is set up with its last picture, how often it
+takes one, and its camera chip. Two sensors on one camera with other settings each get their own: the camera is set up
+again before each picture, which takes a little longer, and the settings say so. Firmware 1.5.0
+takes every setting; an older one only the presets. Below it, *Picture orientation* turns the
 camera's picture upside down or mirrors it, on the camera at once (firmware 1.2.0 on; an older
 camera says there that a newer firmware is out). It shows the wiring and gives the device's file to download (the
 Wi-Fi you type stays in your browser) and import in the ESPHome app, with a password for the

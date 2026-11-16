@@ -415,13 +415,8 @@ export const api = {
     kind: string,
     name: string,
     mute: boolean,
-    cameraUse: string | null,
     assistant: string | null,
-  ) =>
-    request<EsphomeConfiguration>(
-      'esphome/configuration',
-      send('POST', { board, kind, name, mute, camera_use: cameraUse, assistant }),
-    ),
+  ) => request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute, assistant })),
   /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
   /** Home Assistant's media players with their integrations (a voice assistant's Answer on). */
   mediaPlayers: () => request<{ players: MediaPlayer[]; error: string | null }>('esphome/media-players'),
