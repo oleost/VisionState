@@ -349,5 +349,20 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
   (no power cut); what differs is the install before it, written to flash while the camera keeps
   taking pictures. Firmware 1.5.2: the camera is powered down while firmware is installed
   (`camera_power_down_pin`), and a camera without a picture 30 s after start-up has the device
-  restart once (remembered in memory that survives a restart, so never in a loop). Not seen here,
-  so only that user can say whether it helps.
+  restart once (remembered in memory that survives a restart, so never in a loop). Not seen here;
+  that user confirmed on 2026-11-16 that the camera now comes up after an install (0.15.0b22).
+  Not known yet which of the two did it: the device's log after an install says so ("The camera
+  gave no picture … restarting once" is the safety net; without it, the power-down was enough).
+
+**What is left (2026-11-16), in order:**
+1. Issue #86: ask for the log after an install, to know whether the power-down is enough (the
+   restart then never happens) or the safety net carries it.
+2. Issue #86: the pink pictures. The user tries JPEG quality 12 (as their old firmware) and reports
+   overnight; if still pink, the camera clock at 10 MHz. Their pink pictures were darker as well,
+   as if taken before the camera settled. Still open if neither helps: the exposure level
+   (`ae_level: 1` in their old file, not a setting here), and settling until the colour is steady
+   instead of a fixed time (proposed, not built).
+3. The dial misreads that the pink pictures cause, in the reader: `POINTER_DIAL_PLAN.md` §10,
+   after the stable release (the maintainer).
+4. Before the stable 0.15.0: the roadmap's ESP32 rows to firmware 1.5.2 / 0.15.0b22, and the
+   maintainer's own cameras on 1.5.2 (*Install* in the Builder).
