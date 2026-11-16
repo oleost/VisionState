@@ -33,6 +33,7 @@ esp32_camera:
 visionstate_stream:
   camera: vs_camera
   flash: vs_flash  # a snapshot can ask for the flash (?flash=<ms>): VisionState does, for a sensor lit by it
+  camera_power_down_pin: 32  # as power_down_pin above: the camera is powered down while firmware is installed
 
 output:
   - platform: ledc

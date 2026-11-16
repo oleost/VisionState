@@ -342,3 +342,12 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
   our firmware, at 1024×768, JPEG quality 12, `ae_level: 1` and ESPHome's single frame buffer (ours
   keeps two, so the camera takes pictures all the time). The first three are now their sensor's to
   try; the frame buffers are not a setting.
+- **No picture after an install (issue #86, firmware 1.5.0):** that OV2640 gave no picture after
+  every install of our firmware ("Got invalid frame from camera" from the start) until the device
+  was restarted; not with their old firmware, and not with one frame buffer either. The
+  maintainer's two OV3660s never did it. A restart and the restart after an install are the same
+  (no power cut); what differs is the install before it, written to flash while the camera keeps
+  taking pictures. Firmware 1.5.2: the camera is powered down while firmware is installed
+  (`camera_power_down_pin`), and a camera without a picture 30 s after start-up has the device
+  restart once (remembered in memory that survives a restart, so never in a loop). Not seen here,
+  so only that user can say whether it helps.

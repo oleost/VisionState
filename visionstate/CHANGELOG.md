@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0b22
+
+**An ESP32 camera that comes up after an install** (firmware 1.5.2; 1.5.1 was skipped, and its
+fix for broken pictures is in 1.5.2).
+
+- **Powered down while firmware is installed:** one ESP32-CAM gave no picture after every install
+  of our firmware until it was restarted. The camera is now powered down while new firmware is
+  written, so it starts afresh after the restart.
+- **Restarted once if the camera does not work:** a camera that gives no picture 30 s after the
+  device started has the device restart, once (never in a loop). The log says so.
+- **Firmware 1.5.2:** choose *Install* for the device in the ESPHome app.
+
 ## 0.15.0b21
 
 **A broken camera picture is taken again, never read** (firmware 1.5.1).

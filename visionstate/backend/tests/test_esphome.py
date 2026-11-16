@@ -346,6 +346,8 @@ def test_the_firmwares_version_and_controls_are_the_apps():
     assert re.search(r'^    version: "([^"]+)"', common, re.MULTILINE)[1] == ESPHOME["firmware_version"]
     # The flash: its light's name in the camera package, and how long the camera keeps it on at most.
     camera = (ESPHOME_DIR / "packages" / "camera-esp32-cam.yaml").read_text(encoding="utf-8")
+    # The pin the camera is powered down by while firmware is installed is the camera's own.
+    assert re.search(r"power_down_pin: GPIO(\d+)", camera)[1] == re.search(r"camera_power_down_pin: (\d+)", camera)[1]
     assert re.search(r"id: vs_flash\n\s+name: (\S+)", camera)[1] == ESPHOME["flash_name"]
     stream = (ESPHOME_DIR / "components" / "visionstate_stream" / "visionstate_stream.cpp").read_text(encoding="utf-8")
     assert int(re.search(r"FLASH_SETTLE_MAX_MS = (\d+);", stream)[1]) == ESPHOME["flash_max_s"] * 1000

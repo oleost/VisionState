@@ -14,6 +14,8 @@
 #include "esphome/core/log.h"
 
 #ifdef USE_VISIONSTATE_CAMERA
+#include <driver/gpio.h>
+#include <esp_attr.h>
 #include <esp_camera.h>
 #endif
 #ifdef USE_VISIONSTATE_FLASH
@@ -66,6 +68,13 @@ static const PictureSize PICTURE_SIZES[] = {{"640x480", FRAMESIZE_VGA},
 // chips, and smaller pictures: about.
 static const float LINE_US_20MHZ = 56.0f;
 static const int MAX_EXPOSURE_LINES = 1200;
+// A camera that gives no picture this long after start-up is not working: the device restarts once
+// (an ESP32-CAM's OV2640 gave none after a firmware install, until it was restarted: issue #86). The
+// restart is remembered over it, in memory that survives a restart but not a power cut, so it
+// happens once and not in a loop.
+static const uint32_t NO_PICTURE_RESTART_MS = 30000;
+static const uint32_t RESTARTED_MAGIC = 0x56534352;  // "VSCR"
+static RTC_NOINIT_ATTR uint32_t restarted_for_camera;
 #endif
 #ifdef USE_VISIONSTATE_FLASH
 // A snapshot with the flash (?flash=<ms>): pictures are taken and thrown away for that long after it
@@ -160,6 +169,9 @@ void VisionStateStream::setup() {
   this->image_ready_ = xSemaphoreCreateBinary();
   if (this->camera_ != nullptr)
     this->camera_->add_listener(this);
+#if defined(USE_VISIONSTATE_CAMERA_POWER_DOWN) && defined(USE_OTA_STATE_LISTENER)
+  ota::get_global_ota_callback()->add_global_state_listener(this);
+#endif
 #endif
 #ifdef USE_VISIONSTATE_MICROPHONE
   if (this->decimate_ > 1) {
@@ -313,6 +325,31 @@ void VisionStateStream::publish_diagnostics_() {
 #endif
 
 void VisionStateStream::loop() {
+#ifdef USE_VISIONSTATE_CAMERA
+  // The camera after start-up: a picture by now (an idle one comes every idle_framerate), or a
+  // restart, once.
+  if (this->camera_ != nullptr && !this->camera_checked_) {
+    if (this->camera_gave_picture_) {
+      this->camera_checked_ = true;
+      if (restarted_for_camera == RESTARTED_MAGIC)
+        ESP_LOGI(TAG, "The camera works after the restart");
+      restarted_for_camera = 0;
+    } else if (millis() > NO_PICTURE_RESTART_MS) {
+      this->camera_checked_ = true;
+      if (restarted_for_camera != RESTARTED_MAGIC) {
+        ESP_LOGW(TAG, "The camera gave no picture in %" PRIu32 " s after start-up: restarting once",
+                 NO_PICTURE_RESTART_MS / 1000);
+        restarted_for_camera = RESTARTED_MAGIC;
+        App.safe_reboot();
+      } else {
+        ESP_LOGE(TAG, "The camera gives no picture, also after a restart: check its cable and power");
+        restarted_for_camera = 0;
+      }
+    } else {
+      this->camera_->request_image(camera::IDLE);  // asked for, so that a working camera says so soon
+    }
+  }
+#endif
 #ifdef USE_VISIONSTATE_FLASH
   this->apply_flash_();
 #endif
@@ -637,6 +674,7 @@ static std::string settings_text(const CameraSettings &now) {
 }
 
 void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImage> &image) {
+  this->camera_gave_picture_ = true;
   if (image->was_requested_by(camera::WEB_REQUESTER))
     ESP_LOGD(TAG, "A picture for the snapshot: %u bytes%s", (unsigned) image->get_data_length(),
              this->waiting_for_image_ ? "" : " (no longer waited for)");
@@ -742,6 +780,20 @@ void VisionStateStream::set_orientation(const std::string &orientation) {
   s->set_vflip(s, flip);
   ESP_LOGI(TAG, "Orientation: %s", orientation.c_str());
 }
+
+#if defined(USE_VISIONSTATE_CAMERA_POWER_DOWN) && defined(USE_OTA_STATE_LISTENER)
+void VisionStateStream::on_ota_global_state(ota::OTAState state, float progress, uint8_t error,
+                                            ota::OTAComponent *comp) {
+  // Powered down while firmware is written, so it is not taking pictures meanwhile, and starts
+  // afresh after the restart (the camera driver powers it up at start-up). Up again if it failed.
+  if (state == ota::OTA_STARTED) {
+    ESP_LOGI(TAG, "Firmware is installed: the camera is powered down until the restart");
+    gpio_set_level(static_cast<gpio_num_t>(this->camera_power_down_pin_), 1);
+  } else if (state == ota::OTA_ERROR || state == ota::OTA_ABORT) {
+    gpio_set_level(static_cast<gpio_num_t>(this->camera_power_down_pin_), 0);
+  }
+}
+#endif
 
 std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t timeout_ms) {
   xSemaphoreTake(this->image_ready_, 0);  // a give left over from an earlier picture

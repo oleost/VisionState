@@ -7,7 +7,7 @@ HTTP on a port of its own, behind a user name and password like a camera's.
 """
 
 import esphome.codegen as cg
-from esphome.components import esp32_camera, light, microphone, sensor
+from esphome.components import esp32_camera, light, microphone, ota, sensor
 from esphome.components.esp32 import include_builtin_idf_component
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_MICROPHONE, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
@@ -18,6 +18,7 @@ CODEOWNERS = ["@oleost"]
 
 CONF_CAMERA = "camera"
 CONF_FLASH = "flash"
+CONF_CAMERA_POWER_DOWN_PIN = "camera_power_down_pin"
 CONF_MAX_LISTENERS = "max_listeners"
 CONF_BUFFER_DURATION = "buffer_duration"
 CONF_FRESH_SNAPSHOT = "fresh_snapshot"
@@ -71,6 +72,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_CAMERA): cv.use_id(esp32_camera.ESP32Camera),
             # The camera's flash: a snapshot may ask for it (?flash=<ms>), switched on and off here.
             cv.Optional(CONF_FLASH): cv.use_id(light.LightState),
+            # The camera's power-down pin (as esp32_camera's power_down_pin): the camera is powered
+            # down while firmware is installed, and starts afresh after it.
+            cv.Optional(CONF_CAMERA_POWER_DOWN_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_MAX_LISTENERS, default=2): cv.int_range(min=1, max=4),
             # Kept per listener: a listener that falls behind (Wi-Fi) loses the oldest sound, not the newest.
             cv.Optional(CONF_BUFFER_DURATION, default="1s"): cv.All(
@@ -140,6 +144,10 @@ async def to_code(config):
         cg.add_define("USE_VISIONSTATE_CAMERA")
         cam = await cg.get_variable(config[CONF_CAMERA])
         cg.add(var.set_camera(cam))
+        if CONF_CAMERA_POWER_DOWN_PIN in config:
+            cg.add_define("USE_VISIONSTATE_CAMERA_POWER_DOWN")
+            cg.add(var.set_camera_power_down_pin(config[CONF_CAMERA_POWER_DOWN_PIN]))
+            ota.request_ota_state_listeners()
         if CONF_FLASH in config:
             cg.add_define("USE_VISIONSTATE_FLASH")
             cg.add(var.set_flash(await cg.get_variable(config[CONF_FLASH])))

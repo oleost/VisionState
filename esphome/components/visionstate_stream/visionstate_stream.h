@@ -20,6 +20,9 @@
 #ifdef USE_VISIONSTATE_CAMERA
 #include "esphome/components/camera/camera.h"
 #endif
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+#include "esphome/components/ota/ota_backend.h"
+#endif
 #ifdef USE_VISIONSTATE_FLASH
 #include <atomic>
 
@@ -53,6 +56,10 @@ class VisionStateStream final : public Component
 #ifdef USE_VISIONSTATE_CAMERA
     ,
                                 public camera::CameraListener
+#endif
+#if defined(USE_VISIONSTATE_CAMERA_POWER_DOWN) && defined(USE_OTA_STATE_LISTENER)
+    ,
+                                public ota::OTAGlobalStateListener
 #endif
 {
  public:
@@ -97,6 +104,13 @@ class VisionStateStream final : public Component
   /// The picture turned or mirrored on the camera chip (packages/camera-orientation.yaml): "Normal",
   /// "Mirrored", "Upside down" or "Upside down, mirrored", from ESPHome's default for the camera.
   void set_orientation(const std::string &orientation);
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+  /// The camera's power-down pin: high while firmware is installed (see on_ota_global_state).
+  void set_camera_power_down_pin(uint8_t pin) { this->camera_power_down_pin_ = pin; }
+#ifdef USE_OTA_STATE_LISTENER
+  void on_ota_global_state(ota::OTAState state, float progress, uint8_t error, ota::OTAComponent *comp) override;
+#endif
+#endif
 #endif
 #ifdef USE_VISIONSTATE_FLASH
   /// The camera's flash: a snapshot can ask for it (?flash=<ms>), switched on and off here, so the
@@ -168,6 +182,11 @@ class VisionStateStream final : public Component
   CameraSettings settings_;  // how the camera is set up now
   int largest_{-1};          // the largest picture it can give (its buffers were made for it at boot)
   uint32_t frame_ms_{0};     // the time between two pictures, the last time it was measured
+  volatile bool camera_gave_picture_{false};  // since start-up: the camera works (see loop)
+  bool camera_checked_{false};                // whether it was looked at after start-up
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+  uint8_t camera_power_down_pin_{0};
+#endif
 #endif
 #ifdef USE_VISIONSTATE_FLASH
   light::LightState *flash_{nullptr};

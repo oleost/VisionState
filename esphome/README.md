@@ -88,6 +88,11 @@ restarts, set in Home Assistant or in the sensor's settings in VisionState, and 
 `substitutions` is the one a new device starts with; a file that set `vertical_flip` or
 `horizontal_mirror` itself gives its orientation there instead, as the choice overrides them.
 
+While new firmware is installed the camera is powered down (`camera_power_down_pin`, the ESP32-CAM's
+power-down pin), so it starts afresh after the restart; and a camera that gives no picture 30 s after
+start-up has the device restart once (an ESP32-CAM's OV2640 gave none after an install until it was
+restarted: issue #86).
+
 A picture that came out broken (the camera stopped sending part way, and the driver handed out
 the rest of an older one with it: a strip of picture over grey) is taken again before it is sent.
 Switching takes a few pictures: a new picture size or clock about 0.5 s (1600×1200 at 10 MHz
