@@ -805,7 +805,8 @@ CAMERA_PRESETS = {
     "meter": {
         "name": "Meters and displays",
         "description": "Every pixel and less compression, for the digits; the subject stands still",
-        "settings": {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+        # JPEG quality 10, as in Espressif's own example (8 until 0.15.0b19: safe too, but no one else's).
+        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
     },
     "movement": {
         "name": "People, cars and animals",
@@ -817,6 +818,10 @@ CAMERA_PRESETS = {
         "description": "Still things: a door, a gate, a light",
         "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
     },
+}
+# A preset's values before they were changed: a sensor that has them follows the preset to its new ones.
+CAMERA_PRESETS_BEFORE = {
+    "meter": [{"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4}],
 }
 CAMERA_PRESET_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 # When a sensor's light is switched on for a check (triggers.light_when), with the names shown.
@@ -1162,7 +1167,8 @@ def merge_reading(stored: dict | None) -> dict:
 
 def merge_triggers(stored: dict | None) -> dict:
     """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS. A camera use from
-    before the camera settings (0.15.0b18 and older: "camera_use") becomes its preset's settings."""
+    before the camera settings (0.15.0b18 and older: "camera_use") becomes its preset's settings, and
+    a preset's old values its new ones (CAMERA_PRESETS_BEFORE)."""
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
     merged["only_states"] = dict(merged.get("only_states") or {})
@@ -1170,6 +1176,9 @@ def merge_triggers(stored: dict | None) -> dict:
     camera = dict(merged.get("camera") or {})
     if not camera and old_use in CAMERA_PRESETS:
         camera = dict(CAMERA_PRESETS[old_use]["settings"])
+    for key, before in CAMERA_PRESETS_BEFORE.items():
+        if camera in before:
+            camera = dict(CAMERA_PRESETS[key]["settings"])
     merged["camera"] = camera or None
     return merged
 

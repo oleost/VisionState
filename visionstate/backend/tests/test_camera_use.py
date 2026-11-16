@@ -27,7 +27,7 @@ Image.new("RGB", (64, 48), (4, 4, 4)).save(DARK, "JPEG")
 
 METER = CAMERA_PRESETS["meter"]["settings"]
 STATES_QUERY = "size=800x600&quality=10&clock=20&exposure=auto&gain=4"
-METER_QUERY = "size=1600x1200&quality=8&clock=20&exposure=auto&gain=4"
+METER_QUERY = "size=1600x1200&quality=10&clock=20&exposure=auto&gain=4"
 
 
 class Camera(BaseHTTPRequestHandler):
@@ -94,10 +94,13 @@ def test_each_kind_starts_from_a_preset_and_the_name_follows_the_values():
     assert merge_triggers({"camera_use": "meter"})["camera"] == METER
     assert "camera_use" not in merge_triggers({"camera_use": "meter"})
     assert merge_triggers({})["camera"] is None
+    # A sensor on a preset's old values follows it to its new ones (meter: quality 8 until 0.15.0b19).
+    assert merge_triggers({"camera": {**METER, "quality": 8}})["camera"] == METER
+    assert merge_triggers({"camera": {**METER, "quality": 9}})["camera"]["quality"] == 9  # custom stays
 
 
 def test_what_a_camera_says_and_what_it_is_asked():
-    said = said_settings("size=1600x1200&quality=8&clock=20&exposure=auto&gain=4")
+    said = said_settings(METER_QUERY)
     assert said == METER
     assert said_settings("size=unknown&quality=-1&clock=-1&exposure=unknown&gain=-1") is None
     uses = CameraUses()

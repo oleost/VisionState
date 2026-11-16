@@ -71,7 +71,7 @@ would break the files devices have gets a new line, `esphome-v2`, and stays out 
 
 **How the camera is set up** is each VisionState sensor's: its *Camera set-up* (picture size, JPEG
 quality, the camera's clock, exposure and gain ceiling, filled in by a preset) goes with every
-snapshot, `/snapshot.jpg?size=1600x1200&quality=8&clock=20&exposure=auto&gain=4` (`exposure` is
+snapshot, `/snapshot.jpg?size=1600x1200&quality=10&clock=20&exposure=auto&gain=4` (`exposure` is
 `auto` or a time in milliseconds, about; `clock` is 20 or 10 MHz; any of them may be left out). The
 camera is set up so first, throwing away the pictures it kept from before and those taken while it
 settles, and stays so until a snapshot asks otherwise. Every snapshot says that the camera is ours

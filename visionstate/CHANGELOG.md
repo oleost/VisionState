@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0b20
+
+**Meters and displays at JPEG quality 10**, the value Espressif's own camera example uses (it was 8:
+safe too, but no one else's). A sensor on the preset's old values follows it to the new ones; one
+you changed by hand keeps its own. Nothing to install on the camera.
+
 ## 0.15.0b19
 
 **An ESP32 camera set up for each sensor, as you choose it** (firmware 1.5.0).

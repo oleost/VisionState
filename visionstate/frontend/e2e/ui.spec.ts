@@ -2704,7 +2704,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
         const s = await cameraState();
         return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain}`;
       }, { timeout: 30_000 })
-      .toBe('1600x1200 8 10 25 4');
+      .toBe('1600x1200 10 10 25 4');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
 
