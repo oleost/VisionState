@@ -91,6 +91,13 @@ def test_a_dial_is_announced_as_a_flow_with_running():
     assert value["state_class"] == "measurement"
     assert configs["running"]["device_class"] == "running" and configs["running"]["state_topic"].endswith("/running")
     assert "rate" not in configs
+    # "ft3" with no Home Assistant type is ft³ too, as the UI shows it (found on a real Home
+    # Assistant: the flow went out as 120 ft3/h while the UI said ft³/min); a counter's rate keeps
+    # its "m3/h" (test_reading).
+    typed = merge_reading({"mode": "flow", "display": "dial", "unit": "ft3", "device_class": "", "per_turn": 2})
+    sensor = SensorDescriptor("gas_dial", "Gas dial", [], KIND_READING, [], typed, chosen=None)
+    value = {topic.split("/")[-2]: payload for topic, payload in discovery_messages("homeassistant", sensor)}["state"]
+    assert (value["unit_of_measurement"], value["device_class"]) == ("ft³/min", "volume_flow_rate")
 
 
 class DialCamera:

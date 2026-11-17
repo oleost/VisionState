@@ -4,17 +4,17 @@ import { dateTime, plural } from './format';
 import type { Prediction, ReadingSettings, ReadingType, Roi, Sensor } from './types';
 
 /** The unit of a counter's rate, and of a turning dial's flow (mqtt.rate_unit): ft³ → ft³/min, kWh → kW,
- * others per hour. */
-export function rateUnit(unit: string): string {
+ * others per hour. A dial's "ft3" is ft³ too; a counter's rate keeps "m3/h". */
+export function rateUnit(unit: string, flow = false): string {
   const units = app.config?.reading_rate_units ?? {};
   const trimmed = unit.trim();
-  const known = units[trimmed] ?? units[trimmed.replace('3', '³')];
+  const known = units[trimmed] ?? (flow ? units[trimmed.replace('3', '³')] : undefined);
   return known ? known[0] : trimmed ? `${trimmed}/h` : '';
 }
 
 /** The unit shown next to a value ("min" for time left, the flow's unit for a turning dial). */
 export function readingUnit(settings: Pick<ReadingSettings, 'mode' | 'unit'>): string {
-  if (settings.mode === 'flow') return rateUnit(settings.unit);
+  if (settings.mode === 'flow') return rateUnit(settings.unit, true);
   return settings.mode === 'time_left' ? 'min' : settings.unit;
 }
 

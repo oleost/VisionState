@@ -544,10 +544,14 @@ def ha_unit(unit: str, device_class: str) -> tuple[str, str]:
 
 
 def rate_unit(reading: dict) -> tuple[str | None, str | None, float]:
-    """(unit, device class, factor from "per hour") of a counter's rate, from the counter's unit."""
+    """(unit, device class, factor from "per hour") of a counter's rate or a turning dial's flow,
+    from its unit. A turning dial's "ft3" is ft³ without a device class too (its flow has no
+    entities from before); a counter's rate keeps "m3/h" (rateUnit in reading.ts does the same)."""
     unit, _ = ha_unit(reading.get("unit") or "", reading.get("device_class") or "")
-    if unit in READING_RATE_UNITS:
-        return READING_RATE_UNITS[unit]
+    flow = reading.get("mode") == "flow"
+    for known in (unit, unit.replace("3", "³")) if flow else (unit,):
+        if known in READING_RATE_UNITS:
+            return READING_RATE_UNITS[known]
     return (f"{unit}/h" if unit else None), None, 1.0
 
 

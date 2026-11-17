@@ -378,7 +378,7 @@
             check the camera less often. You can change this later under the sensor's Settings.
           </p>
         </div>
-        <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s /></div>
+        <div style="max-width:640px"><TriggersEditor bind:triggers bind:interval_s turning={kind === 'reading' && reading.display === 'dial'} /></div>
         {@render notInHaChoice()}
       {/if}
 

@@ -11,12 +11,14 @@
     triggers = $bindable(),
     interval_s = $bindable(),
     liveScore = null,
-  }: { triggers: Triggers; interval_s: number; liveScore?: number | null } = $props();
+    turning = false,
+  }: { triggers: Triggers; interval_s: number; liveScore?: number | null; turning?: boolean } = $props();
 
   const limits = $derived(app.config?.trigger_limits);
   const intervalLimits = $derived(app.config?.sensor_limits.interval_s);
   const maxEntities = $derived(app.config?.trigger_max_entities ?? 20);
-  const burstUsed = $derived(triggers.entities.length > 0 || triggers.change_detection);
+  // A turning dial checks this often while it moves, triggers or not.
+  const burstUsed = $derived(turning || triggers.entities.length > 0 || triggers.change_detection);
 </script>
 
 {#if limits && intervalLimits}
@@ -110,8 +112,15 @@
 
     <div class="block col" class:dim={!burstUsed}>
       <span class="col" style="gap:2px">
-        <strong>After a trigger</strong>
-        <span class="xsmall faint">Keep checking for a while to catch both the movement and the final state.</span>
+        <strong>{turning ? 'While it turns' : 'After a trigger'}</strong>
+        <span class="xsmall faint">
+          {#if turning}
+            The dial is read this often while the needle moves (or after a trigger), until it has stood still for
+            this long.
+          {:else}
+            Keep checking for a while to catch both the movement and the final state.
+          {/if}
+        </span>
       </span>
       <div class="row wrap small">
         <!-- Each value stays with its unit when the line wraps on a phone. -->

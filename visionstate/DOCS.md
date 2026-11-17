@@ -526,10 +526,10 @@ the needle is read and how far it turned since the last check is counted; the se
 **flow** over the last minute (Settings → Sensor output: *Flow over the last*), in the flow unit of
 its unit: `ft³` gives ft³/min (Home Assistant takes no ft³/h), `gal` gal/min, `m³` m³/h, `L` L/min,
 `kWh` kW — and `0` when it stands still. `binary_sensor.<name>_running` is on while it turns, for
-example to warn of water running for hours. While the dial turns it is read every few seconds (the
-burst of *When to check*), so it never turns half a round between two checks unseen; standing still
-it is read at the sensor's interval, and the first turn after a long stillness may be counted
-short. A move it cannot count for sure — more than about half a turn between two checks, a needle
+example to warn of water running for hours. While the dial turns it is read every few seconds
+(*While it turns* in *When to check*: that often, until it has stood still that long), so it never
+turns half a round between two checks unseen; standing still it is read at the sensor's interval,
+and the first turn after a long stillness may be counted short. A move it cannot count for sure — more than about half a turn between two checks, a needle
 that jumps and is not where the next reading puts it, a gap in the checks — is left out (*problem*
 `too_fast` or `jumped`): the flow may be too low for a moment, but never more than flowed. The flow
 is not a meter reading: for the meter's total, read its wheels with a mechanical counter (a second

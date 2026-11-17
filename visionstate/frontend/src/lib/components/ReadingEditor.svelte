@@ -141,7 +141,7 @@
         <datalist id="flow-units">
           {#each READING_MODE_INFO.flow.units as u (u)}<option value={u}></option>{/each}
         </datalist>
-        <span class="hint">{value.unit.trim() ? `The flow is given in ${rateUnit(value.unit)}.` : 'The flow is given per minute or hour of it.'}</span>
+        <span class="hint">{value.unit.trim() ? `The flow is given in ${rateUnit(value.unit, true)}.` : 'The flow is given per minute or hour of it.'}</span>
       </label>
       <label class="field">
         It turns

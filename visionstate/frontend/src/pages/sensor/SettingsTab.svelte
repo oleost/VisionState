@@ -406,7 +406,12 @@
     {#if !soundSensor}
     <section class="card pad col">
       <h3>When to check</h3>
-      <TriggersEditor bind:triggers bind:interval_s liveScore={sensor.live.change_score} />
+      <TriggersEditor
+        bind:triggers
+        bind:interval_s
+        liveScore={sensor.live.change_score}
+        turning={readingSensor && reading.display === 'dial'}
+      />
     </section>
 
     <section class="card pad col">

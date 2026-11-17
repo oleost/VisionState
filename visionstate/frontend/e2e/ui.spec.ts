@@ -655,6 +655,8 @@ test('new turning dial sensor through the wizard: a flow from a needle going rou
   await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-dial.png'), fullPage: true });
 
   await press(page.getByRole('button', { name: 'Next' }), info);
+  // A dial is read often while it turns: the burst is in use without a trigger, and says so.
+  await expect(page.getByText('While it turns')).toBeVisible();
   await press(page.getByRole('button', { name: 'Create sensor' }), info);
   await expect(page).toHaveURL(/\/live$/);
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
