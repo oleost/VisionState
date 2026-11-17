@@ -206,11 +206,13 @@ export interface ThresholdAdvice {
   separable: boolean;
 }
 
-export type ReadingMode = 'counter' | 'value' | 'time_left';
-/** 'counter' is a mechanical counter with rolling digit wheels; the others are digital displays. */
-export type ReadingDisplay = 'auto' | 'led' | 'lcd' | 'counter';
+/** 'flow': how fast a turning dial goes round (only with the 'dial' display). */
+export type ReadingMode = 'counter' | 'value' | 'time_left' | 'flow';
+/** 'counter' is a mechanical counter with rolling digit wheels, 'dial' a turning dial; the others are
+ * digital displays. */
+export type ReadingDisplay = 'auto' | 'led' | 'lcd' | 'counter' | 'dial';
 /** What is being read, as chosen first in the reading editor ('display' covers auto, led and lcd). */
-export type ReadingType = 'display' | 'counter';
+export type ReadingType = 'display' | 'counter' | 'dial';
 /** What reads a mechanical counter: each wheel's position, or the wheels as text (OCR). */
 export type CounterReader = 'wheels' | 'ocr';
 
@@ -261,6 +263,12 @@ export interface ReadingSettings {
   spot_rate: number;
   /** Counters: the rate entity in Home Assistant is the change over about this many minutes. */
   rate_window_min: number;
+  /** A turning dial: what one turn is, in the unit. */
+  per_turn: number;
+  /** A turning dial that turns anticlockwise. */
+  ccw: boolean;
+  /** A turning dial: the flow is the turns over about this many seconds. */
+  flow_window_s: number;
 }
 
 /** One period on a reading sensor's Quality tab (today, 7 days, 30 days). */
@@ -320,6 +328,8 @@ export interface ReadPreview {
   /** The region in the same units: from 0, 0 to region_width, 1. */
   region_width?: number;
   dials: DialRead[];
+  /** A turning dial: where its needle points (0.0-9.9), null when none was found. */
+  needle?: number | null;
 }
 
 /** The last read of a reading sensor; reason = why it was rejected (null = accepted). */
@@ -823,7 +833,12 @@ export interface AppConfig {
   plates: { vehicles: string[]; max_cars: number; events: string[]; limits: { look_distance: [number, number] } };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
-  reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
+  reading_limits: Record<
+    'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min' | 'per_turn' | 'flow_window_s',
+    [number, number]
+  >;
+  /** Unit of a counter → [unit of its rate (a turning dial's flow), device class, factor from per hour]. */
+  reading_rate_units: Record<string, [string, string | null, number]>;
   /** A counter's standard limit: this many steps of its last digit a minute. */
   counter_standard_steps_per_min: number;
   /** The same for a counter with pointer dials. */

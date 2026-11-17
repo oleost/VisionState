@@ -5,6 +5,8 @@ import {
   COUNTER_BOX,
   COUNTER_SENSOR_NAME,
   COUNTER_URL,
+  DIAL_SENSOR_NAME,
+  DIAL_URL,
   DISPLAY_URL,
   FACE_SENSOR_NAME,
   OBJECT_SENSOR_NAME,
@@ -114,6 +116,25 @@ setup('seed a mechanical counter sensor', async ({ request }) => {
   await expect
     .poll(async () => (await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value, { timeout: 60_000 })
     .toMatch(/^89\.9(39|40)$/);
+});
+
+setup('seed a turning dial sensor', async ({ request }) => {
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name: DIAL_SENSOR_NAME,
+      kind: 'reading',
+      source_type: 'http',
+      source: DIAL_URL(3), // the region is the whole picture: the dial
+      reading: { mode: 'flow', display: 'dial', unit: 'ft³', device_class: 'gas', per_turn: 2, flow_window_s: 20 },
+      interval_s: 5,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const sensor = await created.json();
+  // Three turns a minute of 2 ft³: about 6 ft³/min, once it has turned for a while.
+  await expect
+    .poll(async () => Number((await (await request.get(`api/v1/sensors/${sensor.id}`)).json()).reading.value), { timeout: 90_000 })
+    .toBeGreaterThan(3);
 });
 
 setup('seed a sensor that recognises faces', async ({ request }) => {

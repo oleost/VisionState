@@ -344,3 +344,63 @@ def car_with_plate(text: str, photo: Image.Image) -> Image.Image:
     image = photo.convert("RGB").copy()
     image.paste(licence_plate(text).resize((x2 - x1, y2 - y1), Image.Resampling.LANCZOS), (x1, y1))
     return image
+
+
+# --- Turning dials (docs/TURNING_DIAL_PLAN.md) -----------------------------------------------------
+
+TEST_DIAL_SIZE = 320  # the picture; the dial's circle fills it but for a small margin
+
+
+def render_test_dial(
+    position: float, ccw: bool = False, size: int = TEST_DIAL_SIZE, label: str = "2 FEET"
+) -> Image.Image:
+    """A gas meter's test dial as US meters have it: a pale face with ten ticks on its circle, its
+    ``label`` printed inside, and a black needle with a counterweight (a long tip, a shorter tail,
+    a round hub) pointing at ``position`` (0.0-9.9, clockwise or anticlockwise with ``ccw``). The
+    picture is the dial: a reading sensor's region round the whole picture reads it."""
+    image = Image.new("RGB", (size, size), (205, 210, 214))
+    draw = ImageDraw.Draw(image)
+    c, radius = size / 2, size * 0.46
+    draw.ellipse((c - radius, c - radius, c + radius, c + radius), fill=(236, 238, 240), outline=(35, 35, 40), width=3)
+    for n in range(10):
+        a = n / 10 * 2 * math.pi
+        inner, outer = radius * 0.9, radius * 1.0
+        draw.line(
+            [(c + math.sin(a) * inner, c - math.cos(a) * inner), (c + math.sin(a) * outer, c - math.cos(a) * outer)],
+            fill=(35, 35, 40),
+            width=3,
+        )
+    font = ImageFont.load_default(max(12, size // 11))
+    draw.text((c, c - radius * 0.5), label, fill=(30, 30, 34), font=font, anchor="mm")
+    a = (-1 if ccw else 1) * position / 10 * 2 * math.pi
+    ux, uy = math.sin(a), -math.cos(a)  # along the needle, towards its tip
+    px, py = -uy, ux  # across it
+    black = (22, 22, 26)
+
+    def at(along: float, across: float) -> tuple[float, float]:
+        return c + ux * along * radius + px * across * radius, c + uy * along * radius + py * across * radius
+
+    draw.polygon(
+        [
+            at(0.82, 0),
+            at(0.1, 0.07),
+            at(-0.1, 0.07),
+            at(-0.42, 0.04),
+            at(-0.42, -0.04),
+            at(-0.1, -0.07),
+            at(0.1, -0.07),
+        ],
+        fill=black,
+    )
+    draw.ellipse(
+        (
+            at(-0.42, 0)[0] - radius * 0.1,
+            at(-0.42, 0)[1] - radius * 0.1,
+            at(-0.42, 0)[0] + radius * 0.1,
+            at(-0.42, 0)[1] + radius * 0.1,
+        ),
+        fill=black,
+    )
+    hub = radius * 0.13
+    draw.ellipse((c - hub, c - hub, c + hub, c + hub), fill=black)
+    return image

@@ -29,6 +29,7 @@ Every fact has **one** home; other files link to it instead of repeating it.
 | The wheel reader model: data, licences, results, how to train it | [`tools/wheelreader/README.md`](tools/wheelreader/README.md) |
 | The plan for better counter readings, and its status | [`docs/WHEEL_READER_PLAN.md`](docs/WHEEL_READER_PLAN.md) |
 | Pointer dials: research, decisions, the plan and its status | [`docs/POINTER_DIAL_PLAN.md`](docs/POINTER_DIAL_PLAN.md) |
+| Turning dials (a flow from one dial going round): research, decisions, the plan and its status | [`docs/TURNING_DIAL_PLAN.md`](docs/TURNING_DIAL_PLAN.md) |
 | Face recognition: models, licences, privacy, the plan and the decisions made building it | [`docs/FACE_RECOGNITION_PLAN.md`](docs/FACE_RECOGNITION_PLAN.md) |
 | Licence plates: models, licences, privacy, the plan and its status | [`docs/PLATE_RECOGNITION_PLAN.md`](docs/PLATE_RECOGNITION_PLAN.md) |
 | Sound sensors: models, licences, privacy, measurements, the decisions, status and what is left | [`docs/SOUND_PLAN.md`](docs/SOUND_PLAN.md) |
@@ -133,10 +134,11 @@ itself (`__main__.py`).
   counter; `.5` = the last wheel half way to the next digit; with `&camera=a`,
   `/set?wider=400&camera=a` makes it come back wider, like a camera that changed its size; with
   `&turn=125` the camera hangs askew, `&tilt=0.4` also sees it at an angle, and
-  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten) and
+  `/counter-region.json?digits=7&turn=125&tilt=0.4` is the region to straighten),
   `/meter.jpg?value=187.34565&turn=20&tilt=0.2` (a drawn water meter: five wheels and four pointer
   dials; `/meter-region.json` with the same `turn` and `tilt` gives its region and its dials as a
-  sensor stores them).
+  sensor stores them) and `/dial.jpg?rpm=2` (a drawn gas meter test dial, a black needle with a
+  counterweight, turning `rpm` times a minute in real time; `&position=4.7` holds it, `&ccw=1`).
   For sound sensors (as the stream URL): `/sound.wav` (endless sound, like an ESP32 microphone) and
   `/camera.ts` (H.264 video with sound, like a camera); `/play?sound=siren|dog_bark|smoke_alarm|speech|chime`
   plays a sound once in both (`&gain=0.1`: quieter, so it is only just heard). An ESP32 camera of

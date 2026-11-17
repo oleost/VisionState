@@ -282,6 +282,7 @@ export const READING_MODE_INFO: Record<ReadingMode, { title: string; text: strin
   },
   value: { title: 'Value', text: 'Any number that can go up and down — prices, readouts.', units: ['kr', 'NOK', 'kr/L', '€', '°C'] },
   time_left: { title: 'Time left', text: 'A countdown like 1:25 on an appliance. Reported in minutes.', units: [] },
+  flow: { title: 'Flow', text: 'How fast the dial goes round, as a flow.', units: ['ft³', 'gal', 'm³', 'L', 'kWh'] },
 };
 
 export const READING_DISPLAY_INFO: Record<ReadingDisplay, string> = {
@@ -289,6 +290,7 @@ export const READING_DISPLAY_INFO: Record<ReadingDisplay, string> = {
   led: 'Light digits on dark (LED)',
   lcd: 'Dark digits on light (LCD)',
   counter: 'Mechanical counter',
+  dial: 'Turning dial',
 };
 
 /** What reads a mechanical counter (reading editor). */
@@ -309,11 +311,17 @@ export const READING_TYPE_INFO: Record<ReadingType, { title: string; text: strin
     text: 'Digit wheels that roll behind a window.',
     example: 'e.g. a water or gas meter',
   },
+  dial: {
+    title: 'Turning dial',
+    text: 'A needle that goes round while gas, water or power flows.',
+    example: "e.g. a gas meter's 2 ft³ test dial, a water meter's sweep hand",
+  },
 };
-/** Modes that make sense per type (a mechanical counter shows no countdown). */
+/** Modes that make sense per type (a mechanical counter shows no countdown; a turning dial gives a flow). */
 export const READING_TYPE_MODES: Record<ReadingType, ReadingMode[]> = {
   display: ['counter', 'value', 'time_left'],
   counter: ['counter', 'value'],
+  dial: ['flow'],
 };
 
 /** A new pointer dial (DialsEditor): its radius in units of the counter region's height, and how far

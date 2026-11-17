@@ -64,6 +64,8 @@ def topics(slug: str) -> dict[str, str]:
         "accepted": f"{base}/accepted",
         "rate": f"{base}/rate",
         "reader_image": f"{base}/reader_image",
+        # turning dials: whether it turns
+        "running": f"{base}/running",
         # object sensors that read licence plates: an event per car of the household or unknown plate
         "plate": f"{base}/plate",
     }
@@ -217,8 +219,11 @@ def entity_options(sensor: SensorDescriptor) -> list[dict]:
             "accepted": "Accepted (24 h)",
             "reader_image": "Reader image",
         }
-        if (sensor.reading or {}).get("mode") == "counter":
+        mode = (sensor.reading or {}).get("mode")
+        if mode == "counter":
             diagnostics["rate"] = "Rate"
+        if mode == "flow":
+            options.append({"id": "running", "name": "Running", "default": True})
         options += [
             {"id": key, "name": name, "default": key not in HA_ENTITIES_NOT_BY_DEFAULT}
             for key, name in diagnostics.items()
@@ -456,7 +461,23 @@ def _reading_entities(d: _Discovery) -> list[tuple[str, dict]]:
     if reading.get("mode") == "counter":
         rate = {**d.suggest("sensor", "rate"), **rate_entity(reading, t), **d.with_camera}
         entities.append(d.config("sensor", "rate", rate))
+    if reading.get("mode") == "flow":
+        running = {
+            "name": "Running",
+            **d.suggest("binary_sensor", "running"),
+            "state_topic": t["running"],
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device_class": "running",
+            "icon": "mdi:rotate-right",
+            **d.with_camera,
+        }
+        entities.append(d.config("binary_sensor", "running", running))
     return entities
+
+
+# Entities only one reading mode has: (component, key, the mode).
+READING_EXTRAS = (("sensor", "rate", "counter"), ("binary_sensor", "running", "flow"))
 
 
 def reading_entity(reading: dict, t: dict[str, str]) -> dict:
@@ -466,6 +487,18 @@ def reading_entity(reading: dict, t: dict[str, str]) -> dict:
     not have a measurement state class in Home Assistant, so it gets none.
     """
     mode = reading.get("mode", "value")
+    if mode == "flow":
+        # A turning dial: the flow in the rate unit of its unit (ft³ → ft³/min, kWh → kW …).
+        unit, device_class, _ = rate_unit(reading)
+        payload = {
+            "state_topic": t["state"],
+            "json_attributes_topic": t["attributes"],
+            "icon": "mdi:speedometer",
+            "unit_of_measurement": unit,
+            "device_class": device_class,
+            "state_class": "measurement",
+        }
+        return {k: v for k, v in payload.items() if v is not None}
     if mode == "time_left":
         unit, device_class = "min", "duration"
     else:
@@ -889,11 +922,14 @@ class MqttBridge:
             except Exception as err:  # noqa: BLE001 - whatever it was, it did not arrive
                 raise MqttNotConfirmed(str(err) or type(err).__name__) from err
 
-    async def remove_rate(self, slug: str) -> None:
-        """Forget the rate entity of a reading sensor that is no longer a counter."""
+    async def remove_reading_extras(self, slug: str, mode: str) -> None:
+        """Forget the entities a reading sensor's mode does not have (it changed): a counter's rate, a
+        turning dial's *running*."""
         uid = f"{APP_SLUG}_{slug}"
-        await self.publish(f"{self.settings.discovery_prefix}/sensor/{uid}/rate/config", "", retain=True)
-        await self.publish(topics(slug)["rate"], "", retain=True)
+        for component, key, kept_by in READING_EXTRAS:
+            if mode != kept_by:
+                await self.publish(f"{self.settings.discovery_prefix}/{component}/{uid}/{key}/config", "", retain=True)
+                await self.publish(topics(slug)[key], "", retain=True)
 
     async def remove_sound(self, slug: str, key: str) -> None:
         """Forget one sound of a sound sensor (no longer listened for): its entity and retained value."""

@@ -41,6 +41,12 @@ users exported from VisionState and shared in
 as exported. `readings.json` lists each frame's region and its value as read by eye, not the
 reader's or the user's answer (two answers in the export contradict the needles).
 
+`gas_test_dials.jpg` is the index of a US gas meter: four wheels with "00" painted after them and
+two test dials with black needles and counterweights, "½ FOOT" (by eye at 9.5, near the top) and
+"2 FEET" (at 4.65, down), read clockwise:
+[Gas meter indicator.jpg](https://commons.wikimedia.org/wiki/File:Gas_meter_indicator.jpg) from
+Wikimedia Commons (public domain), scaled down to 640 × 480.
+
 `lcd.png` is drawn by `tests/displays.py` (our own, no licence questions) and used by the CI smoke
 test for the number reader; the reading tests draw their displays on the fly.
 

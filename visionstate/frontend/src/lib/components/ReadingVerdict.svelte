@@ -35,6 +35,8 @@
   const invalid = $derived(!!value.trim() && saved === null);
 
   function ask() {
+    // A turning dial's needle: no value to type, the answer is only that it was misread.
+    if (reading?.mode === 'flow') return send('misread');
     value = item.correct_value ?? readingDetail(item).value ?? '';
     asking = true;
   }

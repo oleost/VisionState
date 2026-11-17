@@ -34,6 +34,7 @@
   let editing = $state<'counter' | 'dials'>('counter');
   const canDial = $derived(reading.display === 'counter' && reading.counter_reader === 'wheels');
   const digitsRead = $derived(reading.digits + extraDigits(reading));
+  const dial = $derived(reading.display === 'dial');
 
   /** Read a fresh frame with the current region and settings (also called when the light is on). */
   export async function test() {
@@ -81,6 +82,11 @@
       <span class="muted">Reading… the first time loads the reader, which takes a moment.</span>
     {:else if error}
       <span class="danger-text">{error}</span>
+    {:else if dial && result?.needle != null}
+      The needle points at <strong class="mono">{result.needle.toFixed(1)}</strong> · {pct(result.score)} sure
+      <span class="muted">— the flow comes once it has turned for a while.</span>
+    {:else if dial && result}
+      <span class="muted">No needle found. Draw the region round the whole dial in the image below.</span>
     {:else if result?.wrong_digit_count}
       <span class="danger-text">
         Read <span class="mono">“{result.text || '—'}”</span> — {digitsSeen(result.text)} digits, not {digitsRead}.
@@ -111,7 +117,11 @@
         <StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />
         <div class="row wrap" style="gap:8px"><RegionButtons bind:roi quad={reading.straighten} /></div>
         <span class="xsmall faint">
-          {#if reading.straighten}
+          {#if dial}
+            Draw a square round the whole dial, its circle touching the sides{reading.straighten
+              ? ' — with four corners when the camera sees it at an angle, the edge marked Top at its top'
+              : ''}; see on the right the needle as it was found.
+          {:else if reading.straighten}
             Put the corners on the corners of the {reading.display === 'counter' ? 'wheels' : 'digits'}; see on the right
             how the reader sees it, upright.
           {:else if reading.display === 'counter'}
@@ -125,11 +135,13 @@
       {/if}
       {#if result}
       <div class="col" style="gap:6px">
-        <span class="xsmall faint">What the reader sees{reading.display === 'counter'
-            ? reading.counter_reader === 'wheels'
-              ? ` — one field per wheel${reading.dials.length ? ', then the dials' : ''}`
-              : ' — the wheels without their dividers'
-            : ''}</span>
+        <span class="xsmall faint">What the reader sees{dial
+            ? ' — the dial, with the needle that was found drawn on it'
+            : reading.display === 'counter'
+              ? reading.counter_reader === 'wheels'
+                ? ` — one field per wheel${reading.dials.length ? ', then the dials' : ''}`
+                : ' — the wheels without their dividers'
+              : ''}</span>
         <img class="seen" src={result.read_image} alt="The region as the number reader saw it" />
       </div>
       {/if}
@@ -137,6 +149,7 @@
 </TestCard>
 <HaPreview>
   <span class="mono">sensor.{entity}</span>
+  {#if dial}<span class="mono">binary_sensor.{entity}_running</span>{/if}
   <span class="mono xsmall muted">
     {reading.mode === 'counter' ? 'state_class: total_increasing' : 'state_class: measurement'}{readingUnit(reading)
       ? ` · unit: ${readingUnit(reading)}`

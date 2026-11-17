@@ -468,7 +468,8 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
 ## Reading sensors
 
 A reading sensor reads a **number** from a display or counter — the kWh on a power meter, a fuel
-price, the minutes left on a washing machine, the wheels of a water or gas meter. Nothing to
+price, the minutes left on a washing machine, the wheels of a water or gas meter — or how fast a
+meter's dial goes round. Nothing to
 label: pick what it looks like and what the number is, and the wizard reads a fresh frame right
 away, showing both the value and the image the reader saw. You can also draw or adjust the
 region right on that test image; it is read again straight away.
@@ -490,6 +491,8 @@ First choose **what it looks like**:
   - *Text reader* — reads the wheels as text with the number reader (Settings → AI model). Only
     the middle of each field is read, so the dividers between the wheels are never mistaken for
     digits, and a reading with another number of digits than the counter has is rejected.
+- **Turning dial** — a needle that goes round while gas, water or power flows, read for **how fast**
+  it turns (below).
 
 **Pointer dials** — the small dials many water meters have beside the wheels (×0.1, ×0.01, ×0.001,
 ×0.0001 m³), each a needle turning over the numbers 0–9. A mechanical counter read by the wheel
@@ -503,13 +506,36 @@ together: the last wheel's digit is settled by the ×0.1 dial, a needle standing
 dial after it — the way a person reads a meter — so a last wheel that already shows the next digit
 coming is read right. A wide pointer across a whole dial is read too: the dial before it settles
 which of its ends counts. The needle is found by being redder than the dial's face — pale needles and
-pictures with a colour cast too — or by being the darkest part of the dial when the picture has no
-colour (an infrared camera at night). Its direction is taken from its own hub, so a circle placed
+pictures with a colour cast too — or, without colour (a black needle, or a red one seen by an
+infrared camera at night), as the dark part of the dial joined to its middle, so print inside the
+dial and a long needle's counterweight are not taken for its tip. Its direction is taken from its own hub, so a circle placed
 a little beside the dial still reads right. *What the reader sees* shows
 each dial after the wheels with the needle it found drawn on it; the list of dials says where
 each needle was found, or *No needle found*. The review queue and the Quality tab show the same
 picture for each stored reading, so the dials' digits can be checked too. A dial needs a few dozen pixels across in the picture
 to be read: move the camera closer, or use its zoom, if the dials are tiny.
+
+**Turning dials** — the test dial of a gas meter ("½ FOOT", "2 FEET"), the sweep hand of a water
+meter, a dial of an electricity meter (not its spinning disc): a needle whose position says nothing
+by itself, but how fast it goes round does. Choose **Turning dial** and draw the region round the
+whole dial, its circle touching the sides (with *Correct rotation and perspective*, four corners
+when the camera sees it at an angle). Set what **one turn** is — as printed on the dial (2 with
+`ft³` for "2 FEET", 10 with `gal` for a 10 gallon sweep hand; *Kh 7.2* on an electricity meter is
+7.2 with `Wh`) or as **turns per unit** (150 rev/kWh) — and which way it **turns**. At every check
+the needle is read and how far it turned since the last check is counted; the sensor's value is the
+**flow** over the last minute (Settings → Sensor output: *Flow over the last*), in the flow unit of
+its unit: `ft³` gives ft³/min (Home Assistant takes no ft³/h), `gal` gal/min, `m³` m³/h, `L` L/min,
+`kWh` kW — and `0` when it stands still. `binary_sensor.<name>_running` is on while it turns, for
+example to warn of water running for hours. While the dial turns it is read every few seconds (the
+burst of *When to check*), so it never turns half a round between two checks unseen; standing still
+it is read at the sensor's interval, and the first turn after a long stillness may be counted
+short. A move it cannot count for sure — more than about half a turn between two checks, a needle
+that jumps and is not where the next reading puts it, a gap in the checks — is left out (*problem*
+`too_fast` or `jumped`): the flow may be too low for a moment, but never more than flowed. The flow
+is not a meter reading: for the meter's total, read its wheels with a mechanical counter (a second
+sensor on the same camera). Without a light at night no needle is found, and the flow stays as it
+was until the dial is seen again; *problem* says why. A dial needs a few dozen pixels across in the
+picture.
 
 **A display or meter seen turned or at an angle** — a camera that cannot hang straight above it:
 with **Correct rotation and perspective** (with the region: under the picture in the wizard, in
@@ -529,6 +555,7 @@ objects the region stays a border.
 | **Counter** | Power, water and gas meters — only goes up | `state_class: total_increasing`, works in the Energy dashboard |
 | **Value** | Prices and other numbers that go up and down | `measurement` (none for money, as Home Assistant requires) |
 | **Time left** | Countdowns like `1:25` on appliances | minutes (`1:25` = 85 min), device class *duration* |
+| **Flow** | A turning dial only: how fast it goes round | `measurement` in the flow unit of its unit (ft³/min, L/min, m³/h, kW …), plus *running* |
 
 - **Unit** and **Home Assistant type**: Home Assistant only takes certain units for a type
   (water: m³, L, gal, ft³, CCF, MCF). VisionState sends `m3` as `m³` and `kwh` as `kWh`; a unit
@@ -617,16 +644,16 @@ objects the region stays a border.
 - **Spot checks** (Settings → Sensor output, off by default): a share of the *accepted*
   readings also goes to the review queue, to find misreads that passed every check.
 - The entity is `sensor.<name>` with the value, plus `…_confidence`, `image.…_last_frame`,
-  `button.…_read_now` and `switch.…_enabled`. Attributes: the text read and why the
+  `button.…_read_now` and `switch.…_enabled` (a turning dial also `binary_sensor.…_running`). Attributes: the text read and why the
   last reading was rejected, if it was.
 - More entities, for those who tick them under the sensor's **Settings → Home Assistant**:
 
   | Entity | What it is |
   |---|---|
   | `sensor.<name>_raw_reading` | What the reader read last, also when it was rejected |
-  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`, `camera_changed`) |
+  | `sensor.<name>_problem` | `ok`, or why the last reading was rejected (`went_down`, `unsure`, `nothing_read`, `wrong_digit_count`, `changed_too_much`, `camera_changed`; a turning dial `jumped`, `too_fast`) |
   | `sensor.<name>_accepted_24_h` | Share of the readings of the last 24 hours that were accepted, in % |
-  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, other units *unit*/h — for example to spot a water leak. It shows as many decimals as the counter's smallest step over those 15 minutes needs; change it under the entity's settings in Home Assistant |
+  | `sensor.<name>_rate` | Counters only: how fast it goes up, over the last 15 minutes (Settings → Sensor output). kWh gives **kW**, m³ gives **m³/h**, L gives **L/min**, ft³, CCF and MCF give **ft³/min**, gal gives **gal/min**, other units *unit*/h — for example to spot a water leak. It shows as many decimals as the counter's smallest step over those 15 minutes needs; change it under the entity's settings in Home Assistant |
   | `image.<name>_reader_image` | What the reader saw at the last reading: the region after display processing (*What the reader sees* on the Live tab) |
 - Works best on LCD and LED displays, printed signs and mechanical counters. The wheel reader
   has been tried on three kinds of real water meter and a public set of 2,400 meter photos;

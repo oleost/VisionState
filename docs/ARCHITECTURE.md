@@ -68,7 +68,8 @@ API as `request.app.state.runtime`.
 | `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Settings → Home Assistant chose: `enable_entities`), a camera's own stream (`camera_stream`), devices Home Assistant found and are not added yet (`discovered`: the ESP32 guide) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
-| `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or darker, at night), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
+| `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or, without colour, the dark part joined to its middle: `_dark_needle`), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together); a turning dial's needle (`read_turning`: the circle inside its region) |
+| `turns.py` | A turning dial's turns between checks (pure logic): a move counted once the next reading agrees with it, jitter and jumps left out, the count started again after a gap or a move too far to be sure of; the flow is `readers.counter_rate` of the turns (docs/TURNING_DIAL_PLAN.md) |
 | `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
 | `plates.py` | Licence plates in vehicle boxes (registry `plates.json`, never bundled): a plate model is a finder (PP-OCR's text detector or a YOLO plate finder) and a reader (PP-OCR or a plate reader); comparing a read with the household's plates (`distance`, `match`) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
@@ -105,7 +106,7 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Pla
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
 | `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next (on the moments the sensors on a camera have in common: `aligned`), looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
 | `checks.py` | Each sensor's loop, change detection (probe), the light (for every check or only when the frame is dark; an ESP32 camera's own flash asked with the picture: `_own_flash`), `run_once` and the state sensors' check |
-| `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
+| `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor (a turning dial: `_run_flow`) |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
 | `sound.py` | Sound sensors: the sound model (on first use), listening (`_listen`, every hop instead of a check), deciding and publishing each sound, history rows, clips, review questions, own sounds (`train_sound_head`, the room's windows), recording one from the stream (`start_recording`, `stop_recording`) |
 | `teaching.py` | Taught boxes of object sensors (index, embeddings); the comparison step of a check (`apply_taught`: a box at the same place as in the last check reuses its embedding, `teach.reusable`, kept in `LiveState.taught_seen`) |
@@ -131,6 +132,8 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
       state sensor   → checks._run_states  backbone embedding → head → probabilities
       object sensor  → objects._run_objects detector → taught boxes (teaching) → faces → tracks (logic)
       reading sensor → reading._run_reading reader → parse → plausibility (change_limit) → debounce
+        a turning dial → reading._run_flow  its needle (dials.read_turning) → turns.observe → the flow;
+                                           a move starts a burst of checks
   sound sensor (instead of all of the above, every hop): sound._listen  what the stream received →
       levels → loud enough? → model (sounds + embedding → own sounds' head) → logic.hear → clips
         │

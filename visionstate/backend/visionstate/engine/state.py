@@ -35,6 +35,7 @@ from ..settings import (
     plates_on,
 )
 from ..sources import AudioStream
+from ..turns import Turns
 
 
 @dataclass
@@ -399,6 +400,7 @@ class LiveState:
     reads: deque = field(default_factory=deque)
     rate_samples: deque = field(default_factory=deque)
     watch: Watch = field(default_factory=Watch)  # counters: how much the value may go up next
+    turns: Turns = field(default_factory=Turns)  # turning dials: the turns counted (turns.py)
     # Reading sensors: the camera's picture has another size than the region was drawn on
     # ({"from": [w, h], "to": [w, h], "since": epoch seconds}); readings are held until it is
     # back or the user accepts it (engine/reading.py).

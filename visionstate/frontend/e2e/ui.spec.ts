@@ -5,6 +5,8 @@ import {
   CAMERA_URL,
   COUNTER_BOX,
   COUNTER_URL,
+  DIAL_SENSOR_NAME,
+  DIAL_URL,
   DISPLAY_URL,
   METER_REGION,
   METER_URL,
@@ -52,6 +54,7 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
   const objectId = await seededObjectSensorId(request);
   const readingId = await seededReadingSensorId(request);
   const counterId = await seededCounterSensorId(request);
+  const dialId = await seededSensorId(request, DIAL_SENSOR_NAME);
   const faceId = await seededFaceSensorId(request);
   const soundId = (await soundModelInstalled(request)) ? await seededSoundSensorId(request) : null;
   const sound: [string, string, RegExp | string][] = soundId
@@ -99,6 +102,9 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ['faces-dataset', `sensors/${faceId}/dataset`, 'Shared by every camera that recognises faces'],
     ['people', 'people', 'The people you named by their face'],
     ['counter-settings', `sensors/${counterId}/settings/detect`, 'Number of digits'],
+    ['dial-live', `sensors/${dialId}/live`, 'The dial with the needle that was found drawn on it'],
+    ['dial-settings', `sensors/${dialId}/settings/detect`, 'One turn of the dial is'],
+    ['dial-settings-checks', `sensors/${dialId}/settings/checks`, 'Flow over the last'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['history-all', 'history', 'What every sensor recorded'],
     ['settings', 'settings', 'AI model'],
@@ -611,6 +617,58 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await page.goto(`#/sensors/${sensorId}/settings/detect`);
   await expect(page.getByTestId('digit-cells').locator('.cell')).toHaveCount(7);
   await expect(page.getByLabel('Number of digits')).toHaveValue('7');
+  errors.expectNone();
+  await page.goto('about:blank');
+  await request.delete(`api/v1/sensors/${sensorId}`);
+});
+
+test('new turning dial sensor through the wizard: a flow from a needle going round', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await page.getByPlaceholder('Garage door').fill('Furnace gas');
+  await press(page.getByText('HTTP snapshot URL'), info);
+  // 3.3 turns a minute: never a whole number of turns between two checks 30 s apart, which looks still.
+  await page.getByLabel('Source URL').fill(DIAL_URL(3.3));
+  await toDetect(page, info);
+
+  await press(page.getByRole('radio', { name: /Reading/ }), info);
+  await press(page.getByRole('radio', { name: /Turning dial/ }), info);
+  // A dial gives a flow: no modes to choose, no decimals; the needle is read on the whole picture.
+  await expect(page.getByText('What is the number?')).toHaveCount(0);
+  await expect(page.getByLabel('Digits after the decimal point')).toHaveCount(0);
+  await expect(page.getByText(/The needle points at/)).toBeVisible({ timeout: 60_000 });
+  await page.getByLabel('Amount per turn').fill('2');
+  await page.getByLabel('Unit').fill('ft³');
+  await expect(page.getByText('The flow is given in ft³/min.')).toBeVisible();
+  // As an electricity meter prints it: turns per unit, stored as what one turn is.
+  await page.getByLabel('How the amount is given').selectOption('turns');
+  await page.getByLabel('Turns per unit').fill('4');
+  await page.getByLabel('How the amount is given').selectOption('amount');
+  await expect(page.getByLabel('Amount per turn')).toHaveValue('0.25');
+  await page.getByLabel('Amount per turn').fill('2');
+  await expect(page.getByAltText('The region as the number reader saw it')).toBeVisible();
+  await expect(page.getByText('(reading…)')).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText(/binary_sensor\..*_running/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .kind, .mode, .card');
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'wizard-dial.png'), fullPage: true });
+
+  await press(page.getByRole('button', { name: 'Next' }), info);
+  await press(page.getByRole('button', { name: 'Create sensor' }), info);
+  await expect(page).toHaveURL(/\/live$/);
+  const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
+  // 3.3 turns a minute of 2 ft³: about 6.6 ft³/min, and running.
+  await expect(page.locator('.value-card .value')).toHaveText(/ft³\/min$/, { timeout: 90_000 });
+  await expect(page.locator('.value-card .chip', { hasText: 'Running' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/The needle points at/)).toBeVisible();
+  const view = await (await request.get(`api/v1/sensors/${sensorId}`)).json();
+  expect(view.reading.per_turn).toBe(2);
+  expect(Number(view.reading.value)).toBeGreaterThan(4);
+  // Its settings: the flow window instead of a counter's limits.
+  await page.goto(`#/sensors/${sensorId}/settings/checks`);
+  await expect(page.getByLabel('Flow over the last seconds')).toBeVisible();
+  await expect(page.getByLabel('Limit how fast the counter may go up')).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
   errors.expectNone();
   await page.goto('about:blank');
   await request.delete(`api/v1/sensors/${sensorId}`);

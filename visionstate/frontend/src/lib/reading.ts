@@ -1,9 +1,20 @@
 // Helpers for reading sensors: how a value and its unit are shown.
+import { app } from './app.svelte';
 import { dateTime, plural } from './format';
 import type { Prediction, ReadingSettings, ReadingType, Roi, Sensor } from './types';
 
-/** The unit shown next to a value ("min" for time left). */
+/** The unit of a counter's rate, and of a turning dial's flow (mqtt.rate_unit): ft³ → ft³/min, kWh → kW,
+ * others per hour. */
+export function rateUnit(unit: string): string {
+  const units = app.config?.reading_rate_units ?? {};
+  const trimmed = unit.trim();
+  const known = units[trimmed] ?? units[trimmed.replace('3', '³')];
+  return known ? known[0] : trimmed ? `${trimmed}/h` : '';
+}
+
+/** The unit shown next to a value ("min" for time left, the flow's unit for a turning dial). */
 export function readingUnit(settings: Pick<ReadingSettings, 'mode' | 'unit'>): string {
+  if (settings.mode === 'flow') return rateUnit(settings.unit);
   return settings.mode === 'time_left' ? 'min' : settings.unit;
 }
 
@@ -14,6 +25,9 @@ export function readingText(sensor: Sensor): string {
   const unit = readingUnit(r);
   return unit ? `${r.value} ${unit}` : r.value;
 }
+
+/** Whether a turning dial's published flow says it turns (readers.running). */
+export const readingRunning = (flow: string | null | undefined): boolean => !!flow && Number(flow) > 0;
 
 /** Why a reading was rejected, as a sentence fragment. */
 /** The reason while a camera's picture has another size than the region was drawn on: nothing is read. */
@@ -26,11 +40,13 @@ export const REJECT_REASONS: Record<string, string> = {
   'changed too much': 'it changed more than allowed',
   'wrong digit count': 'not the number of digits the counter has',
   'camera changed': "the camera's picture changed size",
+  jumped: 'the needle jumped, and the next reading did not confirm it',
+  'too fast': 'the needle moved too far between two readings to count',
 };
 
-/** The type chosen in the reading editor: a mechanical counter or a digital display. */
+/** The type chosen in the reading editor: a mechanical counter, a turning dial or a digital display. */
 export const readingType = (settings: Pick<ReadingSettings, 'display'>): ReadingType =>
-  settings.display === 'counter' ? 'counter' : 'display';
+  settings.display === 'counter' ? 'counter' : settings.display === 'dial' ? 'dial' : 'display';
 
 /** Digits in what the reader saw ("0089.932" → 7). */
 export const digitsSeen = (text: string | null | undefined): number => (text ?? '').replace(/\D/g, '').length;

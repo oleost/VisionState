@@ -79,14 +79,17 @@ READING_SENSOR_DEFAULTS = {
     "debounce": 1,  # a counter in use changes every reading: 2 held it back until the water stopped
 }
 # counter: only goes up (energy/water/gas meters); value: any number (prices);
-# time_left: "h:mm" or minutes on an appliance display, reported in minutes.
-READING_MODES = ("counter", "value", "time_left")
+# time_left: "h:mm" or minutes on an appliance display, reported in minutes; flow: how fast a turning
+# dial goes round, as a flow (only with the "dial" display: docs/TURNING_DIAL_PLAN.md).
+READING_MODES = ("counter", "value", "time_left", "flow")
 # How the reader treats the region: "auto" reads it as it is and falls back to removing faint
 # unlit segments when unsure; "led" (light digits on dark) and "lcd" (dark digits on light)
 # always remove unlit segments, for displays where they show clearly; "counter" is a mechanical
 # counter with rolling digit wheels: the region is split into ``digits`` equal cells and only the
 # middle of each cell is read, so the dividers between the wheels are never read as digits.
-READING_DISPLAYS = ("auto", "led", "lcd", "counter")
+# "dial" is a turning dial: the region is the dial, its needle is read (dials.read_needle) and its
+# turns counted (turns.py); it goes with the "flow" mode.
+READING_DISPLAYS = ("auto", "led", "lcd", "counter", "dial")
 # What reads a "counter" display: "wheels" gives each wheel's position (readers.WheelReader, a wheel
 # half way between two digits is read as such); "ocr" reads the wheels as text with the number reader.
 COUNTER_READERS = ("wheels", "ocr")
@@ -116,6 +119,12 @@ READING_DEFAULTS = {
     # (imaging.reading_plane), in units of the region's height from its top-left corner — {"x", "y",
     # "r", "ccw"} (ccw: the dial turns anticlockwise).
     "dials": [],
+    # A turning dial ("dial" display, "flow" mode): what one turn is in ``unit`` (2 for a gas meter's
+    # 2 ft³ dial; 1/150 for an electricity meter's 150 turns a kWh), whether it turns anticlockwise,
+    # and the flow is the turns over about this many seconds.
+    "per_turn": 1.0,
+    "ccw": False,
+    "flow_window_s": 60.0,
     # Values and times left: the largest plausible change between two readings (0 = no limit).
     # Counters use change_limit instead (see COUNTER_LIMIT).
     "max_step": 0.0,
@@ -139,6 +148,21 @@ READING_LIMITS = {
     "max_rate": (0.0, 1e9),
     "spot_rate": (0.0, 1.0),
     "rate_window_min": (1.0, 1440.0),
+    "per_turn": (1e-6, 1e6),
+    "flow_window_s": (10.0, 3600.0),
+}
+# Counting a turning dial's turns (turns.py). Between two readings it may turn at most max_turn of a
+# turn: as a new position counts only once the next reading agrees with it, two moves in a row must
+# stay under one turn. A move smaller than deadband is none, a move back that small is jitter. After
+# max_gap_s without a reading, or longer than the last speed allows, the count starts again. No flow
+# until its readings span min_span_s. Any move (one too far to count too) and the first reading start
+# a burst of checks (the sensor's trigger settings: burst_interval_s for burst_duration_s), so the
+# dial is read often while it turns.
+TURNING = {
+    "max_turn": 0.45,
+    "deadband": 0.02,
+    "max_gap_s": 300.0,
+    "min_span_s": 10.0,
 }
 # The limit on how fast a counter may go up (change_limit.py). The time since the last accepted
 # reading allows more change, but only time the counter was not seen: down, or read unsure.
@@ -187,14 +211,22 @@ READING_PROBLEMS = (
     "went_down",
     "changed_too_much",
     "camera_changed",
+    "jumped",
+    "too_fast",
 )
 # Unit of a counter -> (unit of its rate, Home Assistant device class, factor from "per hour").
 # Other units get "<unit>/h" without a device class.
+# A turning dial's flow is the same rate of its unit. Home Assistant's volume_flow_rate takes no
+# ft³/h: cubic feet go per minute; CCF and MCF (100 and 1,000 ft³) too.
 READING_RATE_UNITS = {
     "kWh": ("kW", "power", 1.0),
     "Wh": ("W", "power", 1.0),
     "m³": ("m³/h", "volume_flow_rate", 1.0),
     "L": ("L/min", "volume_flow_rate", 1 / 60),
+    "ft³": ("ft³/min", "volume_flow_rate", 1 / 60),
+    "CCF": ("ft³/min", "volume_flow_rate", 100 / 60),
+    "MCF": ("ft³/min", "volume_flow_rate", 1000 / 60),
+    "gal": ("gal/min", "volume_flow_rate", 1 / 60),
 }
 # The units Home Assistant accepts per device class of READING_DEVICE_CLASSES (its sensor
 # DEVICE_CLASS_UNITS; classes not listed take any unit). MQTT discovery refuses an entity whose
@@ -248,15 +280,16 @@ READING = {
     # cast counts too. Its hub is what is left of it with dial_hub_erode of the dial picture's size
     # peeled off its edges (the thick part round the axis: a hub, or a drop-shaped needle's body);
     # its direction is that of the dial_tip_share of its pixels farthest from the hub. A wide pointer
-    # across the dial instead reaches dial_wide_pointer[0] of the radius to both sides of the centre
-    # and is at least dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
+    # across the dial instead reaches dial_wide_pointer[0] of the radius to both sides of the centre,
+    # its shorter side at least dial_wide_pointer[2] of its longer one, and is at least
+    # dial_wide_pointer[1] times as long as it is wide. With dials, a wheel's position
     # may be dial_wheel_slack_bins behind where the value puts it and dial_wheel_ahead_bins ahead (from
     # dial_wheel_exact_from tenths of a digit on, not ahead; it says the digit, the needle the rest), or
     # stand on its digit, which counts dial_wheel_stand_weight. A last wheel on a whole digit with the
     # ×0.1 dial from dial_wheel_exact_from on can be either side of that digit: the last value decides
     # (readers.settle_turning_wheel); without one the reading's confidence is at most this.
     "dial_wheel_undecided_score": 0.5,
-    "dial_wide_pointer": (0.6, 1.3),
+    "dial_wide_pointer": (0.6, 1.3, 0.8),
     "dial_wheel_slack_bins": 4,
     "dial_wheel_ahead_bins": 1,
     "dial_wheel_exact_from": 8,
@@ -273,6 +306,17 @@ READING = {
     "dial_red_contrast": 20,
     "dial_hub_erode": 0.07,
     "dial_tip_share": 0.05,
+    "dial_tip_reach": 0.9,  # and at least this share of the farthest one's distance (a thin tip: not its counterweight)
+    # A needle without colour (black, or red seen grey at night: dials._dark_needle): looked for
+    # inside dial_dark_face of the radius, the part joined to the middle (within dial_dark_seed of the
+    # radius) kept. Where its tip does not point one way (its mean direction shorter than
+    # dial_dark_sure: print or the dial's circle joined to it) it is read again with thin lines taken
+    # away first by an opening dial_dark_open of the dial picture's size, and the surer counts. A wide
+    # pointer is looked for in the one without thin lines.
+    "dial_dark_face": 0.9,
+    "dial_dark_seed": 0.35,
+    "dial_dark_open": 0.04,
+    "dial_dark_sure": 0.9,
     "accepted_window_s": 86_400,  # the "accepted" entity: share of the readings in the last 24 h
     "rate_min_span_s": 30.0,  # no rate until two accepted readings are at least this far apart
     # "Export readings" (to share, e.g. on GitHub): the checked readings, then the accepted ones

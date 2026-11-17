@@ -12,11 +12,11 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import change_limit, imaging, readers, timing
+from .. import change_limit, imaging, readers, timing, turns
 from ..db import Prediction, ReadingStat, ReadingWatch, Sensor
 from ..mqtt import rate_unit, topics
 from ..redact import redact
-from ..settings import COUNTER_LIMIT, READING, REMINDER, VERSION
+from ..settings import COUNTER_LIMIT, READING, REMINDER, TURNING, VERSION
 from .base import RuntimeBase
 from .logic import percent, reading_verdict
 from .models import ModelsMixin
@@ -44,6 +44,9 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         """
         live = self.live_state(cfg.id)
         settings = cfg.reading
+        if settings["mode"] == "flow":
+            await self._run_flow(cfg, image, lit)
+            return
         counter = settings["mode"] == "counter"
         if not live.reading_restored:
             live.reading_restored = True
@@ -102,6 +105,65 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             learned = change_limit.observe(watch, now, value, cfg.interval_s)
         await self._publish_reading(cfg, image, reader_jpeg, text, shown, reason, now)
         await self._keep_reading(cfg, image, text, shown, reason, changed, lit, learned)
+
+    async def _run_flow(self, cfg: SensorConfig, image: Image.Image, lit: bool) -> None:
+        """One check of a turning dial (docs/TURNING_DIAL_PLAN.md): read its needle, count its turns
+        since the last check (turns.py) and publish the flow over ``flow_window_s``.
+
+        A needle not found or read below the threshold is rejected, and so is a move the next reading
+        did not confirm (*jumped*) or one too far to count (*too fast*): they go to Review as other
+        rejected readings, and the flow stays as it was. Any move (counted or not) and the first
+        reading start a burst of checks, so the dial is read often while it turns. The history keeps a row when it starts or stops running.
+        The flow is not restored after a restart: it is what the dial does now."""
+        live = self.live_state(cfg.id)
+        settings = cfg.reading
+        live.reading_restored = True
+        if await self._camera_changed(cfg, image, lit):
+            return
+        try:
+            with timing.step("read"):
+                text, used = await self.read_number(image, cfg.roi, settings)
+        except Exception as err:  # noqa: BLE001 - a broken picture: no needle, not a crash
+            live.error = f"Dial unavailable: {redact(str(err))}"
+            return
+        now = time.time()
+        window = float(settings["flow_window_s"])
+        position = (text.details or {}).get("needle")
+        reason = None
+        if position is None:
+            reason = "nothing read"
+        elif text.score < cfg.threshold:
+            reason = "unsure"
+        else:
+            seen = turns.observe(live.turns, float(position), now, window)
+            reason = {turns.JUMPED: "jumped", turns.TOO_FAST: "too fast"}.get(seen)
+            # It moved — also too far to count, or the count just started: read it often while it turns.
+            if seen != turns.STILL:
+                live.burst_until = max(live.burst_until, now + float(cfg.triggers["burst_duration_s"]))
+        shown = None
+        per_hour = readers.counter_rate(live.turns.samples, now, window, TURNING["min_span_s"])
+        if per_hour is not None and reason is None:
+            _, _, factor = rate_unit(settings)
+            shown = readers.format_flow(per_hour * float(settings["per_turn"]) * factor)
+        was_running = readers.running(live.debouncer.published)
+        if shown is not None:
+            live.debouncer.update(shown, 1)
+        published = live.debouncer.published
+        changed = shown is not None and was_running != readers.running(published)
+        if changed:
+            live.changes.append(now)
+        live.reading = {
+            "text": text.text,
+            "score": round(text.score, 4),
+            "value": shown,
+            "reason": reason,
+            "settling": False,
+            "at": now,
+        }
+        live.reading_image = reader_jpeg = await asyncio.to_thread(imaging.encode_jpeg, used, 85)
+        live.top, live.confidence = published, text.score
+        await self._publish_reading(cfg, image, reader_jpeg, text, None, reason, now)  # raw: the needle
+        await self._keep_reading(cfg, image, text, published if reason is None else None, reason, changed, lit)
 
     async def _camera_changed(self, cfg: SensorConfig, image: Image.Image, lit: bool) -> bool:
         """Hold the readings while the camera's picture has another size than the region was drawn on.
@@ -212,7 +274,13 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             },
             retain=True,
         )
-        shows = (live.debouncer.published, text.text, reason)
+        flow = cfg.reading["mode"] == "flow"
+        running = readers.running(live.debouncer.published)
+        if flow and live.debouncer.published is not None:
+            await self._send(cfg, t["running"], "ON" if running else "OFF", retain=True)
+        # A turning dial's needle moves at every check while it runs: its pictures go when it starts
+        # or stops, or its problem changes (Home Assistant keeps every new picture).
+        shows = (running, reason) if flow else (live.debouncer.published, text.text, reason)
         crop = imaging.region_image(image, cfg.roi, cfg.reading["straighten"])
         exif = imaging.frame_exif(timing.captured_at(), imaging.region_box(cfg.roi))
         await self._send_on_change(cfg, t["image"], shows, lambda: imaging.encode_jpeg(crop, 80, exif))

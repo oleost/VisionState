@@ -11,6 +11,7 @@
     maxRate = $bindable(),
     spotRate = $bindable(),
     rateWindow = $bindable(),
+    flowWindow = $bindable(),
     mode,
     unit,
     decimals,
@@ -25,6 +26,8 @@
     maxRate: number;
     spotRate: number;
     rateWindow: number;
+    /** A turning dial: the flow over this many seconds. */
+    flowWindow: number;
     mode: ReadingMode;
     unit: string;
     /** Of the whole value (settings.value_decimals). */
@@ -65,12 +68,14 @@
   }
   const spotLimits = $derived(app.config?.reading_limits.spot_rate ?? [0, 1]);
   const windowLimits = $derived(app.config?.reading_limits.rate_window_min ?? [1, 1440]);
+  const flowLimits = $derived(app.config?.reading_limits.flow_window_s ?? [10, 3600]);
+  const flow = $derived(mode === 'flow');
 </script>
 
 {#if limits}
   <div class="col params">
     <label class="line">
-      <span>Accept a reading when the reader is at least</span>
+      <span>{flow ? 'Count a needle when the reader is at least' : 'Accept a reading when the reader is at least'}</span>
       <span class="row"
         ><input
           class="input sm num"
@@ -83,13 +88,33 @@
         /> % sure</span
       >
     </label>
+    {#if !flow}
     <label class="line">
       <span>Publish a new value after this many equal readings in a row</span>
       <span class="row"
         ><input class="input sm num" type="number" min={limits.debounce[0]} max={limits.debounce[1]} step="1" bind:value={debounce} /></span
       >
     </label>
-    {#if mode === 'counter'}
+    {/if}
+    {#if flow}
+      <label class="line">
+        <span class="col" style="gap:2px">
+          <span>Flow over the last</span>
+          <span class="xsmall faint">Shorter follows an appliance turning on and off more closely; longer is steadier.</span>
+        </span>
+        <span class="row"
+          ><input
+            class="input sm num"
+            type="number"
+            min={flowLimits[0]}
+            max={flowLimits[1]}
+            step="5"
+            bind:value={flowWindow}
+            aria-label="Flow over the last seconds"
+          /> s</span
+        >
+      </label>
+    {:else if mode === 'counter'}
       <label class="line">
         <span class="col" style="gap:2px">
           <span>Limit how fast the counter may go up</span>
@@ -189,7 +214,10 @@
       </label>
     {/if}
     <p class="xsmall muted">
-      Rejected readings keep the last value; every one of them is listed in the history and waits in the review queue.
+      {#if flow}A needle that is not found, or jumps and is not where the next reading puts it, is not counted; such
+        readings are listed in the history and wait in the review queue. The flow is the turns counted in the time above.
+      {:else}
+      Rejected readings keep the last value; every one of them is listed in the history and waits in the review queue.{/if}
       {#if mode === 'counter'}A counter that reads lower than before is always rejected. Readings over the limit are
         accepted when several in a row agree — unless the jump looks like one misread digit; those wait for your answer.{/if}
     </p>

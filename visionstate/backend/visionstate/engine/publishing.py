@@ -13,7 +13,7 @@ from typing import cast
 from PIL import Image
 from sqlalchemy import func, select
 
-from .. import imaging, timing
+from .. import imaging, readers, timing
 from ..db import Prediction, Sensor
 from ..mqtt import REVIEW_TOPICS, SensorDescriptor, entity_options, object_topics, sound_topics, topics
 from ..settings import APP_SLUG, HA_ENTITIES_NOT_BY_DEFAULT, PUBLISH
@@ -154,8 +154,8 @@ class PublishingMixin(RuntimeBase):
             for key in self._published_classes.get(cfg.id, set()) - current:
                 await self.mqtt.remove_sound(cfg.slug, key)  # no longer listened for: remove its entity
             self._published_classes[cfg.id] = current
-        if cfg.is_reading and cfg.reading["mode"] != "counter":
-            await self.mqtt.remove_rate(cfg.slug)  # only counters have a rate
+        if cfg.is_reading:
+            await self.mqtt.remove_reading_extras(cfg.slug, cfg.reading["mode"])  # a rate, *running*
         await self.mqtt.publish_discovery(cfg.descriptor)
         self._registry_wanted.set()
         if cfg.id in self.live:
@@ -181,6 +181,9 @@ class PublishingMixin(RuntimeBase):
         elif live and live.debouncer.published is not None:
             # Re-send the last state so it is not lost when discovery is (re)published.
             await self._send(cfg, t["state"], live.debouncer.published, retain=True)
+            if cfg.is_reading and cfg.reading["mode"] == "flow":
+                running = readers.running(live.debouncer.published)
+                await self._send(cfg, t["running"], "ON" if running else "OFF", retain=True)
 
     def _review_counts(self) -> tuple[int, dict[str, int], datetime | None]:
         """Frames waiting for review: in all, per sensor, and when the oldest of them came (UTC)."""

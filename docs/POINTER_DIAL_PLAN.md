@@ -109,9 +109,12 @@ and a direction (`ccw`, clockwise by default); the order gives the factor (×0.1
    (red less the larger of green and blue, against the face's median), so a pale needle in a
    picture with a colour cast counts as well as a bright red one — the first real meter (issue
    #59) had pale pink, drop-shaped needles and a greenish picture, and a fixed threshold found
-   none of them. Where there is no red (an infrared camera at night sees a red needle grey), the
-   pixels darker than half way between the darkest and the face, between the hub and the numbers
-   (which are dark too).
+   none of them; and red at all (more red than green and blue), so a black needle on a blue-grey
+   face is not taken for red. Where there is no red (a black needle, or a red one an infrared camera
+   sees grey), the pixels darker than half way between the darkest and the face that are joined to
+   the middle (`dials._dark_needle`): print inside the dial is not joined to it, and a needle that
+   touches print or the circle is read again with thin lines taken away
+   ([`TURNING_DIAL_PLAN.md`](TURNING_DIAL_PLAN.md) §2: black needles with a counterweight).
 3. Its hub (`dials._hub`): the middle of the needle's thick part, what is left with
    `dial_hub_erode` peeled off its edges — a hub, or a drop's round body. The needle is looked for
    again round it, so a circle placed up to half a radius beside the dial reads the same; a thin
@@ -247,7 +250,8 @@ Left (for whoever takes it on):
   one dial, and four dials with a wide pointer). The photo in issue #59 (thin red needles on red
   hubs, not CC0: tried locally only) reads right too. More exports, by day and by night, from other meters: are the needles found under glass with glare, is the
   confidence sensible, does the last wheel agree with the ×0.1 dial?
-- **Night pictures.** The dark-needle path is tested on a drawn dial made grey; a real infrared
+- **Night pictures.** The dark-needle path is tested on a drawn dial made grey, on drawn black needles
+  and on a real US gas meter's black test dials (`tests/assets/gas_test_dials.jpg`); a real infrared
   picture has glare and a dark rim. If it fails, that is the case for phase 3 (§6).
 - **A pink picture hides the needle, and the reader is still sure** (issue #86, an export of
   2026-11-16: an ESP32-CAM with its flash, about 5 % of its pictures pink). When the dial's face is

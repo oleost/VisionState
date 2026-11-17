@@ -151,6 +151,7 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
         raise HTTPException(502, f"Camera unavailable: {redact(str(err))}") from err
     image = await asyncio.to_thread(imaging.decode, data)
     settings = merge_reading(body.reading.model_dump())
+    dial = settings["display"] == "dial"
     try:
         text, used = await rt.read_number(image, body.roi.normalised() if body.roi else None, settings)
     except Exception as err:  # noqa: BLE001
@@ -163,7 +164,9 @@ async def preview_read(body: ReadPreviewIn, request: Request) -> dict:
         "read_image": "data:image/jpeg;base64," + base64.b64encode(used_jpeg).decode(),
         "text": text.text,
         "score": round(text.score, 4),
-        "value": readers.format_value(readers.parse(text.text, settings), settings),
+        # A turning dial reads a needle, not a value: its position is in "needle".
+        "value": None if dial else readers.format_value(readers.parse(text.text, settings), settings),
+        **({"needle": (text.details or {}).get("needle")} if dial else {}),
         # A mechanical counter read with another number of digits than it has wheels.
         "wrong_digit_count": readers.wrong_digit_count(text.text, settings),
         # Its pointer dials as read: where each needle was found (None: none seen) and how sure.

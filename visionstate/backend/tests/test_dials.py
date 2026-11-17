@@ -131,10 +131,10 @@ def test_a_needle_lost_when_looked_for_round_its_hub_is_none_not_a_crash(monkeyp
     first = dials._needle_mask
     calls = []
 
-    def mask(rgb, dist, radius):
+    def mask(rgb, dist, radius, thin=False):
         calls.append(1)
-        found, area = first(rgb, dist, radius)
-        return (found, area) if len(calls) == 1 else (np.zeros_like(found), area)
+        found, area, dark = first(rgb, dist, radius, thin)
+        return (found, area, dark) if len(calls) == 1 else (np.zeros_like(found), area, dark)
 
     monkeypatch.setattr(dials, "_needle_mask", mask)
     monkeypatch.setattr(dials, "_hub", lambda *args: (-10.0, 0.0))
@@ -250,6 +250,22 @@ def test_holes_in_a_needle_do_not_turn_it_round(name, seen):
     needle = dials.read_needle(Image.open(ASSETS / "meter_readings" / f"zapadee-{name}.jpg").convert("RGB"))
     assert needle.position is not None and abs((needle.position - seen + 5) % 10 - 5) < 0.3, needle.position
     assert needle.certainty > 0.5
+
+
+@pytest.mark.parametrize("off", [(0, 0), (0.16, 0), (0, 0.16), (-0.16, -0.16), (0.28, 0.08)])
+@pytest.mark.parametrize(("centre", "radius", "seen"), [((107, 265), 62, 9.5), ((295, 310), 64, 4.65)])
+def test_black_needles_with_a_counterweight(centre, radius, seen, off):
+    """A US gas meter's test dials (tests/assets/gas_test_dials.jpg): black needles with a long
+    counterweight and print inside the dial ("½ FOOT", "2 FEET") — read by the part of the dark face
+    joined to the middle, also with the circle a little beside the dial (``off``, in its radii),
+    and never taken for a wide pointer."""
+    photo = Image.open(ASSETS / "gas_test_dials.jpg").convert("RGB")
+    x, y = centre[0] + off[0] * radius, centre[1] + off[1] * radius
+    m = radius * READING["dial_margin"]
+    size = (READING["dial_size"], READING["dial_size"])
+    needle = dials.read_needle(photo.crop((round(x - m), round(y - m), round(x + m), round(y + m))).resize(size))
+    assert needle.position is not None and abs((needle.position - seen + 5) % 10 - 5) < 0.2, needle.position
+    assert needle.ends == 1 and needle.certainty > 0.9
 
 
 def test_the_dials_around_a_wide_pointer_settle_which_end_counts():

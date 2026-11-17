@@ -18,6 +18,8 @@ GET /meter.jpg?value=187.3456&digits=5&dials=4   a drawn water meter: a counter 
                                  &turn and &tilt as for counter.jpg
 GET /meter-region.json?digits=5&dials=4&ccw=0,1&turn=125&tilt=0.4   its region (as counter-region.json) and
                                  its dials as a reading sensor stores them (placed in the straightened region)
+GET /dial.jpg?rpm=2&ccw=0       a drawn gas meter test dial (a black needle with a counterweight, "2 FEET")
+                                 turning rpm times a minute, in real time (&position=4.7 holds it still there)
 GET /set?wider=400&camera=a      counter.jpg?…&camera=a comes back 400 px wider (a camera that changed
                                  its picture size after a restart); wider=0 sets it back
 GET /sound.wav                   endless sound (a quiet room), as an ESP32 microphone sends it (for sound sensors)
@@ -37,6 +39,7 @@ import json
 import random
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -47,7 +50,15 @@ TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "te
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent))  # the backend package, for the sound stream
-from displays import STYLES, car_with_plate, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
+from displays import (  # noqa: E402  (shared with the backend tests)
+    STYLES,
+    car_with_plate,
+    counter_box,
+    render_counter,
+    render_test_dial,
+    turned,
+    turned_meter,
+)
 from displays import render as render_display  # noqa: E402
 
 SOUND = None  # tests/sound_stream.SoundSource, made on first use (it needs the backend's packages)
@@ -218,6 +229,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=90)
+            self._send(buf.getvalue(), "image/jpeg")
+        elif url.path == "/dial.jpg":
+            query = parse_qs(url.query)
+            try:
+                rpm = min(60.0, max(0.0, float(query.get("rpm", ["2"])[0])))
+                held = query.get("position", [""])[0]
+                position = float(held) % 10 if held else (time.time() * rpm / 60 * 10) % 10
+            except ValueError:
+                self.send_error(400)
+                return
+            buf = io.BytesIO()
+            render_test_dial(position, query.get("ccw", ["0"])[0] == "1").save(buf, format="JPEG", quality=90)
             self._send(buf.getvalue(), "image/jpeg")
         elif url.path == "/plate.jpg":
             text = (parse_qs(url.query).get("text") or ["VS 12345"])[0][:12]

@@ -46,39 +46,79 @@ def _peak(position: float, sigma: float) -> np.ndarray:
 
 def _wide_pointer(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tuple[float, float] | None:
     """The direction of a wide pointer: a long shape reaching far to both sides of the dial's
-    centre (``READING["dial_wide_pointer"]``), where a needle has a hub and at most a short tail.
-    Its outline is what is red; its middle may be any colour. None for anything else."""
-    reach, long = READING["dial_wide_pointer"]
+    centre (``READING["dial_wide_pointer"]``), where a needle has a hub and at most a short tail —
+    and about as far to both sides: a black needle's counterweight may reach as far as a short
+    pointer's end, but the needle reaches much farther. Its outline is what is red; its middle may
+    be any colour. None for anything else."""
+    reach, long, even = READING["dial_wide_pointer"]
     points = np.stack([dx[mask], dy[mask]], axis=1)
     _, spread, axes = np.linalg.svd(points - points.mean(axis=0), full_matrices=False)
     along = points @ axes[0]
-    if min(along.max(), -along.min()) < reach * radius or spread[0] < long * spread[1]:
+    near, far = sorted((along.max(), -along.min()))
+    if near < reach * radius or near < even * far or spread[0] < long * spread[1]:
         return None
     return float(axes[0][0]), float(axes[0][1])
 
 
-def _needle_mask(rgb: np.ndarray, dist: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray]:
-    """The needle's pixels and the area they were looked for in: what is clearly redder than the
-    dial's face inside the numbers round the edge (``READING["dial_red_contrast"]``, so a pale
-    needle in a picture with a colour cast is found as well as a bright one); where the dial has no
-    red (an infrared camera at night), the darkest part of its face between the hub and the
-    numbers, which are dark too."""
+def _needle_mask(
+    rgb: np.ndarray, dist: np.ndarray, radius: float, thin: bool = False
+) -> tuple[np.ndarray, np.ndarray, bool]:
+    """The needle's pixels, the area they were looked for in and whether it is a needle without
+    colour: what is clearly redder than the dial's face inside the numbers round the edge
+    (``READING["dial_red_contrast"]``, so a pale needle in a picture with a colour cast is found as
+    well as a bright one) and red at all (more red than green and blue: a black needle on a
+    blue-grey face is redder than the face, but grey); where the dial has no red (a black needle, or
+    a red one seen grey by an infrared camera at night), the dark part of its face joined to the
+    middle (``_dark_needle``; ``thin``: with thin lines taken away)."""
     face = dist < 0.8 * radius
     redness = rgb[..., 0] - np.maximum(rgb[..., 1], rgb[..., 2])
-    red = (redness - np.median(redness[face]) > READING["dial_red_contrast"]) & face
+    red = (redness - np.median(redness[face]) > READING["dial_red_contrast"]) & (redness > 0) & face
     if red[face].mean() >= READING["dial_min_needle"]:
-        return red, face
-    ring = (dist > 0.2 * radius) & (dist < 0.62 * radius)
-    grey = rgb.mean(axis=2)
-    inside = grey[ring]
+        return red, face, False
+    return *_dark_needle(rgb.mean(axis=2), dist, radius, thin), True
+
+
+def _joined(mask: np.ndarray, dist: np.ndarray, middle: np.ndarray) -> np.ndarray | None:
+    """The part of ``mask`` joined to its pixel nearest the centre within ``middle``; None without one."""
+    seeds = mask & middle
+    if not seeds.any():
+        return None
+    sy, sx = divmod(int(np.argmin(np.where(seeds, dist, np.inf))), mask.shape[1])
+    part = Image.fromarray(mask.astype(np.uint8) * 255).copy()  # a copy: floodfill writes into it
+    ImageDraw.floodfill(part, (sx, sy), 128)
+    return np.asarray(part) == 128
+
+
+def _dark_needle(grey: np.ndarray, dist: np.ndarray, radius: float, thin: bool) -> tuple[np.ndarray, np.ndarray]:
+    """A needle without colour: what is darker than half way between the darkest pixels and the
+    face, inside ``dial_dark_face`` of the radius, and of that only the part joined to the middle
+    (within ``dial_dark_seed`` of the radius) — the needle with its hub, from its counterweight to
+    its tip. Print inside the dial ("2 FEET") is as dark but not joined to it — unless the needle
+    lies on it, or a long needle touches the dial's circle or its ticks. With ``thin``, thin lines
+    (print, the circle) are taken away first by an opening (``dial_dark_open`` of the picture's
+    size) and only the needle's own edges come back; a needle's thin tip is then lost too, so
+    ``read_needle`` reads it both ways and keeps the surer."""
+    face = dist < READING["dial_dark_face"] * radius
+    inside = grey[face]
+    empty = np.zeros_like(face)
     if inside.size == 0:
-        return np.zeros_like(ring), ring
-    # A needle is a small part of the face, much darker than the rest: what is darker than half
-    # way between the darkest pixels and the face.
-    dark, face = np.percentile(inside, 1), np.median(inside)
-    if face - dark < 40:  # no contrast: nothing that stands out as a needle
-        return np.zeros_like(ring), ring
-    return (grey < (dark + face) / 2) & ring, ring
+        return empty, face
+    dark, light = np.percentile(inside, 1), np.median(inside)
+    if light - dark < 40:  # no contrast: nothing that stands out as a needle
+        return empty, face
+    mask = (grey < (dark + light) / 2) & face
+    middle = dist < READING["dial_dark_seed"] * radius
+    if not thin:
+        found = _joined(mask, dist, middle)
+        return (empty if found is None else found), face
+    peel = 2 * round(READING["dial_dark_open"] * mask.shape[0] / 2) + 1
+    picture = Image.fromarray(mask.astype(np.uint8) * 255)
+    opened = picture.filter(ImageFilter.MinFilter(peel)).filter(ImageFilter.MaxFilter(peel))
+    needle = _joined(np.asarray(opened) > 0, dist, middle)
+    if needle is None:
+        return empty, face
+    grown = Image.fromarray(needle.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(peel))
+    return mask & (np.asarray(grown) > 0), face
 
 
 def _hub(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tuple[float, float]:
@@ -97,6 +137,32 @@ def _hub(mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float) -> tup
     return (hx, hy) if math.hypot(hx, hy) < 0.5 * radius else (0.0, 0.0)
 
 
+def _tip(
+    rgb: np.ndarray, mask: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius: float, thin: bool
+) -> tuple[float, float, float, float] | None:
+    """The needle's hub (from the circle's centre) and the mean direction from it to its tip (as a
+    vector, 1 long when all of the tip points one way), or None.
+
+    The tip gives the direction: the needle's pixels farthest from its hub (dial_tip_share of them,
+    none close to the hub, and none much nearer than the farthest: dial_tip_reach), so neither the
+    hub, a drop-shaped needle's round body nor the tail or counterweight behind it turns it. The needle is looked for again round its hub, so a circle placed off it does
+    not cut the tip off."""
+    hx, hy = _hub(mask, dx, dy, radius)
+    if hx or hy:
+        mask, _, _ = _needle_mask(rgb, np.hypot(dx - hx, dy - hy), radius, thin)
+    if not mask.any():  # nothing red enough round the hub (a dark picture): no needle, not a crash
+        return None
+    ax, ay = dx[mask] - hx, dy[mask] - hy
+    away = np.maximum(np.hypot(ax, ay), 1e-9)
+    farthest = float(away.max())
+    tip = away >= max(
+        0.2 * radius, float(np.quantile(away, 1 - READING["dial_tip_share"])), READING["dial_tip_reach"] * farthest
+    )
+    if not tip.any():
+        return None
+    return hx, hy, float((ax[tip] / away[tip]).mean()), float((ay[tip] / away[tip]).mean())
+
+
 def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     """Read one dial: ``dial`` is its picture (square, the dial's circle in the middle at
     1 / ``READING["dial_margin"]`` of its size), ``ccw`` a dial that turns anticlockwise."""
@@ -106,13 +172,17 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
     ys, xs = np.mgrid[0:size, 0:size]
     dx, dy = xs + 0.5 - size / 2, ys + 0.5 - size / 2
     dist = np.hypot(dx, dy)
-    mask, ring = _needle_mask(rgb, dist, radius)
+    mask, ring, dark = _needle_mask(rgb, dist, radius)
     share = float(mask.sum()) / max(1, int(ring.sum()))
     picture = dial.convert("RGB").copy()
+    nothing = Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
     if share < READING["dial_min_needle"]:
-        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
+        return nothing
     low, high = READING["dial_sigma_bins"]
-    pointer = _wide_pointer(mask, dx, dy, radius)
+    # A needle without colour may lie on print or touch the dial's circle: it is also read with thin
+    # lines taken away (which loses a thin tip, though). A wide pointer is looked for in that one.
+    thin = _needle_mask(rgb, dist, radius, thin=True)[0] if dark else mask
+    pointer = _wide_pointer(thin, dx, dy, radius)
     if pointer:
         vx, vy = pointer
         position = (math.atan2(-vx if ccw else vx, -vy) % (2 * math.pi)) / (2 * math.pi) * 10
@@ -121,20 +191,16 @@ def read_needle(dial: Image.Image, ccw: bool = False) -> Needle:
         centre = (size / 2 - vx * reach, size / 2 - vy * reach), (size / 2 + vx * reach, size / 2 + vy * reach)
         ImageDraw.Draw(picture).line(centre, fill=NEEDLE_COLOUR, width=max(2, size // 40))
         return Needle(round(position, 2), 1.0, probs / probs.sum(), picture, ends=2)
-    # The tip gives the direction: the needle's pixels farthest from its hub (dial_tip_share of
-    # them, none close to the hub), so neither the hub, a drop-shaped needle's round body nor the
-    # short tail behind it turns it.
-    hx, hy = _hub(mask, dx, dy, radius)
-    if hx or hy:  # looked for again round the hub, so a circle placed off it does not cut the tip off
-        mask, _ = _needle_mask(rgb, np.hypot(dx - hx, dy - hy), radius)
-    if not mask.any():  # nothing red enough round the hub (a dark picture): no needle, not a crash
-        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
-    ax, ay = dx[mask] - hx, dy[mask] - hy
-    away = np.maximum(np.hypot(ax, ay), 1e-9)
-    tip = away >= max(0.2 * radius, float(np.quantile(away, 1 - READING["dial_tip_share"])))
-    if not tip.any():
-        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), picture)
-    vx, vy = float((ax[tip] / away[tip]).mean()), float((ay[tip] / away[tip]).mean())
+    # The whole needle counts, unless its tip does not point one way (print or the circle joined to
+    # it) and the needle without thin lines is surer.
+    found = _tip(rgb, mask, dx, dy, radius, False)
+    if dark and (found is None or math.hypot(found[2], found[3]) < READING["dial_dark_sure"]):
+        other = _tip(rgb, thin, dx, dy, radius, True)
+        if other is not None and (found is None or math.hypot(other[2], other[3]) > math.hypot(found[2], found[3])):
+            found = other
+    if found is None:
+        return nothing
+    hx, hy, vx, vy = found
     spread = math.hypot(vx, vy)  # 1: the whole tip in one direction
     angle = math.atan2(vx, -vy)  # 0 at the top, clockwise (y points down in an image)
     if ccw:
@@ -173,3 +239,21 @@ def read_needles(image: Image.Image, roi: dict | None, reading: dict, straighten
         return []
     size = (READING["dial_size"], READING["dial_size"])
     return [read_needle(flat.crop(image, dial_box(d, flat.height), size), bool(d.get("ccw"))) for d in placed]
+
+
+def turning_dial(reading: dict, flat: imaging.Plane) -> dict:
+    """A turning dial's circle in the plane of its region (``"dial"`` display): the region is drawn
+    round the dial, so it is the circle inside the region, in units of the region's height."""
+    width = flat.width / flat.height
+    return {"x": width / 2, "y": 0.5, "r": min(width, 1.0) / 2, "ccw": bool(reading.get("ccw"))}
+
+
+def read_turning(image: Image.Image, roi: dict | None, reading: dict, straightened: bool) -> Needle:
+    """A turning dial's needle (``"dial"`` display): the circle inside its region, read in the plane
+    the region is straightened to; no needle without a region that makes an area."""
+    flat = imaging.reading_plane(image, roi, straightened)
+    if flat is None:
+        return Needle(None, 0.0, np.full(BINS, 1.0 / BINS), Image.new("RGB", (READING["dial_size"],) * 2))
+    dial = turning_dial(reading, flat)
+    size = (READING["dial_size"], READING["dial_size"])
+    return read_needle(flat.crop(image, dial_box(dial, flat.height), size), dial["ccw"])

@@ -7,7 +7,7 @@
   import Icon from '../../lib/components/Icon.svelte';
   import { ago, pct } from '../../lib/format';
   import { READING_MODE_INFO, TRIGGER_SOURCES } from '../../lib/ui';
-  import { CAMERA_CHANGED_REASON, REJECT_REASONS, readingText, readingUnit } from '../../lib/reading';
+  import { CAMERA_CHANGED_REASON, REJECT_REASONS, readingRunning, readingText, readingUnit } from '../../lib/reading';
   import { href, paths } from '../../lib/router.svelte';
   import type { Sensor } from '../../lib/types';
 
@@ -16,6 +16,7 @@
   let checking = $state(false);
   const reading = $derived(sensor.reading!);
   const last = $derived(reading.last);
+  const dial = $derived(reading.display === 'dial');
   // A counter that reads with an older wheel reader than new counters get is offered the newer one.
   const newerWheels = $derived.by(() => {
     const latest = app.config?.reading_defaults.wheel_reader;
@@ -49,6 +50,9 @@
             <span class="muted">Waiting for the first reading…</span>
           {:else if last.reason === CAMERA_CHANGED_REASON}
             Not read: the camera's picture changed size <span class="faint"> · {ago(last.at)}</span>
+          {:else if dial}
+            {#if last.text}The needle points at <span class="mono">{last.text}</span> · {pct(last.score)} sure{:else}No needle found{/if}
+            <span class="faint"> · {ago(last.at)}</span>
           {:else}
             Read <span class="mono">“{last.text || '—'}”</span> · {pct(last.score)} sure
             <span class="faint"> · {ago(last.at)}</span>
@@ -83,7 +87,10 @@
         <div class="card-title"><h3>What the reader sees</h3><span class="xsmall faint">the region after display processing</span></div>
         <img class="seen" src={api.readingImageUrl(sensor.id, last.at)} alt="The region as the number reader saw it" />
         <p class="xsmall muted">
-          {#if reading.display === 'counter'}
+          {#if dial}
+            The dial with the needle that was found drawn on it. If it points elsewhere than the needle, draw the region
+            round the whole dial under Settings → Region and reading, or check which way it turns.
+          {:else if reading.display === 'counter'}
             One wheel per field{reading.counter_reader === 'wheels' ? '' : ', without the dividers between them'}{reading
               .dials?.length
               ? ', then each pointer dial with the needle that was found drawn on it'
@@ -107,10 +114,15 @@
         <span class="xsmall muted">The value above stays.</span>
       {:else if last?.reason}
         <span class="chip warn">Last reading rejected: {REJECT_REASONS[last.reason] ?? last.reason}</span>
-        <span class="xsmall muted">Read “{last.text || '—'}”{last.value ? ` (${last.value} ${readingUnit(reading)})` : ''}; the value above stays.</span>
+        <span class="xsmall muted"
+          >{dial ? `Needle at ${last.text || '—'}` : `Read “${last.text || '—'}”`}{last.value ? ` (${last.value} ${readingUnit(reading)})` : ''}; the
+          value above stays.</span
+        >
       {:else if last?.settling}
         <span class="chip info">Last wheel turning</span>
         <span class="xsmall muted">Read “{last.text || '—'}”, one step below; the value above stays until the counter gets there.</span>
+      {:else if last && dial}
+        <span class="chip {readingRunning(reading.value) ? 'info' : 'ok'}">{readingRunning(reading.value) ? 'Running' : 'Standing still'}</span>
       {:else if last}
         <span class="chip ok">Last reading accepted</span>
       {/if}

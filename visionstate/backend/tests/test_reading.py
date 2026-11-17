@@ -192,7 +192,12 @@ def test_diagnostic_entities_of_reading_sensors():
     assert (kwh["unit_of_measurement"], kwh["device_class"]) == ("kW", "power")
     assert configs({"mode": "counter", "unit": "L"})["rate"]["unit_of_measurement"] == "L/min"
     gallons = configs({"mode": "counter", "unit": "gal"})["rate"]
-    assert gallons["unit_of_measurement"] == "gal/h" and "device_class" not in gallons
+    assert (gallons["unit_of_measurement"], gallons["device_class"]) == ("gal/min", "volume_flow_rate")
+    # Home Assistant takes no ft³/h: cubic feet go per minute, CCF (100 ft³) too.
+    ccf = configs({"mode": "counter", "unit": "CCF", "device_class": "gas"})["rate"]
+    assert (ccf["unit_of_measurement"], ccf["device_class"]) == ("ft³/min", "volume_flow_rate")
+    kilos = configs({"mode": "counter", "unit": "kg"})["rate"]
+    assert kilos["unit_of_measurement"] == "kg/h" and "device_class" not in kilos
     for mode in ("value", "time_left"):
         assert "rate" not in configs({"mode": mode}) and "problem" in configs({"mode": mode})
 

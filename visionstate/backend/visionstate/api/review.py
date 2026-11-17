@@ -186,8 +186,9 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
                 if body.action != "skip":
                     row.read_ok = body.action == "read_ok"
                     row.correct_value = None
-                    if body.action == "misread" and body.value and body.value.strip():
-                        settings = merge_reading(sensor.reading)
+                    settings = merge_reading(sensor.reading)
+                    flow = settings["mode"] == "flow"  # a turning dial: no value to type, none to anchor
+                    if body.action == "misread" and body.value and body.value.strip() and not flow:
                         number = readers.right_value(body.value, settings)  # digits only: placed like the reader
                         if number is None:
                             raise HTTPException(400, f"Not a number: {body.value!r}")
@@ -196,7 +197,7 @@ async def review_answer(prediction_id: int, body: ReviewIn, request: Request) ->
                     probs = row.probs or {}
                     kept = probs.get("reason") in ANCHOR_REASONS
                     right = row.correct_value if body.action == "misread" else probs.get("value") if kept else None
-                    if right is not None and _newest_rejected(s, row):
+                    if right is not None and not flow and _newest_rejected(s, row):
                         anchor = (row.sensor_id, right, row.created_at)
                 row.reviewed = True
             elif body.action not in ("confirm", "label", "skip"):

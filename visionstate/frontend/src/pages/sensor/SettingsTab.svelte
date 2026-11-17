@@ -324,7 +324,9 @@
             : readingSensor
               ? reading.display === 'counter'
                 ? 'Cover the wheels from the first to the last, so each field holds one wheel. A little room above and below is fine.'
-                : 'Draw it tightly around the digits only — no labels or units.'
+                : reading.display === 'dial'
+                  ? 'Draw a square round the whole dial, its circle touching the sides.'
+                  : 'Draw it tightly around the digits only — no labels or units.'
               : 'Changing it retrains the model.'}
         </p>
         <div class="frame">
@@ -421,6 +423,7 @@
           limit={sensor.reading?.limit ?? null}
           bind:spotRate={reading.spot_rate}
           bind:rateWindow={reading.rate_window_min}
+          bind:flowWindow={reading.flow_window_s}
           mode={reading.mode}
           unit={reading.unit}
           decimals={valueDecimals(reading)}

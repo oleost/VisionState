@@ -404,6 +404,18 @@ class ReadingIn(BaseModel):
     rate_window_min: float = Field(
         default=READING_DEFAULTS["rate_window_min"], ge=_dlo["rate_window_min"], le=_dhi["rate_window_min"]
     )
+    per_turn: float = Field(default=READING_DEFAULTS["per_turn"], ge=_dlo["per_turn"], le=_dhi["per_turn"])
+    ccw: bool = READING_DEFAULTS["ccw"]
+    flow_window_s: float = Field(
+        default=READING_DEFAULTS["flow_window_s"], ge=_dlo["flow_window_s"], le=_dhi["flow_window_s"]
+    )
+
+    @model_validator(mode="after")
+    def _dial_is_flow(self) -> ReadingIn:
+        """A turning dial gives a flow, and only a turning dial does."""
+        if (self.display == "dial") != (self.mode == "flow"):
+            raise ValueError("A turning dial (display 'dial') goes with the mode 'flow', and only it")
+        return self
 
     @field_validator("mode")
     @classmethod

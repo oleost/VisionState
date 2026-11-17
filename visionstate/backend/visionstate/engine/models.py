@@ -12,10 +12,10 @@ from sqlalchemy import select
 
 from .. import backbones, detectors, imaging, readers, timing
 from ..db import Sensor
-from ..dials import read_needles
+from ..dials import read_needles, read_turning
 from ..readers import uses_wheels, wheel_reader_of
 from ..redact import redact
-from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES, merge_reading
+from ..settings import DETECTION, KIND_OBJECTS, KIND_READING, KIND_STATES, READING, merge_reading
 from .base import RuntimeBase
 from .logic import filter_detections
 from .training import TrainingMixin
@@ -181,8 +181,16 @@ class ModelsMixin(TrainingMixin, RuntimeBase):
         The text's ``details`` name the reader that read it (``reader``). A straightened region
         (``reading["straighten"]``) is read upright: the readers get it already straightened. A
         counter's pointer dials (``reading["dials"]``) are read from the whole frame first: they lie
-        around the region, in the plane it is read in."""
+        around the region, in the plane it is read in. A turning dial (``"dial"`` display) is its
+        needle: the position as the text, the needle as found drawn on the dial as the image."""
         straightened = bool(reading.get("straighten")) and imaging.region_corners(roi) is not None
+        if reading.get("display") == "dial":
+            # A turning dial: its needle's position as the text ("4.7"), how sure as the score.
+            needle = await asyncio.to_thread(read_turning, image, roi, reading, straightened)
+            found = needle.position is not None
+            details = {"reader": "needle", "needle": needle.position, "certainty": needle.certainty}
+            text = readers.Text(f"{needle.position:.1f}" if found else "", needle.certainty if found else 0.0, details)
+            return text, needle.image.resize((READING["dial_size"] * 2,) * 2)
         if uses_wheels(reading):
             wheels = await self.ensure_wheel_reader(wheel_reader_of(reading))
             needles = await asyncio.to_thread(read_needles, image, roi, reading, straightened)

@@ -1,9 +1,11 @@
 <script lang="ts">
-  // What a reading sensor reads: the type (digital display or mechanical counter), mode, decimals,
-  // unit, Home Assistant device class and display details.
+  // What a reading sensor reads: the type (digital display, mechanical counter or turning dial), mode,
+  // decimals, unit, Home Assistant device class and display details; for a turning dial what one turn
+  // is and which way it turns.
   // Options and limits come from the backend config.
+  import { untrack } from 'svelte';
   import { app } from '../app.svelte';
-  import { decimalsSeen, readingType } from '../reading';
+  import { decimalsSeen, rateUnit, readingType } from '../reading';
   import type { ReadingMode, ReadingSettings, ReadingType } from '../types';
   import { COUNTER_READER_INFO, READING_DISPLAY_INFO, READING_MODE_INFO, READING_TYPE_INFO, READING_TYPE_MODES, UNIT_DEVICE_CLASS } from '../ui';
 
@@ -13,8 +15,18 @@
   const type = $derived(readingType(value));
   const types = Object.keys(READING_TYPE_INFO) as ReadingType[];
   const modes = $derived((app.config?.reading_modes ?? []).filter((m) => READING_TYPE_MODES[type].includes(m)));
-  // The display details of a digital display; a mechanical counter is chosen as the type above.
-  const displays = $derived((app.config?.reading_displays ?? []).filter((d) => d !== 'counter'));
+  // The display details of a digital display; a mechanical counter and a turning dial are chosen as the type above.
+  const displays = $derived((app.config?.reading_displays ?? []).filter((d) => d !== 'counter' && d !== 'dial'));
+  const perTurnLimits = $derived(app.config?.reading_limits.per_turn ?? [1e-6, 1e6]);
+  // A turning dial's amount: as printed on it, "a turn is 2 ft³", or "150 turns a kWh" (stored as 1/150).
+  let perTurnAs = $state<'amount' | 'turns'>(untrack(() => (value.per_turn > 0 && value.per_turn < 0.1 ? 'turns' : 'amount')));
+  const round = (n: number) => Number(n.toPrecision(6));
+  const perTurnShown = $derived(perTurnAs === 'turns' ? round(1 / value.per_turn) : value.per_turn);
+  function setPerTurn(entered: number) {
+    if (!(entered > 0)) return;
+    const amount = perTurnAs === 'turns' ? 1 / entered : entered;
+    value.per_turn = Math.min(perTurnLimits[1], Math.max(perTurnLimits[0], amount));
+  }
   const digitLimits = $derived(app.config?.reading_limits.digits ?? [1, 12]);
   const counterReaders = $derived(app.config?.counter_readers ?? []);
   // "Read with": every wheel reader (the default first) and the text reader in one list; with one
@@ -47,10 +59,12 @@
     if (next === type) return;
     if (next === 'counter') {
       value.display = 'counter';
-      if (!READING_TYPE_MODES.counter.includes(value.mode)) setMode('counter');
+    } else if (next === 'dial') {
+      value.display = 'dial';
     } else {
       value.display = app.config?.reading_defaults.display ?? 'auto';
     }
+    if (!READING_TYPE_MODES[next].includes(value.mode)) setMode(READING_TYPE_MODES[next][0]);
   }
 
   function setReadWith(choice: string) {
@@ -77,7 +91,7 @@
 <div class="col editor">
   <div class="col group">
     <span class="group-label">What does it look like?</span>
-    <div class="modes two" role="radiogroup" aria-label="What it looks like">
+    <div class="modes" class:two={types.length === 2} role="radiogroup" aria-label="What it looks like">
       {#each types as t (t)}
         <button class="mode" class:selected={type === t} role="radio" aria-checked={type === t} onclick={() => setType(t)}>
           <strong>{READING_TYPE_INFO[t].title}</strong>
@@ -96,6 +110,49 @@
     </label>
   {/if}
 
+  {#if type === 'dial'}
+    <div class="grid">
+      <label class="field">
+        One turn of the dial is
+        <span class="row per-turn">
+          <select class="input" bind:value={perTurnAs} aria-label="How the amount is given">
+            <option value="amount">an amount</option>
+            <option value="turns">turns per unit</option>
+          </select>
+          <input
+            class="input"
+            type="number"
+            min="0"
+            step="any"
+            value={perTurnShown}
+            oninput={(e) => setPerTurn(Number(e.currentTarget.value))}
+            aria-label={perTurnAs === 'turns' ? 'Turns per unit' : 'Amount per turn'}
+          />
+        </span>
+        <span class="hint"
+          >{perTurnAs === 'turns'
+            ? 'As printed on electricity meters: 150 rev/kWh is 150 turns per kWh.'
+            : 'As printed on the dial: 2 for "2 FEET", 10 for a 10 gallon sweep hand; Kh 7.2 is 7.2 with Wh.'}</span
+        >
+      </label>
+      <label class="field">
+        Unit
+        <input class="input" list="flow-units" value={value.unit} oninput={(e) => setUnit(e.currentTarget.value)} placeholder="ft³" />
+        <datalist id="flow-units">
+          {#each READING_MODE_INFO.flow.units as u (u)}<option value={u}></option>{/each}
+        </datalist>
+        <span class="hint">{value.unit.trim() ? `The flow is given in ${rateUnit(value.unit)}.` : 'The flow is given per minute or hour of it.'}</span>
+      </label>
+      <label class="field">
+        It turns
+        <select class="input" bind:value={value.ccw}>
+          <option value={false}>Clockwise</option>
+          <option value={true}>Anticlockwise</option>
+        </select>
+        <span class="hint">The arrow on the dial shows which way.</span>
+      </label>
+    </div>
+  {:else}
   <span class="group-label">What is the number?</span>
   <div class="modes" class:two={modes.length === 2} role="radiogroup" aria-label="What the number is">
     {#each modes as mode (mode)}
@@ -105,8 +162,14 @@
       </button>
     {/each}
   </div>
+  {/if}
 
-  {#if value.mode !== 'time_left'}
+  {#if type === 'dial'}
+    <p class="small muted">
+      Draw the region round the whole dial. It reads where the needle points at every check and counts how far it
+      turned, so it checks every few seconds while the dial turns.
+    </p>
+  {:else if value.mode !== 'time_left'}
     <div class="grid">
       <label class="field">
         Digits after the decimal point
@@ -149,7 +212,9 @@
     <p class="small muted">Reads <span class="mono">1:25</span> as 85 minutes and <span class="mono">45</span> as 45 minutes.</p>
   {/if}
 
-  {#if type === 'display'}
+  {#if type === 'dial'}
+    <!-- nothing more: the needle is read without a reader to choose -->
+  {:else if type === 'display'}
     <label class="field" style="max-width:360px">
       Display
       <select class="input" bind:value={value.display}>
@@ -217,6 +282,13 @@
   .mode.selected {
     border-color: var(--c-accent);
     box-shadow: 0 0 0 1px var(--c-accent);
+  }
+  .per-turn {
+    gap: var(--space-2);
+  }
+  .per-turn .input {
+    min-width: 0;
+    flex: 1;
   }
   .suggest {
     grid-column: 1 / -1;

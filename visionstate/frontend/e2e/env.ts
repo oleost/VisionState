@@ -37,3 +37,6 @@ export const PLAY_URL = (sound: 'siren' | 'dog_bark' | 'smoke_alarm' | 'speech' 
 export const METER_URL = (value: number, turn = 0, tilt = 0) =>
   `${CAMERA_URL}/meter.jpg?value=${value}&digits=5&dials=4&turn=${turn}&tilt=${tilt}`;
 export const METER_REGION = (turn = 0, tilt = 0) => `${CAMERA_URL}/meter-region.json?digits=5&dials=4&turn=${turn}&tilt=${tilt}`;
+/** A turning dial: a drawn gas meter test dial whose needle goes round `rpm` times a minute (scripts/fake_camera.py). */
+export const DIAL_SENSOR_NAME = 'Gas dial';
+export const DIAL_URL = (rpm = 3) => `${CAMERA_URL}/dial.jpg?rpm=${rpm}`;

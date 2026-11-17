@@ -56,7 +56,12 @@
     if (isObjectSensor(s)) return `Looks for ${(s.objects?.classes ?? []).map((k) => objectName(k)).join(', ')}`;
     if (isReadingSensor(s) && s.reading) {
       const unit = readingUnit(s.reading);
-      const what = s.reading.display === 'counter' ? 'mechanical counter' : READING_MODE_INFO[s.reading.mode].title.toLowerCase();
+      const what =
+        s.reading.display === 'counter'
+          ? 'mechanical counter'
+          : s.reading.display === 'dial'
+            ? 'turning dial'
+            : READING_MODE_INFO[s.reading.mode].title.toLowerCase();
       return `Reads a ${what}${unit ? ` in ${unit}` : ''}`;
     }
     const n = s.counts.labelled;

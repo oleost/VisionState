@@ -841,6 +841,23 @@ def counter_rate(samples: deque[tuple[float, float]], now: float, window_s: floa
     return max(0.0, (v1 - v0) * 3600 / (t1 - t0))
 
 
+def format_flow(per: float) -> str:
+    """A turning dial's flow as published: three significant digits, never in exponent form, and
+    "0" when it stands still (sent once, not at every check)."""
+    if per <= 0:
+        return "0"
+    decimals = max(0, 2 - math.floor(math.log10(per)))
+    return f"{per:.{decimals}f}"
+
+
+def running(flow: str | None) -> bool:
+    """Whether a turning dial's published flow says it turns."""
+    try:
+        return flow is not None and float(flow) > 0
+    except ValueError:
+        return False
+
+
 def format_value(value: float | None, settings: dict) -> str | None:
     """Value as published: fixed decimals for numbers, whole minutes for time left."""
     if value is None:
