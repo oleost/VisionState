@@ -415,7 +415,7 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.5.2",
+    "firmware_version": "1.5.3",
     # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
     # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
     "password_action": "stream_password",
@@ -799,6 +799,9 @@ CAMERA_SIZES = ("640x480", "800x600", "1024x768", "1280x1024", "1600x1200")
 CAMERA_CLOCKS_MHZ = (20, 10)
 CAMERA_GAINS = (2, 4, 8, 16, 32, 64, 128)  # the gain ceiling
 CAMERA_LIMITS = {"quality": (6, 40), "exposure_ms": (1, 500)}  # JPEG quality: lower is better
+# The exposure a sensor gets when its exposure is switched from automatic to fixed: short, so what
+# moves stays sharp (the "movement" preset's until 0.15.0b23).
+CAMERA_FIXED_EXPOSURE_MS = 15
 # Presets fill a sensor's settings in; the name shown is the preset's whose values a sensor has, or
 # Custom. The keys are what firmware before 1.5.0 is asked for (?use=).
 CAMERA_PRESETS = {
@@ -806,12 +809,16 @@ CAMERA_PRESETS = {
         "name": "Meters and displays",
         "description": "Every pixel and less compression, for the digits; the subject stands still",
         # JPEG quality 10, as in Espressif's own example (8 until 0.15.0b19: safe too, but no one else's).
-        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+        # 10 MHz: at 20 MHz an OV3660 gave thin lines across most detailed 1600x1200 pictures (none in
+        # 30 at 10 MHz, 2026-11-17); a meter needs no fast pictures, and gets twice the longest exposure.
+        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 10, "exposure_ms": 0, "gain": 4},
     },
     "movement": {
         "name": "People, cars and animals",
-        "description": "A short fixed exposure, so what moves stays sharp; the gain keeps it bright",
-        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16},
+        "description": "Automatic exposure: short in good light, so what moves stays sharp, longer in poor light",
+        # Automatic since 0.15.0b23: a fixed 15 ms was nearly black in a dim room at any gain, and the
+        # automatic exposure as sharp in a lit one (an OV3660, 2026-11-17). Gain up to 32 for the dark.
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32},
     },
     "states": {
         "name": "States",
@@ -821,7 +828,11 @@ CAMERA_PRESETS = {
 }
 # A preset's values before they were changed: a sensor that has them follows the preset to its new ones.
 CAMERA_PRESETS_BEFORE = {
-    "meter": [{"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4}],
+    "meter": [
+        {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+        {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+    ],
+    "movement": [{"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16}],
 }
 CAMERA_PRESET_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 # When a sensor's light is switched on for a check (triggers.light_when), with the names shown.

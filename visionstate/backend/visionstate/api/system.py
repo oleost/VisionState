@@ -23,6 +23,7 @@ from ..settings import (
     BACKUP,
     BACKUP_PARTS,
     CAMERA_CLOCKS_MHZ,
+    CAMERA_FIXED_EXPOSURE_MS,
     CAMERA_GAINS,
     CAMERA_LIMITS,
     CAMERA_PRESET_BY_KIND,
@@ -186,6 +187,7 @@ def ui_config() -> dict:
             "clocks_mhz": CAMERA_CLOCKS_MHZ,
             "gains": CAMERA_GAINS,
             "limits": CAMERA_LIMITS,
+            "fixed_exposure_ms": CAMERA_FIXED_EXPOSURE_MS,
         },
         "light_when": LIGHT_WHEN,  # when a sensor's light is switched on, with the names shown
         "esphome": {

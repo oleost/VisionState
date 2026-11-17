@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.15.0b23
+
+**Brighter ESP32 pictures in poor light, and no lines across large ones** (firmware 1.5.3).
+
+- **The gain ceiling works on an OV3660 or OV5640 camera:** the camera driver set every gain
+  ceiling below 1x on those chips, so a higher gain never made a picture brighter. The firmware now
+  sets it itself: in the dark a picture is two to four times as bright at the same exposure. An
+  OV2640 was not affected.
+- **People, cars and animals** now uses automatic exposure with the gain up to 32: a fixed 15 ms was
+  nearly black in a dim room, and the automatic exposure is as sharp in good light.
+- **Meters and displays** now runs the camera at 10 MHz: at 20 MHz, detailed 1600×1200 pictures
+  often had thin lines across them. A meter needs no fast pictures, and gets longer exposures too.
+- A sensor on either preset's old values follows it to the new ones; one you changed by hand keeps
+  its own.
+- **Firmware 1.5.3:** choose *Install* for the device in the ESPHome app.
+
 ## 0.15.0b22
 
 **An ESP32 camera that comes up after an install** (firmware 1.5.2; 1.5.1 was skipped, and its

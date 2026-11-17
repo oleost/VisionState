@@ -27,7 +27,7 @@ Image.new("RGB", (64, 48), (4, 4, 4)).save(DARK, "JPEG")
 
 METER = CAMERA_PRESETS["meter"]["settings"]
 STATES_QUERY = "size=800x600&quality=10&clock=20&exposure=auto&gain=4"
-METER_QUERY = "size=1600x1200&quality=10&clock=20&exposure=auto&gain=4"
+METER_QUERY = "size=1600x1200&quality=10&clock=10&exposure=auto&gain=4"
 
 
 class Camera(BaseHTTPRequestHandler):
@@ -88,14 +88,18 @@ def test_each_kind_starts_from_a_preset_and_the_name_follows_the_values():
     assert set(CAMERA_PRESET_BY_KIND.values()) <= set(CAMERA_PRESETS)
     assert camera_settings(None, "reading") == METER
     assert camera_preset(METER) == "meter"
-    assert camera_preset({**METER, "clock_mhz": 10}) is None  # custom
+    assert camera_preset({**METER, "clock_mhz": 20}) is None  # custom
     # A sensor's own settings, and a camera use from before them (0.15.0b18 and older).
     assert camera_settings({"camera": {**METER, "quality": 12}}, "states")["quality"] == 12
     assert merge_triggers({"camera_use": "meter"})["camera"] == METER
     assert "camera_use" not in merge_triggers({"camera_use": "meter"})
     assert merge_triggers({})["camera"] is None
-    # A sensor on a preset's old values follows it to its new ones (meter: quality 8 until 0.15.0b19).
-    assert merge_triggers({"camera": {**METER, "quality": 8}})["camera"] == METER
+    # A sensor on a preset's old values follows it to its new ones (meter: quality 8 until 0.15.0b19,
+    # 20 MHz until 0.15.0b23; movement: a fixed 15 ms until 0.15.0b23).
+    assert merge_triggers({"camera": {**METER, "quality": 8, "clock_mhz": 20}})["camera"] == METER
+    assert merge_triggers({"camera": {**METER, "clock_mhz": 20}})["camera"] == METER
+    movement = CAMERA_PRESETS["movement"]["settings"]
+    assert merge_triggers({"camera": {**movement, "exposure_ms": 15, "gain": 16}})["camera"] == movement
     assert merge_triggers({"camera": {**METER, "quality": 9}})["camera"]["quality"] == 9  # custom stays
 
 
@@ -109,7 +113,7 @@ def test_what_a_camera_says_and_what_it_is_asked():
     assert uses.query("http://cam/snapshot.jpg", METER) == METER_QUERY
     uses.ours["http://cam/snapshot.jpg"] = "states"  # an older firmware: only presets
     assert uses.query("http://cam/snapshot.jpg", METER) == "use=meter"
-    assert uses.query("http://cam/snapshot.jpg", {**METER, "clock_mhz": 10}) is None
+    assert uses.query("http://cam/snapshot.jpg", {**METER, "clock_mhz": 20}) is None
 
 
 def test_a_camera_of_ours_is_set_up_with_each_sensors_settings(settings, camera, caplog):  # noqa: F811
@@ -166,7 +170,7 @@ def test_an_older_firmware_is_asked_for_the_preset(settings, camera):  # noqa: F
         view = client.get(f"/api/v1/sensors/{meter}").json()
         assert view["camera"]["settings"] is False and view["camera"]["now"] is None
         # A custom setting an older firmware cannot take: nothing asked, the camera stays as it is.
-        triggers = {**view["triggers"], "camera": {**METER, "clock_mhz": 10}}
+        triggers = {**view["triggers"], "camera": {**METER, "quality": 12}}
         assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": triggers}).status_code == 200
         time.sleep(1.5)
         Camera.asked.clear()
