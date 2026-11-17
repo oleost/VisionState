@@ -149,8 +149,9 @@ const expectCalm = (counts: Record<string, number>) =>
   expect.soft(Object.entries(counts).filter(([, n]) => n > MAX_PER_PATH), JSON.stringify(counts)).toEqual([]);
 
 test('no page asks the server more often than it polls', async ({ page, request }) => {
-  test.setTimeout(180_000); // every page, 4 s each
-  for (const [name, route, ready] of await allPages(request)) {
+  const pages = await allPages(request);
+  test.setTimeout(pages.length * 6_000); // every page: 4 s counting, the rest loading it
+  for (const [name, route, ready] of pages) {
     await test.step(name, async () => {
       await page.goto(`#/${route}`);
       await expect(page.getByText(ready).first()).toBeVisible();
