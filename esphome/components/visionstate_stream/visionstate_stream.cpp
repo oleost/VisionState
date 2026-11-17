@@ -685,6 +685,21 @@ void VisionStateStream::on_camera_image(const std::shared_ptr<camera::CameraImag
   }
 }
 
+// The gain ceiling (?gain=; gainceiling_t: 0 is 2x, 6 is 128x). The driver's set_gainceiling writes
+// that number as it is into the OV3660's and OV5640's ceiling register (0x3A18-19), which holds the
+// gain itself in 1/16 (they start at 0xF8, 15.5x): a ceiling of 0 to 6/16, under 1x, so the automatic
+// gain never brightened a picture (an OV3660, 2026-11-17: as dark at 2x as at 128x). Those two get
+// the gain in 1/16; others (the OV2640 has a scale of its own) go through the driver.
+static void set_gain_ceiling(sensor_t *s, int level) {
+  if (s->id.PID == OV3660_PID || s->id.PID == OV5640_PID) {
+    int sixteenths = std::min((2 << level) * 16, 0x3FF);  // 10 bits: 128x becomes about 64x
+    s->set_reg(s, 0x3A18, 0x03, sixteenths >> 8);
+    s->set_reg(s, 0x3A19, 0xFF, sixteenths & 0xFF);
+  } else {
+    s->set_gainceiling(s, static_cast<gainceiling_t>(level));
+  }
+}
+
 uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
   sensor_t *s = esp_camera_sensor_get();
   if (s == nullptr)
@@ -719,7 +734,7 @@ uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
     settle = std::max(settle, SETTLE_PICTURES);
   }
   if (asked.gain >= 0 && asked.gain != now.gain) {
-    s->set_gainceiling(s, static_cast<gainceiling_t>(asked.gain));
+    set_gain_ceiling(s, asked.gain);
     now.gain = asked.gain;
     settle = std::max(settle, SETTLE_PICTURES);
   }
