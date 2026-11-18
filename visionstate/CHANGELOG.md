@@ -15,16 +15,15 @@
 - **ESP32 microphones and cameras, set up with ESPHome:** a guide in the app gives the wiring and the
   device's file, and makes the sensor. Each sensor sets up the camera its own way (presets for
   meters, movement and states), the camera's own flash is used directly, and a microphone can be a
-  voice assistant too. New firmware comes with *Install* in the ESPHome app. Thanks to @hruba202 and
-  @pedromfa for trying them.
+  voice assistant too. New firmware comes with *Install* in the ESPHome app.
 - **A light only when it is dark**, for any sensor's light.
 - **Pure silence** in a sound sensor's stream is shown (a microphone not wired or muted).
-- **Every picture carries when its frame was taken** in its EXIF (thanks to @ecdlguy).
+- **Every picture carries when its frame was taken** in its EXIF.
 
 ### Changed
 
 - **A sensor's page:** the same tabs for every kind, and Settings beside Pause, in sections with
-  one Save (thanks to @Bimmerfriend).
+  one Save.
 - **Taught objects cost much less** while someone stays in view.
 
 ### Fixed
