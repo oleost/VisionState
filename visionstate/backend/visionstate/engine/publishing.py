@@ -13,7 +13,7 @@ from typing import cast
 from PIL import Image
 from sqlalchemy import func, select
 
-from .. import imaging
+from .. import imaging, timing
 from ..db import Prediction, Sensor
 from ..mqtt import REVIEW_TOPICS, SensorDescriptor, entity_options, object_topics, sound_topics, topics
 from ..settings import APP_SLUG, HA_ENTITIES_NOT_BY_DEFAULT, PUBLISH
@@ -86,17 +86,20 @@ class PublishingMixin(RuntimeBase):
             if sent_count == count and (not move or imaging.box_change(sent_union, union) < move):
                 return
 
+        captured_at = timing.captured_at()
+
         def make() -> bytes:
             region = imaging.region_box(cfg.roi)
-            picture = imaging.snapshot(
-                image,
+            box = imaging.snapshot_box(
+                image.size,
                 boxes,
                 region,
                 PUBLISH["snapshot_margin"],
                 PUBLISH["snapshot_min_px"],
                 imaging.aspect_ratio(cfg.objects["snapshot_aspect"]),
             )
-            return imaging.encode_jpeg(picture, PUBLISH["snapshot_quality"])
+            exif = imaging.frame_exif(captured_at, imaging.normalised_box(box, image.size))
+            return imaging.encode_jpeg(image.crop(box), PUBLISH["snapshot_quality"], exif)
 
         await self.mqtt.publish(topic, await asyncio.to_thread(make), retain=True)
         live.sent_on_change[topic] = ((count, union), time.time())

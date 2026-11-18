@@ -11,7 +11,7 @@
 {#if overlay}
   <span class="pill overlay">
     <span class="dot" style:background={anyOn ? 'var(--c-accent)' : 'var(--c-unknown)'}></span>
-    {summary}
+    <span class="text">{summary}</span>
   </span>
 {:else}
   <span class="row wrap chips">
@@ -49,6 +49,13 @@
     background: var(--c-overlay);
     height: 30px;
     max-width: 100%;
+  }
+  .overlay .dot {
+    flex-shrink: 0;
+  }
+  /* A long summary ends in "…" inside the card (an inline-flex pill does not cut its own text). */
+  .overlay .text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }

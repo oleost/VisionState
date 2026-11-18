@@ -37,7 +37,7 @@
     <LabelPicker bind:selected={value.sounds} {...soundPicker()} />
     <p class="xsmall muted">
       Each is an on/off sensor in Home Assistant (a smoke alarm as a smoke sensor — on top of your smoke detectors, never
-      instead of them). For a sound of your own, such as your doorbell, teach it under Own sounds.
+      instead of them). For a sound of your own, such as your doorbell, teach it on the Dataset tab.
     </p>
   </fieldset>
 

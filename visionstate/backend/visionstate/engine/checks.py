@@ -7,14 +7,15 @@ import logging
 import math
 import random
 import time
+from urllib.parse import urlsplit
 
 from PIL import Image
 
-from .. import backbones, imaging
+from .. import backbones, esphome, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import RUNTIME, UNKNOWN_STATE
+from ..settings import ESPHOME, RUNTIME, UNKNOWN_STATE, camera_settings
 from ..shared_frames import SharedFrame
 from ..sources import SourceError
 from .base import RuntimeBase
@@ -113,6 +114,54 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             if heard is not None:
                 await self._nothing_heard(cfg, heard)
 
+    async def _own_flash(self, cfg: SensorConfig) -> bool:
+        """The sensor's light is the flash of the ESP32 camera of ours it takes its pictures from, and
+        the camera takes a picture with it itself (firmware 1.4.0 on): then the picture is asked for
+        with the flash (?flash=), and the light is not switched through Home Assistant (switched
+        there, it could not be switched while the device was away from Home Assistant, and the
+        picture was dark). Looked up in Home Assistant's registry once in RUNTIME["own_flash_check_s"]."""
+        entity = cfg.triggers["light_entity"]
+        if not entity or cfg.source_type != "http" or cfg.source not in self.camera_uses.flash:
+            return False
+        host = urlsplit(cfg.source).hostname or ""
+        known = self._own_flashes.get((entity, host))
+        if known is not None and time.time() - known[1] < RUNTIME["own_flash_check_s"]:
+            return known[0]
+        try:
+            entities, _ = await self.ha.registries()
+            address = await esphome.address_of(host)  # a camera reached by its name: found by its address
+            own = esphome.own_flash(address, entity, entities, await self.ha.raw_states())
+        except Exception as err:  # noqa: BLE001 - Home Assistant not reachable: as it was
+            log.debug("Sensor %s: could not look up its light: %s", cfg.slug, redact(str(err)))
+            own = known[0] if known is not None else False
+        self._own_flashes[(entity, host)] = (own, time.time())
+        return own
+
+    async def _grab_flashed(self, cfg: SensorConfig, only_dark: bool) -> tuple[str, bytes, bool]:
+        """A frame from the camera with its own flash; ``only_dark``: the camera switches it on only
+        when the picture it keeps ready is dark (it looks all the time). Whether it was lit."""
+        timing.captured()
+        with timing.step("grab"):
+            flash_ms = round(min(cfg.triggers["light_delay_s"], ESPHOME["flash_max_s"]) * 1000)  # the camera's limit
+            dark = RUNTIME["light_dark_below"] if only_dark else None
+            data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark, self.camera_for(cfg))
+        lit = self.camera_uses.flashed.get(cfg.source, True) if only_dark else True
+        return self.live_state(cfg.id).remember(data), data, lit
+
+    async def _grab_lit(self, cfg: SensorConfig) -> tuple[str, bytes] | None:
+        """A frame taken in the sensor's light: by its camera's own flash, or with the light switched
+        on through Home Assistant. None when that light could not be switched on."""
+        if await self._own_flash(cfg):
+            frame_id, data, _ = await self._grab_flashed(cfg, only_dark=False)
+            return frame_id, data
+        wait = await self._light_before(cfg)
+        try:
+            if wait is None:
+                return None
+            return await self._grab_in_light(cfg, wait)
+        finally:
+            self._light_after(cfg)
+
     async def _light_before(self, cfg: SensorConfig) -> float | None:
         """Hold the sensor's light on for a check (see lights.py).
 
@@ -130,7 +179,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if light.error:  # the check goes on without the light
             if light.error != live.light_error:
                 log.warning("Sensor %s: could not switch on %s: %s", cfg.slug, entity, light.error)
-            live.light_error = light.error
+            live.light_error, live.light_error_entity = light.error, entity
             return None
         live.light_error = ""
         return self.lights.wait_s(entity, cfg.triggers["light_delay_s"]) or 0.0
@@ -150,7 +199,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             return await self.grab(cfg)
         deadline = time.time() + wait
         while True:
-            await self.grabber.grab(cfg.source_type, cfg.source)  # thrown away
+            await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))  # thrown away
             remaining = deadline - time.time()
             if remaining <= 0:
                 break
@@ -195,6 +244,10 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
 
     async def probe(self, cfg: SensorConfig) -> None:
         """Cheap check: compare the region with the last classified frame; classify only if it changed."""
+        with timing.checking():  # a check it starts counts from the frame it asked for
+            await self._probe(cfg)
+
+    async def _probe(self, cfg: SensorConfig) -> None:
         live = self.live_state(cfg.id)
         live.last_probe = time.time()
         entity = cfg.triggers["light_entity"]
@@ -205,7 +258,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         try:
             frame_id, data, _ = await self._grab_for_check(cfg)
             # Only for the signature: decoded small (a check that follows decodes it whole).
-            small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
+            with timing.step("decode"):
+                small = await asyncio.to_thread(imaging.decode_for_signature, data, cfg.roi)
         except (SourceError, OSError) as err:
             live.available, live.error = False, redact(str(err))
             return
@@ -233,8 +287,18 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             else:
                 await self.run_once(cfg, data=data, frame_id=frame_id)
 
+    @staticmethod
+    def camera_for(cfg: SensorConfig) -> dict | None:
+        """How an ESP32 camera of ours is set up for this sensor's pictures (the grabber sends it to
+        a camera that answered as ours; settings.camera_settings). None: not a snapshot address."""
+        if cfg.source_type != "http" or cfg.is_sound:
+            return None
+        return camera_settings(cfg.triggers, cfg.kind)
+
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
-        data = await self.grabber.grab(cfg.source_type, cfg.source)
+        timing.captured()
+        with timing.step("grab"):
+            data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
         return self.live_state(cfg.id).remember(data), data
 
     async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
@@ -242,7 +306,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         live = self.live_state(cfg.id)
         if not live.shares_camera:
             return *(await self.grab(cfg)), None
-        frame = await self.shared_frames.get(cfg.source_type, cfg.source)
+        with timing.step("grab"):
+            frame = await self.shared_frames.get(cfg.source_type, cfg.source, self.camera_for(cfg))
+        check = timing.current()
+        if check is not None:
+            check.captured_at = frame.taken_at
         return live.remember(frame.data), frame.data, frame
 
     async def run_once(
@@ -255,32 +323,54 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         """One check: take a frame (or use the one given), then hand it to the sensor's kind.
 
         A frame the camera could not deliver makes the sensor unavailable in Home Assistant.
-        Without a light, the frame also becomes the baseline of change detection.
+        Without a light, the frame also becomes the baseline of change detection. At debug level
+        it logs how long the check took, part by part (timing.py).
         """
+        with timing.checking() as check:
+            done = await self._run_once(cfg, data, image, frame_id)
+            if done and log.isEnabledFor(logging.DEBUG):
+                log.debug("Sensor %s: check %s", cfg.slug, check.summary())
+
+    async def _run_once(
+        self, cfg: SensorConfig, data: bytes | None, image: Image.Image | None, frame_id: str | None
+    ) -> bool:
+        """run_once; False when the camera gave no frame."""
         live = self.live_state(cfg.id)
         t = topics(cfg.slug)
         live.last_run = time.time()
         lit = False  # the frame was taken with the sensor's light on
         shared = None
         try:
-            if data is None:
-                wait = await self._light_before(cfg)
-                try:
-                    if wait is None:
-                        frame_id, data, shared = await self._grab_for_check(cfg)
-                    else:
-                        frame_id, data = await self._grab_in_light(cfg, wait)
-                        lit = True
-                finally:
-                    self._light_after(cfg)
+            if data is None and cfg.triggers["light_when"] == "dark" and await self._own_flash(cfg):
+                # The camera's own flash only when it is dark: the camera decides from what it sees.
+                frame_id, data, lit = await self._grab_flashed(cfg, only_dark=True)
+            elif data is None and cfg.triggers["light_entity"] and cfg.triggers["light_when"] == "dark":
+                # Another light only when it is dark: a frame without it first, decoded here (the
+                # check uses it as it is when it is light enough).
+                frame_id, data = await self.grab(cfg)
+                with timing.step("decode"):
+                    image = await asyncio.to_thread(imaging.decode, data)
+                if imaging.brightness(image) < RUNTIME["light_dark_below"]:
+                    got = await self._grab_lit(cfg)
+                    if got is not None:
+                        (frame_id, data), image, lit = got, None, True
+            elif data is None and cfg.triggers["light_entity"]:
+                got = await self._grab_lit(cfg)
+                if got is None:  # the light could not be switched on: the check goes on without it
+                    frame_id, data, shared = await self._grab_for_check(cfg)
+                else:
+                    (frame_id, data), lit = got, True
+            elif data is None:
+                frame_id, data, shared = await self._grab_for_check(cfg)
             if image is None:
-                image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
+                with timing.step("decode"):
+                    image = await shared.image() if shared else await asyncio.to_thread(imaging.decode, data)
         except (SourceError, OSError) as err:
             if live.available is not False:
                 log.warning("Sensor %s: camera unavailable: %s", cfg.slug, err)
             live.available, live.error = False, redact(str(err))
             await self._send(cfg, t["availability"], "offline", retain=True)
-            return
+            return False
         live.available, live.error = True, ""
         # Change detection compares frames without the light (probe), so a frame taken in the
         # light is no baseline for it: every probe would look like a change.
@@ -295,12 +385,13 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # The frame on screen changes together with its boxes, once they are found (the UI
             # draws the boxes of live.detections on live.frame_id).
             await self._run_objects(cfg, image, frame_id)
-            return
+            return True
         live.frame_id = frame_id
         if cfg.is_reading:
             await self._run_reading(cfg, image, lit)
-            return
+            return True
         await self._run_states(cfg, image)
+        return True
 
     async def _run_states(self, cfg: SensorConfig, image: Image.Image) -> None:
         """One check of a state sensor: classify the region, debounce, publish, keep history."""
@@ -310,7 +401,8 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             # Its first model is being trained, or a head of an older format retrained after an
             # update: "unknown" until then would be wrong. The training checks again when done.
             return
-        probs = await self.classify_image(cfg, image)
+        with timing.step("classify"):
+            probs = await self.classify_image(cfg, image)
         if probs:
             top, confidence = max(probs.items(), key=lambda kv: kv[1])
         else:
@@ -338,7 +430,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             },
             retain=True,
         )
-        await self._send_on_change(cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80))
+        exif = imaging.frame_exif(timing.captured_at(), imaging.region_box(cfg.roi))
+        await self._send_on_change(
+            cfg, t["image"], live.debouncer.published, lambda: imaging.encode_jpeg(crop, 80, exif)
+        )
+        timing.lap("publish")
 
         reason = None
         if probs:
@@ -361,6 +457,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             )
             if reason:
                 await self.publish_review_count()
+        timing.lap("history")
 
     def _record_prediction(
         self,
@@ -395,6 +492,6 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         if head is None or self.embedder is None or head.backbone != self.embedder.spec.id:
             return {}
         crop = imaging.crop(image, cfg.roi)
-        async with self._sem:
+        async with timing.slot(self._sem):
             vector = await asyncio.to_thread(self.embedder.embed, [crop])
         return head.predict(vector, cfg.state_keys)[0]

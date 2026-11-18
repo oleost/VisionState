@@ -1,0 +1,83 @@
+# Every VisionState device: Wi-Fi, the Home Assistant API, updates over the air, the stream's
+# server with its login, and a light that is on while someone listens or looks (the output vs_light,
+# which each board package gives: an LED, or nothing on a board without one).
+substitutions:
+  stream_port: "8081"
+  stream_username: visionstate
+  # The fallback hotspot's password (8 to 64 characters; the guide makes one up), open while empty.
+  # The device opens the hotspot when it cannot reach its Wi-Fi, and the captive portal there takes
+  # Wi-Fi settings and firmware.
+  ap_password: ""
+
+packages:
+  stream_password: !include stream-password.yaml
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2026.10.0
+  project:
+    name: oleost.visionstate
+    version: "1.5.3"  # settings.ESPHOME["firmware_version"] (tests/test_esphome.py keeps them the same)
+
+logger:
+
+api:
+
+# The device's own file adds `encryption: {}` (the guide and the examples write it): firmware over
+# the air then only from whoever has the API key. Not here: it cannot be combined with an OTA
+# password that a device's own file may set.
+ota:
+  - platform: esphome
+
+wifi:
+  # The device's own file sets them: as values, or as ESPHome secrets (wifi_ssid: !secret wifi_ssid).
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  # Modem sleep leaves gaps in the sound and slows pictures down.
+  power_save_mode: none
+  ap:
+    password: ${ap_password}
+
+captive_portal:
+
+visionstate_stream:
+  id: vs_stream
+  port: ${stream_port}
+  username: ${stream_username}
+  password: ${stream_password}
+  listeners:
+    name: Listeners
+    on_value:
+      - if:
+          condition:
+            lambda: return x > 0;
+          then:
+            - output.turn_on: vs_light
+          else:
+            - output.turn_off: vs_light
+
+sensor:
+  - platform: wifi_signal
+    name: Wi-Fi signal
+    update_interval: 60s
+    entity_category: diagnostic
+  - platform: uptime
+    name: Uptime
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP address
+      entity_category: diagnostic
+  - platform: version
+    name: ESPHome version
+    hide_timestamp: true
+    entity_category: diagnostic
+
+button:
+  - platform: restart
+    name: Restart
+    entity_category: config

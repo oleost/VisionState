@@ -13,6 +13,7 @@
   let dragging = $state(false);
   let progress = $state<number | null>(null);
   let lastResult = $state('');
+  let showOptions = $state(false);
   let items = $state<SampleItem[]>([]);
   let input: HTMLInputElement;
 
@@ -83,7 +84,11 @@
     {#if lastResult && progress === null}<span class="small ok">{lastResult}</span>{/if}
   </label>
 
-  <section class="card pad col">
+  <!-- A phone: the options behind a button, so the images start on the first screen. -->
+  <button type="button" class="btn sm options-toggle" aria-expanded={showOptions} onclick={() => (showOptions = !showOptions)}>
+    Import options <Icon name={showOptions ? 'chevron-up' : 'chevron-down'} size={14} />
+  </button>
+  <section class="card pad col options" class:shut={!showOptions}>
     <h3>Import options</h3>
     <label class="field">
       Label everything as
@@ -181,6 +186,24 @@
   @media (max-width: 900px) {
     .top {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .options-toggle {
+    display: none;
+  }
+  @media (max-width: 600px) {
+    .options-toggle {
+      display: inline-flex;
+      justify-self: start;
+    }
+    .options.shut {
+      display: none;
+    }
+    .drop {
+      padding: var(--space-4);
+    }
+    .icon {
+      display: none;
     }
   }
 </style>

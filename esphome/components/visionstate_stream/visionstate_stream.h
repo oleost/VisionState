@@ -1,0 +1,205 @@
+#pragma once
+
+#ifdef USE_ESP32
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "esphome/components/ring_buffer/ring_buffer.h"
+#include "esphome/components/sensor/sensor.h"
+#include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
+
+#ifdef USE_VISIONSTATE_MICROPHONE
+#include "esphome/components/microphone/microphone_source.h"
+#endif
+#ifdef USE_VISIONSTATE_CAMERA
+#include "esphome/components/camera/camera.h"
+#endif
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+#include "esphome/components/ota/ota_backend.h"
+#endif
+#ifdef USE_VISIONSTATE_FLASH
+#include <atomic>
+
+#include "esphome/components/light/light_state.h"
+#endif
+
+struct httpd_req;  // NOLINT(readability-identifier-naming)
+
+namespace esphome::visionstate_stream {
+
+#ifdef USE_VISIONSTATE_CAMERA
+/// How a sensor wants the camera set up for its picture (?size=&quality=&clock=&exposure=&gain= on a
+/// snapshot, VisionState's settings for the sensor); -1: not asked for, or not known yet.
+struct CameraSettings {
+  int size{-1};         // framesize_t
+  int quality{-1};      // JPEG quality, 6-63 (lower is better)
+  int clock_mhz{-1};    // the camera's clock (XCLK): 20 or 10 MHz
+  int exposure_ms{-1};  // 0: automatic, more: fixed this long (about)
+  int gain{-1};         // gainceiling_t: 0 is 2x, 6 is 128x
+};
+#endif
+
+/// One client of /audio.wav: the sound waits in its own ring buffer, and a task of its own sends it.
+struct Listener {
+  std::shared_ptr<ring_buffer::RingBuffer> buffer;
+  struct httpd_req *req{nullptr};
+  class VisionStateStream *parent{nullptr};
+};
+
+class VisionStateStream final : public Component
+#ifdef USE_VISIONSTATE_CAMERA
+    ,
+                                public camera::CameraListener
+#endif
+#if defined(USE_VISIONSTATE_CAMERA_POWER_DOWN) && defined(USE_OTA_STATE_LISTENER)
+    ,
+                                public ota::OTAGlobalStateListener
+#endif
+{
+ public:
+  void setup() override;
+  void loop() override;
+  void dump_config() override;
+  void on_shutdown() override;
+  float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
+
+  void set_port(uint16_t port) { this->port_ = port; }
+  void set_max_listeners(uint8_t max_listeners) { this->max_listeners_ = max_listeners; }
+  void set_buffer_duration(uint32_t ms) { this->buffer_ms_ = ms; }
+  void set_fresh_snapshot(bool fresh) { this->fresh_snapshot_ = fresh; }
+  void set_credentials(const std::string &username, const std::string &password);
+  // The stream's password, for the stream_password action (packages/stream-password.yaml): VisionState
+  // asks for it through Home Assistant, so nobody has to look for it in the device's file.
+  const std::string &get_password() const { return this->password_; }
+  void set_listeners_sensor(sensor::Sensor *sensor) { this->listeners_sensor_ = sensor; }
+#ifdef USE_VISIONSTATE_MICROPHONE
+  void set_microphone_source(microphone::MicrophoneSource *source) { this->microphone_source_ = source; }
+  /// The gain the microphone's sound is multiplied by (1–64), e.g. from a number entity.
+  void set_gain_factor(int32_t gain) { this->microphone_source_->set_gain_factor(gain); }
+  /// Paused, the stream carries silence without the microphone being muted (which would mute it for
+  /// everything else on the device too, such as a voice assistant).
+  void set_paused(bool paused) { this->paused_ = paused; }
+  bool is_paused() const { return this->paused_; }
+  /// Off, the stream carries silence (a switch of its own, apart from the microphone's mute and from
+  /// the pause for a voice assistant).
+  void set_stream_enabled(bool enabled) { this->stream_enabled_ = enabled; }
+  /// The microphone's own rate: 16000, or 48000 (filtered and taken down to 16 kHz here).
+  void set_input_rate(uint32_t rate) { this->decimate_ = rate / SAMPLE_RATE_OUT; }
+  void set_level_sensor(sensor::Sensor *sensor) { this->level_sensor_ = sensor; }
+  void set_peak_sensor(sensor::Sensor *sensor) { this->peak_sensor_ = sensor; }
+  void set_clipped_sensor(sensor::Sensor *sensor) { this->clipped_sensor_ = sensor; }
+  void set_dropped_sensor(sensor::Sensor *sensor) { this->dropped_sensor_ = sensor; }
+  void set_diagnostics_interval(uint32_t ms) { this->diagnostics_ms_ = ms; }
+  static const uint32_t SAMPLE_RATE_OUT = 16000;
+#endif
+#ifdef USE_VISIONSTATE_CAMERA
+  void set_camera(camera::Camera *camera) { this->camera_ = camera; }
+  void on_camera_image(const std::shared_ptr<camera::CameraImage> &image) override;
+  /// The picture turned or mirrored on the camera chip (packages/camera-orientation.yaml): "Normal",
+  /// "Mirrored", "Upside down" or "Upside down, mirrored", from ESPHome's default for the camera.
+  void set_orientation(const std::string &orientation);
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+  /// The camera's power-down pin: high while firmware is installed (see on_ota_global_state).
+  void set_camera_power_down_pin(uint8_t pin) { this->camera_power_down_pin_ = pin; }
+#ifdef USE_OTA_STATE_LISTENER
+  void on_ota_global_state(ota::OTAState state, float progress, uint8_t error, ota::OTAComponent *comp) override;
+#endif
+#endif
+#endif
+#ifdef USE_VISIONSTATE_FLASH
+  /// The camera's flash: a snapshot can ask for it (?flash=<ms>), switched on and off here, so the
+  /// picture and its light are one request (no light switched through Home Assistant meanwhile).
+  void set_flash(light::LightState *flash) { this->flash_ = flash; }
+#endif
+
+  uint8_t listener_count() const { return this->listener_count_; }
+
+ protected:
+  bool authorized_(struct httpd_req *req);
+  esp_err_t handle_audio_(struct httpd_req *req);
+  esp_err_t handle_snapshot_(struct httpd_req *req);
+  static void listener_task_(void *arg);
+  void remove_listener_(Listener *listener);
+
+  uint16_t port_{8081};
+  uint8_t max_listeners_{2};
+  uint32_t buffer_ms_{1000};
+  bool fresh_snapshot_{true};
+  std::string expected_auth_;  // "Basic <base64>", empty: no login
+  std::string password_;
+  sensor::Sensor *listeners_sensor_{nullptr};
+  void *httpd_{nullptr};
+
+  Mutex lock_;  // guards listeners_ (the microphone's task writes, the listeners' tasks leave)
+  std::vector<Listener *> listeners_;
+  volatile uint8_t listener_count_{0};
+  int published_count_{-1};
+  bool microphone_wanted_{false};
+
+#ifdef USE_VISIONSTATE_MICROPHONE
+  microphone::MicrophoneSource *microphone_source_{nullptr};
+  volatile bool paused_{false};
+  volatile bool stream_enabled_{true};
+  // Taking a 48 kHz microphone down to 16 kHz: a low-pass filter, then every third sample.
+  uint32_t decimate_{1};
+  std::vector<float> taps_;
+  std::vector<float> history_;  // the last taps_.size() input samples, a ring
+  size_t history_pos_{0};
+  uint32_t phase_{0};
+  std::vector<uint8_t> out_;
+  void deliver_(const uint8_t *data, size_t len);
+  // Diagnostics, counted by the microphone's task and published by the main loop.
+  sensor::Sensor *level_sensor_{nullptr};
+  sensor::Sensor *peak_sensor_{nullptr};
+  sensor::Sensor *clipped_sensor_{nullptr};
+  sensor::Sensor *dropped_sensor_{nullptr};
+  uint32_t diagnostics_ms_{10000};
+  uint32_t last_diagnostics_{0};
+  double sum_squares_{0};
+  uint32_t samples_{0};
+  int32_t peak_{0};
+  uint32_t clipped_{0};
+  uint32_t dropped_bytes_{0};
+  void publish_diagnostics_();
+#endif
+#ifdef USE_VISIONSTATE_CAMERA
+  camera::Camera *camera_{nullptr};
+  SemaphoreHandle_t image_ready_{nullptr};
+  std::shared_ptr<camera::CameraImage> image_;
+  volatile bool waiting_for_image_{false};
+  std::shared_ptr<camera::CameraImage> take_image_(uint32_t timeout_ms);
+  /// Sets the camera up as asked (what is not asked for stays); the pictures to throw away after it.
+  uint8_t apply_settings_(const CameraSettings &asked);
+  /// Throws away the pictures kept from before a change and this many more; frame_ms_ is the time
+  /// between the latter.
+  void settle_(uint8_t pictures);
+  CameraSettings settings_;  // how the camera is set up now
+  int largest_{-1};          // the largest picture it can give (its buffers were made for it at boot)
+  uint32_t frame_ms_{0};     // the time between two pictures, the last time it was measured
+  volatile bool camera_gave_picture_{false};  // since start-up: the camera works (see loop)
+  bool camera_checked_{false};                // whether it was looked at after start-up
+#ifdef USE_VISIONSTATE_CAMERA_POWER_DOWN
+  uint8_t camera_power_down_pin_{0};
+#endif
+#endif
+#ifdef USE_VISIONSTATE_FLASH
+  light::LightState *flash_{nullptr};
+  std::atomic<int> flash_holders_{0};   // snapshots that want the flash on now
+  bool flash_ours_{false};              // switched on here, so switched off here again
+  std::atomic<bool> flash_lit_{false};  // the main loop has it on for the snapshots
+  // The last snapshot used the flash: the picture kept ready after it was taken while it was still
+  // on, so it says nothing about whether it is dark.
+  std::atomic<bool> kept_lit_{false};
+  void apply_flash_();
+#endif
+};
+
+}  // namespace esphome::visionstate_stream
+
+#endif  // USE_ESP32

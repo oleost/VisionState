@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import math
 import re
 import weakref
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps
+from PIL import ExifTags, Image, ImageDraw, ImageOps
 
 from .settings import (
     CHANGE_SIGNATURE_DECODE,
@@ -35,6 +37,65 @@ class ImageTooLarge(OSError):
 _ORIGINALS: dict[int, bytes] = {}
 
 EXIF_ORIENTATION = 0x0112
+
+
+def jpeg_end(data: bytes) -> int | None:
+    """Where a JPEG's picture ends: just after the end-of-image marker that closes its scan data
+    (an EXIF thumbnail's, before the scan, does not count), or None when there is none."""
+    i = 2
+    size = len(data)
+    while i + 1 < size:
+        if data[i] != 0xFF:
+            return None  # not a marker where one belongs: not a JPEG this can read
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill bytes before a marker
+            i += 1
+            continue
+        if marker == 0xD9:
+            return i + 2
+        if marker == 0x01 or 0xD0 <= marker <= 0xD7:  # markers without a length
+            i += 2
+            continue
+        if i + 3 >= size:
+            return None
+        i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
+        if marker != 0xDA:
+            continue
+        # Scan data up to the next marker: an 0xFF in it is followed by 0x00 (stuffed), a restart
+        # marker or more fill bytes.
+        while True:
+            i = data.find(b"\xff", i)
+            if i < 0 or i + 1 >= size:
+                return None
+            following = data[i + 1]
+            if following == 0x00 or 0xD0 <= following <= 0xD7:
+                i += 2
+            elif following == 0xFF:
+                i += 1
+            else:
+                break
+    return None
+
+
+def jpeg_broken(data: bytes) -> bool:
+    """A JPEG whose picture ends early and is followed by the rest of another (older) one: the
+    camera stopped sending part way, and its driver handed out the buffer up to the end of what was
+    in it before — seen from an ESP32-CAM, which then decodes as a strip of picture over grey.
+    Not broken: anything that is not a JPEG, a JPEG with an EXIF thumbnail, several pictures in one
+    file (MPO: the next begins with its own start marker) or padding after its end."""
+    if not data.startswith(b"\xff\xd8"):
+        return False
+    end = jpeg_end(data)
+    if end is None:
+        return False  # no end at all: the decoder says it is truncated
+    tail = data[end:]
+    return b"\xff\xd9" in tail and b"\xff\xd8" not in tail
+
+
+def brightness(image: Image.Image) -> float:
+    """How light a frame is: the mean of its grey (0-255), from a small copy."""
+    small = image.reduce(8) if min(image.size) >= 64 else image
+    return float(np.asarray(small.convert("L"), dtype=np.float32).mean())
 
 
 def decode(data: bytes, at_least: tuple[int, int] | None = None) -> Image.Image:
@@ -88,10 +149,30 @@ def load(path: Path, at_least: tuple[int, int] | None = None) -> Image.Image:
         return image.convert("RGB")
 
 
-def encode_jpeg(image: Image.Image, quality: int = JPEG_QUALITY) -> bytes:
+def encode_jpeg(image: Image.Image, quality: int = JPEG_QUALITY, exif: Image.Exif | None = None) -> bytes:
     buf = io.BytesIO()
-    image.save(buf, format="JPEG", quality=quality)
+    if exif is None:
+        image.save(buf, format="JPEG", quality=quality)
+    else:
+        image.save(buf, format="JPEG", quality=quality, exif=exif)
     return buf.getvalue()
+
+
+def frame_exif(captured_at: float | None, crop: Box) -> Image.Exif:
+    """What a picture sent to Home Assistant tells about itself (DOCS.md, *Object sensors*): when the
+    camera was asked for its frame (``DateTimeOriginal`` in UTC, ``SubSecTimeOriginal`` in
+    milliseconds, ``OffsetTimeOriginal`` ``+00:00``), and in ``UserComment`` the JSON
+    ``{"crop": [x1, y1, x2, y2]}``: the part of the frame it shows, normalised to the frame."""
+    exif = Image.Exif()
+    ifd = exif.get_ifd(ExifTags.IFD.Exif)
+    if captured_at is not None:
+        at = datetime.fromtimestamp(captured_at, UTC)
+        ifd[ExifTags.Base.DateTimeOriginal] = at.strftime("%Y:%m:%d %H:%M:%S")
+        ifd[ExifTags.Base.SubsecTimeOriginal] = f"{at.microsecond // 1000:03d}"
+        ifd[ExifTags.Base.OffsetTimeOriginal] = "+00:00"
+    comment = json.dumps({"crop": [round(_clamp(v), 4) for v in crop]}, separators=(",", ":"))
+    ifd[ExifTags.Base.UserComment] = b"ASCII\x00\x00\x00" + comment.encode()
+    return exif
 
 
 def _clamp(value: float) -> float:
@@ -277,11 +358,24 @@ def box_change(a: Box, b: Box) -> float:
 def snapshot(
     image: Image.Image, boxes: list[list[float]], region: Box, margin: float, min_px: int, aspect: float | None = None
 ) -> Image.Image:
+    """The picture of objects: ``image`` cut to snapshot_box."""
+    return image.crop(snapshot_box(image.size, boxes, region, margin, min_px, aspect))
+
+
+def snapshot_box(
+    size: tuple[int, int],
+    boxes: list[list[float]],
+    region: Box,
+    margin: float,
+    min_px: int,
+    aspect: float | None = None,
+) -> tuple[int, int, int, int]:
     """What covers all ``boxes``: their union plus ``margin`` × its size on each side, at least
     ``min_px`` pixels each way when there is room, and never outside ``region`` (the picture of an
     object shows nothing the sensor's region leaves out). With ``aspect`` (width / height) the
-    picture grows to that shape as far as the region has room; the objects are never cut for it."""
-    width, height = image.size
+    picture grows to that shape as far as the region has room; the objects are never cut for it.
+    In the pixels of a frame of ``size``."""
+    width, height = size
     left, top, right, bottom = union_box(boxes)
 
     def tight(low: float, high: float, floor: float, ceiling: float) -> tuple[float, float, float, float]:
@@ -312,7 +406,13 @@ def snapshot(
         else:
             y1, y2 = fit(down, (x2 - x1) / aspect)
             x1, x2 = fit(across, min(x2 - x1, (y2 - y1) * aspect))
-    return image.crop((x1, y1, x2, y2))
+    return x1, y1, x2, y2
+
+
+def normalised_box(box: tuple[int, int, int, int], size: tuple[int, int]) -> Box:
+    """A box in pixels of a frame of ``size``, normalised to it."""
+    width, height = size
+    return box[0] / width, box[1] / height, box[2] / width, box[3] / height
 
 
 def crop_box(image: Image.Image, box: Box) -> Image.Image:

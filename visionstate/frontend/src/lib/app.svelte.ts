@@ -56,8 +56,9 @@ export function dismiss(id: number): void {
  * is off after an import, so it gets its own confirmation here). */
 export function toastImported(result: ImportResult): void {
   const skipped = result.skipped ? `; ${plural(result.skipped, 'unreadable image')} skipped` : '';
-  if (result.faces_off) {
-    toast(`Sensor imported${skipped}. It recognised faces where it came from: turn Recognise faces on below.`, {
+  const off = [result.faces_off && 'recognised faces', result.plates_off && 'read licence plates'].filter(Boolean);
+  if (off.length) {
+    toast(`Sensor imported${skipped}. It ${off.join(' and ')} where it came from: turn that on again below.`, {
       tone: 'warn',
     });
   } else {

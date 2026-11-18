@@ -36,7 +36,7 @@ class FakeCamera:
         self.seed = 0
         self.fixed = False
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         if not self.fixed:  # fixed = identical lighting every frame (for change detection tests)
             self.seed += 1
         return garage(self.state, self.seed)

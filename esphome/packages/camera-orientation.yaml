@@ -1,0 +1,36 @@
+# Picture orientation, a choice in Home Assistant kept over restarts (camera-esp32-cam.yaml and
+# camera-xiao-esp32s3-sense.yaml include it): the camera chip turns the picture 180 degrees and
+# mirrors it itself (VisionState straightens any other angle in a sensor's region). Normal is
+# ESPHome's default for the camera. A device that set vertical_flip or horizontal_mirror in its own
+# file names its orientation instead (camera_orientation): the choice overrides them.
+#
+# How the camera is set up for a picture (its size, JPEG quality, clock, exposure and gain) is not
+# here: each VisionState sensor has its own settings and sends them with its snapshot
+# (/snapshot.jpg?size=&quality=&clock=&exposure=&gain=). The camera starts at its largest size
+# (camera_resolution), so every size asked for fits its buffers.
+substitutions:
+  camera_orientation: Normal
+
+esphome:
+  on_boot:
+    priority: -100  # after the camera started
+    then:
+      - lambda: |-
+          id(vs_stream).set_orientation(id(vs_orientation).current_option());
+
+select:
+  - platform: template
+    id: vs_orientation
+    name: Picture orientation
+    icon: mdi:camera-flip
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    options:
+      - Normal
+      - Mirrored
+      - Upside down
+      - Upside down, mirrored
+    initial_option: ${camera_orientation}
+    on_value:
+      - lambda: id(vs_stream).set_orientation(x);

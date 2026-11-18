@@ -2,7 +2,7 @@
   // The people (shared by every sensor that recognises faces): one card per person with the faces
   // taught and the camera of each, where they were last seen, whether they need more faces,
   // look-alikes and faces that may carry the wrong name; renaming and forgetting. On the People
-  // page, and on the Quality tab of a sensor that recognises faces (`sensor`: how faces look on
+  // page, and on the Dataset tab of a sensor that recognises faces (`sensor`: how faces look on
   // its camera, and links to it), reloaded with every poll of the sensor there.
   import { untrack } from 'svelte';
   import { api } from '../api';
@@ -35,6 +35,7 @@
   });
 
   const suggest = $derived(app.config?.faces.suggest_faces ?? 0);
+  const most = $derived(app.config?.faces.max_faces_per_person ?? Infinity);
   const nameOf = (key: string) => people?.people.find((p) => p.key === key)?.name ?? key;
   const lookAlikes = (p: Person) =>
     (people?.look_alikes ?? []).filter((l) => l.a === p.key || l.b === p.key).map((l) => nameOf(l.a === p.key ? l.b : l.a));
@@ -95,7 +96,7 @@
     {#if sensor}<div class="card-title"><h3>People</h3></div>{/if}
     {#if sensor && !enabled}
       <div class="notice warn">
-        Face recognition is off for this sensor under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.
+        <span>Face recognition is off for this sensor under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Objects</a>.</span>
       </div>
     {:else if sensor?.objects}
       <FaceStats objects={sensor.objects} />
@@ -127,7 +128,8 @@
           {/if}
           <span class="xsmall faint">
             {seen(p)}
-            {#if p.faces.length < suggest} · teach a few more faces{/if}
+            {#if p.faces.length < suggest} · teach a few more faces{:else if p.faces.length >= most} · full: a face
+              answered in the review replaces a near copy{/if}
           </span>
         </div>
         <div class="row wrap actions">

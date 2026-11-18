@@ -7,6 +7,7 @@ GET /set?state=open|closed|partial   changes what the camera shows
 GET /set?night=1                 switches to a greyscale "IR" image
 GET /photo/<name>.jpg            a real photo from visionstate/backend/tests/assets (for object sensors)
 GET /display.jpg?text=12.5&style=lcd|led   a drawn seven-segment display (for reading sensors)
+GET /plate.jpg?text=VS 12345     a real car (CC0 photo) with that licence plate drawn on it (plate reading)
 GET /counter.jpg?value=89939.5&digits=7&decimals=3   a drawn mechanical counter with rolling digits
                                  (value = the number on the wheels; .5 = last wheel half way);
                                  &turn=125 turns the picture (a camera hanging askew above the meter),
@@ -24,6 +25,11 @@ GET /camera.ts                   a camera with sound: H.264 video and the same s
 GET /play?sound=siren            plays a sound once in both: siren, dog_bark, smoke_alarm, speech (the CC0
                                  recordings of backend/tests/assets/sounds) or chime (a drawn doorbell);
                                  &gain=0.1 plays it quieter (a siren then scores about 0.6, not 0.9)
+GET /esp32/snapshot.jpg?size=800x600&quality=10&clock=20&exposure=auto&gain=4
+                                 an ESP32 camera of ours (esphome/, firmware 1.5.0 on): the drawn garage door,
+                                 set up with a sensor's settings (they stay until a snapshot asks otherwise) and
+                                 saying so (X-VisionState-Camera: settings, X-VisionState-Camera-Settings);
+                                 /esp32/state tells it as JSON
 """
 
 import io
@@ -41,7 +47,7 @@ TESTS = Path(__file__).resolve().parent.parent / "visionstate" / "backend" / "te
 PHOTOS = TESTS / "assets"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent))  # the backend package, for the sound stream
-from displays import STYLES, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
+from displays import STYLES, car_with_plate, counter_box, render_counter, turned, turned_meter  # noqa: E402  (shared with the backend tests)
 from displays import render as render_display  # noqa: E402
 
 SOUND = None  # tests/sound_stream.SoundSource, made on first use (it needs the backend's packages)
@@ -82,6 +88,11 @@ def render() -> bytes:
     return buf.getvalue()
 
 
+# An ESP32 camera of ours (/esp32/...): how it is set up, as its firmware keeps it ("unknown" until
+# a snapshot asks for something).
+ESP32_SETTINGS = ("size", "quality", "clock", "exposure", "gain")
+ESP32 = dict.fromkeys(ESP32_SETTINGS, "unknown")
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # keep test output quiet
         pass
@@ -95,6 +106,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         url = urlparse(self.path)
+        if url.path in ("/esp32/snapshot.jpg", "/esp32/state"):
+            asked = parse_qs(url.query)
+            for key in ESP32_SETTINGS:
+                if key in asked:
+                    ESP32[key] = asked[key][0]
+            if url.path == "/esp32/state":
+                self._send(json.dumps(ESP32).encode(), "application/json")
+                return
+            body = render()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-VisionState-Camera", "settings")
+            self.send_header("X-VisionState-Camera-Settings", "&".join(f"{k}={v}" for k, v in ESP32.items()))
+            self.send_header("X-VisionState-Camera-Chip", "OV2640")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path in ("/sound.wav", "/camera.ts"):
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav" if url.path == "/sound.wav" else "video/mp2t")
@@ -187,6 +216,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/meter-region.json":
                 self._send(json.dumps({"region": region, "dials": placed}).encode(), "application/json")
                 return
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
+            self._send(buf.getvalue(), "image/jpeg")
+        elif url.path == "/plate.jpg":
+            text = (parse_qs(url.query).get("text") or ["VS 12345"])[0][:12]
+            image = car_with_plate(text, Image.open(PHOTOS / "plate_car.jpg"))
             buf = io.BytesIO()
             image.save(buf, format="JPEG", quality=90)
             self._send(buf.getvalue(), "image/jpeg")

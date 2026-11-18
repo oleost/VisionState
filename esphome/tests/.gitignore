@@ -1,0 +1,2 @@
+# ESPHome's build folder. secrets.yaml here holds made-up values for CI and is kept.
+/.esphome/

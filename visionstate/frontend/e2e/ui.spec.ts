@@ -32,6 +32,8 @@ import {
   seededObjectSensorId,
   seededReadingSensorId,
   seededSensorId,
+  sensorTabs,
+  settingsSection,
   seededSoundSensorId,
   setVisibility,
   soundModelInstalled,
@@ -56,37 +58,47 @@ async function allPages(request: APIRequestContext): Promise<[string, string, Re
     ? [
         ['sound-live', `sensors/${soundId}/live`, 'Listening'],
         ['sound-history', `sensors/${soundId}/history`, 'When each sound was heard'],
-        ['sound-own', `sensors/${soundId}/quality`, 'Teach the sensor sounds of your own'],
-        ['sound-settings', `sensors/${soundId}/settings`, 'Sounds to listen for'],
-        ['sound-home-assistant', `sensors/${soundId}/home-assistant`, 'Send values'],
+        ['sound-dataset', `sensors/${soundId}/dataset`, 'Teach the sensor sounds of your own'],
+        ['sound-settings-listening', `sensors/${soundId}/settings/detect`, 'Sounds to listen for'],
+        ['sound-settings-review', `sensors/${soundId}/settings/checks`, 'a sound that was only just heard is asked about'],
+        ['sound-home-assistant', `sensors/${soundId}/settings/home-assistant`, 'Send values'],
       ]
     : [];
   return [
     ...sound,
     ['dashboard', '', 'Sensors'],
     ['new-sensor', 'sensors/new', 'Name it and pick a camera'],
+    ['esp32', 'esp32', 'An ESP32 microphone or camera of your own'],
     ['label', `sensors/${id}/label`, 'What state is this?'],
-    ['upload', `sensors/${id}/upload`, 'Drop images, ZIP archives or video here'],
-    ['dataset', `sensors/${id}/dataset`, /\d+ images/],
+    ['dataset', `sensors/${id}/dataset`, 'Drop images, ZIP archives or video here'],
     ['quality', `sensors/${id}/quality`, 'What gets mixed up'],
     ['history', `sensors/${id}/history`, 'State changes and frames flagged for review'],
-    ['sensor-settings', `sensors/${id}/settings`, 'When to check'],
+    ['sensor-settings', `sensors/${id}/settings`, 'Export or delete'],
+    ['sensor-settings-general', `sensors/${id}/settings/general`, 'Image source'],
+    ['sensor-settings-region', `sensors/${id}/settings/region`, 'Changing it retrains the model'],
+    ['sensor-settings-states', `sensors/${id}/settings/detect`, 'Add state'],
+    ['sensor-settings-checks', `sensors/${id}/settings/checks`, 'When to check'],
+    ['sensor-settings-export', `sensors/${id}/settings/export`, 'Delete sensor'],
     ['objects-live', `sensors/${objectId}/live`, 'Right now'],
     ['objects-history', `sensors/${objectId}/history`, 'When each object appeared and cleared'],
-    ['objects-settings', `sensors/${objectId}/settings`, 'Each object gets an on/off sensor'],
-    ['objects-home-assistant', `sensors/${objectId}/home-assistant`, 'Send values'],
-    ['sensor-home-assistant', `sensors/${id}/home-assistant`, 'Last frame'],
-    ['reading-home-assistant', `sensors/${readingId}/home-assistant`, 'Raw reading'],
+    ['objects-dataset', `sensors/${objectId}/dataset`, 'What you taught'],
+    ['objects-settings', `sensors/${objectId}/settings/detect`, 'Each object gets an on/off sensor'],
+    ['objects-settings-checks', `sensors/${objectId}/settings/checks`, 'Sensor output'],
+    ['objects-home-assistant', `sensors/${objectId}/settings/home-assistant`, 'Send values'],
+    ['sensor-home-assistant', `sensors/${id}/settings/home-assistant`, 'Last frame'],
+    ['reading-home-assistant', `sensors/${readingId}/settings/home-assistant`, 'Raw reading'],
     ['reading-live', `sensors/${readingId}/live`, 'What the reader sees'],
     ['reading-history', `sensors/${readingId}/history`, 'Every new value and every rejected reading'],
-    ['reading-settings', `sensors/${readingId}/settings`, 'Digits after the decimal point'],
+    ['reading-settings', `sensors/${readingId}/settings/detect`, 'Digits after the decimal point'],
+    ['reading-settings-general', `sensors/${readingId}/settings`, 'Region and reading'],
+    ['reading-settings-checks', `sensors/${readingId}/settings/checks`, 'Sensor output'],
     ['reading-quality', `sensors/${readingId}/quality`, 'Readings per day'],
     ['counter-live', `sensors/${counterId}/live`, 'One wheel per field'],
     ['faces-live', `sensors/${faceId}/live`, 'Unknown person'],
-    ['faces-settings', `sensors/${faceId}/settings`, 'Ask me about faces I do not know'],
-    ['faces-quality', `sensors/${faceId}/quality`, 'Shared by every camera that recognises faces'],
+    ['faces-settings', `sensors/${faceId}/settings/detect`, 'Ask me about faces I do not know'],
+    ['faces-dataset', `sensors/${faceId}/dataset`, 'Shared by every camera that recognises faces'],
     ['people', 'people', 'The people you named by their face'],
-    ['counter-settings', `sensors/${counterId}/settings`, 'Number of digits'],
+    ['counter-settings', `sensors/${counterId}/settings/detect`, 'Number of digits'],
     ['review', 'review', 'Frames the AI was unsure about'],
     ['history-all', 'history', 'What every sensor recorded'],
     ['settings', 'settings', 'AI model'],
@@ -208,6 +220,93 @@ test('swiping on a camera frame scrolls the page', async ({ page, request }, inf
   }
 });
 
+test("a sensor's tabs, and its Settings in sections beside Pause, with one Save for them all", async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  const id = await seededSensorId(request);
+  const phone = info.project.name !== 'desktop';
+  await page.goto(`#/sensors/${id}/label`);
+  const nav = page.getByRole('navigation', { name: 'Sensor sections' });
+  await expect(nav.getByRole('link', { name: 'Label' })).toHaveAttribute('aria-current', 'page');
+  expect(await sensorTabs(page)).toEqual(['Label', 'History', 'Dataset', 'Quality']);
+  await expect(nav.getByRole('button', { name: /^More/ })).toHaveCount(0); // four fit on a phone too
+  await expectNoHorizontalOverflow(page);
+  if (phone) {
+    // A very narrow phone: what does not fit goes under More, and the open tab stays in the row.
+    const size = page.viewportSize()!;
+    await page.setViewportSize({ width: 300, height: size.height });
+    await page.goto(`#/sensors/${id}/history`);
+    await expect(nav.getByRole('button', { name: /^More/ })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page');
+    await expectNoHorizontalOverflow(page);
+    expect(await sensorTabs(page)).toEqual(expect.arrayContaining(['Label', 'Dataset', 'Quality', 'History']));
+    await page.setViewportSize(size);
+    await page.goto(`#/sensors/${id}/label`);
+  }
+
+  // Settings is the button beside Pause.
+  const settingsButton = page.locator('header').getByRole('link', { name: 'Settings' });
+  await press(settingsButton, info);
+  await expect(page).toHaveURL(new RegExp(`#/sensors/${id}/settings$`));
+  const sections = page.getByRole('navigation', { name: 'Settings sections' });
+  const heading = page.locator('.settings .content h2');
+  if (phone) {
+    // A phone lists the sections, each saying what is set; one opens with a tap.
+    await expect(sections.getByRole('link', { name: /Checks and output.*Every \d+ s/ })).toBeVisible();
+    await expect(heading).toBeHidden();
+  } else {
+    await expect(heading).toHaveText('General'); // a wider screen opens the first beside the menu
+  }
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'sensor-settings-sections.png') });
+  await press(sections.getByRole('link', { name: /Checks and output/ }), info);
+  await expect(page).toHaveURL(new RegExp(`#/sensors/${id}/settings/checks$`));
+  await expect(heading).toHaveText('Checks and output');
+
+  // A change waits for Save at the bottom of the screen, and is kept while another section is open.
+  const every = page.getByLabel('Seconds between regular checks');
+  const before = await every.inputValue();
+  await every.fill(String(Number(before) + 7));
+  const bar = page.locator('.savebar');
+  await expect(bar.getByText('Unsaved changes')).toBeVisible();
+  await expect(bar).toBeInViewport();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'sensor-settings-unsaved.png') });
+  if (phone) {
+    await press(page.locator('.settings .back'), info); // back to the list
+    await expect(sections.getByRole('link', { name: /Checks and output/ })).toBeVisible();
+  }
+  await press(sections.getByRole('link', { name: /General/ }), info);
+  await expect(heading).toHaveText('General');
+  await expect(bar.getByText('Unsaved changes')).toBeVisible();
+  // Undo puts back what is saved.
+  await press(bar.getByRole('button', { name: 'Undo' }), info);
+  await expect(bar).toHaveCount(0);
+  await page.goto(`#/sensors/${id}/settings/checks`);
+  await expect(page.getByLabel('Seconds between regular checks')).toHaveValue(before);
+
+  // Export and Delete have their own section.
+  await page.goto(`#/sensors/${id}/settings/export`);
+  await expect(page.getByRole('button', { name: 'Delete sensor' })).toBeVisible();
+  const content = page.locator('.settings .content');
+  await expect(content.getByRole('link', { name: 'Export', exact: true }).or(content.getByRole('button', { name: 'Export', exact: true }))).toBeVisible();
+
+  // A phone keeps the import options behind a button, so the images start on the first screen.
+  await page.goto(`#/sensors/${id}/dataset`);
+  const labelAll = page.getByLabel('Label everything as');
+  if (phone) {
+    await expect(labelAll).toBeHidden();
+    await press(page.getByRole('button', { name: /^Import options/ }), info);
+  }
+  await expect(labelAll).toBeVisible();
+
+  // Links of earlier versions open where those tabs went.
+  await page.goto(`#/sensors/${id}/home-assistant`);
+  await expect(heading).toHaveText('Home Assistant');
+  await page.goto(`#/sensors/${id}/upload`);
+  await expect(nav.getByRole('link', { name: 'Dataset' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('Drop images, ZIP archives or video here')).toBeVisible();
+  errors.expectNone();
+});
+
 test('long camera names stay inside their boxes', async ({ page }) => {
   const long = 'garasje_bod_1_etg_esp32cam_watermeter_esp32_watermeter_camera';
   await page.route('**/api/v1/cameras', (route) =>
@@ -282,7 +381,14 @@ test('a light for the camera: picked with the camera, held on while framing', as
 
 test('the wizard shows the whole list of entities for a light', async ({ page }, info) => {
   const errors = watchErrors(page);
-  const lights = Array.from({ length: 12 }, (_, i) => ({ entity_id: `light.lamp_${i}`, name: `Lamp ${i}`, domain: 'light', state: 'off' }));
+  // The last one has a long entity id (an ESP32 camera's flash, named after its room): it breaks inside its chip.
+  const flash = 'light.garasje_bod_1_etg_esp32cam_watermeter_flash';
+  const lights = Array.from({ length: 12 }, (_, i) => ({
+    entity_id: i === 11 ? flash : `light.lamp_${i}`,
+    name: `Lamp ${i}`,
+    domain: 'light',
+    state: 'off',
+  }));
   await page.route('**/api/v1/entities*', (route) => route.fulfill({ json: lights }));
   await page.goto('#/sensors/new');
   await press(page.getByText('HTTP snapshot URL'), info);
@@ -302,7 +408,7 @@ test('the wizard shows the whole list of entities for a light', async ({ page },
   const last = list.getByRole('button', { name: /Lamp 11/ });
   await last.scrollIntoViewIfNeeded();
   await press(last, info);
-  await expect(page.getByText('light.lamp_11')).toBeVisible();
+  await expect(page.getByText(flash)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   errors.expectNone();
 });
@@ -502,7 +608,7 @@ test('new mechanical counter sensor through the wizard', async ({ page, request 
   await expect(page.locator('.value-card .value')).toHaveText('45.730 m³', { timeout: 60_000 });
   const sensorId = Number(page.url().match(/sensors\/(\d+)\//)![1]);
   // The settings page shows the same fields over the region.
-  await page.goto(`#/sensors/${sensorId}/settings`);
+  await page.goto(`#/sensors/${sensorId}/settings/detect`);
   await expect(page.getByTestId('digit-cells').locator('.cell')).toHaveCount(7);
   await expect(page.getByLabel('Number of digits')).toHaveValue('7');
   errors.expectNone();
@@ -532,7 +638,7 @@ test('a counter the camera sees turned is read with its region straightened', as
   await expect(page.locator('.value-card .value')).toHaveText('89.932 m³', { timeout: 60_000 });
 
   // Settings: the region has four corners and no "+" to add one, its top marked; Turn moves the top.
-  await page.goto(`#/sensors/${sensor.id}/settings`);
+  await page.goto(`#/sensors/${sensor.id}/settings/detect`);
   await expect(page.getByLabel('Correct rotation and perspective')).toBeChecked();
   const frame = page.locator('.frame .roi');
   await expect(frame.locator('.handle.corner')).toHaveCount(4);
@@ -589,7 +695,7 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
   expect(made.ok(), await made.text()).toBeTruthy();
   const sensor = await made.json();
   try {
-    await page.goto(`#/sensors/${sensor.id}/settings`);
+    await page.goto(`#/sensors/${sensor.id}/settings/detect`);
     // The same switch as in the wizard: the picture edits the counter, or the dials.
     await expect(page.locator('.frame .roi')).toBeVisible();
     await press(page.getByTestId('edit-dials'), info);
@@ -602,11 +708,14 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     await press(card.getByTestId('dial-add'), info);
     await expect(card.getByTestId('dial-label')).toHaveText(['×0.1']);
     const circle = editor.locator('circle').first();
+    // Into the middle of the screen: Save at the bottom (a change is waiting) would take the drag.
+    await circle.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     const before = (await circle.boundingBox())!;
     const centre = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
     await drag(page, info, centre, { x: centre.x - before.width * 0.6, y: centre.y + before.height * 0.3 });
     await expect.poll(async () => Math.round((await circle.boundingBox())!.x)).toBeLessThan(Math.round(before.x));
     const handle = card.getByTestId('dial-size');
+    await handle.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     const h = (await handle.boundingBox())!;
     const width = (await circle.boundingBox())!.width;
     await drag(page, info, { x: h.x + h.width / 2, y: h.y + h.height / 2 }, { x: h.x + h.width / 2 + width * 0.3, y: h.y + h.height / 2 });
@@ -631,7 +740,7 @@ test('a water meter with pointer dials: placed on its face in Settings, read as 
     await request.post(`api/v1/sensors/${sensor.id}/classify`);
     await page.goto(`#/sensors/${sensor.id}/live`);
     await expect(page.locator('.value-card .value')).toHaveText('187.3456 m³', { timeout: 60_000 });
-    await page.goto(`#/sensors/${sensor.id}/settings`);
+    await page.goto(`#/sensors/${sensor.id}/settings/detect`);
     await press(page.getByTestId('edit-dials'), info);
     await expect(card.getByTestId('dial-label')).toHaveText(['×0.1', '×0.01', '×0.001', '×0.0001']);
     await expect(card.getByTestId('dial-row').first()).toContainText('Needle at 3.', { timeout: 60_000 });
@@ -897,7 +1006,7 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
   try {
     await page.goto(`#/sensors/${id}/live`);
     await expect(page.getByText('Wrong? Tap a box to correct it:')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0); // nothing taught yet
+    expect(await sensorTabs(page)).toEqual(['Live', 'History', 'Dataset']);
 
     // Tap the person in the list under the frame: not a person (asked once whether to teach).
     await press(page.locator('button.found', { hasText: 'Person' }), info);
@@ -909,10 +1018,9 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-sheet.png'), fullPage: true });
     await press(sheet.getByRole('button', { name: 'Teach' }), info);
     await expect(page.getByText(/no longer count as person/)).toBeVisible();
-    // The next check shows the person dashed and filtered, and the Quality tab appears.
+    // The next check shows the person dashed and filtered.
     await expect(page.locator('button.found.filtered', { hasText: 'Person' })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.roi .box.filtered')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Quality' })).toBeVisible();
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'objects-teach-live.png'), fullPage: true });
 
     // Draw a box around something the AI missed, then pick what it is.
@@ -929,8 +1037,8 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await press(sheet.getByRole('button', { name: 'Dog' }), info);
     await expect(page.getByText('Saved as Dog.')).toBeVisible();
 
-    // The Quality tab lists both, and the filtered frame.
-    await page.goto(`#/sensors/${id}/quality`);
+    // The Dataset tab lists both, and the filtered frame.
+    await page.goto(`#/sensors/${id}/dataset`);
     await expect(page.getByRole('heading', { name: /Not a person/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /^Dog/ })).toBeVisible();
     await expect(page.getByText('Person filtered away').first()).toBeVisible({ timeout: 15_000 });
@@ -955,10 +1063,8 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await expectNoHorizontalOverflow(page);
 
     // Settings: its own teaching limits. Until set, a field shows the global value in grey.
-    await page.goto(`#/sensors/${id}/settings`);
+    await page.goto(`#/sensors/${id}/settings/detect`);
     await expect(page.getByText('Use what you taught')).toBeVisible();
-    // The region's camera frame loads above: wait for it, or the page moves under the tap.
-    await expect(page.locator('.roi img')).toBeVisible();
     await page.waitForFunction(() => [...document.images].every((img) => img.complete));
     const global = await (await request.get('api/v1/teach-limits')).json();
     const limits = page.getByTestId('sensor-teach-limits');
@@ -983,11 +1089,12 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
     await pressCentered(page.getByRole('button', { name: 'Save changes' }), info);
     await expect.poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.teach).toEqual({});
 
-    // Turn it off or forget it all; then the Quality tab goes away again.
+    // Turn it off or forget it all; then its Dataset says how to teach it again.
     await press(page.getByRole('button', { name: 'Forget all' }), info);
     await press(page.getByRole('button', { name: 'Tap again to forget everything taught' }), info);
     await expect(page.getByText('Everything taught is forgotten')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Quality' })).toHaveCount(0);
+    await page.goto(`#/sensors/${id}/dataset`);
+    await expect(page.getByTestId('nothing-taught')).toBeVisible();
     errors.expectNone();
   } finally {
     await request.delete(`api/v1/sensors/${id}`);
@@ -997,7 +1104,7 @@ test('teaching an object sensor: correct a box, draw a missed one, forget it all
 test('region editor: move, add and remove corners', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededSensorId(request);
-  await page.goto(`#/sensors/${id}/settings`);
+  await page.goto(`#/sensors/${id}/settings/region`);
   const roi = page.locator('.roi');
   await roi.scrollIntoViewIfNeeded();
   await expect(roi.locator('img')).toBeVisible();
@@ -1054,7 +1161,7 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   // Start from the defaults, whatever an earlier (failed) run left behind.
   const before = (await (await request.get('api/v1/config')).json()).trigger_defaults;
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
-  await page.goto(`#/sensors/${id}/settings`);
+  await page.goto(`#/sensors/${id}/settings/checks`);
   await expect(page.getByText('When to check')).toBeVisible();
 
   // The regular check can be switched off; its interval then goes away.
@@ -1070,7 +1177,8 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   await add.press('Enter');
   await page.getByLabel('Only when sensor.watermeter_status becomes').fill('Flow finished');
 
-  // A light: only lights and switches are accepted.
+  // A light (under General: the change above waits for Save meanwhile): only lights and switches are accepted.
+  await settingsSection(page, info, 'General');
   const light = page.getByLabel('Light to switch on');
   await light.fill('camera.meter');
   await light.press('Enter');
@@ -1079,6 +1187,10 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   await light.press('Enter');
   await expect(page.getByText('Wait before taking the frame')).toBeVisible();
   await expect(page.getByLabel('Light to switch on')).toHaveCount(0); // one light at most
+  // For every check, or only when the picture is dark.
+  const when = page.getByLabel('When the light is switched on');
+  await expect(when).toHaveValue('always');
+  await when.selectOption('dark');
 
   await press(page.getByRole('button', { name: 'Save changes' }), info);
   await expect(page.getByText('Settings saved')).toBeVisible();
@@ -1090,10 +1202,12 @@ test('when to check: no regular check, one state of an entity, and a light', asy
   expect(saved.regular).toBe(false);
   expect(saved.only_states).toEqual({ 'sensor.watermeter_status': 'Flow finished' });
   expect(saved.light_entity).toBe('light.meter_flash');
+  expect(saved.light_when).toBe('dark');
   await page.reload();
+  await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible(); // General
+  await page.goto(`#/sensors/${id}/settings/checks`);
   await expect(page.getByRole('checkbox', { name: 'Regular check' })).not.toBeChecked();
   await expect(page.getByLabel('Only when sensor.watermeter_status becomes')).toHaveValue('Flow finished');
-  await expect(page.getByRole('button', { name: 'Remove light.meter_flash' })).toBeVisible();
   errors.expectNone();
   expect((await request.patch(`api/v1/sensors/${id}`, { data: { triggers: before } })).ok()).toBe(true);
 });
@@ -1152,7 +1266,7 @@ test('the Home Assistant tab chooses what a sensor has there', async ({ page, re
   };
   await request.patch(`api/v1/sensors/${id}`, { data: { in_ha: true, publish: true, ha_entities: {} } });
   try {
-    await page.goto(`#/sensors/${id}/home-assistant`);
+    await page.goto(`#/sensors/${id}/settings/home-assistant`);
     const options: { object?: string }[] = (await (await request.get(`api/v1/sensors/${id}`)).json()).ha_entities;
     const first = options.find((e) => e.object)!.object!;
     // A snapshot is off until chosen; choosing one removes nothing, so one tap saves it.
@@ -1220,7 +1334,7 @@ test('a sensor can be kept from Home Assistant while it is tuned', async ({ page
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
   try {
-    await page.goto(`#/sensors/${id}/home-assistant`);
+    await page.goto(`#/sensors/${id}/settings/home-assistant`);
     await expect(page.getByRole('radio', { name: 'Send values', exact: true })).toBeChecked();
     await press(page.getByRole('radio', { name: 'Don’t send values' }), info);
     await press(page.getByRole('button', { name: 'Save changes' }), info);
@@ -1243,7 +1357,7 @@ test('a sensor can be kept from Home Assistant while it is tuned', async ({ page
 test('a counter has a rate window for its rate entity', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
-  await page.goto(`#/sensors/${id}/settings`);
+  await page.goto(`#/sensors/${id}/settings/checks`);
   const field = page.getByLabel('Rate over the last minutes');
   await expect(field).toHaveValue('15');
   await field.fill('30');
@@ -1264,7 +1378,7 @@ test('a counter has a rate window for its rate entity', async ({ page, request }
 test('a counter learns how fast it may go up, or takes a fixed rate or change per reading', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);
-  await page.goto(`#/sensors/${id}/settings`);
+  await page.goto(`#/sensors/${id}/settings/checks`);
   const choice = page.getByLabel('Limit how fast the counter may go up');
   await expect(choice).toHaveValue('auto');
   await expect(page.getByText(/Learning from its readings: \d+ of \d+ days/)).toBeVisible();
@@ -1560,6 +1674,9 @@ test('a backup of everything is downloaded and restored', async ({ page, request
   await expect(card.getByRole('checkbox', { name: /History/ })).toBeChecked();
   await expect(card.getByRole('checkbox', { name: /Camera passwords/ })).not.toBeChecked();
   const download = card.getByRole('link', { name: /Download backup/ });
+  // The sizes come a moment later and make the lines longer: on a phone that moves the boxes, and
+  // a tap before then can land beside the one meant.
+  await expect(download).toContainText('about');
   await press(card.getByRole('checkbox', { name: /Downloaded AI models/ }), info);
   await expect(download).toHaveAttribute('href', /leave_out=models/);
   await expectNoHorizontalOverflow(page);
@@ -1592,7 +1709,7 @@ test('the AI models can be compared, and the teaching and face limits set for al
     await expect(compare.getByText('D-FINE L (most accurate)')).toBeVisible();
     await expect(compare.getByText('DINOv2 base · fp32 (most accurate)')).toBeVisible();
     await expect(compare.getByText('AuraFace v1 (accurate)')).toBeVisible();
-    await expect(compare.getByText(/· in use$/)).toHaveCount(5); // one per kind
+    await expect(compare.getByText(/· in use$/)).toHaveCount(6); // one per kind
     // From the smallest to the largest, in every kind.
     const settings = await (await request.get('api/v1/settings')).json();
     const smallest = [...settings.detectors].sort((a, b) => a.size - b.size)[0].name;
@@ -1810,7 +1927,7 @@ test('faces: a new face model learning the taught faces shows on the cards, the 
   const card = page.locator('.card', { has: page.getByRole('link', { name: 'Crew', exact: true }) });
   await expect(card.getByText('Learning faces… 3/8')).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await page.goto(`#/sensors/${faceId}/settings`);
+  await page.goto(`#/sensors/${faceId}/settings/detect`);
   await expect(page.locator('h1 ~ .chip', { hasText: 'Learning faces… 3/8' })).toBeVisible();
   await expect(page.getByTestId('faces-card').getByText(/Learning the taught faces .* 3 of 8/)).toBeVisible();
   await page.goto('#/people');
@@ -1819,7 +1936,7 @@ test('faces: a new face model learning the taught faces shows on the cards, the 
   errors.expectNone();
 });
 
-test('faces: turned on with a confirmation, a person taught from the Live tab, shown under Quality', async ({ page, request }, info) => {
+test('faces: turned on with a confirmation, a person taught from the Live tab, shown on its Dataset tab', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   const faceId = await seededFaceSensorId(request);
   // Each device runs this against the same backend: start without the person it teaches.
@@ -1830,7 +1947,7 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
 
   // Turning it on asks first, and says what is stored and downloaded.
   const beach = await seededObjectSensorId(request);
-  await page.goto(`#/sensors/${beach}/settings`);
+  await page.goto(`#/sensors/${beach}/settings/detect`);
   const card = page.getByTestId('faces-card');
   await expect(card.getByText('Recognise people by their face')).toBeVisible();
   await pressCentered(card.getByRole('button', { name: 'Turn on…' }), info);
@@ -1866,7 +1983,7 @@ test('faces: turned on with a confirmation, a person taught from the Live tab, s
   await expect(page.getByText('Person · Butch').first()).toBeVisible({ timeout: 30_000 });
 
   // Quality: one card per person, with their faces.
-  await page.goto(`#/sensors/${faceId}/quality`);
+  await page.goto(`#/sensors/${faceId}/dataset`);
   const people = page.getByTestId('people');
   await expect(people).toBeVisible();
   await expect(page.getByRole('heading', { name: /^Butch/ })).toBeVisible();
@@ -1938,7 +2055,7 @@ test('a camera that changed its picture size holds the readings until the region
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .chip, .notice');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'camera-changed.png'), fullPage: true });
-    await expect(notice.getByRole('link', { name: 'Adjust the region' })).toHaveAttribute('href', `#/sensors/${id}/settings`);
+    await expect(notice.getByRole('link', { name: 'Adjust the region' })).toHaveAttribute('href', `#/sensors/${id}/settings/detect`);
 
     await press(notice.getByRole('button', { name: 'The region is right' }), info);
     await expect(notice).toHaveCount(0, { timeout: 30_000 });
@@ -2015,6 +2132,11 @@ test('a sound heard on a camera: its video clip in the history, the question in 
   // The question may name another sound (a siren can score as a smoke alarm too, and be asked about as both):
   // answer yes to it, and it leaves the queue.
   const before = await waiting();
+  // The clips taught so far: the answer adds one, to whichever sound the question named — a
+  // built-in one, or the own sound "Our siren" when that was almost heard (both can be asked).
+  const clipIds = async () =>
+    ((await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json()).clips as { id: number }[]).map((c) => c.id);
+  const known = new Set(await clipIds());
   // Played once, the clip goes round until the next question, whose clip then plays by itself in
   // the same player (a phone lets an element it played play again, never a new one).
   await press(page.getByRole('button', { name: 'Play the clip' }), info);
@@ -2031,18 +2153,93 @@ test('a sound heard on a camera: its video clip in the history, the question in 
       await expect.poll(() => player!.evaluate((el) => !(el as HTMLMediaElement).paused)).toBe(true);
     }
   }
-  // The answer taught the clip to that built-in sound, which then hears it surely and asks no more:
-  // forget it, so the next project is asked too.
-  const taught = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-  const builtin = new Set((taught.builtin as { key: string }[]).map((b) => b.key));
-  await expect.poll(async () => {
-    const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-    return (now.clips as { label: string }[]).filter((c) => builtin.has(c.label)).length;
-  }).toBeGreaterThan(0);
-  const now = await (await request.get(`api/v1/sensors/${id}/sounds/taught`)).json();
-  for (const c of now.clips as { id: number; label: string }[]) {
-    if (builtin.has(c.label)) await request.delete(`api/v1/sound-clips/${c.id}`);
-  }
+  // The answer taught its clip to that sound, which then hears it surely and asks no more: forget
+  // that clip (only it), so the next project is asked too.
+  const added = async () => (await clipIds()).filter((c) => !known.has(c));
+  await expect.poll(async () => (await added()).length, { timeout: 30_000 }).toBeGreaterThan(0);
+  for (const c of await added()) await request.delete(`api/v1/sound-clips/${c}`);
+  errors.expectNone();
+});
+
+test('a sound sensor on an ESP32: its microphone set from the Live tab, and a newer firmware said', async ({ page, request }, info) => {
+  test.skip(!(await soundModelInstalled(request)), 'no sound model');
+  const id = await seededSoundSensorId(request);
+  const errors = watchErrors(page);
+  // The e2e backend has no Home Assistant: the device it would find there is answered here.
+  const device = {
+    name: 'hall',
+    address: '10.0.0.9',
+    ours: true,
+    firmware: '1.0.0-dev',
+    latest: '1.1.0',
+    outdated: true,
+    controls: [
+      { entity_id: 'switch.hall_microphone', kind: 'switch', name: 'Microphone', state: 'on' },
+      { entity_id: 'number.hall_microphone_gain', kind: 'number', name: 'Microphone gain', state: '4.0', min: 1, max: 64, step: 1 },
+      { entity_id: 'text.hall_answer_on', kind: 'text', name: 'Answer on', state: 'media_player.kitchen' },
+    ],
+  };
+  // One speaker through two integrations, and another seen twice through one: told apart.
+  const player = (entity_id: string, name: string, integration: string, state = 'idle') => ({ entity_id, name, integration, state });
+  await page.route('**/api/v1/esphome/media-players', (route) =>
+    route.fulfill({
+      json: {
+        players: [
+          player('media_player.hall', 'Hall speaker', 'Google Cast'),
+          player('media_player.hall_2', 'Hall speaker', 'Music Assistant'),
+          player('media_player.kitchen', 'Kitchen speaker', 'Google Cast'),
+          player('media_player.kitchen_2', 'Kitchen speaker', 'Google Cast', 'unavailable'),
+        ],
+        error: null,
+      },
+    }),
+  );
+  const sent: unknown[] = [];
+  await page.route(`**/api/v1/sensors/${id}/device`, async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { entity_id: string; value: boolean | number | string };
+      sent.push(body);
+      const c = device.controls.find((x) => x.entity_id === body.entity_id)!;
+      c.state =
+        typeof body.value === 'boolean' ? (body.value ? 'on' : 'off') : typeof body.value === 'string' ? body.value : `${body.value}.0`;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { device, error: null } });
+  });
+  await page.goto(`#/sensors/${id}/live`);
+  const card = page.getByTestId('sound-device');
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('firmware-outdated')).toContainText('1.1.0');
+  const mic = card.getByLabel('Microphone', { exact: true });
+  await expect(mic).toBeChecked();
+  await press(mic, info);
+  await expect(mic).not.toBeChecked();
+  const gain = card.getByLabel('Microphone gain');
+  await gain.fill('8'); // a range input: set and let go
+  await expect(card.getByText('8', { exact: true })).toBeVisible();
+  // The voice assistant's speaker, from Home Assistant's media players.
+  const answerOn = card.getByLabel('Answer on');
+  await expect(answerOn).toHaveValue('media_player.kitchen');
+  await expect(answerOn.locator('option')).toHaveText([
+    'None: no answer played',
+    'Hall speaker · Google Cast',
+    'Hall speaker · Music Assistant',
+    'Kitchen speaker · Google Cast · media_player.kitchen',
+    'Kitchen speaker · Google Cast · media_player.kitchen_2 (unavailable)',
+  ]);
+  await answerOn.selectOption('media_player.hall');
+  await expect(answerOn).toHaveValue('media_player.hall');
+  // None chosen: Home Assistant shows the empty text as "unknown", which is no speaker, not an option.
+  device.controls.find((c) => c.kind === 'text')!.state = 'unknown';
+  await expect(answerOn).toHaveValue('', { timeout: 15_000 });
+  await expect(answerOn.locator('option', { hasText: 'unknown' })).toHaveCount(0);
+  expect(sent).toEqual([
+    { entity_id: 'switch.hall_microphone', value: false },
+    { entity_id: 'number.hall_microphone_gain', value: 8 },
+    { entity_id: 'text.hall_answer_on', value: 'media_player.hall' },
+  ]);
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .card');
   errors.expectNone();
 });
 
@@ -2050,7 +2247,7 @@ test('own sounds: a recording taught as a new sound, played back, and forgotten'
   test.skip(!(await soundModelInstalled(request)), 'no sound model');
   const id = await seededSoundSensorId(request);
   const errors = watchErrors(page);
-  await page.goto(`#/sensors/${id}/quality`);
+  await page.goto(`#/sensors/${id}/dataset`);
   await expect(page.getByTestId('own-sound-our_siren')).toBeVisible();
   const name = `Bark ${info.project.name}`;
   await page.getByLabel('Name of the new own sound').fill(name);
@@ -2073,7 +2270,7 @@ test('own sounds: recorded from the stream, trimmed by its ends, taught and forg
   test.setTimeout(90_000);
   const id = await seededSoundSensorId(request);
   const errors = watchErrors(page);
-  await page.goto(`#/sensors/${id}/quality`);
+  await page.goto(`#/sensors/${id}/dataset`);
   const name = `Chime ${info.project.name}`;
   await page.getByLabel('Name of the new own sound').fill(name);
   await press(page.getByTestId('record-new'), info);
@@ -2104,7 +2301,7 @@ test('own sounds: recorded from the stream, trimmed by its ends, taught and forg
   await press(recorder.getByTestId('record-teach'), info);
   const card = page.getByTestId(`own-sound-chime_${info.project.name}`);
   await expect(card).toContainText('1 clip');
-  await expect(card).toContainText('Recorded from the stream');
+  await expect(card.locator('.when').first()).toHaveAttribute('title', /^Recorded from the stream · /); // where it came from, on hover
   await expect(recorder).toHaveCount(0);
   await press(card.getByRole('button', { name: /Forget/ }).first(), info);
   await press(card.getByRole('button', { name: /Tap again/ }), info);
@@ -2117,7 +2314,7 @@ test('a built-in sound taught with a clip of what it is not, recorded from the s
   test.setTimeout(90_000);
   const id = await seededSoundSensorId(request);
   const errors = watchErrors(page);
-  await page.goto(`#/sensors/${id}/quality`);
+  await page.goto(`#/sensors/${id}/dataset`);
   // Not the siren: the other tests need it heard.
   const card = page.getByTestId('builtin-sound-dog_bark');
   await expect(card).toContainText('built-in');
@@ -2132,7 +2329,7 @@ test('a built-in sound taught with a clip of what it is not, recorded from the s
   await expect(recorder.getByTestId('record-teach')).toHaveText(/Teach as not Dog/);
   await press(recorder.getByTestId('record-teach'), info);
   await expect(card.getByText('It is not this 1')).toBeVisible();
-  await expect(card).toContainText('Recorded from the stream');
+  await expect(card.locator('.when').first()).toHaveAttribute('title', /^Recorded from the stream · /); // where it came from, on hover
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '[data-testid^=builtin-sound] .btn');
   await press(card.getByRole('button', { name: 'Forget this clip' }), info);
@@ -2147,7 +2344,7 @@ test('thresholds from the answers: the card on Settings, for a state sensor and 
   for (const id of ids) {
     const advice = (await (await request.get(`api/v1/sensors/${id}/advice`)).json()).items as { key: string; advice: { yes: number; no: number } }[];
     expect(advice.length).toBeGreaterThan(0);
-    await page.goto(`#/sensors/${id}/settings`);
+    await page.goto(`#/sensors/${id}/settings/checks`);
     const card = page.getByTestId('advice-card');
     await expect(card).toContainText('From your answers');
     const answered = advice.filter((i) => i.advice.yes + i.advice.no > 0);
@@ -2206,4 +2403,464 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   // Over: the sensors go on.
   await expect.poll(async () => (await (await request.get('api/v1/status')).json()).benchmark_running).toBe(false);
   errors.expectNone();
+});
+
+test('the ESP32 guide: a microphone that is a voice assistant too, its answer on a speaker in Home Assistant', async ({
+  page,
+}, info) => {
+  const errors = watchErrors(page);
+  // Home Assistant's media players (none in e2e).
+  await page.route('**/api/v1/esphome/media-players', (route) =>
+    route.fulfill({
+      json: {
+        players: [{ entity_id: 'media_player.kitchen', name: 'Kitchen speaker', integration: 'Google Cast', state: 'idle' }],
+        error: null,
+      },
+    }),
+  );
+  await page.goto('#/esp32');
+  const guide = page.getByTestId('esp32-guide');
+  const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]');
+  await expect(yaml).toHaveValue(/microphone\.yaml/);
+  await expect(yaml).not.toHaveValue(/voice-assistant/);
+  await press(guide.getByText('A voice assistant too', { exact: false }), info);
+  const player = guide.getByLabel('The answer plays on');
+  await expect(player.locator('option')).toHaveCount(2); // later, or the speaker
+  await expect(player.locator('option').nth(1)).toHaveText('Kitchen speaker · Google Cast');
+  await player.selectOption('media_player.kitchen');
+  await expect(yaml).toHaveValue(/assistant_media_player: "media_player\.kitchen"[\s\S]*voice-assistant-ha-wake-word\.yaml/);
+  await expect(guide.getByTestId('esp32-assistant-steps')).toContainText('Allow the device to perform Home Assistant actions');
+  // Leaving the page (for the ESPHome app) and coming back keeps the choices and the password the
+  // device was made with, so the check after installing uses the right one.
+  const streamPassword = await guide.getByLabel('Device password').inputValue();
+  await page.goto('#/sensors/new');
+  await page.goto('#/esp32');
+  await expect(guide.getByLabel('Device password')).toHaveValue(streamPassword);
+  await expect(guide.getByLabel('The answer plays on')).toHaveValue('media_player.kitchen');
+  // A camera is not a voice assistant: the choice goes.
+  await press(guide.getByText('ESP32-CAM', { exact: true }), info); // a camera (and microphone): no assistant
+  await expect(guide.getByText('A voice assistant too', { exact: false })).toHaveCount(0);
+  await expect(yaml).not.toHaveValue(/voice-assistant/);
+  await expectNoHorizontalOverflow(page);
+  errors.expectNone();
+});
+
+test('the ESP32 guide: a board and what it is to an ESPHome configuration, and a sensor from the device', async ({
+  page,
+}, info) => {
+  const errors = watchErrors(page);
+  await page.goto('#/sensors/new');
+  await press(page.getByTestId('esp32-link').getByRole('link', { name: 'Set one up with ESPHome' }), info);
+  const guide = page.getByTestId('esp32-guide');
+  await expect(guide.getByRole('heading', { name: 'An ESP32 microphone or camera of your own' })).toBeVisible();
+  const yaml = guide.locator('textarea[aria-label="ESPHome configuration"]'); // under "What is in it" (closed)
+  await expect(yaml).toHaveValue(/board-esp32-devkit\.yaml/);
+  // The boards the firmware has not run on yet say so; the ones it has, do not.
+  const untried = guide.getByTestId('board-untried');
+  await expect(untried).toHaveCount(4);
+  await expect(guide.locator('label', { hasText: 'ESP32-CAM' }).getByTestId('board-untried')).toHaveCount(0);
+  await expect(guide.locator('label', { hasText: 'XIAO ESP32-S3 Sense' }).getByTestId('board-untried')).toHaveCount(1);
+  await expectNoHorizontalOverflow(page);
+
+  // A XIAO ESP32-S3 Sense: its own microphone (PDM), nothing to wire.
+  await press(guide.getByText('XIAO ESP32-S3 Sense', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await expect(yaml).toHaveValue(/camera-xiao-esp32s3-sense\.yaml[\s\S]*microphone-pdm\.yaml/);
+  await expect(guide.getByText('Nothing to wire: the camera and the microphone are on the board.')).toBeVisible();
+
+  // A Waveshare ESP32-S3-Touch-LCD-2: a microphone only, wired to its headers, with no mute pin; its display is the light.
+  await press(guide.getByText('Waveshare ESP32-S3-Touch-LCD-2', { exact: true }), info);
+  await expect(yaml).toHaveValue(/board-waveshare-esp32s3-lcd2\.yaml[\s\S]*microphone\.yaml/);
+  await expect(yaml).not.toHaveValue(/mute/);
+  await expect(guide.getByText(/A mute switch on a pin/)).toHaveCount(0);
+  await expect(guide.locator('table')).toContainText('GPIO43');
+  await expect(guide.getByText(/With a camera in the socket, SD goes to GPIO18/)).toBeVisible();
+  await expect(guide.getByText('Its display (a red dot) lights while VisionState listens or looks.')).toBeVisible();
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 GHz network/)).toBeVisible();
+
+  // A Waveshare ESP32-C5-WIFI6-KIT: a microphone with a mute switch, and Wi-Fi on 5 GHz too.
+  await press(guide.getByText('Waveshare ESP32-C5-WIFI6-KIT', { exact: true }), info);
+  await expect(yaml).toHaveValue(/board-waveshare-esp32c5-kit\.yaml[\s\S]*microphone\.yaml/);
+  await expect(guide.locator('table')).toContainText('GPIO10');
+  await expect(guide.getByText(/The Wi-Fi is the 2\.4 or 5 GHz network/)).toBeVisible();
+
+  // An ESP32-CAM with a microphone and a mute switch: the camera's packages, the SD card's pins.
+  await press(guide.getByText('ESP32-CAM', { exact: true }), info);
+  await press(guide.getByText('Camera and microphone', { exact: true }), info);
+  await guide.getByRole('textbox', { name: 'Device name' }).fill('Front door');
+  await press(guide.getByText(/A mute switch on a pin/), info);
+  await expect(yaml).toHaveValue(/esp32-cam-microphone\.yaml[\s\S]*microphone\.yaml[\s\S]*mute-pin\.yaml/);
+  // How the camera is set up is each sensor's, not the device file's.
+  await expect(yaml).not.toHaveValue(/camera_use/);
+  await expect(yaml).toHaveValue(/name: front-door/);
+  await expect(guide.locator('table')).toContainText('GPIO14');
+  await expect(guide.locator('table')).toContainText('GPIO12 to GND');
+  // The Wi-Fi and the device's password are fields of the page, filled into the file in the browser.
+  const download = guide.getByRole('button', { name: /^Download/ });
+  await expect(download).toBeDisabled();
+  await guide.getByRole('textbox', { name: 'Wi-Fi name' }).fill('Our Wi-Fi');
+  await guide.getByLabel('Wi-Fi password', { exact: true }).fill('very secret');
+  await expect(download).toBeEnabled();
+  const password = await guide.getByRole('textbox', { name: 'Device password' }).inputValue();
+  expect(password).toHaveLength(20);
+  await expect(yaml).toHaveValue(new RegExp(`wifi_ssid: "Our Wi-Fi"[\\s\\S]*stream_password: "${password}"`));
+  await expect(yaml).not.toHaveValue(/very secret/); // shown masked
+  const [file] = await Promise.all([page.waitForEvent('download'), press(download, info)]);
+  expect(file.suggestedFilename()).toBe('front-door.yaml');
+  const saved = await (await import('node:fs/promises')).readFile(await file.path(), 'utf8');
+  expect(saved).toContain('wifi_password: "very secret"'); // the file itself has it
+  await expect(yaml).not.toHaveValue(/\{\{/);
+  await expectNoClipping(page, '[data-testid=esp32-guide] .btn');
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'esp32-guide.png'), fullPage: true });
+
+  // Home Assistant finds the device: first waiting under Discovered (with the key it asks for), then
+  // added, with its address filled in. No board here: Home Assistant's answers are made up.
+  let devices: unknown = { devices: [], waiting: ['front-door'], error: null };
+  await page.route('**/api/v1/esphome/devices', (route) => route.fulfill({ json: devices }));
+  const waiting = guide.getByTestId('esp32-waiting');
+  await expect(waiting).toContainText('Home Assistant has found front-door: add it.', { timeout: 15_000 });
+  await press(waiting.getByRole('button', { name: 'Show' }), info);
+  await expect(waiting.locator('.key')).toHaveText(/^[A-Za-z0-9+/]{43}=$/);
+  devices = {
+    devices: [{ entity_id: 'sensor.front_door_ip_address', name: 'Front door', address: '10.0.0.7' }],
+    waiting: [],
+    error: null,
+  };
+  await expect(guide.getByTestId('esp32-found')).toContainText('10.0.0.7', { timeout: 15_000 });
+  await expect(guide.getByRole('textbox', { name: 'IP address' })).toHaveValue('10.0.0.7');
+
+  // The device answers (no board here: the check is answered for it) and becomes a sound sensor.
+  const sound = `http://visionstate:${password}@10.0.0.7:8081/audio.wav`;
+  await page.route('**/api/v1/esphome/check', (route) =>
+    route.fulfill({
+      json: {
+        addresses: { sound, picture: 'http://visionstate:x@10.0.0.7:8081/snapshot.jpg' },
+        sound: { ok: true, status: 200 },
+        picture: { ok: false, status: 401 },
+      },
+    }),
+  );
+  await press(guide.getByRole('button', { name: 'Check' }), info);
+  await expect(guide.getByTestId('esp32-check')).toContainText('Picture: Wrong password');
+  await press(guide.getByRole('button', { name: 'Make a sound sensor' }), info);
+  await expect(page.getByRole('heading', { name: 'Name it and pick a stream with sound' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Stream with sound' })).toHaveValue(sound);
+  await expect(page.getByLabel('Sensor name')).toHaveValue('Front door sound'); // not the device's own name
+  expect(page.url()).not.toContain(password); // the password never goes into the address bar
+  errors.expectNone();
+});
+
+test('an ESP32 of ours that Home Assistant has: offered first as the source, its password asked of it or typed', async ({ page }, info) => {
+  const errors = watchErrors(page);
+  // Home Assistant's devices (none in e2e): a camera of ours, a microphone of ours, another ESPHome device.
+  const device = (name: string, address: string, parts: object) => ({
+    entity_id: `sensor.${name}_ip_address`,
+    name,
+    address,
+    light: null,
+    ours: true,
+    camera: false,
+    microphone: false,
+    ...parts,
+  });
+  await page.route('**/api/v1/esphome/devices', (route) =>
+    route.fulfill({
+      json: {
+        devices: [
+          device('watermeter', '10.0.0.7', { camera: true, light: 'light.watermeter_flash' }),
+          device('garage', '10.0.0.6', { camera: true }),
+          device('hall', '10.0.0.8', { microphone: true }),
+          device('plug', '10.0.0.9', { ours: false }),
+        ],
+        waiting: [],
+        error: null,
+      },
+    }),
+  );
+  // No board here: the check is answered for it, first with a wrong password.
+  const picture = `${CAMERA_URL}/photo/beach.jpg`;
+  let password = '';
+  await page.route('**/api/v1/esphome/check', async (route) => {
+    password = (route.request().postDataJSON() as { password: string }).password;
+    const ok = password === 'right';
+    return route.fulfill({
+      json: { addresses: { picture }, picture: ok ? { ok, status: 200, bytes: 12000 } : { ok, status: 401 } },
+    });
+  });
+  // Firmware 1.3.0 tells its password through Home Assistant (the garage); an older one does not (the
+  // water meter), and its password is typed.
+  const garagePicture = `${CAMERA_URL}/photo/demo_garage.jpg`;
+  await page.route('**/api/v1/esphome/connect', (route) => {
+    const { entity_id } = route.request().postDataJSON() as { entity_id: string };
+    if (entity_id !== 'sensor.garage_ip_address')
+      return route.fulfill({ json: { told: false, detail: 'It did not tell its stream password', addresses: {} } });
+    return route.fulfill({
+      json: { told: true, addresses: { picture: garagePicture }, picture: { ok: true, status: 200, bytes: 12000 } },
+    });
+  });
+  await page.goto('#/sensors/new');
+  const offered = page.getByTestId('esp32-sources');
+  await expect(offered).toContainText('watermeter');
+  await expect(offered).not.toContainText('hall'); // a microphone: offered to a sound sensor
+  await expect(offered).not.toContainText('plug'); // not ours
+  await press(offered.getByText('garage'), info);
+  await expect(page.getByRole('textbox', { name: 'Source URL' })).toHaveValue(garagePicture);
+  await expect(page.getByLabel('Stream password')).toHaveCount(0); // nothing to type
+  await press(offered.getByText('watermeter'), info);
+  const field = page.getByLabel('Stream password');
+  await field.fill('wrong');
+  await press(page.getByRole('button', { name: 'Use it' }), info);
+  await expect(page.getByText('Wrong password')).toBeVisible();
+  await field.fill('right');
+  await press(page.getByRole('button', { name: 'Use it' }), info);
+  await expect(page.getByRole('textbox', { name: 'Source URL' })).toHaveValue(picture);
+  // Its flash is offered as the light; chosen, the editor says the camera takes the picture with it itself
+  // (Home Assistant's answer, which the e2e backend has no Home Assistant for).
+  await page.route('**/api/v1/camera-light', async (route) => {
+    const chosen = route.request().postDataJSON().light_entity;
+    const own = chosen === 'light.watermeter_flash';
+    await route.fulfill({
+      json: { flash: 'light.watermeter_flash', device: 'watermeter', light: own ? 'own' : null, light_device: own ? 'watermeter' : null, error: null },
+    });
+  });
+  const offer = page.getByTestId('camera-flash-offer');
+  await expect(offer).toContainText('light.watermeter_flash');
+  await press(offer.getByRole('button', { name: "Use the camera's flash" }), info);
+  await expect(page.getByRole('button', { name: 'Remove light.watermeter_flash' })).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect(page.getByTestId('light-status')).toContainText("The camera's own flash");
+  await expect(page.getByLabel('Flash on before the picture')).toHaveAttribute('max', '10');
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .cam');
+  errors.expectNone();
+});
+
+test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera follows', async ({ page, request }, info) => {
+  const errors = watchErrors(page);
+  // Its device in Home Assistant (the e2e backend has none): the picture's orientation, set at once.
+  const orientation = {
+    entity_id: 'select.door_picture_orientation',
+    kind: 'select',
+    name: 'Picture orientation',
+    state: 'Normal',
+    options: ['Normal', 'Mirrored', 'Upside down', 'Upside down, mirrored'],
+  };
+  const sent: unknown[] = [];
+  let firmware = '1.1.0'; // first an older firmware: no orientation yet, and a word to install the newer
+  await page.route('**/api/v1/sensors/*/device', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { entity_id: string; value: string };
+      sent.push(body);
+      orientation.state = body.value;
+      return route.fulfill({ json: { ok: true } });
+    }
+    const device = { name: 'door', address: '127.0.0.1', ours: true, firmware, latest: '1.2.0', outdated: firmware !== '1.2.0' };
+    return route.fulfill({ json: { device: { ...device, controls: firmware === '1.2.0' ? [orientation] : [] }, error: null } });
+  });
+  // The fake camera's /esp32/ answers as our firmware does (an X-VisionState-Camera header).
+  const made = await request.post('api/v1/sensors', {
+    data: {
+      name: `ESP32 door ${info.project.name}`,
+      source_type: 'http',
+      source: `${CAMERA_URL}/esp32/snapshot.jpg`,
+      interval_s: 2,
+      states: [{ name: 'Open' }, { name: 'Closed' }],
+    },
+  });
+  const id = (await made.json()).id as number;
+  const cameraState = async () =>
+    (await (await request.get(`${CAMERA_URL}/esp32/state`)).json()) as Record<string, string>;
+  try {
+    const nowSize = async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).camera?.now?.size;
+    await expect.poll(nowSize, { timeout: 30_000 }).toBe('800x600'); // a state sensor: its kind's preset, States
+    await page.goto(`#/sensors/${id}/settings/general`); // on a phone Settings opens as a list of its sections
+    const setup = page.getByLabel('Camera preset');
+    await expect(setup).toBeVisible();
+    await expect(setup).toHaveValue('states');
+    await expect(page.getByTestId('camera-settings-now')).toContainText('800×600');
+    await expect(page.getByTestId('camera-firmware-outdated')).toContainText('1.1.0');
+    await expect(page.getByLabel('Picture orientation')).toHaveCount(0);
+    firmware = '1.2.0'; // installed: the notice goes, the choice comes (polled)
+    await expect(page.getByTestId('camera-firmware-outdated')).toHaveCount(0, { timeout: 15_000 });
+    const turn = page.getByLabel('Picture orientation');
+    await expect(turn).toHaveValue('Normal');
+    await turn.selectOption('Upside down, mirrored');
+    await expect.poll(() => sent).toEqual([{ entity_id: 'select.door_picture_orientation', value: 'Upside down, mirrored' }]);
+    await expect(turn).toHaveValue('Upside down, mirrored');
+    // A preset fills the settings in; one changed by hand makes them Custom, and the camera gets them all.
+    await setup.selectOption('meter');
+    await expect(page.getByLabel('Picture size')).toHaveValue('1600x1200');
+    await page.getByLabel('Camera clock').selectOption('20');
+    await expect(setup).toHaveValue('');
+    await expect(setup.locator('option:checked')).toHaveText('Custom');
+    await page.getByLabel('Exposure', { exact: true }).selectOption('fixed');
+    await page.getByLabel('Exposure time').fill('25');
+    await page.getByLabel('Exposure time').blur();
+    await press(page.getByRole('button', { name: 'Save changes' }), info);
+    await expect(page.getByText('Settings saved')).toBeVisible();
+    await expect
+      .poll(async () => {
+        const s = await cameraState();
+        return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain}`;
+      }, { timeout: 30_000 })
+      .toBe('1600x1200 10 20 25 4');
+    await expectNoHorizontalOverflow(page);
+    await expectNoClipping(page, '.btn, .card');
+
+    // Its flash (named after its room: a long id) is offered as the light, and the editor says how a light is
+    // switched: by the camera itself, or through Home Assistant and why (Home Assistant's answer, mocked).
+    const flash = 'light.garasje_bod_1_etg_esp32cam_watermeter_flash';
+    await page.route('**/api/v1/camera-light', async (route) => {
+      const chosen = route.request().postDataJSON().light_entity as string;
+      const light = chosen === flash ? 'own' : chosen === 'light.other_cam_flash' ? 'other_source' : null;
+      await route.fulfill({
+        json: { flash, device: 'door', light, light_device: chosen === flash ? 'door' : 'other cam', error: null },
+      });
+    });
+    await page.reload();
+    const offer = page.getByTestId('camera-flash-offer');
+    await expect(offer).toContainText(flash);
+    await expectNoHorizontalOverflow(page);
+    await press(offer.getByRole('button', { name: "Use the camera's flash" }), info);
+    await expect(page.getByTestId('light-status')).toContainText('the camera switches it on for each picture itself');
+    await expect(page.getByLabel('Flash on before the picture')).toBeVisible();
+    await expectNoHorizontalOverflow(page); // the long id breaks inside its chip
+    await press(page.getByRole('button', { name: `Remove ${flash}` }), info);
+    const pick = page.getByLabel('Light to switch on');
+    await pick.fill('light.other_cam_flash');
+    await pick.press('Enter');
+    await expect(page.getByTestId('light-status')).toContainText('does not take its pictures from that device');
+    await expect(page.getByLabel('Wait before taking the frame')).toBeVisible();
+    await expect(offer).toContainText(flash); // its own flash still offered
+    await expectNoHorizontalOverflow(page);
+    await page.unroute('**/api/v1/camera-light');
+    // Any other camera has no such choice.
+    await page.goto(`#/sensors/${await seededSensorId(request)}/settings/general`);
+    await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+    await expect(page.getByLabel('Camera set-up')).toHaveCount(0);
+    await expect(page.getByLabel('Picture orientation')).toHaveCount(0);
+    errors.expectNone();
+  } finally {
+    await request.delete(`api/v1/sensors/${id}`);
+    await request.get(`${CAMERA_URL}/esp32/snapshot.jpg?use=states`); // as it was, for the next project
+  }
+});
+
+test('licence plates: turned on after a sheet, a car added, named by its plate on the Live tab and in the history', async ({
+  page,
+  request,
+}, info) => {
+  // Every device runs this against the same backend: its own sensor, car and plate.
+  const plate = { desktop: 'VS 12345', mobile: 'VS 23456', iphone: 'VS 34567' }[info.project.name] ?? 'VS 45678';
+  const name = `Plates ${info.project.name}`;
+  const carName = `Car ${info.project.name}`;
+  for (const s of await (await request.get('api/v1/sensors')).json()) {
+    if (s.name === name) await request.delete(`api/v1/sensors/${s.id}`);
+  }
+  for (const c of await (await request.get('api/v1/cars')).json()) {
+    if (c.name.startsWith(carName)) await request.delete(`api/v1/cars/${c.key}`);
+  }
+  const created = await request.post('api/v1/sensors', {
+    data: {
+      name,
+      kind: 'objects',
+      source_type: 'http',
+      source: `${CAMERA_URL}/plate.jpg?text=${encodeURIComponent(plate)}`,
+      objects: { classes: ['car'], clear_after_s: 0 },
+      interval_s: 2,
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const id = (await created.json()).id;
+
+  // Off by default; turning it on asks first and says what it means.
+  await page.goto(`#/sensors/${id}/settings/detect`);
+  const card = page.getByTestId('plates-card');
+  await pressCentered(card.getByRole('button', { name: 'Turn on…' }), info);
+  const sheet = page.getByRole('dialog', { name: `Read licence plates on ${name}?` });
+  await expect(sheet.getByText(/It is not a key/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await press(sheet.getByRole('button', { name: /^(Turn on|Download and turn on)$/ }), info);
+  await expect(card.getByText('Report plates of cars I do not know')).toBeVisible();
+
+  // A car of the household, with its plate.
+  await pressCentered(card.getByRole('button', { name: 'Add a car' }), info);
+  await card.getByPlaceholder('Our car').fill(carName);
+  await card.getByPlaceholder('AB 12345').fill(plate);
+  await press(card.getByRole('button', { name: 'Add car' }), info);
+  await expect(card.getByTestId('car').filter({ hasText: carName })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expectNoClipping(page, '.btn, .card');
+
+  // Reporting unknown plates asks first too.
+  await pressCentered(card.getByRole('checkbox', { name: /Report plates of cars I do not know/ }), info);
+  await expect(page.getByRole('dialog', { name: 'Report plates of cars you do not know?' })).toBeVisible();
+  await press(page.getByRole('button', { name: 'Cancel' }), info);
+  await expect(card.getByRole('checkbox', { name: /Report plates of cars I do not know/ })).not.toBeChecked();
+
+  // How far off a plate may be when the car's look agrees: saved at once.
+  await card.getByTestId('look-distance').selectOption('2');
+  await expect
+    .poll(async () => (await (await request.get(`api/v1/sensors/${id}`)).json()).objects.plates.look_distance)
+    .toBe(2);
+  await expectNoClipping(page, '.btn, .card');
+
+  // The Live tab: the plate read and whose car it is; the car is an entity of the sensor.
+  await page.goto(`#/sensors/${id}/live`);
+  const text = plate.replace(' ', '');
+  await expect(page.getByTestId('plate-notes').getByText(`Car · ${text} · ${carName}`)).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText(/^event\..*licence_plate$/)).toBeVisible();
+  // ... and how it was known, there and as an entity that can be chosen on the Home Assistant tab.
+  await expect(page.getByText(/^Detected by its plate/).first()).toBeVisible();
+  await page.goto(`#/sensors/${id}/settings/home-assistant`);
+  await expect(page.getByRole('columnheader', { name: 'Identified by' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: `${carName} identified by` })).toBeChecked();
+  await expectNoHorizontalOverflow(page);
+
+  // The history: the car's coming is a plate row.
+  await page.goto(`#/sensors/${id}/history`);
+  await expect(page.getByText(`${carName} · plate ${text}`).first()).toBeVisible({ timeout: 30_000 });
+  await expectNoHorizontalOverflow(page);
+
+  // A second car of the same look: the first stands for the look, its plate moves to a car under it.
+  await page.goto(`#/sensors/${id}/settings/detect`);
+  await pressCentered(card.getByRole('button', { name: 'Add a car' }), info);
+  await card.getByPlaceholder('Our car').fill(`${carName} 2`);
+  await card.getByPlaceholder('AB 12345').fill(plate.replace('VS', 'EL')); // its own on every device
+  await card.getByTestId('car-kind').selectOption({ label: carName });
+  await expect(card.getByText(/moves to a car of its own under it/)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await pressCentered(card.getByRole('button', { name: 'Add car' }), info);
+  await expect(card.getByTestId('car').filter({ hasText: `${carName} ${plate}` })).toBeVisible();
+  await expect(card.getByTestId('car').filter({ hasText: `${carName} 2` })).toContainText(`looks like ${carName}`);
+  await expectNoClipping(page, '.btn, .card');
+
+  // The dashboard says the car once, by the surest name: the car its plate names, not the look it shares as well.
+  await page.goto('#/');
+  const tile = page.locator('article.sensor').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  await expect(tile.locator('.pill.overlay')).toHaveText(`1 car, 1 ${carName} ${plate}`, { timeout: 60_000 });
+
+  await request.delete(`api/v1/sensors/${id}`);
+  for (const c of await (await request.get('api/v1/cars')).json()) {
+    if (c.name.startsWith(carName)) await request.delete(`api/v1/cars/${c.key}`);
+  }
+});
+
+test('a plate model that states no licence is chosen only after accepting that', async ({ page }, info) => {
+  await page.goto('#/settings');
+  const select = page.getByRole('combobox', { name: 'Licence plates (object sensors)' });
+  await select.scrollIntoViewIfNeeded();
+  const options = await select.locator('option').allTextContents();
+  await select.selectOption({ label: options.find((o) => o.startsWith('Plate model, fast'))! });
+  const accept = page.getByTestId('plate-accept');
+  await expect(accept).toBeVisible();
+  const save = page.getByRole('button', { name: 'Apply', exact: true });
+  await expect(save).toBeDisabled();
+  await expectNoHorizontalOverflow(page);
+  await press(accept.getByRole('checkbox'), info);
+  await expect(save).toBeEnabled();
+  // Not saved: the open model stays for the other tests.
+  await select.selectOption({ label: options.find((o) => o.startsWith('PP-OCR small'))! });
+  await expect(accept).toHaveCount(0);
 });

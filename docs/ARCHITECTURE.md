@@ -16,9 +16,12 @@ scripts/                channel.py (stable/beta config), fake_camera.py (test ca
                         check_options.py, cpu_probe.py, upgrade_test.sh, network_watch.sh, discovery_ids.py
 tools/wheelreader/      training code of the wheel reader model (not part of the app image)
 tools/soundmodel/       how the sound model and its everyday "other" sounds are made (not part of the app image)
+esphome/                ESPHome firmware for ESP32 microphones and cameras (not part of the app image):
+                        components/visionstate_stream (the stream, the snapshot, the login), packages/
+                        (boards, microphone, camera, mute switch), examples/, tests/ (what CI compiles)
 docs/                   SCOPE.md, ARCHITECTURE.md, RELEASING.md, WHEEL_READER_PLAN.md,
-                        FACE_RECOGNITION_PLAN.md, SOUND_PLAN.md, promo/ (README images)
-.github/                CI workflow, Dependabot, issue forms
+                        FACE_RECOGNITION_PLAN.md, SOUND_PLAN.md, ESP32_PLAN.md, promo/ (README images)
+.github/                CI workflows (the app; the ESPHome firmware), Dependabot, issue forms
 ```
 
 **Stack:** Python 3.14, FastAPI, uvicorn, SQLAlchemy (SQLite), asyncio; ONNX Runtime (CPU only),
@@ -58,24 +61,27 @@ API as `request.app.state.runtime`.
 | `db.py` | SQLAlchemy tables and the schema migrations (`MIGRATIONS`, `SCHEMA_VERSION`) |
 | `storage.py` | Image files on disk: training samples, history frames, sound clips, thumbnails; written whole or not at all |
 | `engine/` | The runtime — see below |
-| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips, uploaded recordings and recordings from the sensor's stream: start, stop, trim, teach), `cameras.py` (camera and entity lists, the light, previews), `benchmark.py` (the speed test), `review.py` (review queue and answers), `advice.py` (every threshold of a sensor with a suggestion from the answers, and setting one), `imports.py` (import), `backup.py` (backup of everything, restore), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
-| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video; a Home Assistant camera's own stream through `HomeAssistant.stream_address`); address checks and size limits; the Home Assistant REST client (states, services, notify services, the app's page) |
+| `api/` | The REST API (`/api/v1/…`), one file per topic: `sensors.py` (CRUD, quality, export), `history.py` (the history: one filter for the list, its count and facets; history frames), `samples.py` (training images), `teach.py` (taught boxes; what is taught from a history frame is written into its row: `remember_taught`), `faces.py` (teaching a face on a sensor; the people and their faces, shared by every sensor), `plates.py` (the household's cars, shared by every sensor, with their plates and where their look was taught), `sounds.py` (trying a stream before a sound sensor is made; teaching own sounds from clips, uploaded recordings and recordings from the sensor's stream: start, stop, trim, teach), `cameras.py` (camera and entity lists, the light, previews), `benchmark.py` (the speed test), `review.py` (review queue and answers), `advice.py` (every threshold of a sensor with a suggestion from the answers, and setting one), `imports.py` (import), `backup.py` (backup of everything, restore), `esphome.py` (the ESP32 guide: the device's file, the ESPHome devices Home Assistant has and has found, checking a device with a password typed or with the one it tells through Home Assistant (`/esphome/connect`); a sensor's device, its microphone's and camera's controls and whether its firmware is old; Home Assistant's media players with their integrations, for a voice assistant's *Answer on*; what a sensor's light is to its camera, `/camera-light`), `system.py` (UI config, status, `alive` for Home Assistant's watchdog, AI models and deleting downloaded ones, storage, review rules, review reminder, teaching and face limits), `common.py` (input models and views shared by them) |
+| `sources.py` | Camera sources: Home Assistant camera, HTTP snapshot, RTSP (on threads of its own; a stream grabbed often is kept open: `RtspStream`); a sound sensor's stream (`AudioStream`: its audio decoded on a thread of its own, the last seconds kept, video packets kept undecoded for clips with video; a Home Assistant camera's own stream through `HomeAssistant.stream_address`); address checks and size limits; the Home Assistant REST client (states, services, services that answer, notify services, the app's page); a snapshot of an ESP32 camera of ours asked with its own flash (`?flash=`, `CameraUses.flash`); `CameraUses` (on the runtime): the ESP32 cameras of ours (known by the `X-VisionState-Camera` header of their snapshots), how they said they are set up and how fast they take pictures, and what a snapshot asks them for: a sensor's camera settings (`settings.camera_settings`: `triggers.camera`, or its kind's preset), which every grab of a sensor passes along (`engine/checks.py` `camera_for`; shared pictures only among sensors with the same settings, `shared_frames.py`) — or, from a firmware before 1.5.0, the preset they are (`?use=`); a broken JPEG (`imaging.jpeg_broken`: its picture ends early and the rest of an older one follows, from an ESP32 camera's driver) is asked for again once and is an error the second time, never read |
 | `shared_frames.py` | Sensors on the same camera asking at the same moment: one picture, taken after all of them asked, decoded once. Nothing kept afterwards; a sensor with a light or alone on its camera does not use it |
 | `mqtt.py` | MQTT topics, Home Assistant discovery messages, the bridge (connect, publish, commands) |
-| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Home Assistant tab chose: `enable_entities`), a camera's own stream (`camera_stream`) |
+| `ha_events.py` | Home Assistant WebSocket: state changes of trigger entities, entity registry (reading it, and switching on what a sensor's Settings → Home Assistant chose: `enable_entities`), a camera's own stream (`camera_stream`), devices Home Assistant found and are not added yet (`discovered`: the ESP32 guide) |
 | `lights.py` | A sensor's light: switched on for checks and while someone looks, shared by both |
 | `backbones.py`, `detectors.py`, `readers.py` | The three AI models and their registries (`*.json`): embedding backbone (state sensors), object detector, number reader (and the wheel reader for mechanical counters, `readers.WheelReader`; trained with `tools/wheelreader`) |
 | `dials.py` | A mechanical counter's pointer dials, read without a model: each cut from the plane the counter is read in, its needle found by being redder than the dial's face (or darker, at night), its direction from its own hub to its tip, a probability over the positions the wheel decoder takes (`readers.wheel_decode` reads wheels and dials together) |
 | `change_limit.py` | Counters: how much the value may go up since the last accepted reading — what it learns, time not seen (pure logic; the engine keeps a `Watch` per sensor) |
+| `plates.py` | Licence plates in vehicle boxes (registry `plates.json`, never bundled): a plate model is a finder (PP-OCR's text detector or a YOLO plate finder) and a reader (PP-OCR or a plate reader); comparing a read with the household's plates (`distance`, `match`) |
 | `faces.py` | Faces in person boxes (registry `faces.json`, never bundled): finding them (YuNet), the quality gate, aligning, evening out the light (`even_light`), embedding, telling who it is |
 | `sounds.py` | The sound model (registry `sounds.json`, never bundled) and its sounds; levels and the line a window must reach; clips (AAC, speech silenced); the head for own sounds (`SoundHead`) and the everyday sounds every head starts from (`ced-tiny-other.npy`); a built-in sound taught with clips (`correct`: heard from them too, held back by clips that are not it) |
 | `advice.py` | A threshold suggested from review answers, one way for every sensor kind (`threshold_advice`); what each kind's answers are, and setting one: `api/advice.py` |
 | `classifier.py` | The small per-sensor classifier ("head") on top of the backbone |
 | `teach.py` | Object sensors: comparing detected boxes with the boxes the user taught |
-| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes |
+| `imaging.py` | Decoding (also decoded small where that is enough: change signatures, thumbnails), regions (ROI), crops, a reading sensor's region straightened (`region_image`) and the plane it is read in (`reading_plane`, `Plane`: where pointer dials are cut from; `meter_face` for placing them), change signatures, drawing boxes, what a picture sent to Home Assistant tells about itself (`frame_exif`) |
 | `uploads.py`, `bundle.py` | Uploaded files (images, ZIP, video) → frames; sensor export/import bundles |
 | `backup.py` | A backup of everything (database copy + files, by the parts of `settings.BACKUP_PARTS`) and restoring one: staged, swapped in, undone on failure |
 | `redact.py` | Masks credentials in URLs, messages and log lines |
+| `esphome.py` | The ESP32 guide's ESPHome file for a board and kind (the packages in `esphome/`, the user's Wi-Fi and passwords left as fields the page fills in, never sent to the app), a device's stream and snapshot addresses, the device behind a sensor's address in Home Assistant's registries with its controls (`device_controls`), the media players with the integration each comes through (`media_players`), which device actions may tell a device's stream password (`password_services`), and a sensor's light: its camera's flash (`flash_of`), whether the light is that flash (`own_flash`) and, for the light in the settings, how it is switched and why (`camera_light`); a camera reached by a host name is found by its address (`address_of`) |
+| `timing.py` | One check's clock, in a context variable: when its frame was asked for (the time in the EXIF of every picture sent: `imaging.frame_exif`), how long each part took and how long it waited for a model run (`step`, `lap`, `slot`; logged at debug level at the end of `run_once`) |
 
 ### `engine/`
 
@@ -84,7 +90,7 @@ API as `request.app.state.runtime`.
 parts it uses — its class line says what it depends on:
 
 ```
-Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, TeachingMixin ── ModelsMixin ── TrainingMixin
+Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, PlatesMixin, TeachingMixin ── ModelsMixin ── TrainingMixin
         │                │                    └─ PublishingMixin
         │                ├─ ReadingChecksMixin ── ModelsMixin, PublishingMixin
         │                └─ SoundMixin ── ModelsMixin, PublishingMixin
@@ -98,15 +104,16 @@ Runtime ── ChecksMixin ──┬─ ObjectChecksMixin ── FacesMixin, Tea
 | `runtime.py` | Lifecycle (start/stop), sensors coming and going, waking a sensor, triggers |
 | `state.py` | `SensorConfig` (a snapshot of a sensor row) and `LiveState` (everything a sensor knows between checks) |
 | `logic.py` | Pure decisions, no I/O: debouncing object tracks, review, triggers, when to check next (on the moments the sensors on a camera have in common: `aligned`), looking for a face while a person is there (`steer_face_burst`), whether a sound is heard (`hear`) |
-| `checks.py` | Each sensor's loop, change detection (probe), the light, `run_once` and the state sensors' check |
+| `checks.py` | Each sensor's loop, change detection (probe), the light (for every check or only when the frame is dark; an ESP32 camera's own flash asked with the picture: `_own_flash`), `run_once` and the state sensors' check |
 | `objects.py`, `reading.py` | The check of an object sensor (with its questions in Review, and "last seen" read back from the history at start: `restore_last_seen`) and of a reading sensor |
 | `models.py` | Loading and switching the three AI models; `detect_objects`, `read_number` |
 | `sound.py` | Sound sensors: the sound model (on first use), listening (`_listen`, every hop instead of a check), deciding and publishing each sound, history rows, clips, review questions, own sounds (`train_sound_head`, the room's windows), recording one from the stream (`start_recording`, `stop_recording`) |
-| `teaching.py` | Taught boxes of object sensors (index, embeddings) |
+| `teaching.py` | Taught boxes of object sensors (index, embeddings); the comparison step of a check (`apply_taught`: a box at the same place as in the last check reuses its embedding, `teach.reusable`, kept in `LiveState.taught_seen`) |
+| `plates.py` | Licence plates on object sensors: the plate model (downloaded and loaded in the background, let go when unused), the household's cars (own labels of a vehicle class become cars: `adopt_car_labels`), the plate step of a check (`apply_plates`), its events (`announce_plates`), learning a car's look from its plate (`learn_from_plates`), how a car is known (`identified_by`) and cars that share a look (`grouped`) |
 | `faces.py` | Faces on object sensors: the face model (downloaded and loaded in the background, let go when unused), the index of the people's taught faces (shared by every sensor), the face step of a check (`apply_faces`), each person's own entities (where they are seen, when they were last seen) |
 | `training.py` | Training the state sensors' heads; embeddings of samples |
 | `benchmark.py` | The speed test: every sensor paused and every model let go, then each chosen model downloaded when needed, loaded, run on the sensor's camera or microphone and let go; what was downloaded only for it deleted again |
-| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`; an object's snapshot: `_send_snapshot`; what the sensor's Home Assistant tab leaves out is not sent), the review queue entity, commands from it |
+| `publishing.py` | Discovery and values to Home Assistant (pictures and object attributes only when they change, or now and then: `_send_on_change`; an object's snapshot: `_send_snapshot`; what the sensor's Settings → Home Assistant leaves out is not sent), the review queue entity, commands from it |
 | `history.py` | History clean-up by age and size, disk use |
 | `reminders.py` | The review reminder: a notification in Home Assistant (and a push) when frames waited long |
 
@@ -127,9 +134,13 @@ sensor loop (checks._sensor_loop)          woken by: its interval, a trigger ent
   sound sensor (instead of all of the above, every hop): sound._listen  what the stream received →
       levels → loud enough? → model (sounds + embedding → own sounds' head) → logic.hear → clips
         │
-        ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image
+        ├─ publish (publishing._send → mqtt.MqttBridge.publish)   state, attributes, image (its EXIF:
+        │                                        when the frame was asked for, the part it shows)
         └─ history: a Prediction row + frame, when the value changed or the frame goes to review
 ```
+
+Each part of a check is timed (`timing.step`; a wait for a model run apart: `timing.slot`); a new
+part or a new wait for a model run uses them, so the debug line stays complete.
 
 A camera problem makes the sensor *unavailable* (its availability topic `offline`); any other
 error is kept in `LiveState.error` and shown in the UI.
@@ -172,10 +183,10 @@ error is kept in `LiveState.error` and shown in the UI.
 | `lib/history.ts` | The history filter: from and to the page URL, and as the API takes it |
 | `lib/poll.ts` | Polling that rests while the page is hidden (`pollWhileVisible`: status, dashboard, sensor page) |
 | `lib/ui.ts` | UI constants (tabs per sensor kind, wizard texts); `tokens.css` colours, type, spacing |
-| `lib/objects.ts`, `lib/reading.ts`, `lib/sound.ts`, `lib/roi.ts`, `lib/format.ts` | Helpers: names and colours of objects and own labels, reading values and units, sounds, region geometry, formatting |
-| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
+| `lib/objects.ts`, `lib/reading.ts`, `lib/sound.ts`, `lib/roi.ts`, `lib/format.ts`, `lib/esp32.ts` | Helpers: names and colours of objects and own labels, reading values and units, sounds, region geometry, formatting, what an ESP32's check says (the guide and the source picker, which offers an ESP32 of ours first) |
+| `pages/` | Dashboard, the new sensor wizard (`NewSensor.svelte`; its Detect step per kind in `pages/wizard/`), the ESP32 guide (`Esp32Device.svelte`: it hands the wizard the new sensor through `lib/prefill.svelte.ts`, in memory, so the password never goes into the URL), Review, History, People, Settings, and `SensorPage` with one file per tab in `pages/sensor/` (its History tab is `HistoryView`) |
 | `lib/components/history/` | `HistoryView` (filters, list, paging, new rows) shared by the History page and the History tabs, and one row component per sensor kind |
-| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, a counter's pointer dials (`DialsEditor`, on the meter face `POST /preview/read` returns), a reading sensor's *Correct rotation and perspective* switch shown with the region (`StraightenSwitch`), *Edit: Counter | Dials* (`CounterDialsSwitch`), what is done to a whole region (`RegionButtons`), states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`, `ThresholdAdvice` (a threshold suggested from the answers, *Use* to set it) and `AdviceCard` (all of a sensor's, at the top of its Settings: every kind); each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question, recording from the stream (`SoundRecorder`) and trimming a clip by its ends (`ClipTrimmer`) |
+| `lib/components/` | Building blocks (region editor, frames with boxes, editors for triggers, reading, a counter's pointer dials (`DialsEditor`, on the meter face `POST /preview/read` returns), an ESP32 camera's *Picture orientation* in a sensor's settings (`CameraOrientation`), a reading sensor's *Correct rotation and perspective* switch shown with the region (`StraightenSwitch`), *Edit: Counter | Dials* (`CounterDialsSwitch`), what is done to a whole region (`RegionButtons`), states, limits that inherit (`LimitsEditor`)…). Shared by the sensor kinds: `LabelPicker` (a model's labels, popular first: objects and sounds), `LiveChips` (what a sensor finds now), `ProbBars` (scores against thresholds: states and sounds), `EntitiesCard`, `ReviewAnswers` (yes / one of yours / a new one / no / skip: faces and sounds), `ReviewRulesEditor`, `ThresholdAdvice` (a threshold suggested from the answers, *Use* to set it) and `AdviceCard` (all of a sensor's, at the top of its Settings: every kind), `TabBar` (a sensor's tabs: what does not fit goes under *More*, the open tab stays in the row); each kind gives them its data (`objectPicker`, `soundPicker`, `objectChips`, `soundChips`). `sound/`: the clip player (video or sound, played after a tap), the level chart, the sound editor, the stream field, teaching a clip, the review question, recording from the stream (`SoundRecorder`), trimming a clip by its ends (`ClipTrimmer`) and an ESP32's microphone on the Live tab (`DeviceCard`) |
 
 ## Recipes
 
@@ -221,5 +232,15 @@ inputs), with its measured footprint (`ram_mb`, `time_ms`, `accuracy`; see `back
 `tests/test_models.py` checks every entry against real inputs once it is downloaded
 (`python -m visionstate.backbones models --all`, as CI does).
 
-**A new page or tab**: the route in `router.svelte.ts` (tab: `TABS_BY_KIND` in `ui.ts`), the page
+**A new camera setting or preset** (how an ESP32 camera of ours is set up for a sensor): a setting
+is read from the snapshot in the firmware (`asked_settings`, `apply_settings_` and `settings_text` in
+`esphome/components/visionstate_stream/visionstate_stream.cpp`) and in the app
+`settings.CAMERA_SETTING_KEYS` with its choices or limits (`CAMERA_*`), `CameraSettingsIn` in
+`api/common.py` and `CameraSettingsEditor.svelte`; `tests/test_esphome.py` fails until the firmware
+and the app agree. A preset is only values: `settings.CAMERA_PRESETS` (and `CAMERA_PRESET_BY_KIND`
+if a kind should start from it). Measure on a board how long a change takes to settle
+(`SETTLE_PICTURES*`).
+
+**A new page or tab**: the route in `router.svelte.ts` (tab: `TABS_BY_KIND` in `ui.ts`; a section of a
+sensor's Settings: `SETTINGS_SECTIONS` and `SETTINGS_SECTION_LABELS`, its cards in `SettingsTab.svelte`), the page
 in `pages/`, and an e2e test in `e2e/ui.spec.ts` on all three devices.

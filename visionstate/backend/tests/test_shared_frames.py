@@ -17,7 +17,7 @@ from visionstate.engine.logic import aligned, next_check_at
 from visionstate.engine.state import LiveState, SensorConfig
 from visionstate.settings import RUNTIME, Settings
 from visionstate.shared_frames import SharedFrames
-from visionstate.sources import SourceError
+from visionstate.sources import CameraUses, SourceError
 
 from .test_triggers import config as trigger_config
 
@@ -35,7 +35,7 @@ class Camera:
         self.error = None
         self.data = jpeg()
 
-    async def grab(self, kind, source):
+    async def grab(self, kind, source, camera=None):
         self.calls.append((kind, source))
         if self.error:
             raise self.error
@@ -57,6 +57,7 @@ def engine(camera):
     obj = object.__new__(ChecksMixin)
     obj.live = {}
     obj._camera_of = {}
+    obj.camera_uses = CameraUses()
     obj.benchmark_paused = False
     obj.grabber = camera
     obj.shared_frames = SharedFrames(camera.grab, camera.decode, 0.001)
@@ -244,7 +245,7 @@ def test_late_waiter_never_receives_a_frame_from_inflight_capture():
         release = asyncio.Event()
         camera = Camera()
 
-        async def slow_grab(kind, source):
+        async def slow_grab(kind, source, settings=None):
             started.set()
             await release.wait()
             return await camera.grab(kind, source)
@@ -282,7 +283,7 @@ def test_close_cancels_an_inflight_capture():
         cancelled = asyncio.Event()
         camera = Camera()
 
-        async def grab(kind, source):
+        async def grab(kind, source, camera=None):
             started.set()
             try:
                 await asyncio.Future()

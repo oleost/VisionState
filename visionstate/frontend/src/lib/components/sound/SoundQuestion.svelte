@@ -53,7 +53,7 @@
     choices={own}
     noun="sound"
     noLabel="No, something else"
-    footnote="Your answer teaches the sound with this clip: yes, it was; no, it was not (see Own sounds)."
+    footnote="Your answer teaches the sound with this clip: yes, it was; no, it was not (see the sensor's Dataset tab)."
     {given}
     {busy}
     onanswer={answer}

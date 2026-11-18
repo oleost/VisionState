@@ -1,8 +1,11 @@
 // Typed client for the backend. Every URL the UI uses is built here.
 import type {
+  CameraLight,
   AppConfig,
   BackupInfo,
   BackupPart,
+  Car,
+  PlateStatus,
   RestoreResult,
   ObjectSettings,
   FaceLimitsInfo,
@@ -17,6 +20,11 @@ import type {
   PhotoResult,
   Camera,
   Detection,
+  EsphomeCheck,
+  EsphomeConfiguration,
+  EsphomeDevice,
+  MediaPlayer,
+  SensorDevice,
   HaEntity,
   HistoryFacets,
   HistoryFilter,
@@ -162,6 +170,8 @@ export const api = {
     detector?: string;
     reader?: string;
     face_model?: string;
+    plate_model?: string;
+    plate_model_accepted?: boolean;
     inference_threads?: number;
   }) =>
     request<SettingsInfo>('settings', send('PUT', body)),
@@ -341,6 +351,11 @@ export const api = {
     return request<PhotoResult>('people/photos', { method: 'POST', body: form });
   },
   retryFaces: () => request<FaceStatus>('faces/retry', send('POST')),
+  cars: () => request<Car[]>('cars'),
+  addCar: (car: Omit<Car, 'key'>) => request<Car>('cars', send('POST', car)),
+  changeCar: (key: string, car: Omit<Car, 'key'>) => request<Car>(`cars/${encodeURIComponent(key)}`, send('PUT', car)),
+  forgetCar: (key: string) => request<void>(`cars/${encodeURIComponent(key)}`, send('DELETE')),
+  retryPlates: () => request<PlateStatus>('plates/retry', send('POST')),
   faceLimits: () => request<FaceLimitsInfo>('face-limits'),
   saveFaceLimits: (values: FaceOverrides) => request<FaceLimitsInfo>('face-limits', send('PUT', values)),
   /** Delete a downloaded AI model that is not in use; `kind` is its list in GET /settings. */
@@ -393,6 +408,36 @@ export const api = {
       body: form,
     });
   },
+  /** The ESP32 guide: the device's whole ESPHome file, with {{fields}} for the user's values (filled in the page). */
+  /** `assistant`: a voice assistant too, its answer on that media player ('' later); null: only a microphone. */
+  esphomeConfiguration: (
+    board: string,
+    kind: string,
+    name: string,
+    mute: boolean,
+    assistant: string | null,
+  ) => request<EsphomeConfiguration>('esphome/configuration', send('POST', { board, kind, name, mute, assistant })),
+  /** Devices whose IP address Home Assistant shows, and ESPHome devices it found but has not added (`waiting`). */
+  /** Home Assistant's media players with their integrations (a voice assistant's Answer on). */
+  mediaPlayers: () => request<{ players: MediaPlayer[]; error: string | null }>('esphome/media-players'),
+  esphomeDevices: () =>
+    request<{ devices: EsphomeDevice[]; waiting: string[]; error: string | null }>('esphome/devices'),
+  /** What a sensor's light is to its camera: the flash of the ESP32 of ours it looks through (offered), and how the
+   * light chosen is switched (by the camera itself or through Home Assistant). A POST: the source may hold a password. */
+  cameraLight: (sourceType: string, source: string, lightEntity: string) =>
+    request<CameraLight>('camera-light', send('POST', { source_type: sourceType, source, light_entity: lightEntity })),
+  /** Ask the device for its sound and its picture, as the sensor will. */
+  sensorDevice: (id: number) => request<{ device: SensorDevice | null; error: string | null }>(`sensors/${id}/device`),
+  setSensorDevice: (id: number, entityId: string, value: boolean | number | string) =>
+    request<{ ok: boolean }>(`sensors/${id}/device`, send('POST', { entity_id: entityId, value })),
+  esphomeCheck: (host: string, password: string, sound: boolean, picture: boolean) =>
+    request<EsphomeCheck>('esphome/check', send('POST', { host, password, sound, picture })),
+  /** The same check, with the stream's password the device tells through Home Assistant (firmware 1.3.0 on). */
+  esphomeConnect: (entityId: string, sound: boolean, picture: boolean) =>
+    request<EsphomeCheck & { told: boolean; detail?: string }>(
+      'esphome/connect',
+      send('POST', { entity_id: entityId, sound, picture }),
+    ),
   /** Each threshold the sensor decides by, with how the review answers fare and a suggested one. */
   sensorAdvice: (id: number) => request<{ items: AdviceItem[] }>(`sensors/${id}/advice`),
   /** Set one of them (an AdviceItem's key). */

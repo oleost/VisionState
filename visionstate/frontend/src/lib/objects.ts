@@ -56,6 +56,22 @@ export function objectKeys(sensor: Pick<Sensor, 'objects'>): string[] {
 export const facesOn = (sensor: Pick<Sensor, 'objects'>) =>
   !!sensor.objects?.faces?.enabled && sensor.objects.classes.includes('person');
 
+/** Whether an object sensor reads licence plates: switched on, and it looks for a vehicle. */
+export const platesOn = (sensor: Pick<Sensor, 'objects'>) =>
+  !!sensor.objects?.plates?.enabled && sensor.objects.classes.some((c) => app.config?.plates.vehicles.includes(c));
+
+/** What the plate reader says about a vehicle box, in a few words ("" when nothing was read). */
+export function plateNote(d: Detection, own: OwnLabel[] = []): string {
+  const plate = d.plate;
+  if (!plate) return '';
+  if (plate.state === 'match' && plate.car)
+    return `${plate.text} · ${objectName(plate.car, own)}${plate.kept ? ' (still here)' : plate.look ? ' (plate and look)' : ''}`;
+  if (plate.state === 'pending') return `${plate.text} · checking whose car`;
+  if (plate.state === 'unknown') return `${plate.text} · not one of your cars`;
+  if (plate.state === 'look' && plate.car) return `${plate.text} · ${objectName(plate.car, own)} by its look (no plate given)`;
+  return `${plate.text} · reading`;
+}
+
 /** The people (shared by every sensor) among an object sensor's labels while it recognises faces. */
 export const peopleOf = (sensor: Pick<Sensor, 'objects'>): OwnLabel[] =>
   (sensor.objects?.custom ?? []).filter((l) => l.face);
@@ -132,12 +148,20 @@ export function objectCount(n: number, key: string, own: OwnLabel[] = []): strin
 
 export const isObjectSensor = (sensor: Pick<Sensor, 'kind'>) => sensor.kind === 'objects';
 
-/** "2 people, 1 dog" for what an object sensor currently reports; "Nothing detected" when all are off. */
+/** "2 people, 1 dog" for what an object sensor currently reports; "Nothing detected" when all are off.
+ * Each car says the surest name it was known by: a car named by its plate is not counted again for the
+ * look it shares with another car (that look counts only the cars of it no plate named). */
 export function objectSummary(sensor: Sensor): string {
   const own = sensor.objects?.custom ?? [];
   const on = (sensor.objects?.live ?? []).filter((o) => o.on);
   if (!on.length) return 'Nothing detected';
-  const text = on.map((o) => objectCount(o.count, o.key, own)).join(', ');
+  const named = new Map<string, number>();
+  for (const o of on) if (o.group) named.set(o.group, (named.get(o.group) ?? 0) + o.count);
+  const text = on
+    .map((o) => ({ ...o, count: o.count - (named.get(o.key) ?? 0) }))
+    .filter((o) => o.count > 0)
+    .map((o) => objectCount(o.count, o.key, own))
+    .join(', ');
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
@@ -168,6 +192,7 @@ export function boxReason(d: Detection, own: OwnLabel[] = []): string {
       ? 'A face this sensor does not know'
       : `Recognised by the face as ${objectName(d.label, own)}${d.face?.kept ? ' (still here, face not seen now)' : ''}`;
   }
+  if (d.label && d.plate?.car === d.label) return `Its plate ${d.plate.text} is ${objectName(d.label, own)}'s`;
   if (d.filtered) {
     const taughtAs = d.match?.label;
     return taughtAs && taughtAs !== noneLabel()

@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
-from .. import imaging, teach
+from .. import imaging, teach, timing
 from ..db import Embedding, Sample
 from ..settings import TEACH
 from .base import RuntimeBase
@@ -40,19 +40,27 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         return index if index.ids else None
 
     def _build_taught(self, cfg: SensorConfig, generation: int = 0) -> teach.TaughtIndex:
+        """The sensor's taught boxes to compare with. A car that shares another car's look keeps its
+        own boxes (unsharing undoes it), but they count as that car's: one look for both."""
         parents = cfg.parents
+        looks = cfg.car_looks
         embedder = self.embedder
         assert embedder is not None  # taught_index only builds one with a backbone
         with self.db.session() as s:
             rows = s.scalars(
                 select(Sample).where(Sample.sensor_id == cfg.id, Sample.object_label.is_not(None)).order_by(Sample.id)
             )
-            examples = [x for x in rows if x.object_label is not None and teach.usable(x.object_label, parents)]
+            examples = [
+                x
+                for x in rows
+                if x.object_label is not None and teach.usable(looks.get(x.object_label, x.object_label), parents)
+            ]
         examples, vectors = self._taught_vectors(cfg, examples)
+        labels = [x.object_label or "" for x in examples]
         return teach.build(
             embedder.spec.id,
             [x.id for x in examples],
-            [x.object_label or "" for x in examples],
+            [looks.get(label, label) for label in labels],
             [x.detected for x in examples],
             vectors,
             parents,
@@ -112,15 +120,34 @@ class TeachingMixin(ModelsMixin, RuntimeBase):
         found: list[dict],
         candidates: list[dict],
         previous: list[dict] | None = None,
+        seen: list[teach.Seen] | None = None,
     ) -> list[dict]:
-        """Compare a check's boxes with the taught ones (see teach.apply); ``previous``: the last check's."""
+        """Compare a check's boxes with the taught ones (see teach.apply); ``previous``: the last
+        check's boxes, ``seen``: its embedded crops, reused for boxes that stayed (teach.reusable).
+        The crops embedded or reused here are kept in the live state for the next check."""
         checked, rescue = teach.plan(found, candidates, index)
-        crops = [teach.crop(image, found[i]["box"]) for i in checked] + [teach.crop(image, d["box"]) for d in rescue]
+        boxes = [found[i] for i in checked] + rescue
         embedder = self.embedder
-        if not crops or embedder is None:
+        if not boxes or embedder is None:
             return found
-        async with self._sem:
-            vectors = await asyncio.to_thread(teach.embed, embedder, crops)
+        backbone = embedder.spec.id
+        reused = [teach.reusable(seen or [], d["key"], d["box"], backbone) for d in boxes]
+        todo = [n for n, r in enumerate(reused) if r is None]
+        fresh: list = []
+        if todo:
+            crops = [teach.crop(image, boxes[n]["box"]) for n in todo]
+            async with timing.slot(self._sem):
+                fresh = list(await asyncio.to_thread(teach.embed, embedder, crops))
+        now: list[teach.Seen] = []
+        for n, d in enumerate(boxes):
+            earlier = reused[n]
+            if earlier is None:
+                vector = fresh.pop(0)
+                now.append(teach.Seen(d["key"], tuple(d["box"]), vector, backbone))
+            else:
+                now.append(teach.Seen(d["key"], tuple(d["box"]), earlier.vector, backbone, earlier.age + 1))
+        self.live_state(cfg.id).taught_seen = now
+        vectors = np.stack([s.vector for s in now])
         n = len(checked)
         return teach.apply(
             found,

@@ -309,18 +309,25 @@ class Embedder:
 
 def all_specs() -> list:
     """Every model of every registry: backbones (states), detectors (objects), readers and wheel
-    readers (readings), the face detector and recognisers, the sound models."""
-    from . import detectors, faces, readers, sounds
+    readers (readings), the face detector and recognisers, the files of the plate models (each once:
+    a plate model may share a file with a reader), the sound models."""
+    from . import detectors, faces, plates, readers, sounds
 
-    return [
+    specs = [
         *BACKBONES.values(),
         *detectors.DETECTORS.values(),
         *readers.READERS.values(),
         *readers.WHEEL_READERS.values(),
         faces.DETECTOR,
         *faces.RECOGNISERS.values(),
-        *sounds.MODELS.values(),
     ]
+    named = {spec.filename for spec in specs}
+    for model in plates.MODELS.values():
+        for file in model.files:
+            if file.filename not in named:
+                named.add(file.filename)
+                specs.append(file)
+    return [*specs, *sounds.MODELS.values()]
 
 
 if __name__ == "__main__":

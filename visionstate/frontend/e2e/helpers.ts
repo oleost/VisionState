@@ -98,6 +98,14 @@ export async function doubleTap(page: Page, info: TestInfo, at: Point) {
 export async function press(locator: Locator, info: TestInfo) {
   if (isTouch(info)) {
     await locator.scrollIntoViewIfNeeded();
+    // Where a person would tap it: "if needed" can leave it under the sticky top bar (the tap then
+    // landed on the bar once the page above had grown a line taller), so it is brought to the
+    // middle when something else covers its centre.
+    await locator.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      if (hit && !el.contains(hit) && !hit.contains(el)) el.scrollIntoView({ block: 'center' });
+    });
     await expect(locator).toBeEnabled();
     await touch(locator.page(), await center(locator), await center(locator), 0);
   } else await locator.click();
@@ -160,4 +168,25 @@ export async function setVisibility(page: Page, state: 'visible' | 'hidden') {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => s === 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));
   }, state);
+}
+
+/** The names of a sensor's tabs, in the row and under "More" (the menu is opened and closed again). */
+export async function sensorTabs(page: Page): Promise<string[]> {
+  const nav = page.getByRole('navigation', { name: 'Sensor sections' });
+  const names = (await nav.locator('a.tab').allTextContents()).map((t) => t.replace(/\d+$/, '').trim());
+  const more = nav.getByRole('button', { name: /^More/ });
+  if (await more.count()) {
+    await more.click();
+    names.push(...(await nav.getByRole('menuitem').allTextContents()).map((t) => t.replace(/\d+$/, '').trim()));
+    await page.keyboard.press('Escape');
+  }
+  return names;
+}
+
+/** Opens another section of a sensor's Settings (on a phone: back to the list first). */
+export async function settingsSection(page: Page, info: TestInfo, name: string) {
+  const back = page.locator('.settings .back');
+  if (await back.isVisible()) await press(back, info);
+  await press(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: new RegExp(`^${name}`) }), info);
+  await expect(page.locator('.settings .content h2')).toHaveText(name);
 }

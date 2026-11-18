@@ -237,7 +237,7 @@ class PhotoCamera:
     def __init__(self, name: str):
         self.name = name
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         return (ASSETS / f"{self.name}.jpg").read_bytes()
 
     async def close(self):

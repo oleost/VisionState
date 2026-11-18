@@ -311,3 +311,36 @@ def turned_meter(
         out.append({"x": round(centre[0], 4), "y": round(centre[1], 4), "r": round(r, 4), "ccw": d["ccw"]})
     del corners["also"]
     return seen, corners, out
+
+
+# A car with a licence plate (plate tests and the fake camera): the CC0 photo tests/assets/plate_car.jpg
+# with a plate of our own text drawn over its real one.
+PLATE_CAR_BOX = (271, 345, 357, 371)  # where the plate is in plate_car.jpg (pixels)
+
+
+def licence_plate(text: str, width: int = 520, height: int = 112) -> Image.Image:
+    """A European-style plate: dark letters on white, a blue band on the left, a dark border."""
+    plate = Image.new("RGB", (width, height), (245, 245, 240))
+    draw = ImageDraw.Draw(plate)
+    band = round(height * 0.38)
+    draw.rectangle((0, 0, band, height), fill=(30, 60, 170))
+    draw.rectangle((0, 0, width - 1, height - 1), outline=(20, 20, 20), width=max(2, height // 28))
+    size = round(height * 0.82)
+    font = ImageFont.load_default(size=size)
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    while right - left > width - band - height * 0.3 and size > 10:
+        size -= 2
+        font = ImageFont.load_default(size=size)
+        left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    x = band + (width - band - (right - left)) / 2 - left
+    y = (height - (bottom - top)) / 2 - top
+    draw.text((x, y), text, fill=(15, 15, 15), font=font)
+    return plate
+
+
+def car_with_plate(text: str, photo: Image.Image) -> Image.Image:
+    """``photo`` (plate_car.jpg) with the plate ``text`` instead of its own."""
+    x1, y1, x2, y2 = PLATE_CAR_BOX
+    image = photo.convert("RGB").copy()
+    image.paste(licence_plate(text).resize((x2 - x1, y2 - y1), Image.Resampling.LANCZOS), (x1, y1))
+    return image

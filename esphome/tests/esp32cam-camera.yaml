@@ -1,0 +1,17 @@
+# CI: an ESP32-CAM as a camera only.
+substitutions:
+  name: vs-test-camera
+  friendly_name: Test camera
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  stream_password: !secret vs_stream_password
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+packages:
+  board: !include ../packages/board-esp32-cam.yaml
+  common: !include ../packages/common.yaml
+  camera: !include ../packages/camera-esp32-cam.yaml

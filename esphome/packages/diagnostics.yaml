@@ -1,0 +1,21 @@
+# The stream's diagnostics, for wiring and gain: while VisionState listens, every 10 s, the sound's
+# level and its loudest sample (dBFS: 0 is the loudest there is), how many samples clipped (the gain
+# too high, or something very loud), and how much sound was dropped because the listener did not keep
+# up (ms; Wi-Fi). Off in Home Assistant until switched on there, so they are not stored all the time.
+visionstate_stream:
+  level:
+    name: Sound level
+    entity_category: diagnostic
+    disabled_by_default: true
+  peak:
+    name: Sound peak
+    entity_category: diagnostic
+    disabled_by_default: true
+  clipped:
+    name: Samples clipped
+    entity_category: diagnostic
+    disabled_by_default: true
+  dropped:
+    name: Sound dropped
+    entity_category: diagnostic
+    disabled_by_default: true

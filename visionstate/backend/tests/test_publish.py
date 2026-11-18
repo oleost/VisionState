@@ -202,6 +202,6 @@ class CountingCamera(DisplayCamera):
         super().__init__(text)
         self.grabs = 0
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.grabs += 1
         return await super().grab(source_type, source)

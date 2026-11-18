@@ -1,7 +1,7 @@
 <script lang="ts">
   // Does the camera give usable faces? "A usable face in 9 of the last 40 people looked at", and
   // when that share is low, what usually helps for the most common reason. Used on the Live tab,
-  // the Faces card and the Quality tab.
+  // the Faces card and the Dataset tab.
   import { FACE_PROBLEMS } from '../objects';
   import type { FaceProblem, SensorObjects } from '../types';
 

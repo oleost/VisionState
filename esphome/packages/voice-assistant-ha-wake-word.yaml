@@ -1,0 +1,106 @@
+# A voice assistant on a VisionState microphone (microphone.yaml): the wake word is heard by Home
+# Assistant (use_wake_word: its pipeline needs a wake word engine, such as openWakeWord), so it
+# also runs on an ESP32 without PSRAM. The device has no speaker: the answer is played on a media
+# player in Home Assistant (a Chromecast, a Music Assistant player…), which needs "Allow the device
+# to perform Home Assistant actions" on the device in Home Assistant. Which one is *Answer on* on the
+# device, kept over restarts and changed in Home Assistant or on VisionState's Live tab without
+# installing again; assistant_media_player is the one it starts with (empty: none yet, no answer
+# played).
+# The device waits until that player has played the answer (the answer player, components/
+# visionstate_answer, follows its state in Home Assistant) before it listens for a follow-up when
+# Home Assistant continues the conversation, so it does not hear its own answer.
+# The microphone is shared: its Microphone switch and mute switch mute both. While the assistant
+# listens (after the wake word, and for a follow-up) and until its answer has been played the stream
+# carries silence (VisionState pauses for the assistant turns that off).
+# VisionState stream (stream-switch.yaml) switches VisionState's stream off and leaves the assistant on.
+packages:
+  stream_switch: !include stream-switch.yaml
+
+substitutions:
+  assistant_media_player: ""  # the player it starts with (Answer on): the device's own file sets it
+  assistant_gain: "4"
+
+voice_assistant:
+  id: vs_assistant
+  microphone:
+    microphone: vs_microphone
+    gain_factor: ${assistant_gain}
+  use_wake_word: true
+  on_client_connected:
+    - voice_assistant.start_continuous:
+  on_client_disconnected:
+    - voice_assistant.stop:
+  # Also a follow-up when Home Assistant continues the conversation: it starts without a wake word.
+  on_listening:
+    - lambda: if (id(vs_pause_for_assistant).state) id(vs_stream).set_paused(true);
+  media_player: vs_answer
+  on_tts_start:
+    - lambda: id(vs_answer).set_answer_text(x);
+  on_end:
+    - wait_until:
+        condition:
+          not:
+            media_player.is_announcing: vs_answer
+        timeout: 2min
+    - lambda: id(vs_stream).set_paused(false);
+  # An error (speech-to-text failed, nothing was said in time) ends a conversation Home Assistant
+  # continued: ESPHome keeps it going otherwise, starting one follow-up after another without a wake
+  # word, each taking whatever is said in the room.
+  on_error:
+    - lambda: id(vs_stream).set_paused(false);
+    - voice_assistant.stop:
+    - wait_until:
+        condition:
+          lambda: return !id(vs_assistant).is_running();
+        timeout: 5s
+    - voice_assistant.start_continuous:
+
+media_player:
+  - platform: visionstate_answer
+    id: vs_answer
+    internal: true
+    player: vs_answer_on
+    on_answer:
+      - homeassistant.action:
+          action: media_player.play_media
+          data:
+            entity_id: !lambda return id(vs_answer_on).state;
+            media_content_id: !lambda return x;
+            media_content_type: music
+            announce: "true"
+          # The answer cannot be played (the player is gone or broken): end the conversation, or a
+          # follow-up Home Assistant asks for would take whatever is said in the room, unheard.
+          on_error:
+            - logger.log:
+                level: WARN
+                format: "The answer could not be played on %s: %s"
+                args: ["id(vs_answer_on).state.c_str()", "error.c_str()"]
+            - voice_assistant.stop:
+            - wait_until:
+                condition:
+                  lambda: return !id(vs_assistant).is_running();
+                timeout: 5s
+            - voice_assistant.start_continuous:
+
+text:
+  - platform: template
+    id: vs_answer_on
+    name: Answer on
+    icon: mdi:speaker
+    entity_category: config
+    mode: text
+    max_length: 100
+    optimistic: true
+    restore_value: true
+    initial_value: "${assistant_media_player}"
+
+switch:
+  - platform: template
+    id: vs_pause_for_assistant
+    name: VisionState pauses for the assistant
+    icon: mdi:microphone-message-off
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_off:
+      - lambda: id(vs_stream).set_paused(false);

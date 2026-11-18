@@ -18,6 +18,17 @@ export function dateTime(input: string): string {
   return new Date(input).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** "8 Nov, 10:13" — with the year only when it is not this year (short lines on a phone). */
+export function shortDateTime(input: string, now = new Date()): string {
+  const d = new Date(input);
+  const date = d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+  return `${date}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+}
+
 export const mb = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 
 /** AI models from the smallest to the largest (their download size). */

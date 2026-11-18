@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.15.0
+
+**Licence plates, ESP32 microphones and cameras of your own, and a tidier sensor page.**
+
+### New
+
+- **Licence plates** on object sensors (*Settings → Objects → Cars and licence plates*): your cars
+  fire a `known_car` event, others `unknown_plate` if you want, once per visit and as a row in the
+  History. One list of cars is shared by every camera; a car is known by its plate, its look or
+  both, and two cars that look the same are told apart by their plates. An open plate model is the
+  default; two made for plates read more, after you accept their terms. Use the camera's main
+  stream: a plate needs about 80 pixels.
+- **ESP32 microphones and cameras, set up with ESPHome:** a guide in the app gives the wiring and the
+  device's file, and makes the sensor. Each sensor sets up the camera its own way (presets for
+  meters, movement and states), the camera's own flash is used directly, and a microphone can be a
+  voice assistant too. New firmware comes with *Install* in the ESPHome app.
+- **A light only when it is dark**, for any sensor's light.
+- **Pure silence** in a sound sensor's stream is shown (a microphone not wired or muted).
+- **Every picture carries when its frame was taken** in its EXIF.
+
+### Changed
+
+- **A sensor's page:** the same tabs for every kind, and Settings beside Pause, in sections with
+  one Save.
+- **Taught objects cost much less** while someone stays in view.
+
+### Fixed
+
+- A person with the most faces can be answered about again (#87).
+- A broken camera picture is fetched again instead of being read.
+- A pointer dial with no needle found no longer stops the check.
+
 ## 0.14.0
 
 **Teach sounds as your own microphone hears them, get a threshold suggested from your answers, and

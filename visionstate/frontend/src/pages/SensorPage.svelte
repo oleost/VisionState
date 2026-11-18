@@ -2,19 +2,28 @@
   import { api } from '../lib/api';
   import { shownConfidence, stateInfo, toast, toastError } from '../lib/app.svelte';
   import CameraChanged from '../lib/components/CameraChanged.svelte';
-  import ExportButton from '../lib/components/ExportButton.svelte';
   import Icon from '../lib/components/Icon.svelte';
   import HistoryView from '../lib/components/history/HistoryView.svelte';
   import LiveChips from '../lib/components/LiveChips.svelte';
   import StatePill from '../lib/components/StatePill.svelte';
+  import TabBar from '../lib/components/TabBar.svelte';
   import { facesBusy, isObjectSensor, objectChips } from '../lib/objects';
   import { pollWhileVisible } from '../lib/poll';
   import { isReadingSensor, readingText } from '../lib/reading';
   import { href, paths } from '../lib/router.svelte';
   import type { Sensor } from '../lib/types';
-  import { HISTORY_INTRO, NOT_IN_HA, NOT_SENT, POLL, SENSOR_STATUS, SENSOR_TABS, TAB_LABELS, TABS_BY_KIND, type SensorTab } from '../lib/ui';
+  import {
+    HISTORY_INTRO,
+    NOT_IN_HA,
+    NOT_SENT,
+    POLL,
+    SENSOR_STATUS,
+    SENSOR_TABS,
+    TABS_BY_KIND,
+    type SensorTab,
+    type SettingsSection,
+  } from '../lib/ui';
   import DatasetTab from './sensor/DatasetTab.svelte';
-  import HomeAssistantTab from './sensor/HomeAssistantTab.svelte';
   import LabelTab from './sensor/LabelTab.svelte';
   import LiveTab from './sensor/LiveTab.svelte';
   import ObjectQualityTab from './sensor/ObjectQualityTab.svelte';
@@ -27,7 +36,9 @@
   import SettingsTab from './sensor/SettingsTab.svelte';
   import UploadTab from './sensor/UploadTab.svelte';
 
-  let { id, tab: requested }: { id: number; tab: SensorTab | '' } = $props();
+  let { id, tab: requested, section = '' }: { id: number; tab: SensorTab | ''; section?: SettingsSection | '' } = $props();
+  // Undo on Settings draws the form again from what is saved.
+  let settingsVersion = $state(0);
 
   let sensor = $state<Sensor | null>(null);
   let error = $state('');
@@ -59,17 +70,14 @@
   }
 
   const current = $derived(sensor ? stateInfo(sensor, sensor.live.published) : null);
-  // Tabs depend on the kind; an unknown or missing tab opens the kind's first tab. An object
-  // sensor's Quality tab only appears once it was taught something.
-  const taughtSomething = (s: Sensor) => !!s.objects && (s.objects.taught > 0 || s.objects.custom.length > 0);
-  const tabs = $derived(
-    sensor
-      ? SENSOR_TABS.filter(
-          (t) => TABS_BY_KIND[sensor!.kind].includes(t.id) && !(t.id === 'quality' && isObjectSensor(sensor!) && !taughtSomething(sensor!)),
-        )
-      : [],
-  );
-  const tab = $derived(tabs.some((t) => t.id === requested) ? (requested as SensorTab) : tabs[0]?.id);
+  // Tabs depend on the kind; an unknown or missing tab opens the kind's first tab. Settings is the
+  // button beside Pause. An object or sound sensor's Quality of earlier versions is its Dataset now.
+  const tabs = $derived(sensor ? TABS_BY_KIND[sensor.kind].map((id) => SENSOR_TABS.find((t) => t.id === id)!) : []);
+  const tab = $derived.by((): SensorTab | undefined => {
+    if (requested === 'settings' || tabs.some((t) => t.id === requested)) return requested as SensorTab;
+    if (requested === 'quality' && tabs.some((t) => t.id === 'dataset')) return 'dataset';
+    return tabs[0]?.id;
+  });
 </script>
 
 {#if error && !sensor}
@@ -77,10 +85,10 @@
 {:else if sensor && current}
   <header>
     <div class="inner">
-      <div class="row wrap top">
+      <div class="top">
         <div class="col" style="gap:6px">
           <div class="small muted"><a class="muted" href={href(paths.dashboard())}>Sensors</a> / {sensor.name}</div>
-          <div class="row wrap">
+          <div class="row wrap namerow">
             <h1>{sensor.name}</h1>
             {#if isObjectSensor(sensor)}
               <LiveChips {...objectChips(sensor)} />
@@ -101,58 +109,67 @@
               >{isObjectSensor(sensor) || isSoundSensor(sensor) ? `${sensor.entity_ids.length} entities` : sensor.entity_id}</span
             >
             {#if !sensor.in_ha}<span class="chip warn" title={NOT_IN_HA.help}>{NOT_IN_HA.label}</span>{:else if !sensor.publish}<span class="chip warn" title={NOT_SENT.help}>{NOT_SENT.label}</span>{/if}
+            <span class="row actions">
+              <button class="btn sm" onclick={togglePause}>
+                <Icon name={sensor.enabled ? 'pause' : 'play'} size={14} />
+                {sensor.enabled ? 'Pause' : 'Resume'}
+              </button>
+              <a
+                class="btn sm settings-btn"
+                class:on={tab === 'settings'}
+                href={href(paths.sensorSettings(sensor.id))}
+                aria-current={tab === 'settings' ? 'page' : undefined}
+              >
+                <Icon name="settings" size={14} /> Settings
+              </a>
+            </span>
           </div>
         </div>
-        <span class="spacer"></span>
-        <div class="row actions">
-          <ExportButton {sensor} />
-          <button class="btn sm" onclick={togglePause}>
-            <Icon name={sensor.enabled ? 'pause' : 'play'} size={14} />
-            {sensor.enabled ? 'Pause' : 'Resume'}
-          </button>
-        </div>
       </div>
-      <nav aria-label="Sensor sections">
-        {#each tabs as t (t.id)}
-          <a href={href(paths.sensor(sensor.id, t.id))} class:active={t.id === tab} aria-current={t.id === tab ? 'page' : undefined}>
-            {TAB_LABELS[sensor.kind]?.[t.id] ?? t.label}
-            {#if t.id === 'upload' && sensor.counts.unlabelled}<span class="count">{sensor.counts.unlabelled}</span>{/if}
-          </a>
-        {/each}
-      </nav>
+      <TabBar
+        label="Sensor sections"
+        active={tab}
+        tabs={tabs.map((t) => ({
+          id: t.id,
+          label: t.label,
+          href: href(paths.sensor(sensor!.id, t.id)),
+          count: t.id === 'dataset' && sensor!.kind === 'single_state' ? sensor!.counts.unlabelled : 0,
+        }))}
+      />
     </div>
   </header>
 
   <div class="page">
     {#if sensor.reading?.camera_changed}
-      <div class="changed"><CameraChanged {sensor} onSettings={tab === 'settings'} onchange={load} /></div>
+      <div class="changed"><CameraChanged {sensor} onSettings={tab === 'settings' && section === 'detect'} onchange={load} /></div>
     {/if}
     {#if tab === 'live' && isReadingSensor(sensor)}
       <ReadingLiveTab {sensor} onchange={load} />
     {:else if tab === 'live' && isSoundSensor(sensor)}
       <SoundLiveTab {sensor} onchange={load} />
-    {:else if tab === 'quality' && isSoundSensor(sensor)}
+    {:else if tab === 'dataset' && isSoundSensor(sensor)}
       <SoundOwnTab {sensor} onchange={load} />
+    {:else if tab === 'dataset' && isObjectSensor(sensor)}
+      <ObjectQualityTab {sensor} onchange={load} />
     {:else if tab === 'live'}
       <LiveTab {sensor} onchange={load} />
     {:else if tab === 'label'}
       <LabelTab {sensor} onchange={load} />
-    {:else if tab === 'upload'}
-      <UploadTab {sensor} onchange={load} />
     {:else if tab === 'dataset'}
+      <!-- A state sensor's images: adding them (upload), those waiting for a label, then all of them. -->
+      <UploadTab {sensor} onchange={load} />
+      <h2>All images</h2>
       <DatasetTab {sensor} onchange={load} />
     {:else if tab === 'quality' && isReadingSensor(sensor)}
       <ReadingQualityTab {sensor} />
-    {:else if tab === 'quality' && isObjectSensor(sensor)}
-      <ObjectQualityTab {sensor} onchange={load} />
     {:else if tab === 'quality'}
       <QualityTab {sensor} />
     {:else if tab === 'history'}
       <HistoryView sensors={[sensor]} locked={sensor} intro={HISTORY_INTRO[sensor.kind]} onchange={load} />
     {:else if tab === 'settings'}
-      <SettingsTab {sensor} onchange={load} />
-    {:else if tab === 'home-assistant'}
-      <HomeAssistantTab {sensor} onchange={load} />
+      {#key settingsVersion}
+        <SettingsTab {sensor} {section} onchange={load} onreset={() => settingsVersion++} />
+      {/key}
     {/if}
   </div>
 {:else}
@@ -171,59 +188,24 @@
     flex-direction: column;
     gap: var(--space-4);
   }
-  .top {
-    align-items: flex-start;
+  .top > .col {
+    min-width: 0;
   }
   h1 {
     font-size: 28px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .actions {
     gap: var(--space-2);
+    margin-left: auto;
   }
-  @media (max-width: 600px) {
-    /* Own row on phones, so the buttons stay put when a status chip (Paused, Training…) appears. */
-    .actions {
-      flex-basis: 100%;
-    }
-    .top .spacer {
-      display: none;
-    }
-  }
-  nav {
-    display: flex;
-    gap: var(--space-1);
-    overflow-x: auto;
-  }
-  nav a {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 14px;
-    font-weight: 500;
-    color: var(--c-muted);
-    border-bottom: 2px solid transparent;
-    white-space: nowrap;
-  }
-  nav a.active {
-    color: var(--c-text);
-    border-bottom-color: var(--c-accent);
-  }
-  nav a:hover {
+  .settings-btn.on {
+    border-color: var(--c-accent);
+    background: var(--c-surface-3);
     color: var(--c-text);
   }
   .changed {
     margin-bottom: var(--space-5);
-  }
-  .count {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: var(--radius-pill);
-    background: var(--c-surface-3);
-    font-size: var(--fs-xs);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--c-text-2);
   }
 </style>

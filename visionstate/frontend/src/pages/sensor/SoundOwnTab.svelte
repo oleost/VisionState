@@ -14,7 +14,7 @@
   import SoundRecorder from '../../lib/components/sound/SoundRecorder.svelte';
   import ThresholdAdvice from '../../lib/components/ThresholdAdvice.svelte';
   import { notLabel } from '../../lib/sound';
-  import { dateTime, pct, plural } from '../../lib/format';
+  import { dateTime, pct, plural, shortDateTime } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import type { Sensor, SoundTaught } from '../../lib/types';
   import { SAMPLE_ORIGINS } from '../../lib/ui';
@@ -142,11 +142,14 @@
 {#snippet clipList(label: string)}
   <div class="col clips">
     {#each clipsOf(label) as c (c.id)}
-      <div class="row wrap clip">
+      <div class="row clip">
         <ClipPlayer src={api.soundClipUrl(c.id)} label="Play the clip" />
-        <span class="xsmall faint">{SAMPLE_ORIGINS[c.origin] ?? c.origin} · {dateTime(c.created_at)}</span>
+        <!-- Where it came from on hover or a long press: the line stays one line on a phone. -->
+        <span class="xsmall faint when" title="{SAMPLE_ORIGINS[c.origin] ?? c.origin} · {dateTime(c.created_at)}">{shortDateTime(c.created_at)}</span>
         <span class="spacer"></span>
-        <button type="button" class="btn sm ghost" onclick={() => forgetClip(c.id)} aria-label="Forget this clip"><Icon name="x" size={14} /></button>
+        <button type="button" class="btn sm ghost" onclick={() => forgetClip(c.id)} aria-label="Forget this clip" title="Forget this clip"
+          ><Icon name="x" size={14} /></button
+        >
       </div>
     {/each}
   </div>
@@ -191,7 +194,7 @@
             {@render recordButton(s.key, busy)}
             {@render addButton(s.key, `sound-files-${s.key}`, 'Add recordings', busy)}
             <ConfirmButton class="btn sm danger" onconfirm={() => forgetSound(s.key, s.name)} confirmLabel="Tap again to forget {s.name}">
-              <Icon name="trash" size={14} /> Forget
+              <Icon name="trash" size={14} /> Forget sound
             </ConfirmButton>
           </div>
         </div>
@@ -318,5 +321,12 @@
   .clip {
     gap: var(--space-3);
     align-items: center;
+    flex-wrap: nowrap;
+  }
+  .clip .when {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

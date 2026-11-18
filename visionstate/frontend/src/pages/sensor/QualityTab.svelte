@@ -55,7 +55,7 @@
 
   const ACTION_LINKS: Record<string, { label: string; tab?: SensorTab; review?: true }> = {
     label: { label: 'Label', tab: 'label' },
-    upload: { label: 'Upload', tab: 'upload' },
+    upload: { label: 'Upload', tab: 'dataset' },
     review: { label: 'Review queue', review: true },
   };
 

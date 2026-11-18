@@ -30,6 +30,25 @@ export interface Triggers {
   /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
   light_entity: string;
   light_delay_s: number;
+  /** When the light is switched on (config light_when): 'always', or 'dark' (only for a dark frame). */
+  light_when: string;
+  /** How an ESP32 camera of ours is set up for this sensor's pictures; null = its kind's preset. */
+  camera: CameraSettings | null;
+}
+
+/** An ESP32 camera's settings for a sensor (config camera); exposure_ms 0 is automatic exposure. */
+export interface CameraSettings {
+  size: string;
+  quality: number;
+  clock_mhz: number;
+  exposure_ms: number;
+  gain: number;
+}
+
+export interface CameraPreset {
+  name: string;
+  description: string;
+  settings: CameraSettings;
 }
 
 export interface ReviewRules {
@@ -126,6 +145,8 @@ export interface SensorSound extends SoundSettings {
   /** The level a window must reach to be analysed (null: not learned yet). */
   line: number | null;
   analysed: boolean;
+  /** Nothing but digital silence for a while: a microphone not wired, broken or muted. */
+  dead_silent: boolean;
   /** The stream's audio and video, once it was opened. */
   stream: { codec: string; sample_rate: number; channels: number; video: { codec: string; width: number; height: number } | null } | null;
 }
@@ -335,6 +356,8 @@ export interface Detection {
   box: [number, number, number, number];
   filtered?: boolean;
   label?: string;
+  /** Named by the plate of a car that shares another car's look: that car (it counts for both). */
+  group?: string;
   was?: string;
   rescued?: boolean;
   match?: { id: number; label: string; similarity: number };
@@ -344,6 +367,8 @@ export interface Detection {
   ask?: { id: number | null; label: string; similarity: number; face?: boolean };
   /** Person boxes of a sensor that recognises faces: what the face search found (see FaceInfo). */
   face?: FaceInfo;
+  /** Vehicle boxes of a sensor that reads licence plates: what was read (see PlateInfo). */
+  plate?: PlateInfo;
   /** On a history frame: taught from it since (its label is the answer; filtered: "not it"). */
   taught?: boolean;
 }
@@ -429,11 +454,13 @@ export interface PhotoResult {
   faces: number | null;
 }
 
-/** POST /import: the new sensor; `faces_off`: it recognised faces where it was exported (now off). */
+/** POST /import: the new sensor; `faces_off` / `plates_off`: it recognised faces / read licence
+ * plates where it was exported (now off). */
 export interface ImportResult {
   id: number;
   skipped: number;
   faces_off: boolean;
+  plates_off: boolean;
 }
 
 /** The face model: chosen, loaded, downloading (bytes), embedding the taught faces (count) or why it failed. */
@@ -446,6 +473,62 @@ export interface FaceStatus {
   embedding: { done: number; total: number } | null;
   error: string;
   downloaded: boolean;
+}
+
+/** A vehicle box's plate (backend engine/plates.py): the read, and whose car it is. `state`:
+ * 'match' (a car of the household), 'pending' (close to one: one more read must agree), 'unknown'
+ * (read the same way on two checks), 'look' (no car's plate, on a car its look names that has no plate
+ * given: that car), 'reading' (not yet). `event`: this frame made a plate event. */
+export interface PlateInfo {
+  text: string;
+  score: number;
+  box: [number, number, number, number];
+  car: string | null;
+  state: 'match' | 'pending' | 'unknown' | 'look' | 'reading';
+  sure?: boolean;
+  kept?: boolean;
+  /** Named because the car's taught look agreed with a plate read a little off. */
+  look?: boolean;
+  event?: 'known_car' | 'unknown_plate';
+}
+
+/** A car of the household, shared by every sensor (GET /cars). */
+export interface Car {
+  key: string;
+  name: string;
+  /** Its plates, separated by commas; empty: known by its look only. */
+  plate: string;
+  /** The kind of vehicle: car, truck, bus or motorcycle. */
+  parent: string;
+  /** The sensors its look was taught on (GET /cars only). */
+  taught?: { sensor: number; name: string; boxes: number }[];
+  /** Another car whose look it shares (the same model and colour): told apart by their plates. */
+  look?: string;
+}
+
+export interface PlateSettings {
+  enabled: boolean;
+  /** Plates of cars it does not know make an event in Home Assistant. */
+  unknown: boolean;
+  /** When a car's taught look agrees, a plate read this far off (about characters) names it; 0 = never. */
+  look_distance: number;
+  /** Learn a car's look from its plate: a sure plate on a car its look does not know is taught. */
+  learn: boolean;
+}
+
+export interface PlateStatus {
+  model: string;
+  loaded: boolean;
+  loading: boolean;
+  progress: { done: number; total: number } | null;
+  error: string;
+  downloaded: boolean;
+}
+
+export interface PlateModelInfo extends BackboneInfo {
+  data: string;
+  /** Its licence and training data allow any use: chosen without accepting anything. */
+  open: boolean;
 }
 
 export interface FaceModelInfo extends BackboneInfo {
@@ -467,12 +550,20 @@ export interface ObjectQuestion {
 }
 
 /** An own label of an object sensor: a kind of one of its objects, e.g. "Our car" (parent "car"). */
+/** How a car of the household is known: by its plate, its taught look, or both. */
+export type IdentifiedBy = 'plate_and_look' | 'plate' | 'look';
+
 export interface OwnLabel {
   key: string;
   name: string;
   parent: string;
   /** A person (shared by every sensor, GET /people): added by the backend while the sensor recognises faces. */
   face?: boolean;
+  /** A car of the household (shared by every sensor, GET /cars): added while the sensor reads plates
+   * or when its look was taught on this sensor. */
+  car?: boolean;
+  /** A car that shares another car's look: that car. */
+  look?: string;
 }
 
 export interface ObjectSettings {
@@ -488,6 +579,7 @@ export interface ObjectSettings {
   /** This sensor's own teaching limits; a missing one follows the global value. */
   teach?: TeachOverrides;
   faces?: FaceSettings;
+  plates?: PlateSettings;
 }
 
 export type TeachKey = 'match_similarity' | 'keep_similarity' | 'ask_similarity' | 'rescue_similarity' | 'rescue_floor';
@@ -507,6 +599,10 @@ export interface ObjectLive {
   key: string;
   /** Own labels: the object they are a kind of. */
   parent: string | null;
+  /** A car that shares another car's look: that car. */
+  group?: string | null;
+  /** A car of the household that is here: how it was known. */
+  identified_by?: IdentifiedBy | null;
   on: boolean;
   count: number;
   score: number;
@@ -602,6 +698,19 @@ export interface Counts {
   unlabelled: number;
 }
 
+/** An ESP32 camera of ours behind a sensor's snapshot address (settings.CAMERA_USES keys). */
+export interface SensorCamera {
+  /** Its firmware takes a sensor's settings (1.5.0 on); older firmware only a preset. */
+  settings: boolean;
+  /** How the camera said it is set up with its last picture, and the time between its pictures. */
+  now: CameraSettings | null;
+  frame_ms: number | null;
+  /** Its camera chip (OV2640, OV3660 …), firmware 1.5.0 on. */
+  chip: string | null;
+  /** The other sensors on the camera that want it set up otherwise: it switches between them. */
+  others: string[];
+}
+
 export interface Sensor {
   id: number;
   slug: string;
@@ -618,9 +727,11 @@ export interface Sensor {
   publish: boolean;
   /** Off: it has no entities in Home Assistant at all. */
   in_ha: boolean;
-  /** What can be chosen on its Home Assistant tab. */
+  /** What can be chosen under its Settings → Home Assistant. */
   ha_entities: HaEntity[];
   triggers: Triggers;
+  /** Set when the source is an ESP32 camera of ours (esphome/): only then its set-up can be chosen. */
+  camera: SensorCamera | null;
   review: ReviewOverrides;
   review_effective: ReviewRules;
   entity_id: string;
@@ -643,7 +754,7 @@ export interface HaEntity {
   on: boolean;
   /** An object sensor's: the class or own label it belongs to, and what it is of that object. */
   object?: string;
-  column?: 'detected' | 'count' | 'snapshot';
+  column?: 'detected' | 'count' | 'snapshot' | 'identified';
 }
 
 export interface SensorInput {
@@ -707,6 +818,9 @@ export interface AppConfig {
   /** The key (and entity) of a face nobody was taught for. */
   face_unknown_key: string;
   faces: { max_people: number; max_faces_per_person: number; suggest_faces: number; stats_window: number };
+  plate_defaults: PlateSettings;
+  /** The classes a plate is looked for in, how many cars there can be, the plate entity's events. */
+  plates: { vehicles: string[]; max_cars: number; events: string[]; limits: { look_distance: [number, number] } };
   reading_sensor_defaults: { interval_s: number; threshold: number; debounce: number };
   reading_defaults: ReadingSettings;
   reading_limits: Record<'decimals' | 'digits' | 'max_step' | 'max_rate' | 'spot_rate' | 'rate_window_min', [number, number]>;
@@ -739,6 +853,30 @@ export interface AppConfig {
   sound_levels: SoundLevel[];
   /** Thresholds suggested from review answers: from at least `min_answers` answers. */
   advice: { min_answers: number };
+  /** An ESP32 camera of ours: a sensor's settings, their choices and the presets that fill them in. */
+  camera: {
+    presets: Record<string, CameraPreset>;
+    preset_by_kind: Record<string, string>;
+    sizes: string[];
+    clocks_mhz: number[];
+    /** The exposure a sensor gets when it is switched to fixed (settings.CAMERA_FIXED_EXPOSURE_MS). */
+    fixed_exposure_ms: number;
+    gains: number[];
+    limits: Record<'quality' | 'exposure_ms', [number, number]>;
+  };
+  /** When a sensor's light is switched on: key → name. */
+  light_when: Record<string, string>;
+  /** The ESP32 guide (settings.ESPHOME). */
+  esphome: {
+    port: number;
+    username: string;
+    password_chars: number;
+    kinds: Record<string, string>;
+    boards: Record<string, EsphomeBoard>;
+    /** The first firmware that takes a picture with its own flash, and the longest it keeps it on before it. */
+    flash_firmware: string;
+    flash_max_s: number;
+  };
   sound: {
     hop_s: number;
     window_s: number;
@@ -782,6 +920,8 @@ export interface Status {
   sound_model_error: string;
   /** The face model, and how many people and sensors that recognise faces there are. */
   faces: FaceStatus & { people: number; sensors: number };
+  /** The plate model, and how many cars and sensors that read plates there are. */
+  plates: PlateStatus & { cars: number; sensors: number };
   mqtt: { connected: boolean; host: string | null; error: string };
   home_assistant: boolean;
   ha_events: { enabled: boolean; connected: boolean; entities: number; error: string };
@@ -924,7 +1064,7 @@ export interface BackboneInfo {
 }
 
 /** The AI models a user chooses, by their list in GET /settings. */
-export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'readers';
+export type ModelKind = 'backbones' | 'detectors' | 'face_models' | 'plate_models' | 'readers';
 
 /** GET /storage: disk use and the history limits (whichever is reached first applies). */
 export type BackupPart = 'sensors' | 'samples' | 'faces' | 'history' | 'models';
@@ -974,6 +1114,9 @@ export interface SettingsInfo {
   /** Recognising faces on object sensors: the recogniser chosen; downloaded when a sensor turns faces on. */
   face_model: string;
   face_models: FaceModelInfo[];
+  /** Licence plates on object sensors: the plate model chosen; downloaded when a sensor turns plates on. */
+  plate_model: string;
+  plate_models: PlateModelInfo[];
   /** Threads per model run: the user's choice, 0 = automatic (one per core, `threads_auto`); at most `threads_max`. */
   inference_threads: number;
   /** Null where the app cannot count the cores (a PC running it for development): ONNX Runtime does. */
@@ -1082,4 +1225,109 @@ export interface SoundRecording {
   /** The loudest sample of each 1/peaks_per_s second, 0…1. */
   peaks: number[];
   peaks_per_s: number;
+}
+
+/** A board the ESP32 guide writes a configuration for, with its default pins. */
+export interface EsphomeBoard {
+  name: string;
+  description: string;
+  kinds: string[];
+  /** What lights while VisionState listens or looks; null on a board without an LED. */
+  light: string | null;
+  /** The firmware has run on one; otherwise only built, not tried on a board yet. */
+  tried: boolean;
+  /** The board's pins; a board without mute_pin takes no mute switch. */
+  pins: Record<string, string>;
+  /** About the wiring, below its table. */
+  wiring_note?: string;
+  /** Its camera takes the first I2S port (an ESP32-CAM). */
+  camera_i2s?: boolean;
+  /** 'built_in': a microphone on the board (nothing to wire); otherwise an INMP441 is wired to it. */
+  microphone?: string;
+  /** The Wi-Fi bands it joins (its radio), as the guide says them. */
+  wifi: string;
+}
+
+export interface EsphomeConfiguration {
+  name: string;
+  friendly_name: string;
+  /** The whole file, with {{field}} where the page puts the user's values (never sent to VisionState). */
+  yaml: string;
+  fields: string[];
+  port: number;
+  username: string;
+  sound: boolean;
+  picture: boolean;
+  /** A voice assistant too (its answer on a media player in Home Assistant). */
+  assistant: boolean;
+}
+
+export interface EsphomeCheckPart {
+  ok: boolean;
+  status: number | null;
+  detail?: string;
+  bytes?: number;
+}
+
+export interface EsphomeCheck {
+  addresses: { sound?: string; picture?: string };
+  sound?: EsphomeCheckPart;
+  picture?: EsphomeCheckPart;
+}
+
+/** What a sensor's light is to its camera (POST camera-light). */
+export interface CameraLight {
+  /** The flash of the ESP32 of ours the sensor takes its pictures from, offered as its light; `device` its name. */
+  flash: string | null;
+  device: string | null;
+  /** The light chosen is a device's flash: 'own' the camera takes the picture with it itself; switched through Home
+   * Assistant: 'firmware' (older than settings.ESPHOME flash_firmware), 'camera_entity' (looked at through the
+   * device's camera entity), 'other_source' (the pictures come from another address). Null: a light like any other. */
+  light: 'own' | 'firmware' | 'camera_entity' | 'other_source' | null;
+  light_device?: string | null;
+  firmware?: string | null;
+  error: string | null;
+}
+
+/** A sound sensor's ESPHome device (GET sensors/{id}/device): its microphone's controls. */
+export interface SensorDevice {
+  name: string;
+  address: string;
+  /** Our firmware (settings.ESPHOME["model"]): it has a version to compare. */
+  ours: boolean;
+  firmware: string | null;
+  latest: string | null;
+  outdated: boolean;
+  controls: {
+    entity_id: string;
+    /** switch, number, text (a media player): the microphone's and assistant's (Live tab); select: the camera's (its settings). */
+    kind: 'switch' | 'number' | 'select' | 'text';
+    name: string;
+    state: string | null;
+    min?: number | null;
+    max?: number | null;
+    step?: number | null;
+    options?: string[];
+  }[];
+}
+
+/** A media player in Home Assistant (GET esphome/media-players), for a voice assistant's Answer on. */
+export interface MediaPlayer {
+  entity_id: string;
+  name: string;
+  /** The integration it comes through (one speaker is often there several times). */
+  integration: string;
+  state: string | null;
+}
+
+export interface EsphomeDevice {
+  entity_id: string;
+  name: string;
+  address: string;
+  /** Its flash (an ESP32-CAM), offered as the light for checks in the dark. */
+  light: string | null;
+  /** Our firmware (settings.ESPHOME["model"]), with a camera or a microphone: offered as a sensor's source. */
+  ours: boolean;
+  camera: boolean;
+  microphone: boolean;
 }

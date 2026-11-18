@@ -132,6 +132,28 @@ def test_a_person_is_the_mean_of_their_closest_faces():
     assert faces.decide(staying, LIMITS) != "match"
 
 
+def test_a_full_person_keeps_their_faces_varied():
+    """A new face of a person with the most faces replaces a near copy, so the faces stay as
+    varied as they can be; a face that adds nothing replaces nothing."""
+    front, side, night = unit(1, 0, 0), unit(0, 1, 0), unit(0, 0, 1)
+    near_front = unit(1, 0.05, 0)
+    # Faces 1 and 2 are near copies (both from the front); 3 and 4 are each one of a kind.
+    idx = index([("kari", front), ("kari", near_front), ("kari", side), ("kari", unit(1, 1, 0)), ("eva", night)])
+    every = {1: 1, 2: 1, 3: 1, 4: 1}
+    assert faces.to_replace(idx, "kari", night, every) == 1  # of the copies, the older
+    # Faces taught from review answers go before the ones taught by hand, if one is a copy.
+    assert faces.to_replace(idx, "kari", night, {**every, 2: 0}) == 2
+    # A face that may have the wrong name (not in removable) stays; then its copy goes.
+    assert faces.to_replace(idx, "kari", night, {2: 1, 3: 1, 4: 1}) == 2
+    # Without the copies: the face closest to another one (4 is between 2 and 3).
+    assert faces.to_replace(idx, "kari", night, {3: 1, 4: 1}) == 4
+    # A face that is only a little new replaces only a face closer to another one than that.
+    assert faces.to_replace(idx, "kari", unit(1, 0.3, 0), {3: 1, 4: 1}) is None
+    # Another face from the front adds nothing: the copies are no closer than it comes.
+    assert faces.to_replace(idx, "kari", front, every) is None
+    assert faces.to_replace(idx, "eva", front, {5: 1}) is None  # one face only: nothing to compare
+
+
 def test_only_a_clearly_seen_face_that_matches_nobody_is_a_stranger():
     from visionstate.engine.faces import FacesMixin
 
@@ -463,6 +485,55 @@ def test_a_face_question_is_answered_in_the_review_queue(settings):  # noqa: F81
         assert live(client, sid)["butch"]["last_seen"]
         seen = {p["key"]: p["seen"]["at"] for p in client.get("/api/v1/people").json()["people"]}
         assert seen["butch"]
+
+
+@requires_faces
+def test_a_full_person_can_still_be_answered_about(settings, monkeypatch):  # noqa: F811
+    """GitHub #87: "Is this Kari?" about a person with the most faces could not be answered. By
+    hand a full person is refused with what to do; an answer replaces a near copy with a face that
+    adds something, and otherwise stands without it."""
+    monkeypatch.setitem(FACES, "max_faces_per_person", 2)
+    camera = PhotoCamera("face_williams_2006")
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = camera
+        sid = create(client, objects=faces_patch(True, ask_unknown=True)["objects"], interval_s=1).json()["id"]
+        assert wait_for(lambda: person_with_face(client, sid), timeout=90)
+        frame_id, person = person_with_face(client, sid)
+        body = {"frame_id": frame_id, "box": person["box"], "new_person": "Suni"}
+        assert client.post(f"/api/v1/sensors/{sid}/faces", json=body).status_code == 201
+        body = {"frame_id": frame_id, "box": person["box"], "person": "suni"}
+        assert client.post(f"/api/v1/sensors/{sid}/faces", json=body).status_code == 201  # a near copy
+        full = client.post(f"/api/v1/sensors/{sid}/faces", json=body)
+        assert full.status_code == 400 and "Suni has 2 faces" in full.json()["detail"]
+        assert "People page" in full.json()["detail"]
+
+        def suni_faces():
+            [suni] = client.get("/api/v1/people").json()["people"]
+            return [(f["id"], f["origin"]) for f in suni["faces"]]
+
+        copies = sorted(suni_faces())
+        # Another face (Butch, answered as Suni to have one that looks different): two questions.
+        camera.name = "face_wilmore"
+
+        def questions():
+            items = client.get("/api/v1/review").json()["items"]
+            return [i for i in items if (i["probs"].get("ask") or {}).get("face")]
+
+        assert wait_for(lambda: len(questions()) >= 2, timeout=90)
+        first, second = questions()[:2]
+        answer = {"action": "person", "state_key": "suni"}
+        assert client.post(f"/api/v1/review/{first['id']}", json=answer).status_code == 200
+        after = suni_faces()
+        assert len(after) == 2 and copies[0] not in after and copies[1] in after  # the older copy went
+        assert sorted(origin for _id, origin in after) == ["live", "review"]
+        # The same face again adds nothing: the answer stands, nothing is replaced.
+        assert client.post(f"/api/v1/review/{second['id']}", json=answer).status_code == 200
+        assert suni_faces() == after
+        assert second["id"] not in [i["id"] for i in client.get("/api/v1/review").json()["items"]]
+        rows = client.get("/api/v1/history", params={"sensor": sid, "limit": 100}).json()["items"]
+        row = next(r for r in rows if r["id"] == second["id"])
+        assert [d["label"] for d in row["detections"] if d.get("taught")] == ["suni"]
 
 
 def test_a_face_model_that_cannot_be_downloaded_leaves_the_sensor_working(settings, monkeypatch, tmp_path):  # noqa: F811

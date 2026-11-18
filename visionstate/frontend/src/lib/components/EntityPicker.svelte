@@ -87,7 +87,7 @@
       {#each value as id (id)}
         {@const e = byId.get(id)}
         <span class="chip-entity" class:with-state={states !== undefined}>
-          <span class="col" style="gap:0">
+          <span class="col names" style="gap:0">
             <span class="small">{e?.name ?? id}</span>
             <span class="mono xsmall faint">{id}{e ? ` · ${e.state}` : ''}</span>
           </span>
@@ -154,6 +154,16 @@
     border-radius: var(--radius-md);
     background: var(--c-surface-3);
     border: 1px solid var(--c-border-strong);
+    max-width: 100%;
+  }
+  /* A long entity id breaks inside the chip instead of pushing the page sideways on a phone. */
+  .names {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .list button span {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
   /* The state field sits on its own row inside the chip. */
   .chip-entity.with-state {

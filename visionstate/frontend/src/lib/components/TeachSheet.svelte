@@ -9,7 +9,7 @@
   import { app, toast, toastError } from '../app.svelte';
   import { pct } from '../format';
   import { activeLabels, boxReason, byFace, facesOn, noneLabel, objectName, peopleOf } from '../objects';
-  import type { Detection, Sensor, TeachInput } from '../types';
+  import type { Car, Detection, Sensor, TeachInput } from '../types';
   import Icon from './Icon.svelte';
 
   let {
@@ -49,14 +49,34 @@
   const name = $derived(current ? objectName(current, own) : '');
   const objectWord = $derived(detection ? objectName(detection.key).toLowerCase() : '');
   const firstTime = $derived((sensor.objects?.taught ?? 0) === 0);
-  const roomForLabel = $derived(own.filter((l) => !l.face).length < (app.config?.teach.max_labels ?? 0));
+  // A vehicle is named as one of the household's cars (shared by every sensor, with or without a
+  // plate); anything else as an own label of this sensor.
+  const vehicle = $derived(!!detection && (app.config?.plates.vehicles ?? []).includes(detection.key));
+  let cars = $state<Car[]>([]);
+  onMount(() => {
+    if (untrack(() => vehicle)) api.cars().then((c) => (cars = c)).catch(toastError);
+  });
+  const roomForLabel = $derived(
+    vehicle
+      ? cars.length < (app.config?.plates.max_cars ?? 0)
+      : own.filter((l) => !l.face && !l.car).length < (app.config?.teach.max_labels ?? 0),
+  );
   // Everything the box could be instead: the sensor's objects and own labels (people are taught by
-  // their face, not here), except what it is now.
+  // their face, not here; the household's cars can be taught by their look too), except what it is now.
   const options = $derived([
     ...classes.filter((k) => k !== current).map((k) => ({ key: k, text: objectName(k), sub: '' })),
+    // A car that shares another car's look is taught as that car: only that one is offered.
     ...activeLabels(sensor)
-      .filter((l) => l.key !== current && !l.face)
-      .map((l) => ({ key: l.key, text: l.name, sub: `a kind of ${objectName(l.parent).toLowerCase()}` })),
+      .filter((l) => l.key !== current && !l.face && !l.look)
+      .map((l) => ({
+        key: l.key,
+        text: l.name,
+        sub: l.car ? 'one of your cars' : `a kind of ${objectName(l.parent).toLowerCase()}`,
+      })),
+    // The household's cars not yet taught here (nor read by a plate here).
+    ...cars
+      .filter((c) => c.key !== current && !c.look && classes.includes(c.parent) && !own.some((l) => l.key === c.key))
+      .map((c) => ({ key: c.key, text: c.name, sub: 'one of your cars' })),
   ]);
 
   // Faces: is there a usable face in this person box? Asked once when the sheet opens.
@@ -189,7 +209,7 @@
         {:else}
           VisionState will look again at boxes it is unsure about and compare them with what you showed it.
         {/if}
-        You can turn this off or forget it under Settings.
+        You can turn this off or forget it under Settings → Objects.
       </p>
       <div class="row actions">
         <button class="btn primary first" disabled={busy} onclick={send}>Teach</button>
@@ -291,13 +311,20 @@
       }}
     >
       <label class="field">
-        A kind of {objectWord}, for example “Our {objectWord}”
+        {#if vehicle}One of your cars, for example “Tesla”{:else}A kind of {objectWord}, for example “Our {objectWord}”{/if}
         <!-- svelte-ignore a11y_autofocus -->
         <input class="input" bind:value={newName} maxlength="64" placeholder="Name" autofocus />
       </label>
-      <span class="xsmall faint">It gets an on/off sensor and a count in Home Assistant, like the objects do.</span>
+      <span class="xsmall faint">
+        {#if vehicle}
+          Shared by every camera: teach its look on each, and give it its plates under Settings → Objects → Cars and licence
+          plates. It gets an on/off sensor and a count in Home Assistant.
+        {:else}
+          It gets an on/off sensor and a count in Home Assistant, like the objects do.
+        {/if}
+      </span>
       <div class="row actions">
-        <button class="btn primary" type="submit" disabled={busy || !newName.trim()}>Add label</button>
+        <button class="btn primary" type="submit" disabled={busy || !newName.trim()}>{vehicle ? 'Add car' : 'Add label'}</button>
         <button class="btn" type="button" onclick={() => (view = 'other')}>Back</button>
       </div>
     </form>

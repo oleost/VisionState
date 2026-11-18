@@ -44,6 +44,17 @@ class TaughtIndex:
 
 
 @dataclass(frozen=True)
+class Seen:
+    """A crop embedded in a check: reused by the next check for a box at the same place."""
+
+    key: str  # the detector's class of the box
+    box: tuple[float, float, float, float]
+    vector: np.ndarray
+    backbone: str
+    age: int = 0  # checks it has been reused in
+
+
+@dataclass(frozen=True)
 class Match:
     label: str
     similarity: float
@@ -167,6 +178,18 @@ def plan(found: list[dict], candidates: list[dict], index: TaughtIndex) -> tuple
     return checked, rescue
 
 
+def reusable(earlier: list[Seen], key: str, box: Sequence[float], backbone: str) -> Seen | None:
+    """The embedding of the last check this box can use instead of its own: same class and model,
+    at the same place (TEACH["reuse_iou"]), and not reused TEACH["recheck_every"] - 1 times yet."""
+    same = [
+        s
+        for s in earlier
+        if s.key == key and s.backbone == backbone and s.age + 1 < TEACH["recheck_every"]
+        and box_iou(s.box, box) >= TEACH["reuse_iou"]
+    ]  # fmt: skip
+    return max(same, key=lambda s: box_iou(s.box, box), default=None)
+
+
 def apply(
     found: list[dict],
     checked: list[int],
@@ -265,8 +288,9 @@ def unsure_for(detection: dict, key: str) -> bool:
 
 
 def counts_for(detection: dict, key: str) -> bool:
-    """Whether a box counts for a class or own label (filtered boxes count for nothing)."""
-    return not detection.get("filtered") and (detection["key"] == key or detection.get("label") == key)
+    """Whether a box counts for a class or own label (filtered boxes count for nothing); a box named
+    by the plate of a car that shares another car's look counts for that car too (its ``group``)."""
+    return not detection.get("filtered") and key in (detection["key"], detection.get("label"), detection.get("group"))
 
 
 def seen_faintly(candidates: list[dict], box: Sequence[float]) -> bool:

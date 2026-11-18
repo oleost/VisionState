@@ -50,21 +50,27 @@ async def import_bundle(request: Request, file: UploadFile = File(...)) -> dict:
         path.unlink(missing_ok=True)
         raise HTTPException(413, f"Bundle is larger than {UPLOAD_LIMITS['max_file_mb']} MB")
     try:
-        sensor_id, skipped, faces_off = await asyncio.to_thread(_import_sync, rt, path)
+        sensor_id, skipped, faces_off, plates_off = await asyncio.to_thread(_import_sync, rt, path)
     except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as err:
         raise HTTPException(400, f"Import failed: {redact(str(err))}") from err
     finally:
         path.unlink(missing_ok=True)
+    # Own labels of a vehicle kind it brought become cars of the household (or are the car of
+    # that key already, when it was exported from another installation of this one's data).
+    adopted = await asyncio.to_thread(rt.adopt_car_labels)
     await rt.sensor_created(sensor_id)
     await rt.people_changed()  # people that came with their faces
+    if adopted:
+        await rt.cars_changed()
     cfg = await asyncio.to_thread(rt.load_sensor, sensor_id)
     if cfg and cfg.kind == KIND_STATES:
         rt.schedule_retrain(sensor_id, delay=0)
-    # faces_off: it recognised faces where it was exported; the UI says to turn that on again here.
-    return {"id": sensor_id, "skipped": skipped, "faces_off": faces_off}
+    # faces_off / plates_off: it recognised faces / read plates where it was exported; the UI says to
+    # turn that on again here.
+    return {"id": sensor_id, "skipped": skipped, "faces_off": faces_off, "plates_off": plates_off}
 
 
-def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
+def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool, bool]:
     """Creates the sensor of a bundle; returns its ID, how many of its images were unreadable and
     whether face recognition, on where it was exported, was turned off."""
     manifest = bundle.read_manifest(path)
@@ -86,6 +92,11 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
         # own confirmation (and download).
         faces_off = bool(spec.objects.faces.enabled)
         spec.objects.faces.enabled = False
+    plates_off = False
+    if spec.objects is not None and spec.objects.plates is not None:
+        # The same for plate reading: on there, turned on here with its own confirmation.
+        plates_off = bool(spec.objects.plates.enabled)
+        spec.objects.plates.enabled = False
     samples = manifest.get("samples", []) if spec.kind in (KIND_STATES, KIND_OBJECTS, KIND_SOUND) else []
     if not isinstance(samples, list) or len(samples) > UPLOAD_LIMITS["max_zip_members"]:
         raise ValueError("too many samples in bundle")
@@ -127,7 +138,7 @@ def _import_sync(rt: Runtime, path: Path) -> tuple[int, int, bool]:
         except (ValueError, KeyError, TypeError, AttributeError, OSError, HTTPException) as err:
             skipped += 1
             log.warning("Import: skipping a face: %s", getattr(err, "detail", err))
-    return sensor_id, skipped, faces_off
+    return sensor_id, skipped, faces_off, plates_off
 
 
 SENSOR_FIELDS = (

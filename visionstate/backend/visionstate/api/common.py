@@ -13,9 +13,13 @@ from sqlalchemy.orm import Session
 
 from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
-from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, with_people
+from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, car_looks, with_shared
 from ..mqtt import entity_options, main_entities
 from ..settings import (
+    CAMERA_CLOCKS_MHZ,
+    CAMERA_GAINS,
+    CAMERA_LIMITS,
+    CAMERA_SIZES,
     COUNTER_LIMIT,
     COUNTER_READERS,
     FACE_DEFAULTS,
@@ -26,10 +30,13 @@ from ..settings import (
     KIND_READING,
     KIND_SOUND,
     LIGHT_DOMAINS,
+    LIGHT_WHEN,
     MAX_STATES,
     OBJECT_DEFAULTS,
     OBJECT_LIMITS,
     OBJECT_MAX_CLASSES,
+    PLATE_DEFAULTS,
+    PLATE_LIMITS,
     READING,
     READING_CHANGE_LIMITS,
     READING_DEFAULTS,
@@ -52,6 +59,7 @@ from ..settings import (
     TRIGGER_STATE_MAX_LENGTH,
     UNKNOWN_STATE,
     active_custom,
+    camera_settings,
     faces_on,
     merge_objects,
     merge_reading,
@@ -152,6 +160,28 @@ def valid_light(value: str) -> str:
     return value
 
 
+class CameraSettingsIn(BaseModel):
+    """How an ESP32 camera of ours is set up for a sensor's pictures (settings.CAMERA_*)."""
+
+    size: str
+    quality: int = Field(ge=CAMERA_LIMITS["quality"][0], le=CAMERA_LIMITS["quality"][1])
+    clock_mhz: int
+    exposure_ms: int = Field(ge=0, le=CAMERA_LIMITS["exposure_ms"][1])  # 0: automatic
+    gain: int
+
+    @model_validator(mode="after")
+    def _known(self) -> CameraSettingsIn:
+        if self.size not in CAMERA_SIZES:
+            raise ValueError(f"Picture size: one of {', '.join(CAMERA_SIZES)}")
+        if self.clock_mhz not in CAMERA_CLOCKS_MHZ:
+            raise ValueError(f"Camera clock: one of {', '.join(map(str, CAMERA_CLOCKS_MHZ))} MHz")
+        if self.gain not in CAMERA_GAINS:
+            raise ValueError(f"Gain ceiling: one of {', '.join(map(str, CAMERA_GAINS))}")
+        if 0 < self.exposure_ms < CAMERA_LIMITS["exposure_ms"][0]:
+            raise ValueError(f"A fixed exposure is at least {CAMERA_LIMITS['exposure_ms'][0]} ms")
+        return self
+
+
 class Triggers(BaseModel):
     """When a sensor checks its camera besides the interval. Defaults and limits: settings.TRIGGER_*."""
 
@@ -173,6 +203,9 @@ class Triggers(BaseModel):
     )
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
+    light_when: str = TRIGGER_DEFAULTS["light_when"]  # settings.LIGHT_WHEN
+    # An ESP32 camera of ours: its settings for this sensor; None: its kind's preset.
+    camera: CameraSettingsIn | None = None
 
     @field_validator("entities")
     @classmethod
@@ -187,6 +220,13 @@ class Triggers(BaseModel):
     @classmethod
     def _valid_light(cls, value: str) -> str:
         return valid_light(value)
+
+    @field_validator("light_when")
+    @classmethod
+    def _valid_light_when(cls, value: str) -> str:
+        if value not in LIGHT_WHEN:
+            raise ValueError(f"One of: {', '.join(LIGHT_WHEN)}")
+        return value
 
     @model_validator(mode="after")
     def _valid_only_states(self) -> Triggers:
@@ -267,6 +307,21 @@ class FacesIn(FaceLimits):
     ask_unknown: bool = FACE_DEFAULTS["ask_unknown"]
 
 
+class PlatesIn(BaseModel):
+    """Reading licence plates on an object sensor: on or off, and whether plates of cars it does not
+    know make an event, and how far off a plate may be when the car's look agrees. Defaults:
+    settings.PLATE_DEFAULTS, limits settings.PLATE_LIMITS."""
+
+    enabled: bool = PLATE_DEFAULTS["enabled"]
+    unknown: bool = PLATE_DEFAULTS["unknown"]
+    learn: bool = PLATE_DEFAULTS["learn"]
+    look_distance: float = Field(
+        default=PLATE_DEFAULTS["look_distance"],
+        ge=PLATE_LIMITS["look_distance"][0],
+        le=PLATE_LIMITS["look_distance"][1],
+    )
+
+
 class ObjectsIn(BaseModel):
     """What an object sensor looks for. Defaults and limits: settings.OBJECT_*."""
 
@@ -282,14 +337,17 @@ class ObjectsIn(BaseModel):
     )
     teach: TeachLimits | None = None  # this sensor's own teaching limits; unset ones follow the global ones
     faces: FacesIn | None = None  # recognising people by their face; unset keeps what the sensor has
+    plates: PlatesIn | None = None  # reading licence plates; unset keeps what the sensor has
     # Own labels ("custom") are made by teaching a box (api/teach.py) or a face (api/faces.py), never set here.
 
     def stored(self, exclude_unset: bool = False) -> dict:
-        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach", "faces"})
+        data = self.model_dump(exclude_unset=exclude_unset, exclude={"teach", "faces", "plates"})
         if self.teach is not None or not exclude_unset:
             data["teach"] = self.teach.stored() if self.teach else {}
         if self.faces is not None:
             data["faces"] = self.faces.model_dump(exclude_none=True)
+        if self.plates is not None:
+            data["plates"] = self.plates.model_dump()
         return data
 
     @field_validator("classes")
@@ -545,8 +603,10 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
     recognises faces), live, and what was taught."""
     if sensor.kind != KIND_OBJECTS:
         return None
-    settings = with_people(merge_objects(sensor.objects), session)
+    settings = with_shared(merge_objects(sensor.objects), session, sensor.id)
     parents = {label["key"]: label["parent"] for label in active_custom(settings)}
+    looks = {label["key"]: label["look"] for label in active_custom(settings) if label.get("look")}
+    identified = live.car_identified if live else {}
     tracks = live.tracks if live else {}
     per_class = []
     unknown = [FACE_UNKNOWN_KEY] if faces_on(settings) else []  # recognising faces: "unknown person"
@@ -556,6 +616,9 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
             {
                 "key": key,
                 "parent": parents.get(key),  # own labels: the class they are a kind of
+                "group": looks.get(key),  # a car that shares another car's look: that car
+                # a car of the household that is here: by its plate, its look or both
+                "identified_by": identified.get(key) if track.on else None,
                 "on": track.on,
                 "count": track.count,
                 "score": track.score,
@@ -567,6 +630,8 @@ def objects_view(session: Session, sensor: Sensor, live: LiveState | None) -> di
             Sample.sensor_id == sensor.id, Sample.object_label.is_not(None)
         )
     ).all()
+    shared = car_looks(session)  # a car that shares another car's look: its boxes count as that car's
+    taught = [(shared.get(label, label) if label else label, detected) for label, detected in taught]
     usable = [(label, detected) for label, detected in taught if label is not None and teach.usable(label, parents)]
     taught_faces = session.scalar(select(func.count()).select_from(Face).where(Face.sensor_id == sensor.id)) or 0
     stats = list(live.face_stats) if live else []
@@ -622,6 +687,8 @@ def sound_view(sensor: Sensor, live: LiveState | None) -> dict | None:
         "levels": list(heard.levels) if heard else [],
         "line": heard.line if heard else None,
         "analysed": bool(heard and heard.analysed),
+        # Nothing but digital silence for SOUND["dead_silence_s"]: a microphone not wired or muted.
+        "dead_silent": bool(heard and heard.silent_hops * SOUND["hop_s"] >= SOUND["dead_silence_s"]),
         "stream": getattr(stream, "info", None) or None,
     }
 
@@ -657,6 +724,30 @@ def limit_view(settings: dict, watch: change_limit.Watch) -> dict:
     }
 
 
+def camera_view(rt: Runtime, session: Session, sensor: Sensor) -> dict | None:
+    """An ESP32 camera of ours (esphome/): whether its firmware takes a sensor's settings (1.5.0 on),
+    how it said it is set up, how fast it takes pictures and its camera chip, and the other sensors on it that want
+    it set up otherwise (it switches between them). None for any other camera."""
+    ours = rt.camera_uses.ours.get(sensor.source) if sensor.source_type == "http" else None
+    if ours is None or sensor.kind == KIND_SOUND:
+        return None
+    mine = camera_settings(sensor.triggers, sensor.kind)
+    others = session.scalars(
+        select(Sensor).where(Sensor.source_type == "http", Sensor.source == sensor.source, Sensor.id != sensor.id)
+    ).all()
+    return {
+        "settings": ours == "settings",
+        "now": rt.camera_uses.now.get(sensor.source),
+        "frame_ms": rt.camera_uses.frame_ms.get(sensor.source),
+        "chip": rt.camera_uses.chip.get(sensor.source),
+        "others": [
+            other.name
+            for other in others
+            if other.enabled and other.kind != KIND_SOUND and camera_settings(other.triggers, other.kind) != mine
+        ],
+    }
+
+
 def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     """A sensor as the UI shows it: settings, status, live state, model and the parts of its kind."""
     live = rt.live.get(sensor.id)
@@ -683,10 +774,12 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
     if live and live.face_burst.until > now:
         paces.append(FACES["burst_interval_s"])
     pace = min(paces) if paces else None
+    camera = camera_view(rt, session, sensor)
     return {
         "id": sensor.id,
         "slug": sensor.slug,
         "name": sensor.name,
+        "camera": camera,
         "kind": sensor.kind,
         "source_type": sensor.source_type,
         "source": sensor.source,
@@ -723,7 +816,10 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "burst_interval_s": pace,
             "change_score": live.change_score if live else None,
             "last_trigger": live.last_trigger if live else None,
-            "light_error": live.light_error if live else "",
+            # Only about the light chosen now: one changed since is not tried until the next check.
+            "light_error": live.light_error
+            if live and live.light_error_entity == merge_triggers(sensor.triggers)["light_entity"]
+            else "",
             "frame_id": live.frame_id if live else None,
         },
         "model": {

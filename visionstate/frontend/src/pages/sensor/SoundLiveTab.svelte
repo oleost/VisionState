@@ -6,9 +6,11 @@
   import ProbBars from '../../lib/components/ProbBars.svelte';
   import Icon from '../../lib/components/Icon.svelte';
   import LevelChart from '../../lib/components/sound/LevelChart.svelte';
+  import DeviceCard from '../../lib/components/sound/DeviceCard.svelte';
   import { pct } from '../../lib/format';
   import { href, paths } from '../../lib/router.svelte';
   import { soundColor } from '../../lib/sound';
+  import { DEAD_SILENT } from '../../lib/ui';
   import type { Sensor } from '../../lib/types';
 
   let { sensor }: { sensor: Sensor; onchange?: () => void } = $props();
@@ -25,6 +27,8 @@
         <span class="spacer"></span>
         {#if sensor.live.available === false}
           <span class="chip danger">No sound</span>
+        {:else if sound.dead_silent}
+          <span class="chip warn">{DEAD_SILENT.label}</span>
         {:else if sound.analysed}
           <span class="chip ok">Analysing</span>
         {:else}
@@ -33,13 +37,15 @@
       </div>
       {#if sensor.live.error}
         <div class="notice danger small" data-testid="sound-error"><Icon name="alert" /><span>{sensor.live.error}</span></div>
+      {:else if sound.dead_silent}
+        <div class="notice warn small" data-testid="sound-dead-silent"><Icon name="alert" /><span>{DEAD_SILENT.help}</span></div>
       {/if}
       <LevelChart levels={sound.levels} line={sound.line} floor={Math.min(app.config?.sound.floor_db ?? -70, -70) - 20} />
       <p class="xsmall muted">
         Only sound above the line is analysed: {sound.level === 'auto'
           ? `${sound.above_db} dB above the background it learns`
           : `a fixed ${sound.fixed_db} dB`}. A sound that matters but stays below it — a beep two rooms away — is
-        missed: lower the line under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.
+        missed: lower the line under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Listening</a>.
       </p>
     </section>
 
@@ -57,12 +63,13 @@
           {/snippet}
         </ProbBars>
       {:else}
-        <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensor(sensor.id, 'settings'))}>Settings</a>.</p>
+        <p class="small muted">It listens for no sound. Pick some under <a href={href(paths.sensorSettings(sensor.id, 'detect'))}>Settings → Listening</a>.</p>
       {/if}
     </section>
   </div>
 
   <aside class="col">
+    <DeviceCard sensorId={sensor.id} />
     <section class="card pad col stream">
       <div class="card-title"><h3>The stream</h3></div>
       {#if stream}

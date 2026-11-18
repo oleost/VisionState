@@ -325,7 +325,7 @@ class LoggingCamera:
     def __init__(self, log: list[str]):
         self.log = log
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         self.log.append("grab")
         buf = io.BytesIO()
         render("00500").save(buf, format="JPEG", quality=92)
@@ -407,6 +407,11 @@ def test_only_triggered_checks_with_a_light(tmp_path, model_dir):
         fire("x", "Flow finished")
         assert wait_for(lambda: log.count("grab") == 7, timeout=10)
         assert view()["live"]["light_error"] == "no connection"
+        # Another light chosen (a camera's new firmware renamed its flash): the error was about the
+        # old one, so it is not shown until the new one has been tried.
+        rt.live_state(sid).light_error_entity = "light.old_flash"
+        assert view()["live"]["light_error"] == ""
+        rt.live_state(sid).light_error_entity = "light.flash"
 
         # During the burst after a trigger the light stays on: one on, several frames, one off.
         rt.ha.fail = False
@@ -435,7 +440,7 @@ class EspCamera:
             Image.new("RGB", (400, 160), (6, 6, 8)).save(buf, format="JPEG")  # dark: nothing to read
         return buf.getvalue()
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         picture, self.ready = self.ready, self.take()
         return picture
 
@@ -449,7 +454,7 @@ class DimCamera:
     def __init__(self, ha: FakeHa, log: list[str]):
         self.ha, self.log, self.text = ha, log, "00500"
 
-    async def grab(self, source_type, source):
+    async def grab(self, source_type, source, camera=None):
         lit = self.ha.states.get("light.flash") == "on"
         self.log.append("grab lit" if lit else "grab dark")
         image = render(self.text)

@@ -1,0 +1,138 @@
+{
+  "default": "ppocr-small",
+  "files": {
+    "ppocrv6-small-det": {
+      "kind": "text",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/28fe5895c24fd108c19eb3e8479f4ab385fbfc62/inference.onnx",
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+      "size": 9880512
+    },
+    "yolo-v9-t-384-plates": {
+      "kind": "yolo",
+      "url": "https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-384-license-plates-end2end.onnx",
+      "sha256": "888397b96d761c89db40bc9c305838e8652660f5e282c2cadebbe8d2951a77a8",
+      "size": 7771218,
+      "input_size": [
+        384,
+        384
+      ]
+    },
+    "yolo-v9-t-640-plates": {
+      "kind": "yolo",
+      "url": "https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx",
+      "sha256": "c3c1026ca7d0585dd88084d68182dd897113712fa734ae1557ca70174440c076",
+      "size": 7835770,
+      "input_size": [
+        640,
+        640
+      ]
+    },
+    "ppocrv6-small": {
+      "kind": "ppocr",
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/b8f84f0b80c529de40b4fbb3544b84fa7233a513/inference.onnx",
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+      "size": 21159378,
+      "chars": {
+        "0": 33,
+        "1": 34,
+        "2": 35,
+        "3": 36,
+        "4": 37,
+        "5": 38,
+        "6": 39,
+        "7": 40,
+        "8": 41,
+        "9": 42,
+        "A": 43,
+        "B": 44,
+        "C": 45,
+        "D": 46,
+        "E": 47,
+        "F": 48,
+        "G": 49,
+        "H": 50,
+        "I": 51,
+        "J": 52,
+        "K": 53,
+        "L": 54,
+        "M": 55,
+        "N": 56,
+        "O": 57,
+        "P": 58,
+        "Q": 59,
+        "R": 60,
+        "S": 61,
+        "T": 62,
+        "U": 63,
+        "V": 64,
+        "W": 65,
+        "X": 66,
+        "Y": 67,
+        "Z": 68
+      }
+    },
+    "cct-xs-v2-global": {
+      "kind": "cct",
+      "url": "https://github.com/ankandrew/cnn-ocr-lp/releases/download/arg-plates/cct_xs_v2_global.onnx",
+      "sha256": "8031afb5fdc6b4d80462c9d542f1284ebd2cfddf5dbacd62609848d7e2855f44",
+      "size": 3344292,
+      "input_size": [
+        128,
+        64
+      ],
+      "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+    },
+    "cct-s-v2-global": {
+      "kind": "cct",
+      "url": "https://github.com/ankandrew/cnn-ocr-lp/releases/download/arg-plates/cct_s_v2_global.onnx",
+      "sha256": "384bbbd2cea3ef54761d3df70822ef3a349ee1a112aeafddbe0e3ba06bc6e47b",
+      "size": 5262230,
+      "input_size": [
+        128,
+        64
+      ],
+      "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+    }
+  },
+  "models": {
+    "ppocr-small": {
+      "name": "PP-OCR small (open)",
+      "description": "Recommended. Finds the text on a vehicle and reads it; any country's letters and digits, not made for plates. Read 39 of 53 plates in the benchmark (47 within one character).",
+      "finder": "ppocrv6-small-det",
+      "reader": "ppocrv6-small",
+      "license": "Apache-2.0 (PP-OCRv6 small text detection and recognition)",
+      "data": "PaddleOCR's own training data, published with the models under Apache-2.0",
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx",
+      "open": true,
+      "ram_mb": 60,
+      "time_ms": 60,
+      "accuracy": 3
+    },
+    "alpr-fast": {
+      "name": "Plate model, fast",
+      "description": "Made for plates of 65+ countries: a plate finder and a plate reader. Read 50 of 53 plates in the benchmark. Fast enough for a Raspberry Pi.",
+      "finder": "yolo-v9-t-384-plates",
+      "reader": "cct-xs-v2-global",
+      "license": "The repositories are MIT; no licence is stated for the model files",
+      "data": "Not named: the finder about 11,000 plate images from the web (mostly from open datasets, its author says), trained with a GPL-3.0 YOLOv9 fork; the reader a custom set of plates from 65+ countries and synthetic plates",
+      "source": "https://github.com/ankandrew/fast-alpr",
+      "open": false,
+      "ram_mb": 30,
+      "time_ms": 25,
+      "accuracy": 4
+    },
+    "alpr-accurate": {
+      "name": "Plate model, accurate",
+      "description": "The same with a larger finder input and reader: smaller plates further away. Read 51 of 53 plates in the benchmark.",
+      "finder": "yolo-v9-t-640-plates",
+      "reader": "cct-s-v2-global",
+      "license": "The repositories are MIT; no licence is stated for the model files",
+      "data": "Not named: the finder about 11,000 plate images from the web (mostly from open datasets, its author says), trained with a GPL-3.0 YOLOv9 fork; the reader a custom set of plates from 65+ countries and synthetic plates",
+      "source": "https://github.com/ankandrew/fast-alpr",
+      "open": false,
+      "ram_mb": 40,
+      "time_ms": 60,
+      "accuracy": 5
+    }
+  }
+}

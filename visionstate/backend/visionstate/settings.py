@@ -58,6 +58,7 @@ OBJECT_DEFAULTS = {
     "custom": [],
     "teach": {},  # this sensor's own values of the tunable teaching limits (TEACH_TUNABLE); missing = global
     "faces": {},  # recognising people by their face: see FACE_DEFAULTS (missing = default)
+    "plates": {},  # reading licence plates: see PLATE_DEFAULTS (missing = default)
     "snapshot_aspect": "free",  # the shape of an object's snapshot: "free", or width:height such as "16:9"
     # A new snapshot while the count stays, once the boxes differ this much from those of the last one
     # (imaging.box_change; 0 = only when the count changes). Above a parked car's jitter between checks.
@@ -358,6 +359,9 @@ SOUND = {
     "stall_s": 15.0,  # a stream that sent no audio for this long is opened again
     "offline_after_s": 20.0,  # unavailable only after this long without audio: a reconnect is not news
     "live_levels": 120,  # levels (one per hop) the Live tab shows
+    # A stream of nothing but digital silence (sounds.SILENCE_DB) for this long is said to be: no
+    # room is that quiet, so its microphone is not wired, broken or muted (an ESP32's switch).
+    "dead_silence_s": 60.0,
     "max_sounds": 20,  # the model's sounds per sensor (one entity each)
     "max_custom": 10,  # own sounds per sensor (one entity each)
     "max_taught": 50,  # clips taught per own sound
@@ -398,6 +402,119 @@ ADVICE = {
     "min_answers": 3,
 }
 
+# ESP32 devices of our own, built with ESPHome (esphome/ in the repository, docs/ESP32_PLAN.md): what
+# the guide on the ESP32 page writes (esphome.py). The boards' pins are the defaults of
+# esphome/packages/board-*.yaml (tests/test_esphome.py keeps them the same).
+ESPHOME = {
+    "repository": "https://github.com/oleost/VisionState",
+    # The firmware's line (docs/RELEASING.md): it moves to each new version of v1, so a device gets it
+    # at its next Install; esphome/examples name the same.
+    "ref": "esphome-v1",
+    # How often ESPHome looks for a newer firmware on that line: at every Install, so Install always
+    # builds the newest (a shallow git fetch; without a network ESPHome builds the copy it has).
+    "refresh": "0s",
+    # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
+    # reports an older one is told to install again.
+    "firmware_version": "1.5.3",
+    # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
+    # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
+    "password_action": "stream_password",
+    # A device's entities VisionState shows, by their name in the firmware (the packages in
+    # esphome/) and kind, set there through Home Assistant: the switches, numbers and texts (the
+    # microphone's and a voice assistant's, a text being a media player picked from Home Assistant's)
+    # on a sound sensor's Live tab, the selects (the camera's) in a camera sensor's settings.
+    "controls": {
+        "Microphone": "switch",
+        "VisionState stream": "switch",
+        "Microphone gain": "number",
+        "VisionState microphone gain": "number",
+        "Picture orientation": "select",
+        "Answer on": "text",
+    },
+    # The device model our firmware reports (esphome/packages/common.yaml, project name).
+    "model": "visionstate",
+    # A camera's flash: its light's name in the firmware (esphome/packages/camera-*.yaml), the first
+    # firmware that takes a picture with it itself (?flash=<ms>), and the longest the camera keeps it
+    # on before the picture (FLASH_SETTLE_MAX_MS in visionstate_stream.cpp; a sensor's wait is cut
+    # to it).
+    "flash_name": "Flash",
+    "flash_firmware": "1.4.0",
+    "flash_max_s": 10.0,
+    # How long a camera's host name (watermeter.local) may take to resolve, to find its device.
+    "resolve_timeout_s": 2.0,
+    "port": 8081,  # visionstate_stream's port
+    "username": "visionstate",
+    "password_chars": 20,  # a password the guide makes up
+    "check_timeout_s": 6.0,
+    "kinds": {
+        "microphone": "Microphone",
+        "camera": "Camera",
+        "camera_microphone": "Camera and microphone",
+    },
+    "boards": {
+        "esp32-devkit": {
+            "name": "ESP32 DevKit",
+            "description": "ESP32-WROOM-32, 30 or 38 pins",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            "light": "The blue LED",
+            "tried": True,
+            "pins": {"mic_sck": "GPIO26", "mic_ws": "GPIO25", "mic_sd": "GPIO33", "mute_pin": "GPIO32"},
+        },
+        "esp32-cam": {
+            "name": "ESP32-CAM",
+            "description": "AI-Thinker layout and its clones; the microphone on the SD card's pins",
+            "wifi": "2.4 GHz",
+            "kinds": ["camera", "camera_microphone"],
+            "light": "The small red LED on the back",
+            "tried": True,
+            "pins": {"mic_sck": "GPIO14", "mic_ws": "GPIO15", "mic_sd": "GPIO13", "mute_pin": "GPIO12"},
+            # Its camera driver takes the first I2S port: esp32-cam-microphone.yaml keeps it.
+            "camera_i2s": True,
+        },
+        "xiao-esp32s3-sense": {
+            "name": "XIAO ESP32-S3 Sense",
+            "description": "Seeed Studio; the camera and the microphone are on its camera board, nothing to wire",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone", "camera", "camera_microphone"],
+            "light": "The orange LED",
+            "tried": False,
+            "pins": {"mute_pin": "GPIO1"},
+            "microphone": "built_in",  # a PDM microphone (microphone-pdm.yaml), not an INMP441
+        },
+        "esp32s3-devkit": {
+            "name": "ESP32-S3 DevKit",
+            "description": "ESP32-S3-DevKitC-1 and its clones",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "tried": False,
+            "pins": {"mic_sck": "GPIO4", "mic_ws": "GPIO5", "mic_sd": "GPIO6", "mute_pin": "GPIO7"},
+        },
+        "waveshare-esp32s3-lcd2": {
+            "name": "Waveshare ESP32-S3-Touch-LCD-2",
+            "description": "The microphone on its headers",
+            "wifi": "2.4 GHz",
+            "kinds": ["microphone"],
+            # No LED of its own: its display shows a red dot instead. No pin known to be free for a mute switch.
+            "light": "Its display (a red dot)",
+            "tried": False,
+            "pins": {"mic_sck": "GPIO43", "mic_ws": "GPIO44", "mic_sd": "GPIO12"},
+            "wiring_note": "SCK and WS on the P2 header's TX and RX, SD on its pin 10. With a camera in the "
+            "socket, SD goes to GPIO18 (P1 header, pin 6) instead: change mic_sd in the file.",
+        },
+        "waveshare-esp32c5-kit": {
+            "name": "Waveshare ESP32-C5-WIFI6-KIT",
+            "description": "ESP32-C5: Wi-Fi on 2.4 and 5 GHz",
+            "wifi": "2.4 or 5 GHz",
+            "kinds": ["microphone"],
+            "light": "The RGB LED",
+            "tried": False,
+            "pins": {"mic_sck": "GPIO8", "mic_ws": "GPIO9", "mic_sd": "GPIO10", "mute_pin": "GPIO4"},
+        },
+    },
+}
+
 DETECTION = {
     "nms_iou": 0.7,  # boxes of one class overlapping more than this are the same object
     "max_detections": 100,
@@ -434,6 +551,12 @@ TEACH = {
     "rescue_floor": 0.25,  # weakest boxes looked at again, once a box the detector missed was taught
     "max_checked": 6,  # boxes compared per check (most certain first), to bound the extra work
     "max_rescue": 4,  # unsure boxes compared per check
+    # A box at the same place as one compared in the last check (they overlap this much: a still
+    # object's box moved up to 5 %, a weak box's edge 15 %, see snapshot_move) reuses that check's
+    # embedding instead of embedding its crop again; every recheck_every-th check it is embedded
+    # anew. One embedding costs about a detector run (discussion #83: ~1 s on a Celeron J3455).
+    "reuse_iou": 0.85,
+    "recheck_every": 3,
     "rescue_overlap_iou": 0.5,  # an unsure box overlapping a counted one this much is that same object
     "crop_margin": 0.1,  # share of a box's size added on each side of what is compared
     "min_box": 0.01,  # smallest taught box side, as a share of the frame
@@ -558,6 +681,69 @@ FACES = {
     "max_photos": 10,
     "photo_video_interval_s": 0.5,
 }
+# --- Licence plates (object sensors; plates.py, docs/PLATE_RECOGNITION_PLAN.md) ------------------
+PLATES = {
+    # A read that can be a plate: this many letters and digits, at least one a digit.
+    "min_chars": 3,
+    "max_chars": 10,
+    "finder_score": 0.4,  # a plate finder made for plates: its least confidence
+    # PP-OCR's text finder: the vehicle image's longest side (larger images are made smaller), the
+    # map value that is text, the least mean value of an area of text, and how far it is widened.
+    "text_side": 640,
+    "text_thresh": 0.3,
+    "text_box_thresh": 0.5,
+    "text_unclip": 1.5,
+    "max_candidates": 8,  # areas of text read per vehicle at most (the most certain first)
+    "min_aspect": 1.2,  # an area of text narrower than this × its height is no plate
+    "crop_pad": 0.08,  # a found plate is cut this much wider on every side before it is read
+    "max_read_width": 480,  # the reader's widest input
+    # A plate seen at an angle is straightened before it is read (plates.straighten): turned by at
+    # most this many degrees and sheared by at most this much (x moves by shear × y), and only when
+    # that makes its lines and strokes clearly sharper than as it was (by straighten_gain).
+    "straighten": True,
+    "straighten_max_turn": 30,
+    "straighten_max_shear": 0.6,
+    "straighten_gain": 1.1,
+    "max_vehicles": 3,  # vehicle boxes looked at per check at most (the largest first)
+    "min_vehicle_px": 60,  # a vehicle box narrower than this (frame pixels) is too far to read
+    # A read is a car's plate when it is at most this far from it (plates.distance: a confusable
+    # character costs 0.5, any other 1). Only an exact read names the car at once; a close one
+    # must be read on two checks while the box stays.
+    "match_distance": 1.0,
+    "min_score": 0.5,  # a read the reader is less sure of counts for nothing
+    # A plate that is not a car's becomes an unknown plate once read the same way on this many
+    # checks while the vehicle stays (one read is too often a sticker or a half plate).
+    "unknown_after": 2,
+    "recheck_every": 3,  # a car named by an exact read is carried over this many checks without reading
+    "max_cars": 50,  # cars the household can name
+    # The same car or plate makes no new event on a sensor until it was gone this many seconds; an
+    # unknown plate read at most same_plate_distance from one announced is that plate (a parked car
+    # read a character off: BR85853, B85853, 885853, 18885853).
+    "event_cooldown_s": 300,
+    "same_plate_distance": 2.0,
+    # Learning a car's look from its plate (objects["plates"]["learn"]): a vehicle whose plate was
+    # read exactly as a car's, at least this sure, that its look does not know yet, is taught as
+    # that car on this sensor; at most once per learn_every_s per car and sensor (other light,
+    # another angle, not the same parked car again and again), and up to learn_max such boxes.
+    "learn_score": 0.8,
+    "learn_every_s": 3600,
+    "learn_max": 20,
+}
+VEHICLE_CLASSES = ("car", "truck", "bus", "motorcycle")  # the classes a plate is looked for in
+PLATE_DEFAULTS = {
+    "enabled": False,
+    "unknown": False,  # report plates of cars it does not know (an event in Home Assistant)
+    # When a car's taught look says a vehicle is that car, a plate read at most this far from the
+    # car's plate (plates.distance: about one per wrong or missing character) names it at once.
+    # 0: the look does not help the plate.
+    "look_distance": 1.0,
+    # Learn a car's look from its plate: a sure plate on a car its look does not know is taught.
+    "learn": True,
+}
+PLATE_LIMITS = {"look_distance": (0.0, 2.0)}
+# The events of an object sensor's plate entity: a car of the household, or a plate it does not know.
+PLATE_EVENTS = ("known_car", "unknown_plate")
+
 FACE_UNKNOWN_KEY = "unknown_person"  # the key (and entity) of a face nobody was taught for
 # A person's own entity (sensor.visionstate_<key>) says on which sensor they are seen: its slug,
 # the one that saw them last when several do, or this when none sees them now.
@@ -591,7 +777,66 @@ TRIGGER_DEFAULTS = {
     # Checks._grab_in_light); an ESP32 camera at 1600x1200 takes about a second per frame, so 1 s
     # threw away only the stale one and the frame read was often dark.
     "light_delay_s": 2.0,
+    # When the light is switched on: one of LIGHT_WHEN. "dark": a frame is taken without it first,
+    # and the light switched on only when that frame is darker than RUNTIME["light_dark_below"].
+    "light_when": "always",
+    # How an ESP32 camera of ours (esphome/) is set up for this sensor's pictures: the keys of
+    # CAMERA_SETTING_KEYS, sent with each snapshot. None: its kind's preset (CAMERA_PRESET_BY_KIND).
+    # Only for a camera that answers as ours (an X-VisionState-Camera header); ignored for any other.
+    "camera": None,
 }
+# An ESP32 camera's settings for a sensor (firmware 1.5.0 on), and the query key each is sent with.
+# exposure_ms 0 is automatic exposure; more is a fixed exposure that long (about: the firmware turns
+# it into the sensor's lines).
+CAMERA_SETTING_KEYS = {
+    "size": "size",
+    "quality": "quality",
+    "clock_mhz": "clock",
+    "exposure_ms": "exposure",
+    "gain": "gain",
+}
+CAMERA_SIZES = ("640x480", "800x600", "1024x768", "1280x1024", "1600x1200")
+CAMERA_CLOCKS_MHZ = (20, 10)
+CAMERA_GAINS = (2, 4, 8, 16, 32, 64, 128)  # the gain ceiling
+CAMERA_LIMITS = {"quality": (6, 40), "exposure_ms": (1, 500)}  # JPEG quality: lower is better
+# The exposure a sensor gets when its exposure is switched from automatic to fixed: short, so what
+# moves stays sharp (the "movement" preset's until 0.15.0b23).
+CAMERA_FIXED_EXPOSURE_MS = 15
+# Presets fill a sensor's settings in; the name shown is the preset's whose values a sensor has, or
+# Custom. The keys are what firmware before 1.5.0 is asked for (?use=).
+CAMERA_PRESETS = {
+    "meter": {
+        "name": "Meters and displays",
+        "description": "Every pixel and less compression, for the digits; the subject stands still",
+        # JPEG quality 10, as in Espressif's own example (8 until 0.15.0b19: safe too, but no one else's).
+        # 10 MHz: at 20 MHz an OV3660 gave thin lines across most detailed 1600x1200 pictures (none in
+        # 30 at 10 MHz, 2026-11-17); a meter needs no fast pictures, and gets twice the longest exposure.
+        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 10, "exposure_ms": 0, "gain": 4},
+    },
+    "movement": {
+        "name": "People, cars and animals",
+        "description": "Automatic exposure: short in good light, so what moves stays sharp, longer in poor light",
+        # Automatic since 0.15.0b23: a fixed 15 ms was nearly black in a dim room at any gain, and the
+        # automatic exposure as sharp in a lit one (an OV3660, 2026-11-17). Gain up to 32 for the dark.
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32},
+    },
+    "states": {
+        "name": "States",
+        "description": "Still things: a door, a gate, a light",
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+    },
+}
+# A preset's values before they were changed: a sensor that has them follows the preset to its new ones.
+CAMERA_PRESETS_BEFORE = {
+    "meter": [
+        {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+        {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+    ],
+    "movement": [{"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16}],
+}
+CAMERA_PRESET_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
+# When a sensor's light is switched on for a check (triggers.light_when), with the names shown.
+LIGHT_WHEN = {"always": "For every check", "dark": "Only when it is dark"}
 TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),
@@ -763,8 +1008,9 @@ HISTORY = {
 # kinds). api/history.py says which rows each one matches, the UI how it is named.
 HISTORY_EVENTS: dict[str, tuple[str, ...]] = {
     KIND_STATES: ("change", "flagged"),  # a published change; a frame put in the review queue
-    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]).
-    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen"),
+    # "asked": "Is this Our car?"; "face_seen": a face nobody is named for (FACES["record_cooldown_s"]);
+    # "plate_seen": a car of the household came, or an unknown plate was read (its plate event).
+    KIND_OBJECTS: ("appeared", "cleared", "filtered", "asked", "face_seen", "plate_seen"),
     KIND_READING: ("value", "rejected", "verified"),  # verified: the user said whether it read right
     KIND_SOUND: ("heard", "quiet", "near"),  # a sound began to be heard; no longer; almost heard (asked about)
 }
@@ -826,6 +1072,12 @@ RUNTIME = {
     # While a check's light warms up, a frame is fetched (and thrown away) this often: a camera
     # that hands out a picture it took earlier (ESP32) gives a fresh one, and adjusts its exposure.
     "light_warmup_interval_s": 1.0,
+    # A frame darker than this (its mean brightness, 0-255) is "dark" for a light switched on only
+    # when it is dark. Measured on ESP32-CAMs at night: 3-10 without the light, 40-150 with it.
+    "light_dark_below": 25,
+    # How long it is trusted that a sensor's light is (or is not) its ESP32 camera's own flash, as
+    # Home Assistant's registry said (engine/checks.py _own_flash).
+    "own_flash_check_s": 600,
     # A light VisionState switched off this recently may still be reported "on" by Home Assistant;
     # the next check switches it on (and waits) anyway instead of taking it for somebody else's.
     "light_off_settle_s": 10.0,
@@ -864,6 +1116,7 @@ def merge_objects(stored: dict | None) -> dict:
     merged["custom"] = [dict(label) for label in merged.get("custom") or []]
     merged["teach"] = {k: v for k, v in (merged.get("teach") or {}).items() if k in TEACH_TUNABLE and v is not None}
     merged["faces"] = merge_faces(merged.get("faces"))
+    merged["plates"] = {k: type(v)((merged.get("plates") or {}).get(k, v)) for k, v in PLATE_DEFAULTS.items()}
     return merged
 
 
@@ -879,6 +1132,11 @@ def merge_faces(stored: dict | None) -> dict:
 def faces_on(objects: dict) -> bool:
     """Whether an object sensor recognises faces: switched on, and it looks for people."""
     return bool(objects["faces"]["enabled"]) and "person" in objects["classes"]
+
+
+def plates_on(objects: dict) -> bool:
+    """Whether an object sensor reads licence plates: switched on, and it looks for a vehicle."""
+    return bool(objects["plates"]["enabled"]) and any(c in VEHICLE_CLASSES for c in objects["classes"])
 
 
 def active_custom(objects: dict) -> list[dict]:
@@ -919,11 +1177,32 @@ def merge_reading(stored: dict | None) -> dict:
 
 
 def merge_triggers(stored: dict | None) -> dict:
-    """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS."""
+    """Trigger settings of a sensor: stored values on top of TRIGGER_DEFAULTS. A camera use from
+    before the camera settings (0.15.0b18 and older: "camera_use") becomes its preset's settings, and
+    a preset's old values its new ones (CAMERA_PRESETS_BEFORE)."""
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
     merged["only_states"] = dict(merged.get("only_states") or {})
+    old_use = merged.pop("camera_use", "")
+    camera = dict(merged.get("camera") or {})
+    if not camera and old_use in CAMERA_PRESETS:
+        camera = dict(CAMERA_PRESETS[old_use]["settings"])
+    for key, before in CAMERA_PRESETS_BEFORE.items():
+        if camera in before:
+            camera = dict(CAMERA_PRESETS[key]["settings"])
+    merged["camera"] = camera or None
     return merged
+
+
+def camera_settings(triggers: dict | None, kind: str) -> dict:
+    """The settings an ESP32 camera of ours is set up with for a sensor: its own, or its kind's preset."""
+    preset = CAMERA_PRESETS[CAMERA_PRESET_BY_KIND.get(kind, "states")]["settings"]
+    return {**preset, **(merge_triggers(triggers)["camera"] or {})}
+
+
+def camera_preset(settings: dict) -> str | None:
+    """The preset whose values these are (CAMERA_PRESETS), or None: custom."""
+    return next((key for key, preset in CAMERA_PRESETS.items() if preset["settings"] == settings), None)
 
 
 # --- Privacy -----------------------------------------------------------------

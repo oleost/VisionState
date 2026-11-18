@@ -15,14 +15,14 @@ from typing import Any
 import numpy as np
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, imaging, readers, sounds, teach
+from .. import backbones, classifier, detectors, faces, imaging, plates, readers, sounds, teach
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener
 from ..lights import Lights
 from ..mqtt import MqttBridge
 from ..settings import RUNTIME, Settings, merge_review, merge_teach
 from ..shared_frames import SharedFrames
-from ..sources import FrameGrabber, HomeAssistant
+from ..sources import CameraUses, FrameGrabber, HomeAssistant
 from ..storage import Storage
 from .state import LiveState, SensorConfig, SoundRecording
 
@@ -40,11 +40,16 @@ class RuntimeBase:
         self.storage = Storage(settings)
         self.ha = HomeAssistant(settings)
         self.lights = Lights(lambda: self.ha)  # sensors' lights, shared by checks and open views
-        self.grabber = FrameGrabber(self.ha)
+        self.camera_uses = CameraUses()  # ESP32 cameras of ours, set up for their sensors (sources.py)
+        self.grabber = FrameGrabber(self.ha, self.camera_uses)
         self.shared_frames = SharedFrames(
-            lambda kind, source: self.grabber.grab(kind, source), imaging.decode, RUNTIME["shared_frame_window_s"]
+            lambda kind, source, camera: self.grabber.grab(kind, source, camera=camera),
+            imaging.decode,
+            RUNTIME["shared_frame_window_s"],
         )
         self._camera_of: dict[int, tuple[str, str]] = {}  # sensors that may share a picture -> their camera
+        # (light, camera host) -> (whether the light is that camera's own flash, when looked up)
+        self._own_flashes: dict[tuple[str, str], tuple[bool, float]] = {}
         # The speed test (engine/benchmark.py): the last one, and while it runs no sensor checks.
         self.benchmark = None
         self.benchmark_paused = False
@@ -92,6 +97,14 @@ class RuntimeBase:
         # published, and when and on which sensor they were last seen.
         self._person_where: dict[str, str] = {}
         self._person_last: dict[str, tuple[float, int]] = {}
+        # Licence plates (object sensors): the plate model, loaded in the background when a sensor
+        # turns plate reading on (engine/plates.py); the chosen one (DB setting "plate_model").
+        self.plate_model: plates.PlateModel | None = None
+        self.plate_choice = plates.DEFAULT_MODEL
+        self.plate_error = ""
+        self.plate_progress: dict | None = None  # {"done", "total"} bytes while it downloads
+        self._plate_lock = asyncio.Lock()
+        self._plate_task: asyncio.Task | None = None
         # Sound sensors: the sound model (loaded on first use), each sensor's head for its own sounds,
         # and the windows of its room kept as "other" (engine/sound.py).
         self.sound_model: sounds.SoundModel | None = None

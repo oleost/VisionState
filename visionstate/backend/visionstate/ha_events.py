@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from .settings import APP_SLUG, RUNTIME, SUPERVISOR_URL, TRIGGER_IGNORED_STATES, Settings
@@ -97,10 +98,41 @@ async def fetch_registry(url: str, token: str) -> list[dict]:
     return (await ws_commands(url, token, [{"type": "config/entity_registry/list"}]))[0] or []
 
 
+async def fetch_registries(url: str, token: str) -> tuple[list[dict], list[dict]]:
+    """Home Assistant's entity and device registries."""
+    entities, devices = await ws_commands(
+        url, token, [{"type": "config/entity_registry/list"}, {"type": "config/device_registry/list"}]
+    )
+    return entities or [], devices or []
+
+
+async def integration_names(url: str, token: str, domains: list[str]) -> dict[str, str]:
+    """The names Home Assistant shows for integrations ("cast": "Google Cast")."""
+    manifests = (await ws_commands(url, token, [{"type": "manifest/list", "integrations": domains}]))[0] or []
+    return {m["domain"]: m.get("name") or m["domain"] for m in manifests if m.get("domain")}
+
+
 async def enable_entities(url: str, token: str, entity_ids: list[str]) -> None:
     """Switch these entities on in Home Assistant."""
     update = "config/entity_registry/update"
     await ws_commands(url, token, [{"type": update, "entity_id": e, "disabled_by": None} for e in entity_ids])
+
+
+async def discovered(url: str, token: str, domain: str) -> list[str]:
+    """The names of devices Home Assistant has found for an integration and not been told to add
+    (Settings → Devices & services → Discovered)."""
+    flows = (await ws_commands(url, token, [{"type": "config_entries/flow/progress"}]))[0] or []
+    names = []
+    for flow in flows:
+        if flow.get("handler") != domain:
+            continue
+        context = flow.get("context") or {}
+        name = (context.get("title_placeholders") or {}).get("name")
+        if name and context.get("source") != "user":
+            # ESPHome shows "Friendly name (device-name)" when the device has a friendly name.
+            inner = re.fullmatch(r".*\(([^()]+)\)", str(name).strip())
+            names.append(inner[1] if inner else str(name))
+    return names
 
 
 async def camera_stream(url: str, token: str, entity_id: str) -> str:

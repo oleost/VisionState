@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
-from .. import backbones, classifier, detectors, faces, readers
+from .. import backbones, classifier, detectors, faces, plates, readers
 from ..db import Database, Sensor
 from ..ha_events import HaEventListener, enable_entities, fetch_registry, our_enabled, our_entity_ids
 from ..mqtt import MqttBridge, SensorDescriptor
@@ -57,6 +57,9 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         self.face_choice = await asyncio.to_thread(self.db.get_text, "face_model", faces.DEFAULT_RECOGNISER)
         if self.face_choice not in faces.RECOGNISERS:
             self.face_choice = faces.DEFAULT_RECOGNISER
+        self.plate_choice = await asyncio.to_thread(self.db.get_text, "plate_model", plates.DEFAULT_MODEL)
+        if self.plate_choice not in plates.MODELS:
+            self.plate_choice = plates.DEFAULT_MODEL
         threads = await asyncio.to_thread(self.db.get_setting, "inference_threads", RUNTIME["inference_threads"])
         backbones.set_threads(threads if isinstance(threads, int) else RUNTIME["inference_threads"])
         backbone_id = await asyncio.to_thread(self.db.get_text, "backbone", backbones.DEFAULT_BACKBONE)
@@ -69,10 +72,12 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
             if await asyncio.to_thread(self.heads_load, sensor_id):
                 log.info("Sensor %s: model from another version, retraining from stored images", sensor_id)
                 self.schedule_retrain(sensor_id, delay=0)
+        await asyncio.to_thread(self.adopt_car_labels)  # own labels of a vehicle kind: cars of the household
         await asyncio.to_thread(self.restore_last_seen)  # "last seen" survives an update or restart
         for sensor_id in await asyncio.to_thread(self._sensor_ids):
             self._start_loop(sensor_id)
         await self.faces_settled()  # sensors that recognise faces: load the face model in the background
+        await self.plates_settled()  # sensors that read plates: the plate model, the same way
         self._spawn(self.sound_settled())  # sound sensors with own sounds: their heads
         await self.refresh_trigger_entities()
         self.ha_events.start()
@@ -111,6 +116,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         self.embedder = self.detector = self.reader = None
         self.wheel_readers.clear()
         self.face_model = self.face_index = None
+        self.plate_model = None
         self.sound_model = None
         self.sound_heads.clear()
         self.sound_room.clear()
@@ -167,6 +173,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if cfg and cfg.is_objects:
             await self.faces_settled()  # made with face recognition on (the wizard)
+            await self.plates_settled()
         if cfg and cfg.is_sound:
             await self.train_sound_head(cfg)  # imported with own sounds or taught built-in ones
 
@@ -182,6 +189,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
         await self.refresh_trigger_entities()
         if cfg.is_objects:
             await self.faces_settled()
+            await self.plates_settled()
         if cfg.kind == KIND_READING:
             await self.release_wheel_readers()  # a counter may read with another one now
         if cfg.is_sound:
@@ -214,6 +222,7 @@ class Runtime(BenchmarkMixin, HistoryMixin, RemindersMixin):
             self.detector = None  # the last object sensor is gone: free the memory
         if descriptor.kind == KIND_OBJECTS:
             await self.faces_settled()
+            await self.plates_settled()
         if descriptor.kind == KIND_READING and not await asyncio.to_thread(self._sensor_ids, KIND_READING):
             self.reader = None
         if descriptor.kind == KIND_READING:

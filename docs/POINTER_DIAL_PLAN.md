@@ -249,6 +249,23 @@ Left (for whoever takes it on):
   confidence sensible, does the last wheel agree with the ×0.1 dial?
 - **Night pictures.** The dark-needle path is tested on a drawn dial made grey; a real infrared
   picture has glare and a dark rim. If it fails, that is the case for phase 3 (§6).
+- **A pink picture hides the needle, and the reader is still sure** (issue #86, an export of
+  2026-11-16: an ESP32-CAM with its flash, about 5 % of its pictures pink). When the dial's face is
+  itself reddish (its median redness 16–24 where a normal picture has 0–5), the needle's thin part
+  is no longer `dial_red_contrast` redder than the face: only the hub is found, and the "tip" is a
+  few pixels at its edge, often nearly opposite the real needle. Step 5's certainty only measures
+  how well those pixels agree, so it said 0.996–1.0 for needles read 4–5 digits off, and the value
+  was accepted. Of 739 readings, 9 misread and 26 *unsure* were among the 53 pink ones, 2 misread
+  among the 686 others. Tried on that export, not built:
+  - *Balancing the dial on its own face* (each colour scaled so the face's median is grey) before
+    looking for red read all 8 pink pictures checked by eye right, with high certainty. On normal
+    pictures it moved 13 of about 700 needles, 3 of them for the worse — so only for a face with a
+    cast, if at all.
+  - *No certainty without a needle that reaches out*: a tip that stays near the hub is not a
+    needle; low certainty lets the wheels decide. A safety net whatever the cause.
+  The cast came when that camera moved to our ESP32 firmware (1 of the same meter's 173 pictures
+  before it; two other ESP32-CAMs with it show none), so the camera is where it is fixed first; the
+  reader's part waits until after the next stable release.
 - **By hand on a phone** (the UI routine in CLAUDE.md): placing four dials on a real meter face at
   390 px, and how small the face gets when the region is small in the picture.
 - **A meter whose last wheel snaps** instead of turning with the ×0.1 dial (§7): the *smooth* link

@@ -1,12 +1,16 @@
 <script lang="ts">
   // The sensor's entities in Home Assistant, on its Live tab (every kind of sensor).
+  import { href, paths } from '../router.svelte';
   import type { Sensor } from '../types';
 
   let { sensor }: { sensor: Sensor } = $props();
 </script>
 
 <section class="card pad">
-  <div class="card-title"><h3>In Home Assistant</h3></div>
+  <div class="card-title">
+    <h3>In Home Assistant</h3>
+    <a class="small" href={href(paths.sensorSettings(sensor.id, 'home-assistant'))}>Change</a>
+  </div>
   <ul class="entities">
     {#each sensor.entity_ids as id (id)}<li class="mono xsmall">{id}</li>{/each}
   </ul>

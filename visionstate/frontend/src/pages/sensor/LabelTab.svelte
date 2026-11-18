@@ -144,7 +144,7 @@
           </span>
         {:else}
           <span class="xsmall faint">
-            No triggers yet. <a href={href(paths.sensor(sensor.id, 'settings'))}>Set up motion or change triggers</a>.
+            No triggers yet. <a href={href(paths.sensorSettings(sensor.id, 'checks'))}>Set up motion or change triggers</a>.
           </span>
         {/if}
       </div>

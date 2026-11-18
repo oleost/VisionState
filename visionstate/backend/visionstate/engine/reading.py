@@ -12,7 +12,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import change_limit, imaging, readers
+from .. import change_limit, imaging, readers, timing
 from ..db import Prediction, ReadingStat, ReadingWatch, Sensor
 from ..mqtt import rate_unit, topics
 from ..redact import redact
@@ -53,7 +53,8 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         if await self._camera_changed(cfg, image, lit):
             return
         try:
-            text, used = await self.read_number(image, cfg.roi, settings)
+            with timing.step("read"):
+                text, used = await self.read_number(image, cfg.roi, settings)
         except Exception as err:  # noqa: BLE001 - reader missing or failed to load
             live.error = f"Number reader unavailable: {redact(str(err))}"
             return
@@ -213,9 +214,11 @@ class ReadingChecksMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         )
         shows = (live.debouncer.published, text.text, reason)
         crop = imaging.region_image(image, cfg.roi, cfg.reading["straighten"])
-        await self._send_on_change(cfg, t["image"], shows, lambda: imaging.encode_jpeg(crop, 80))
+        exif = imaging.frame_exif(timing.captured_at(), imaging.region_box(cfg.roi))
+        await self._send_on_change(cfg, t["image"], shows, lambda: imaging.encode_jpeg(crop, 80, exif))
         await self._send_on_change(cfg, t["reader_image"], shows, lambda: reader_jpeg)
         await self._send_reading_diagnostics(cfg, text.text, shown, reason, now)
+        timing.lap("publish")
 
     async def _keep_reading(
         self,

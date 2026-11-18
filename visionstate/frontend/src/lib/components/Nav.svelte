@@ -34,7 +34,8 @@
     {#each items as item (item.id)}
       <a href={href(item.path)} class:active={section === item.id} aria-current={section === item.id ? 'page' : undefined}>
         {item.label}
-        {#if item.badge}<span class="badge">{item.badge}</span>{/if}
+        <!-- 99+ keeps the menu on a phone's width; the Review page has the exact count. -->
+        {#if item.badge}<span class="badge" title={String(item.badge)}>{item.badge > 99 ? '99+' : item.badge}</span>{/if}
       </a>
     {/each}
   </div>
