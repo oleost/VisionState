@@ -1,371 +1,107 @@
 # Changelog
 
-## 0.15.0b23
+## 0.15.0
 
-**Brighter ESP32 pictures in poor light, and no lines across large ones** (firmware 1.5.3).
+**Licence plates and one list of your cars, ESP32 microphones and cameras of your own, and a
+sensor's page tidied up.**
 
-- **The gain ceiling works on an OV3660 or OV5640 camera:** the camera driver set every gain
-  ceiling below 1x on those chips, so a higher gain never made a picture brighter. The firmware now
-  sets it itself: in the dark a picture is two to four times as bright at the same exposure. An
-  OV2640 was not affected.
-- **People, cars and animals** now uses automatic exposure with the gain up to 32: a fixed 15 ms was
-  nearly black in a dim room, and the automatic exposure is as sharp in good light.
-- **Meters and displays** now runs the camera at 10 MHz: at 20 MHz, detailed 1600×1200 pictures
-  often had thin lines across them. A meter needs no fast pictures, and gets longer exposures too.
-- A sensor on either preset's old values follows it to the new ones; one you changed by hand keeps
-  its own.
-- **Firmware 1.5.3:** choose *Install* for the device in the ESPHome app.
+### New
 
-## 0.15.0b22
+- **Read licence plates** on an object sensor that looks for cars, trucks, buses or motorcycles:
+  turn it on under *Settings → Objects → Cars and licence plates*; a sheet first says what it does
+  and which model is downloaded.
+  - **Events in Home Assistant:** when one of your cars comes, the sensor's *Licence plate* entity
+    fires a `known_car` event with the plate and the car; with *Report plates of cars I do not know*
+    on, other cars fire `unknown_plate`. One event per visit: a car parked in view, read a little
+    differently at each check, is announced once, and again only after it has been gone for five
+    minutes. Each event is a row in the History, with the frame and its own plate.
+  - **One list of your cars, shared by every camera.** A car can have no plate, one, or several
+    (another plate in winter, a trailer), and its look is taught on each camera as before. Own
+    labels of a vehicle, such as *Our car*, move into the list by themselves, with their taught boxes
+    and entities.
+  - **The look and the plate work together:** a car seen from the side is still known by its look;
+    when the look says it is your car, a plate read one character off still counts; a car that only
+    looks like yours, with another plate, is not yours; a car you gave no plate keeps its name when
+    its plate is read. When a plate is read surely and the camera does not know the car's look yet,
+    that box is taught as the car (now and then, marked *by its plate*).
+  - **Cars that look the same** (two white Teslas): add the second with *Kind → The same look as*,
+    and the plates tell them apart. Each keeps what was taught of it, so choosing its kind again
+    undoes it.
+  - **How a car was known** (*by its plate*, *by its look*, *by its plate and look*) is shown on the
+    Live tab, in each car's `identified_by` attribute, and in an entity **… identified by** per car.
+  - **Plate models:** *PP-OCR small (open)* is the default (in a test with 53 plates from eight
+    countries, 39 read exactly and 47 within one character). *Plate model, fast* (runs on a
+    Raspberry Pi 4) and *Plate model, accurate* are made for plates and read 50–51 of the 53; their
+    makers state no licence for the model files, so they are chosen only after you accept that,
+    under *Settings → AI model*. Plates at an angle are straightened first. The speed test measures
+    them too.
+  - **Good to know:** the plate must be at least about 80 pixels wide in the picture, so use the
+    camera's main stream (on a doorbell's 640×480 sub-stream no model read a plate; on its main
+    stream every model read both cars at every check). A plate is not a key: never open a gate on a
+    plate alone. Reporting the plates of passers-by may not be allowed where you live.
+- **ESP32 microphones and cameras of your own, set up with ESPHome** (thanks to @hruba202 in #75
+  and #85, and @pedromfa in #86 for trying them).
+  - **A guide in the app:** *Set one up with ESPHome*, under a new sensor's sound or image source.
+    Pick the board and what it is (microphone, camera or both); it shows the wiring and gives the
+    device's file to import in the ESPHome app. Once Home Assistant has the device, the guide finds
+    it, checks it and makes the sensor. Boards: ESP32 DevKit and ESP32-S3 DevKit with an INMP441,
+    ESP32-CAM, Seeed Studio XIAO ESP32-S3 Sense, Waveshare ESP32-S3-Touch-LCD-2 and
+    ESP32-C5-WIFI6-KIT; the guide marks the ones not tried on a board yet.
+  - **An ESP32 of yours as a source:** one Home Assistant already has is offered first when you make
+    a sensor. VisionState asks it for its stream password through Home Assistant, so there is
+    nothing to type.
+  - **Locked down** like ESPHome's own devices: firmware over the air only with the device's API key,
+    and a password on its fallback hotspot.
+  - **Updates with one tap:** a device's file follows the firmware's line (`esphome-v1`), so a new
+    version comes with *Install* in the ESPHome app. A sensor says when its device has an older one.
+  - **A camera set up for each sensor:** under *Camera set-up* in a sensor's settings, the picture
+    size, JPEG quality, clock, exposure and gain, filled in by a preset (*Meters and displays*,
+    *People, cars and animals*, *States*) or your own. Two sensors on one camera each get theirs. It
+    also shows how the camera is set up and its chip, and turns or mirrors the picture
+    (*Picture orientation*).
+  - **The camera's own flash:** a sensor whose light is the flash of the ESP32 camera it looks
+    through has the camera take the picture with its flash itself, on at once and nothing through
+    Home Assistant; its settings say how the light is switched.
+  - **A microphone on the Live tab:** a sound sensor on an ESP32 shows the device's *Microphone*
+    switch and gain next to the level. Microphones at 48 kHz are taken down to 16 kHz on the device.
+    Optional diagnostics on the device: level, peak, clipping and sound dropped on a weak Wi-Fi.
+  - **A voice assistant too:** a microphone of ours can also be a voice assistant, its wake word
+    heard by Home Assistant and its answer played on a speaker you pick (*Answer on*). It listens for
+    a follow-up only once the answer has been played. A *VisionState stream* switch turns off only
+    VisionState's stream.
+- **A light only when it is dark:** a sensor's light (any light, or the camera's flash) can be
+  switched on for every check or only when the picture is dark, under the light in its settings.
+- **Pure silence:** a sound sensor whose stream is nothing but digital silence for a while says so
+  on the dashboard and its Live tab (a microphone not wired, broken or muted).
+- **Every picture says when its frame was taken** (discussion #83, thanks to @ecdlguy): each
+  picture sent to Home Assistant carries in its EXIF when the camera was asked for the frame
+  (`DateTimeOriginal` with milliseconds, in UTC) and which part of the frame it shows
+  (`UserComment`: `{"crop":[left,top,right,bottom]}`). With `log_level: debug`, every check logs how
+  long each part of it took.
 
-**An ESP32 camera that comes up after an install** (firmware 1.5.2; 1.5.1 was skipped, and its
-fix for broken pictures is in 1.5.2).
+### Changed
 
-- **Powered down while firmware is installed:** one ESP32-CAM gave no picture after every install
-  of our firmware until it was restarted. The camera is now powered down while new firmware is
-  written, so it starts afresh after the restart.
-- **Restarted once if the camera does not work:** a camera that gives no picture 30 s after the
-  device started has the device restart, once (never in a loop). The log says so.
-- **Firmware 1.5.2:** choose *Install* for the device in the ESPHome app.
-
-## 0.15.0b21
-
-**A broken camera picture is taken again, never read** (firmware 1.5.1).
-
-- **Broken pictures:** an ESP32 camera sometimes stops sending part way through a picture, and its
-  driver hands out the rest of an older one with it: a strip of picture over grey. A reading sensor
-  read it as 99999999 and asked about it in Review. VisionState now knows such a picture, from any
-  camera, asks for it again once, and never reads it.
-- **Firmware 1.5.1** takes such a picture again itself before sending it: choose *Install* for the
-  device in the ESPHome app.
-
-## 0.15.0b20
-
-**Meters and displays at JPEG quality 10**, the value Espressif's own camera example uses (it was 8:
-safe too, but no one else's). A sensor on the preset's old values follows it to the new ones; one
-you changed by hand keeps its own. Nothing to install on the camera.
-
-## 0.15.0b19
-
-**An ESP32 camera set up for each sensor, as you choose it** (firmware 1.5.0).
-
-- **Camera set-up** in a sensor's settings (*Settings → General*, for an ESP32 camera of ours): the
-  picture size, JPEG quality, the camera's clock (20 or 10 MHz), the exposure (automatic, or fixed
-  for a time in milliseconds) and the gain ceiling. A preset fills them in: *Meters and displays*,
-  *People, cars and animals* or *States*, the one for the sensor's kind to start with. Change any
-  setting and it is *Custom*.
-- **Each sensor gets its own:** the camera is set up with a sensor's settings before its picture.
-  Two sensors on one camera with other settings no longer share the most demanding; the camera
-  switches between them, and their settings say so.
-- **What the camera says:** under the settings, how it is set up, how often it takes a picture, and
-  its camera chip (OV2640, OV3660 …: boards are sold with different ones).
-- **Firmware 1.5.0:** choose *Install* for the device in the ESPHome app. *Camera use* and
-  *Exposure for moving things* are gone from the device in Home Assistant (delete them there; a
-  sensor's own choice became its settings), and the guide no longer asks what a camera looks at. An
-  older firmware still gets the presets.
-- **Boards not tried yet:** the ESP32 guide marks the boards the firmware is built for but has not
-  run on yet (the XIAO ESP32-S3 Sense, the ESP32-S3 DevKit and both Waveshare boards). Tried one?
-  Say so in issue #86.
-
-## 0.15.0b18
-
-**The camera's own flash, offered and explained in a sensor's settings.** VisionState found out
-by itself whether a sensor's light was the flash of the ESP32 camera it looks through, but nothing
-said so, and outside the wizard nothing offered it.
-
-- **Use the camera's flash:** a sensor that takes its pictures from an ESP32 camera of ours offers
-  its flash above the light, in the settings as in the wizard.
-- **It says how the light is switched:** under the light, *The camera's own flash* when the camera
-  takes the picture with it itself. When the flash is switched through Home Assistant instead, it
-  says why: an older firmware (install 1.4.0 or newer), the sensor looking through the device's
-  camera entity (pick the device itself as the source), or pictures from another address than
-  the one Home Assistant shows for the device.
-- **A camera reached by its name** (`watermeter.local`) is found by its address: its own flash, its
-  firmware and its controls work as with the address.
-- **The flash is found by its device**, also when Home Assistant named it after its room
-  (`light.garage_…_flash`).
-- **Flash on before the picture:** for the camera's own flash the wait is named for what it is,
-  and kept within the camera's limit (10 s).
-
-## 0.15.0b17
-
-**Two cars that look the same, said once, and no page to push sideways on a phone.**
-
-- **Each car once, by its surest name:** with a car known by its plate in view, a sensor's summary
-  on the dashboard also counted it for the look it shares with your other car ("1 Tesla, 1 Tesla
-  EJ86876"), as if there were two. Now the look counts only the cars of it no plate named.
-- **The summary on a sensor's card ends in "…"** when it is longer than the card, instead of running
-  out of it.
-- **A light with a long entity id** (an ESP32 camera's flash, named after its room) breaks inside its
-  card in the sensor's settings: on a phone it made the whole page move sideways.
-
-## 0.15.0b16
-
-**Licence plates tried on a real doorbell, with two cars parked in front of it.**
-
-- **A parked car makes one event per visit:** a car standing in view was read a little
-  differently at every check, and each new misreading made an *unknown_plate* event (217 in nine
-  hours). Now a car or plate stays announced while it is seen, a plate read a character or two off
-  counts as the same plate, and a new event comes only when it has been gone for five minutes.
-- **The History shows each plate event's own plate:** with two cars in view, the row of one car's
-  event could show the other car's plate.
-- **Good to know:** on the doorbell's sub-stream (640×480) the plate was about 40 pixels wide and no
-  plate model read it; on its main stream every model read both cars at every check. Use the
-  camera's main stream for plates, as the *Documentation* tab says.
-
-## 0.15.0b15
-
-**ESP32 firmware 1.4.0: an ESP32-CAM that takes its picture with its own flash.** Found in a water
-meter's export (#86): some pictures at night were black, or pink, after moving to our firmware.
-
-- **The flash comes on at once:** it faded in over a second, and pictures taken meanwhile could be
-  dark or have a colour cast.
-- **The camera takes its picture with its own flash:** when a sensor's light is the flash of the
-  ESP32 camera it looks through, VisionState asks the camera for a picture with the flash, and the
-  camera switches it on and off itself. Nothing goes through Home Assistant for it, so the picture is
-  lit even while the device is away from Home Assistant for a moment.
-- **A light only when it is dark:** a sensor's light (any light, or the flash) can be switched on
-  for every check or only when the picture is dark, under the light in the sensor's settings. The
-  ESP32 camera decides that for its own flash from what it sees, in the same request.
-- **A pointer dial the reader could not find a needle in** no longer stops the check with an
-  error.
-
-Choose *Install* for the device in the ESPHome app to get the firmware.
-
-## 0.15.0b14
-
-**ESP32 firmware 1.3.0: no stream password to look for, and a voice assistant that waits for its
-answer to be played.**
-
-- **No stream password to type:** pick an ESP32 of yours as a sensor's source, and VisionState asks
-  the device for its stream password through Home Assistant. Only a device with an older firmware
-  still asks you for it.
-- **The voice assistant no longer hears its own answer.** When an answer ends with a question, Home Assistant
-  continues the conversation, and a microphone of ours listened again the moment the answer's text
-  was ready, before the speaker had even started: it took its own answer for the next command,
-  round after round. Now it follows the speaker chosen in *Answer on* and listens for the follow-up
-  only when the answer has been played, so the whole time to answer is yours.
-- **The voice assistant in Home Assistant no longer stays *responding*** after an answer: the device says
-  when the answer is done.
-- **A conversation ends when something goes wrong:** if the answer cannot be played, or speech
-  recognition fails, the assistant goes back to waiting for its wake word instead of taking
-  whatever is said in the room as the next command.
-- **A speaker whose state shows no start or end of the answer** is waited for as long as the
-  answer takes to say.
-
-Choose *Install* for the device in the ESPHome app to get it; a sound sensor's Live tab and a camera
-sensor's settings say when a device has an older firmware.
-
-## 0.15.0b13
-
-- **A person with the most faces can be answered about again** (#87): *Is this Kari?* about
-  someone who already had 50 faces could not be answered. Now the answer replaces one of two faces
-  that are nearly the same, so the faces stay varied, or is simply taken when the new face adds
-  nothing new. Teaching a full person by hand or from photos says what to do, and the People page
-  says when a person is full.
-- **A car known by its look keeps its name when its plate is read:** a car you taught by its look
-  but gave no plate lost its name as soon as its plate was read (*not one of your cars*), and made
-  *unknown_plate* events about your own car. Now a plate overrules the look only when that car has
-  a plate given; the Live tab shows the plate as that car's (*by its look, no plate given*).
-
-## 0.15.0b11
-
-The ESP32 guide, from a new device set up from start to finish:
-
-- **It keeps its choices and passwords** when you leave the page (to install in the ESPHome app)
-  and come back, so the check uses the password the device was made with.
-- **It finds a device Home Assistant has discovered** when the device has a friendly name too
-  (Home Assistant shows it as *Name (device-name)*).
-- **Clearer steps for Home Assistant:** where to add the device, and that it takes the key from its
-  ESPHome app itself; and what to do when a board that was set up before is ignored there.
-
-## 0.15.0b10
-
-- **Install always builds the newest ESP32 firmware:** a device file from the guide (and the
-  examples) looks for the newest of its line at every Install (`refresh: 0s`). Before, an Install
-  less than a day after the last could build the old version again.
-- **Picking the voice assistant's speaker:** *Answer on* lists each speaker with the integration it
-  comes through (*Living room · Google Cast*, *Living room · Music Assistant*), so one speaker that is
-  there several times can be told apart; with none chosen it says so.
-- **A camera of ours says when its firmware is old,** under *Camera set-up* in a sensor's settings,
-  as a microphone does on its Live tab (*Picture orientation* shows once it has firmware 1.2.0).
-
-## 0.15.0b9
-
-**ESP32 firmware 1.2.0: the picture turned the right way, your ESP32s offered as sources, and a
-voice assistant from the guide.**
-
-- **Picture orientation:** a camera of ours turns its picture upside down or mirrors it itself
-  (*Normal*, *Mirrored*, *Upside down*, *Upside down, mirrored*). Chosen under *Camera set-up* in
-  a sensor's settings or in Home Assistant, kept over restarts, at once. A device whose own file set
-  `vertical_flip` or `horizontal_mirror` gives `camera_orientation` under `substitutions` instead.
-- **An ESP32 of ours as a source:** one that Home Assistant already has is offered first when you
-  make a sensor (a camera for pictures, a microphone for sound). Give its stream password and
-  VisionState takes the pictures or the sound straight from it, and offers its flash as the light;
-  no need to go through the guide again.
-- **A voice assistant from the guide:** for a microphone, *A voice assistant too* adds the wake
-  word (heard by Home Assistant) and plays the answer on a speaker you pick there. The speaker is
-  *Answer on* on the device, changed in Home Assistant or on the sound sensor's Live tab without
-  installing again.
+- **A sensor's page, tidied up** (issue #84, thanks to @Bimmerfriend): the same tabs for every kind
+  of sensor — *Live* (or *Label*), *History*, *Dataset* and *Quality*; *Upload* is part of *Dataset*.
+  **Settings** is the button beside Pause, in sections (*General*, *Region*, what it looks for,
+  *Checks and output*, *Home Assistant*, *Export or delete*) with one *Save changes* for all of them
+  and *Undo*. On a phone the sections are a list that says what is set in each. Links to the old
+  tabs still open where they went.
+- **Taught objects cost much less while someone stays in view** (discussion #83): a box at the same
+  place as in the check before keeps what the model saw in it and is compared with your taught boxes
+  every third check, so two of three checks skip that work. The answers are the same.
 
 ### Fixed
 
-- **ESP32 firmware locked down like ESPHome's own devices:** a device the guide makes takes
-  firmware over the air only from whoever has its API key, and its fallback hotspot has a password
-  (before, anyone on the network, or near a device that had lost its Wi-Fi, could install firmware
-  on it). For a device made before, add the two lines from *Locked* in `esphome/README.md`.
-- A light that could not be switched kept its warning in the sensor's settings after another light
-  was chosen, until the next check.
-
-## 0.15.0b8
-
-**ESP32 firmware 1.1.0, and it updates without editing its file.** Asked for by @hruba202 in #75
-and #85, thanks.
-
-- **Updating is one tap:** a device's file follows the firmware's line (`esphome-v1`), so a new
-  version comes with *Install* in the ESPHome app; nothing in the file changes. A sound sensor's
-  Live tab says when its device has an older version. Each version also has a tag of its own
-  (`esphome-v1.1.0`) for staying on it.
-- **The microphone on the Live tab:** a sound sensor on an ESP32 shows the device's *Microphone*
-  switch and its gain, set through Home Assistant, right next to the level they change.
-- **VisionState stream:** on a voice assistant, a switch that turns off only VisionState's stream
-  and leaves the assistant's microphone on.
-- **Diagnostics** on the device (off in Home Assistant until switched on there): the sound's level
-  and peak, samples that clipped, and sound dropped on a weak Wi-Fi.
-- **Microphones at 48 kHz** (such as the Waveshare ESP32-S3 Audio Board): filtered and taken down
-  to 16 kHz on the device (`mic_sample_rate: "48000"`).
-
-## 0.15.0b7
-
-**ESP32 microphones and cameras of your own, set up with ESPHome.** The firmware (`esphome-v1`)
-has been tried on an ESP32 DevKit with an INMP441 microphone and on an ESP32-CAM; the other boards
-are compiled but not yet tried on a board. Feedback is welcome in #75.
-
-- **A guide in the app:** *Set one up with ESPHome*, under a new sensor's sound or image source.
-  Pick the board and what it is (microphone, camera or both); it shows the wiring and gives the
-  device's file to import in the ESPHome app. The Wi-Fi you type stays in your browser. Once the
-  device is added in Home Assistant, the guide finds it, checks it and makes the sensor.
-- **Boards:** ESP32 DevKit and ESP32-S3 DevKit with an INMP441, ESP32-CAM (camera, or camera and
-  microphone), Seeed Studio XIAO ESP32-S3 Sense, Waveshare ESP32-S3-Touch-LCD-2 and
-  ESP32-C5-WIFI6-KIT.
-- **On the device in Home Assistant:** a *Microphone* switch, the gain, an optional mute switch on
-  a pin, and a light that is on while VisionState listens or looks.
-- **A camera of ours is set up for what each sensor looks at** (*Camera use*): still things, a
-  meter or display (a bigger picture, less compression), or things that move (a short exposure).
-  Sensors on one camera share the most demanding. Its snapshot is always taken after the request,
-  so it is fresh.
-- **A voice assistant too:** such a microphone can also be a voice assistant, its wake word heard
-  by Home Assistant and its answer played on a media player. A Home Assistant Voice PE or an
-  M5Stack Atom VoiceS3R can keep its own firmware and get VisionState's stream added. Both are
-  compiled, not yet tried on a device: see `esphome/README.md`.
-- **Pure silence:** a sound sensor whose stream is nothing but digital silence for a while says so
-  on the dashboard and on its Live tab (a microphone not wired, broken or muted). This is for every
-  sound sensor, not only ESP32s.
-
-**Cars that look the same** (two white Teslas with their own plates): add the second car with
-*Kind → The same look as → Tesla*. The first car then stands for the look they share, and each car
-under it is known by its plate. Each keeps what was taught of it, so choosing its kind again undoes
-it.
-
-- **How a car was known** is shown on the Live tab (*Detected by its plate*, *by its look*, *by its
-  plate and look*), and on a sensor that reads plates each car has an entity **… identified by**,
-  which can be chosen away under *Settings → Home Assistant*.
-
-**Fixed:** with *Plate model, fast* or *Plate model, accurate* chosen, the sensor list and the
-history stopped loading once a plate was found (0.15.0b5).
-
-## 0.15.0b5
-
-**Untested: licence plates, and one list of the household's cars.** This is a first beta of a new
-feature and has not been tried on real cameras yet: expect thresholds to change. Feedback is welcome.
-
-- **Read licence plates** on an object sensor that looks for cars, trucks, buses or motorcycles. It
-  is off until you turn it on under *Settings → Objects → Cars and licence plates*; a sheet first
-  says what it does and which model is downloaded.
-- **Events in Home Assistant:** when one of your cars comes, the sensor's *Licence plate* entity
-  fires a `known_car` event with the plate and the car. With *Report plates of cars I do not know*
-  turned on, other cars fire `unknown_plate`. Each event is also a row in the history, with the
-  frame.
-- **One list of your cars, shared by every camera.** A car can have no plate, one, or several
-  (another plate in winter, a trailer), and its look is taught on each camera as before.
-  - Existing own labels of a vehicle, such as *Our car*, move into the list by themselves. They
-    keep their taught boxes and their entities.
-  - A car seen from the side, with no plate visible, is still recognised by its look.
-- **The look and the plate work together:**
-  - When the look says it is your car, a plate read one character off still counts. This is set
-    under *Let a car's look help*.
-  - The plate always decides: a car that only looks like yours, with another plate, is not yours.
-  - Each car's entities have an `identified_by` attribute: `plate`, `look` or `plate_and_look`.
-- **It learns a car's look from its plate:** when a plate is read surely but the camera does not
-  know the car's look yet, that box is taught as the car. This happens now and then, not at every
-  check, and the boxes are marked *by its plate* under *What you taught*.
-- **Plate models:**
-  - *PP-OCR small (open)* is the default and is used without asking. In a test with 53 plates from
-    eight countries it read 39 exactly and 47 within one character.
-  - *Plate model, fast* (runs on a Raspberry Pi 4) and *Plate model, accurate* are made for plates
-    and read 50–51 of the 53. Their makers state no licence for the model files, so they are chosen
-    only after you accept that, under *Settings → AI model*.
-- **Plates seen at an angle are straightened** before they are read.
-- **The speed test** measures the plate models too, on an object sensor.
-- **A sensor imported** from an export comes with plate reading off, like face recognition: turn it
-  on there with its own confirmation. The cars taught on it come along, but their plates are in a
-  backup.
-- **Good to know:**
-  - The plate must be at least about 80 pixels wide in the camera's picture; use the camera's main
-    stream, not the substream.
-  - A plate is not a key: never open a gate on a plate alone.
-  - Reporting the plates of passers-by may not be allowed where you live.
-
-## 0.15.0b3
-
-**A sensor's page, tidied up: the same few tabs for every kind of sensor, and its Settings in
-sections** (issue #84, thanks to @Bimmerfriend). Feedback on the new layout is welcome in #85.
-
-- **The same tabs for every kind:** what it sees now (*Live*, or *Label* for a state sensor),
-  *History*, *Dataset* (what it was taught) and *Quality* (how well it does). *Upload* is now part
-  of *Dataset*; an object sensor's taught boxes and a sound sensor's *Own sounds* are its
-  *Dataset*. On a very narrow screen what does not fit goes under *More*.
-- **Settings is the button beside Pause**, in sections: *General*, *Region*, what it looks for,
-  *Checks and output*, *Home Assistant* (no longer a tab of its own) and *Export or delete* —
-  where *Delete sensor* is easy to find now. On a phone they are a list that says what is set in
-  each; on a wider screen a menu beside the open one.
-- **One Save for all sections:** a change waits for *Save changes* at the bottom of the screen and
-  is kept while you look at another section; *Undo* puts back what is saved.
-- On a phone the import options on *Dataset* are behind a button so the images start on the first
-  screen, and the Review count in the top menu shows *99+* so the menu fits.
-- Smaller things: every sensor card on the dashboard has *Live* (or *Label*), *History* and
-  *Settings*; *In Home Assistant* on the Live tab links to where it is changed; an own sound's
-  clips stay on one line, and its red button says *Forget sound*.
-- Links to the old tabs (bookmarks) still open where they went.
-
-## 0.15.0b2
-
-**Taught objects cost much less while someone stays in view** (discussion #83, thanks to @ecdlguy).
-
-- Comparing a box with the boxes you taught takes about as long as the AI needs for the whole
-  picture, on a small CPU around a second per box, at every check while someone stands there. A box
-  at the same place as in the check before now keeps what the model saw in it and is looked at
-  again every third check, so two of three checks skip that work. The answers are the same: a box
-  you teach in between counts at once. The first check when someone arrives costs as before.
-
-## 0.15.0b1
-
-**Every picture says when its frame was taken** (discussion #83, thanks to @ecdlguy).
-
-- A picture reaches Home Assistant a moment after the camera took it: the check needs that time,
-  seconds on a small CPU. Now every picture VisionState sends — an object's snapshot and each
-  sensor's *Last frame* — carries in its EXIF when the camera was asked for the frame
-  (`DateTimeOriginal` with milliseconds, in UTC). A picture saved with Home Assistant's
-  `image.snapshot` keeps it, so it can be matched with your camera's own recording to the second.
-- The same EXIF says which part of the camera frame the picture shows (`UserComment`:
-  `{"crop":[left,top,right,bottom]}`, from 0 to 1 like the `boxes` attribute).
-
-**See where a check's time goes.**
-
-- With the app option `log_level: debug`, every check logs how long it took, part by part:
-  `Sensor driveway: check 1.01 s (grab 0.32, decode 0.01, detect 0.25, taught 0.37, faces 0.06,
-  publish 0.00, history 0.00)`. When a check had to wait while other sensors used the AI models,
-  *waited* at the end says how long.
+- **A person with the most faces can be answered about again** (#87): the answer replaces one of two
+  faces that are nearly the same, or is simply taken when the new face adds nothing new. The People
+  page says when a person is full.
+- **A broken camera picture is taken again, never read:** a picture that ends part way through,
+  with the rest of an older one (seen from ESP32 cameras: a strip of picture over grey), was read as
+  99999999. Now it is fetched again once, from any camera, and never read.
+- A pointer dial the reader could not find a needle in no longer stops the check with an error.
+- A light that could not be switched kept its warning after another light was chosen.
+- A long light entity id no longer makes a sensor's settings move sideways on a phone.
 
 ## 0.14.0
 

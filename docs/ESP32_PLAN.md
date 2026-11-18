@@ -379,10 +379,9 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
 2. Issue #86: the pink pictures. The user tries JPEG quality 12 (as their old firmware) and reports
    overnight; if still pink, the camera clock at 10 MHz. Their export after 0.15.0b22 (2026-11-17):
    160 readings, none wrong, 2 rejected; 6 had a green tint (one so strong it was rejected). Their pink pictures were darker as well,
-   as if taken before the camera settled. Still open if neither helps: the exposure level
+   as if taken before the camera settled. Next they run the camera at 10 MHz for a day (asked 2026-11-17). Still open if neither helps: the exposure level
    (`ae_level: 1` in their old file, not a setting here), and settling until the colour is steady
    instead of a fixed time (proposed, not built).
 3. The dial misreads that the pink pictures cause, in the reader: `POINTER_DIAL_PLAN.md` §10,
    after the stable release (the maintainer).
-4. Before the stable 0.15.0: the roadmap's ESP32 rows to firmware 1.5.2 / 0.15.0b22, and the
-   maintainer's own cameras on 1.5.2 (*Install* in the Builder).
+4. Before the stable 0.15.0: the maintainer's own cameras on 1.5.3 (*Install* in the Builder).
