@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.16.0b1
+
+**Turning dials: how fast gas or water runs, and readings to share that stay small.**
+
+### New
+
+- **Turning dials** (reading sensors, *Turning dial*): the test dial of a gas meter, the sweep
+  hand of a water meter or a dial of an electricity meter is read for how fast it goes round. The
+  sensor's value is the flow (ft³/min, L/min, m³/h, kW …), and `binary_sensor.<name>_running` is
+  on while it turns — for example to warn of water running for hours. While it turns it is read
+  every few seconds; a move it cannot count for sure is left out, so the flow is never more than
+  flowed.
+
+### Changed
+
+- **Export readings** (Quality tab): once you have exported, **Export new readings** holds only
+  the readings not exported yet and those you answered since, so each file you share is new. When
+  not everything fits, the checked readings come first, then the rejected ones, then accepted ones
+  from all through the time instead of only the newest. The export also needs far less memory on a
+  sensor with many readings (a Raspberry Pi).
+
 ## 0.15.0
 
 **Licence plates, ESP32 microphones and cameras of your own, and a tidier sensor page.**
