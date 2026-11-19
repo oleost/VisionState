@@ -704,8 +704,10 @@ microphone are on the board, or a Waveshare ESP32-S3-Touch-LCD-2 or ESP32-C5-WIF
 such a camera up itself before each sensor's pictures, with the sensor's own settings under
 *Settings → General → Camera set-up* (shown only for such a camera): the picture size, the JPEG
 quality (lower is sharper and larger), the camera's clock (20 MHz, or 10 MHz: fewer pictures a
-second and longer exposures, worth a try when its pictures have a colour cast), the exposure
-(automatic, or fixed for a time in milliseconds, about: short keeps what moves sharp) and the gain
+second and longer exposures, worth a try when its pictures have a colour cast; at 1280×1024 and
+larger, 20 MHz can give thin lines across a detailed picture, and 10 MHz does not), the exposure
+(automatic, or fixed for a time in milliseconds, about: short keeps what moves sharp; at most
+the time the camera takes for one picture, about 70 ms at 1600×1200 and 20 MHz) and the gain
 ceiling (higher is brighter in poor light, and noisier). A *Preset* fills them in — *Meters and
 displays* for a reading sensor, *People, cars and animals* for an object sensor, *States* for a
 state sensor, which is where a new sensor starts — and a setting changed by hand makes them

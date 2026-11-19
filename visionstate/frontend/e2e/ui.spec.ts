@@ -2752,7 +2752,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     // A preset fills the settings in; one changed by hand makes them Custom, and the camera gets them all.
     await setup.selectOption('meter');
     await expect(page.getByLabel('Picture size')).toHaveValue('1600x1200');
-    await page.getByLabel('Camera clock').selectOption('10');
+    await page.getByLabel('Camera clock').selectOption('20');
     await expect(setup).toHaveValue('');
     await expect(setup.locator('option:checked')).toHaveText('Custom');
     await page.getByLabel('Exposure', { exact: true }).selectOption('fixed');
@@ -2765,7 +2765,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
         const s = await cameraState();
         return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain}`;
       }, { timeout: 30_000 })
-      .toBe('1600x1200 10 10 25 4');
+      .toBe('1600x1200 10 20 25 4');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
 

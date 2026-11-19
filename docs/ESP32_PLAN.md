@@ -354,15 +354,34 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
   Not known yet which of the two did it: the device's log after an install says so ("The camera
   gave no picture … restarting once" is the safety net; without it, the power-down was enough).
 
+**Measured on an OV3660 (2026-11-17), changed in firmware 1.5.3 and 0.15.0b23:**
+- **The gain ceiling did nothing:** the camera driver's `set_gainceiling` writes the gainceiling_t
+  (0–6) as it is into the OV3660's and OV5640's ceiling register (0x3A18-19), which holds the gain in
+  1/16, so every choice was a ceiling under 1x (as dark at 2x as at 128x). The firmware writes the
+  ceiling itself on those two chips; afterwards 15 ms gave 5 / 12 / 14.5 (mean grey) at 2x / 16x /
+  128x in the dark, automatic exposure 11 / 25 / 30 at 4x / 16x / 128x. The OV2640 (its own scale)
+  goes through the driver.
+- **Thin lines across large pictures** (a few rows, full width, often green): at 20 MHz in 14 of 20
+  detailed 1600×1200 pictures and 4 of 10 at 1280×1024, none at 1024×768 or smaller; at 10 MHz none
+  in 30 at 1600×1200. Fewer with more compression (JPEG quality 20: 4 of 10, 30: none), so the chip's
+  JPEG output not keeping up. A dark, flashed meter picture had none in 40. *Meters and displays*
+  moved to 10 MHz.
+- **The people preset:** a fixed 15 ms was nearly black in a dim room at any gain, and with a fixed
+  exposure the automatic gain swung from picture to picture (once a picture whose lower part was
+  washed out); automatic exposure was as sharp in a lit room and steady. *People, cars and animals*
+  moved to automatic exposure, gain up to 32. Sensors on the old values of either preset follow it.
+- A fixed exposure is at most one picture's time (the driver clamps it to the frame length: about
+  70 ms at 1600×1200 and 20 MHz).
+
 **What is left (2026-11-16), in order:**
 1. Issue #86: ask for the log after an install, to know whether the power-down is enough (the
    restart then never happens) or the safety net carries it.
 2. Issue #86: the pink pictures. The user tries JPEG quality 12 (as their old firmware) and reports
-   overnight; if still pink, the camera clock at 10 MHz. Their pink pictures were darker as well,
-   as if taken before the camera settled. Still open if neither helps: the exposure level
+   overnight; if still pink, the camera clock at 10 MHz. Their export after 0.15.0b22 (2026-11-17):
+   160 readings, none wrong, 2 rejected; 6 had a green tint (one so strong it was rejected). Their pink pictures were darker as well,
+   as if taken before the camera settled. Next they run the camera at 10 MHz for a day (asked 2026-11-17). Still open if neither helps: the exposure level
    (`ae_level: 1` in their old file, not a setting here), and settling until the colour is steady
    instead of a fixed time (proposed, not built).
 3. The dial misreads that the pink pictures cause, in the reader: `POINTER_DIAL_PLAN.md` §10,
    after the stable release (the maintainer).
-4. Before the stable 0.15.0: the roadmap's ESP32 rows to firmware 1.5.2 / 0.15.0b22, and the
-   maintainer's own cameras on 1.5.2 (*Install* in the Builder).
+4. Before the stable 0.15.0: the maintainer's own cameras on 1.5.3 (*Install* in the Builder).

@@ -874,6 +874,8 @@ export interface AppConfig {
     preset_by_kind: Record<string, string>;
     sizes: string[];
     clocks_mhz: number[];
+    /** The exposure a sensor gets when it is switched to fixed (settings.CAMERA_FIXED_EXPOSURE_MS). */
+    fixed_exposure_ms: number;
     gains: number[];
     limits: Record<'quality' | 'exposure_ms', [number, number]>;
   };

@@ -28,7 +28,7 @@
   const preset = $derived(
     settings && cfg ? (Object.entries(cfg.presets).find(([, p]) => same(p.settings, settings))?.[0] ?? '') : '',
   );
-  const fixedDefault = $derived(cfg?.presets.movement?.settings.exposure_ms ?? 15);
+  const fixedDefault = $derived(cfg?.fixed_exposure_ms ?? 1);
 
   function choosePreset(key: string) {
     const chosen = cfg?.presets[key];
@@ -97,7 +97,9 @@
     <label class="line">
       <span class="col" style="gap:0">
         <span class="small">Camera clock</span>
-        <span class="xsmall faint">Slower: fewer pictures a second, longer exposures.</span>
+        <span class="xsmall faint"
+          >Slower: fewer pictures a second, longer exposures, and no thin lines across large detailed pictures.</span
+        >
       </span>
       <select
         class="input sm"
