@@ -80,7 +80,9 @@ digits — a camera that cannot hang straight sees the meter turned or at an ang
 mechanical water or gas meter — down to the litre with the small pointer dials many water meters
 have — and the digits of an LCD or LED power meter, checks every value
 before it is published (a counter never goes down or jumps), and the total lands in the Energy
-dashboard — with a rate (m³/h, kW) if you want one. For a dark meter cabinet it switches a light
+dashboard — with a rate (m³/h, kW) if you want one. A gas meter's test dial or a water meter's
+sweep hand can be its own sensor too: how fast it turns is the flow right now, and whether gas or
+water runs. For a dark meter cabinet it switches a light
 on for each reading (or the ESP32-CAM's own flash); a battery camera can trigger a check when it
 has a new picture.
 
@@ -165,7 +167,7 @@ Home Assistant
   [AuraFace](https://huggingface.co/fal/AuraFace-v1) on a fast PC) with the faces you named.
 - **Readings:** [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) reads digits; mechanical
   counters use a small wheel reader made for VisionState ([`tools/wheelreader`](tools/wheelreader)),
-  read together with the meter's pointer dials.
+  read together with the meter's pointer dials; a turning dial's needle is read without a model.
   Every value is checked before it is published.
 - **Sounds:** [CED-Tiny](https://huggingface.co/mispeech/ced-tiny) listens to what is loud enough and
   tells which sound it is; your own sounds are learned from its embedding of your clips

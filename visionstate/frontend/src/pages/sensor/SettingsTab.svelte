@@ -29,7 +29,7 @@
   import TeachLimitsEditor from '../../lib/components/TeachLimitsEditor.svelte';
   import TriggersEditor from '../../lib/components/TriggersEditor.svelte';
   import { isObjectSensor, objectName, objectPicker } from '../../lib/objects';
-  import { extraDigits, isReadingSensor, valueDecimals } from '../../lib/reading';
+  import { extraDigits, isReadingSensor, readingUnit, valueDecimals } from '../../lib/reading';
   import { toPoints, toRectangle } from '../../lib/roi';
   import { go, href, paths } from '../../lib/router.svelte';
   import { isSoundSensor } from '../../lib/sound';
@@ -154,7 +154,9 @@
       .join(' · '),
     region: roi ? 'Part of the picture' : 'The whole picture',
     detect: readingSensor
-      ? `${reading.digits} digits${reading.unit ? ` · ${reading.unit}` : ''}`
+      ? reading.display === 'dial'
+        ? `Turning dial · ${readingUnit(reading)}`
+        : `${reading.digits} digits${reading.unit ? ` · ${reading.unit}` : ''}`
       : objectSensor
         ? short(classes.map((c) => objectName(c, sensor.objects?.custom ?? [])))
         : soundSensor
@@ -317,7 +319,9 @@
         {#if readingSensor}<StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />{/if}
         <p class="small muted">
           {straightened
-            ? 'Put its four corners on the corners of the display or counter, the edge marked Top at its top; it is read upright.'
+            ? reading.display === 'dial'
+              ? 'Put its four corners round the whole dial, its circle touching the sides, the edge marked Top at its top; it is read upright.'
+              : 'Put its four corners on the corners of the display or counter, the edge marked Top at its top; it is read upright.'
             : 'Drag to draw a new box, move it, or shape it with corners.'}
           {straightened ? '' : objectSensor
             ? 'An object counts when it stands inside it (the bottom of its box).'

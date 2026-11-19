@@ -35,7 +35,8 @@ taught from a few clips.
   custom-trained detectors.
 - Multi-label sensors (the data model allows this later, see §10).
 - Reading needle gauges (a pressure or temperature gauge). The pointer dials of a water meter are
-  read as part of its counter: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md).
+  read as part of its counter: [`POINTER_DIAL_PLAN.md`](POINTER_DIAL_PLAN.md); a dial that goes
+  round is read for how fast it turns, not where it points: [`TURNING_DIAL_PLAN.md`](TURNING_DIAL_PLAN.md).
 - Understanding speech: a sound sensor may know *that* someone speaks, never *what* is said (no
   transcription, keywords or speaker recognition) — see [`SOUND_PLAN.md`](SOUND_PLAN.md) §6.
 - Cloud training or cloud inference; telemetry of any kind.
@@ -356,14 +357,26 @@ one more digit without dials (`reading["fraction"]`) was offered in 0.12.0b1 and
 (the plan's §4 says why). Dials are circles in the plane the counter
 is read in (`imaging.reading_plane`: the straightened region, or its box), in units of the region's
 height, so they move with the region and a dial seen at an angle is cut round with its 0 up. A
-needle is read without a model (`dials.read_needle`: redder than the dial's face, else its darkest
-part; its direction from its own hub to its tip, a probability over 100 positions) and the wheels and dials are decoded together
+needle is read without a model (`dials.read_needle`: redder than the dial's face, else the dark
+part joined to its middle; its direction from its own hub to its tip, a probability over 100 positions) and the wheels and dials are decoded together
 (`readers.wheel_decode` with *smooth* links: a wheel or dial's tenth is the next one's digit), so
 the ×0.1 dial settles the last wheel and a needle on a number is settled by the next dial. The
 editor places dials on the straightened meter face around the region (`imaging.meter_face`), not
 on the camera picture, so circles stay round. A counter has dials when the user adds them. The
 change limit stays in the counter's own decimals; the settling tolerance and Home Assistant's display precision follow the
 value's.
+
+**A turning dial gives a flow, not a value** ([`TURNING_DIAL_PLAN.md`](TURNING_DIAL_PLAN.md) §3,
+decided 2026-11-17): the test dial of a gas meter, a water meter's sweep hand. In the UI it is a
+third *What does it look like?*, in the code the reading mode `flow` (`settings.READING_DISPLAYS`
+`dial` goes with it), so region, straightening, Review, export and backup are the reading sensor's
+and there is no fifth sensor kind. The region is the dial; its needle is read by the same reader as
+a counter's dials (`dials.read_turning`), and `turns.py` counts the turns between checks: a move
+counts once the next reading agrees with it, and a move too far or a gap starts the count again
+rather than guessing, so the flow may be low for a moment but never more than flowed. The state is
+the flow over `flow_window_s` in the flow unit of the dial's unit (`settings.READING_RATE_UNITS`),
+plus a *running* binary sensor; no total (the meter's wheels are their own sensor). A move starts a
+burst of checks, since a check costs only a picture.
 
 **Reading sensors** use a CTC text recognizer (registry `backend/visionstate/readers.json`):
 
@@ -1161,6 +1174,7 @@ is part of backups and needs no restart.
 | **One sensor page for every kind** ✅ | The same tabs for every kind, Settings beside Pause in sections with one Save | 0.15.0 (beta 0.15.0b3) |
 | **Licence plates** ✅ | Own cars known by their plate, by their look or both, one list of cars shared by every camera (cars that look the same told apart by their plates), unknown plates read into Home Assistant as one event per visit, a car's look learned from its plate, as many countries as possible — an open plate model and two made for plates (accepted first), a benchmark of 53 plates — [`PLATE_RECOGNITION_PLAN.md`](PLATE_RECOGNITION_PLAN.md) | 0.15.0 (betas 0.15.0b5–b17) |
 | **ESP32 microphones and cameras of our own** ✅ | ESPHome firmware and a guide in the app (boards, wiring, install), a camera set up for what each sensor looks at, its own flash and a light only when it is dark, a microphone that can be a voice assistant too — [`ESP32_PLAN.md`](ESP32_PLAN.md), [`esphome/README.md`](../esphome/README.md) | 0.15.0 (betas 0.15.0b7–b23) |
+| **Turning dials** | A reading sensor for one dial going round: the flow (ft³/min, L/min, kW …) and *running*, a black needle with print and a counterweight read (a public-domain US gas meter in the tests), checks every few seconds while it turns. Left: tried on real meters — [`TURNING_DIAL_PLAN.md`](TURNING_DIAL_PLAN.md) §6 | in beta, not released |
 | **Better counter readings** | More shared meters, labels, loss and calibration for the next model, later the last value as an expectation — status per step in [`WHEEL_READER_PLAN.md`](WHEEL_READER_PLAN.md) | planned |
 | **Sound sensors** ✅ | A fourth sensor kind: sounds in a camera's or a microphone's stream, own sounds taught from clips, clips with the camera's video, review questions — status and what is left in [`SOUND_PLAN.md`](SOUND_PLAN.md) §13 | 0.13.0 (betas 0.13.0b1–b10) |
 

@@ -201,7 +201,7 @@
   </div>
   {#if editable && quad}
     <p class="help">
-      Drag the corners onto the corners of the display or counter · the thick edge marked <strong>Top</strong> is its top.
+      Drag the corners onto the corners of what is read · the thick edge marked <strong>Top</strong> is its top.
     </p>
   {:else if editable}
     <p class="help">
