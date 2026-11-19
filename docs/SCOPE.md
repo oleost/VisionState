@@ -1041,16 +1041,31 @@ as a busy database would otherwise stop every sensor, MQTT and the API with it.
   their label, detected class, box and score, and the own labels).
 - Camera credentials are removed from exported URLs; the importer re-enters them.
 - **Readings to share** (`GET /sensors/{id}/reading-export`, Quality tab of a reading sensor),
-  so reading can be improved: the readings checked by hand (newest first), then the ones nobody
-  checked, accepted or rejected (newest first, `"answer": "unchecked"`; never used as labels without a check,
-  see `docs/WHEEL_READER_PLAN.md`), whose frame is kept — each only the region it was read in
+  so reading can be improved: the readings checked by hand, then the rejected ones nobody checked
+  (each newest first), then the accepted ones nobody checked (`"answer": "unchecked"`; never used as labels without a check,
+  see `docs/WHEEL_READER_PLAN.md`), spread over their time when not all fit (a busy meter makes about
+  200 a day: a week of them does not fit, and the newest alone would be one day), whose frame is kept — each only the region it was read in
   plus `export_margin` (the region is kept with every stored reading since 0.7.1b2,
   `probs["roi"]`; older ones are cut with today's region, `"region": "current"`; `"box"`: the
   region inside the image in pixels, as the margin is cut off at the frame's edges). One ZIP of at
   most `READING["export_max_mb"]` (GitHub takes 25 MB per file; about 1,000 readings); the
-  readings that did not fit are counted (`left_out`). `readings.json` (`"format": 7`; 6 had no pointer dials, 5 no `"straightened"`, 4 no `"confidence_rule"`, 3 no `"box"`, 2 left out
+  readings that did not fit are counted (`left_out`).
+  **Only the new ones** (`?new=true`, the button once something was exported): checked readings
+  are kept for ever, so every export of everything repeats them, and fills up with them. Each
+  reading sent is noted with its answer then (`probs["shared"]` = `[read_ok, correct_value]`,
+  written by `bundle.mark_shared` after the file was sent, not when it is made: a download that
+  breaks off marks nothing); an export of the new ones holds those not noted, or answered since
+  (so a reading checked after it was shared goes again, with its answer). In the JSON details, not
+  a column of its own: no database version for it, and deciding on a few columns takes under 0.1 s
+  for 20,000 readings; compared in Python, as SQLite's `json_array()` makes a stored `true` a `1`.
+  The export decides on those columns and reads the rows it writes a few at a time
+  (`READING["export_load_rows"]`): reading every row with its details first took 200 MB of
+  memory for 20,000 readings, too much beside Home Assistant on a Raspberry Pi
+  (`tests/test_reading_export.py` checks it). The images are the time it takes (about 5 ms each on a
+  PC, several times that on a Pi), so an export of the new ones is also the quick one.
+  `readings.json` (`"format": 8`; 7 had `"seconds"` from the export's oldest reading, so two exports could not be put together, and no `"only_new"`; 6 had no pointer dials, 5 no `"straightened"`, 4 no `"confidence_rule"`, 3 no `"box"`, 2 left out
   the rejected readings nobody answered, so a sensor's checks could not be replayed: read text, value, rejection reason, confidence, answer, right value, day only and
-  seconds since the oldest reading; per reading the reader id and app version (kept with every
+  seconds since the sensor was made (the same in every export); per reading the reader id and app version (kept with every
   stored reading since 0.7.1b5, null before), whether the picture was greyscale (IR), whether
   the sensor's light was on and the camera picture's size; for the wheel reader each wheel's position, probability (the one the confidence is made
   of, `"confidence_rule"`) and most likely positions, the common shift and the value with the last wheel's fraction; a meter's

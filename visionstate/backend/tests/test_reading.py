@@ -1154,43 +1154,60 @@ def test_wheel_counter_sensor_flow(settings):
         )
         assert client.get(f"/api/v1/history/{row_id}/image", params={"size": "huge"}).status_code == 422
 
-        def export(meter: str = "") -> dict:
-            with zipfile.ZipFile(
-                io.BytesIO(client.get(f"/api/v1/sensors/{sid}/reading-export", params={"meter": meter}).content)
-            ) as archive:
+        def export(meter: str = "", new: bool = False) -> dict:
+            got = client.get(f"/api/v1/sensors/{sid}/reading-export", params={"meter": meter, "new": new})
+            with zipfile.ZipFile(io.BytesIO(got.content)) as archive:
                 manifest = json.loads(archive.read("readings.json"))
                 assert len({r["file"] for r in manifest["readings"]}) == len(manifest["readings"])
                 assert all(r["file"] in archive.namelist() for r in manifest["readings"])
                 return manifest
 
         manifest = export()
-        assert manifest["format"] == 7 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["format"] == 8 and manifest["meter"] is None and manifest["left_out"] == 0
+        assert manifest["only_new"] is False
         assert manifest["reader"] == readers.DEFAULT_WHEEL_READER
         assert manifest["settings"]["counter_reader"] == "wheels"
         # The checked reading first, then the accepted one nobody checked, marked as such.
         entry, unchecked = manifest["readings"]
         assert (unchecked["answer"], unchecked["value"], unchecked["right_value"]) == ("unchecked", "90.100", None)
         assert entry["reader"] == readers.DEFAULT_WHEEL_READER and entry["app"] == VERSION
-        assert entry["answer"] == "read correctly" and entry["seconds"] == 0 <= unchecked["seconds"]
+        # "seconds" since the sensor was made: the same in every export, so several go together.
+        assert entry["answer"] == "read correctly" and 0 <= entry["seconds"] <= unchecked["seconds"] < 600
         assert entry["lamp"] is False and entry["greyscale"] is False and entry["frame_size"] == [800, 360]
         assert round(entry["wheels"]["value"]) == 89950 and len(entry["wheels"]["per_wheel"]) == 7
         assert export(meter="  Gas meter, white on black  ")["meter"] == "Gas meter, white on black"
-        verified = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]
-        assert verified["unchecked"] == 1
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["verified"]["unchecked"] == 1
+        # Both were exported (sent): an export of the new ones has nothing.
+        assert quality["export"] == {"new": 0, "shared": 2}
+        nothing = client.get(f"/api/v1/sensors/{sid}/reading-export", params={"new": True})
+        assert nothing.status_code == 404 and "No new readings" in nothing.json()["detail"]
+        assert export()["readings"][0]["seconds"] == entry["seconds"]  # everything, as before
 
         # A rejected reading nobody answered goes in too, newest first among the unchecked ones.
         with client.app.state.runtime.db.session() as s:
             frame = s.scalars(select(Prediction.frame).where(Prediction.sensor_id == sid)).first()
             details = {"text": "0099999", "value": "99.999", "reason": "went down"}
             s.add(Prediction(sensor_id=sid, state_key="reading", confidence=0.5, probs=details, frame=frame))
+        quality = client.get(f"/api/v1/sensors/{sid}/reading-quality").json()
+        assert quality["verified"]["unchecked"] == 2 and quality["export"] == {"new": 1, "shared": 2}
+        # Only the new one, then nothing new; a reading answered after it was exported is new again.
+        new = export(new=True)
+        assert new["only_new"] is True and [r["rejected"] for r in new["readings"]] == ["went down"]
+        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["export"] == {"new": 0, "shared": 3}
+        with client.app.state.runtime.db.session() as s:
+            row = s.get(Prediction, row_id)
+            assert row is not None and row.probs["shared"] == [True, None] and "wheels" in row.probs
+            row.read_ok, row.correct_value = False, "89951.000"
+        again = export(new=True)["readings"]
+        assert [(r["answer"], r["right_value"]) for r in again] == [("misread", "89951.000")]
         rejected = export()["readings"][1]
         assert (rejected["answer"], rejected["rejected"], rejected["value"]) == ("unchecked", "went down", "99.999")
-        assert client.get(f"/api/v1/sensors/{sid}/reading-quality").json()["verified"]["unchecked"] == 2
 
-        # The ZIP stays small enough for GitHub: what does not fit is left out (the oldest) and counted.
+        # The ZIP stays small enough for GitHub: what does not fit (the unchecked ones here) is left out and counted.
         with patch.dict(READING, {"export_max_mb": 0.0001}):  # room for one image only
             small = export()
-        assert [r["answer"] for r in small["readings"]] == ["read correctly"] and small["left_out"] == 2
+        assert [r["answer"] for r in small["readings"]] == ["misread"] and small["left_out"] == 2
 
         # A sensor export keeps the choice; one made before the wheel reader keeps the text reader.
         exported = client.get(f"/api/v1/sensors/{sid}/export").content

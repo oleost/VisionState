@@ -57,6 +57,9 @@
   const v = $derived(quality?.verified);
   const verifiedTotal = $derived(v ? v.misread_rejected + v.right_rejected + v.misread_accepted + v.right_accepted : 0);
   const unchecked = $derived(v?.unchecked ?? 0);
+  // Exported before: the next export can hold only what is new (or answered since).
+  const shared = $derived(quality?.export.shared ?? 0);
+  const fresh = $derived(quality?.export.new ?? 0);
 
   let meter = $state(''); // the export's optional "What meter is this?"
 
@@ -216,9 +219,21 @@
           />
         </label>
         <div class="row wrap actions">
-          <a class="btn sm" href={api.readingExportUrl(sensor.id, meter)} download>
-            <Icon name="download" size={14} /> Export readings
-          </a>
+          {#if shared}
+            <span class="xsmall muted grow">
+              {fresh ? `${fresh} new since the last export.` : 'Nothing new since the last export.'}
+            </span>
+            <a class="btn sm" href={api.readingExportUrl(sensor.id, meter)} download>All readings</a>
+            {#if fresh}
+              <a class="btn sm primary" href={api.readingExportUrl(sensor.id, meter, true)} download>
+                <Icon name="download" size={14} /> Export new readings
+              </a>
+            {/if}
+          {:else}
+            <a class="btn sm" href={api.readingExportUrl(sensor.id, meter)} download>
+              <Icon name="download" size={14} /> Export readings
+            </a>
+          {/if}
         </div>
       </div>
     {/if}
@@ -404,6 +419,10 @@
   .share .actions {
     gap: var(--space-2);
     justify-content: flex-end;
+    align-items: center;
+  }
+  .share .actions .grow {
+    flex: 1 1 12em;
   }
   .head {
     gap: var(--space-3);

@@ -313,8 +313,13 @@ export const api = {
   readingQuality: (id: number) => request<ReadingQuality>(`sensors/${id}/reading-quality`),
   /** ZIP of the readings to share (checked, then accepted ones nobody checked; only the region of
    * each), small enough for GitHub; `meter` = what the user says the meter is. */
-  readingExportUrl: (id: number, meter = '') =>
-    `${BASE}sensors/${id}/reading-export${meter.trim() ? `?${new URLSearchParams({ meter: meter.trim() })}` : ''}`,
+  /** onlyNew: only the readings not exported before, or answered since. */
+  readingExportUrl: (id: number, meter = '', onlyNew = false) => {
+    const query = new URLSearchParams();
+    if (meter.trim()) query.set('meter', meter.trim());
+    if (onlyNew) query.set('new', 'true');
+    return `${BASE}sensors/${id}/reading-export${query.toString() ? `?${query}` : ''}`;
+  },
 
   /** Object sensors: what was taught, and teaching one box (or forgetting it). */
   taught: (id: number) => request<Taught>(`sensors/${id}/taught`),

@@ -1556,6 +1556,12 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     expect(zip.ok()).toBeTruthy();
     expect(zip.headers()['content-disposition']).toContain('visionstate-readings-gas_meter.zip');
     expect((await zip.body()).subarray(0, 2).toString()).toBe('PK');
+    // Exported (sent): next time only what is new, or everything again.
+    await page.reload();
+    const share = page.locator('.share');
+    await expect(share).toContainText('Nothing new since the last export.');
+    await expect(share.getByRole('link', { name: 'All readings' })).toBeVisible();
+    await expect(share.getByRole('link', { name: 'Export new readings' })).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .chip, .card');
     await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-export.png'), fullPage: true });
@@ -1568,6 +1574,12 @@ test('rejected readings: review queue and quality tab', async ({ page, request }
     await page.reload();
     const bar = page.locator('.dismiss');
     await expect(bar).toContainText('1 waiting in the review queue.');
+    // That reading is new since the export: one tap exports only it.
+    await expect(share).toContainText('1 new since the last export.');
+    const newLink = share.getByRole('link', { name: 'Export new readings' });
+    await expect(newLink).toHaveAttribute('href', /new=true/);
+    await expectNoClipping(page, '.btn, .chip, .card');
+    await page.screenshot({ path: path.join('test-results', 'pages', info.project.name, 'reading-quality-export-new.png'), fullPage: true });
     await expectNoClipping(page, '.btn, .chip, .card');
     await press(bar.getByRole('button', { name: 'Dismiss all' }), info);
     await press(bar.getByRole('button', { name: 'Press again' }), info);

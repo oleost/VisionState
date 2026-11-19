@@ -6,8 +6,9 @@ import json
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import Table, bindparam, case, func, literal_column, select
 from sqlalchemy.orm import Session
 
 from .db import Database, Face, Person, Prediction, Sample, Sensor, Setting
@@ -128,12 +129,14 @@ def export_sensor(db: Database, storage: Storage, sensor_id: int, target: Path, 
         return f"visionstate-{sensor.slug}.zip"
 
 
-READINGS_FORMAT = 7  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
+READINGS_FORMAT = 8  # readings.json; 2 added per-reading reader details, "meter", unchecked readings;
 # 3: unchecked rejected readings too, the camera picture's size; 4: where the region is in the image;
 # 5: the wheels' "confidence_rule" ("p" as the confidence counts it; readings without it: the decoder's);
 # 6: "straightened" (the region read upright, its perspective undone, and so is the image);
 # 7: pointer dials (each dial's picture, its needle in "wheels"), "dials" in "settings" ("fraction" in
-# 0.12.0b1 only: the last wheel's tenth as one more digit)
+# 0.12.0b1 only: the last wheel's tenth as one more digit); 8: "seconds" since the sensor was made (was:
+# since the export's oldest reading), "only_new", the rejected ones before the accepted ones, these spread
+# over their time when not all fit)
 
 READINGS_README = """Readings from a VisionState reading sensor
 ==========================================
@@ -143,8 +146,10 @@ around it) — not the whole camera picture. readings.json lists for each image 
 read, the value it made of it, why it was rejected (if it was), and the answer given in
 VisionState: "read correctly", "misread" (with the right value when it was entered), or
 "unchecked" (nobody checked it: the reader's value, not confirmed by a person; "rejected" says
-whether it was accepted). The checked readings come first, newest first, then the unchecked ones,
-newest first.
+whether it was accepted). The checked readings come first, then the rejected ones nobody checked,
+each newest first, then the accepted ones nobody checked — when not all of them fit, a few from
+all through their time. "only_new": true when the export holds only the readings not exported
+before (or answered since they were).
 
 Per reading it also says which reader read it ("reader"; null for readings from before
 VisionState 0.8.0, beta 0.7.1b5), the app version ("app"), whether the whole picture was greyscale (an
@@ -162,13 +167,14 @@ the dials, with "needle" where the needle was found (null: none seen) and "certa
 of the wheels' "p": "mean" (their geometric mean) or "weakest" (the smallest; "p" is then the
 probability that the wheel stands near that position). Readings made before VisionState 0.10.1
 (beta 0.10.1b3) have no "confidence_rule": their "p" is always the "mean" kind, whichever rule
-made the confidence. "seconds" is the time since the oldest reading of the
-export (no time of day): sorted by it, the readings are in the order they were made. VisionState
+made the confidence. "seconds" is the time since the sensor was made (no time of day): sorted
+by it, the readings are in the order they were made, also across several exports of one sensor
+(a reading in two exports has the same "seconds" in both). VisionState
 keeps only the readings that changed the value, the rejected ones and spot checks, so a reading
 that only repeated the last value is not in it.
 
 The file stays under 24 MB (GitHub takes files up to 25 MB): the readings that did not fit
-are counted in "left_out" — export again later for newer ones.
+are counted in "left_out" — an export of the new readings later holds them.
 
 The reader does not learn from these answers by itself. Shared, they help make reading better
 for everyone: what goes wrong on which kind of display or meter.
@@ -198,14 +204,96 @@ Full text: https://creativecommons.org/publicdomain/zero/1.0/
 ANSWERS = {True: "read correctly", False: "misread", None: "unchecked"}
 
 
-def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path, reader: str, meter: str = "") -> str:
+def _spread(n: int) -> list[int]:
+    """0 … n-1 in an order whose every beginning is spread evenly over all of them (the bits of
+    each index reversed): when only some fit, they still cover the whole time, not its newest part."""
+    bits = max(1, (n - 1).bit_length())
+    return sorted(range(n), key=lambda i: int(f"{i:0{bits}b}"[::-1], 2))
+
+
+def _mark(text: str | None) -> list | None:
+    """What a reading's answer was when it was last exported (``probs["shared"]``), if it was."""
+    return json.loads(text) if text else None
+
+
+def _readings_to_share(s: Session, sensor_id: int, only_new: bool) -> tuple[list[int], int]:
+    """The ids of a sensor's readings to export, in the order they go in, and how many were exported
+    before. Decided on a few columns, so a sensor with tens of thousands of readings needs no more
+    memory than one with a hundred: the checked readings, then the rejected ones nobody checked,
+    each newest first, then the accepted ones nobody checked, spread over their time. ``only_new``:
+    only those not exported yet, or answered since they were (their answer is new)."""
+    query = (
+        select(
+            Prediction.id,
+            Prediction.read_ok,
+            Prediction.correct_value,
+            Prediction.published_key.is_(None),
+            func.json_extract(Prediction.probs, "$.shared"),
+        )
+        .where(Prediction.sensor_id == sensor_id, Prediction.frame.is_not(None))
+        .order_by(Prediction.created_at.desc(), Prediction.id.desc())
+    )
+    checked: list[int] = []
+    rejected: list[int] = []
+    accepted: list[int] = []
+    before = 0
+    for pid, ok, right, was_rejected, text in s.execute(query):
+        # Compared here, not in SQL: SQLite's json_array() makes a stored true 1, a JSON true stays true.
+        mark = _mark(text)
+        before += mark is not None
+        if only_new and mark == [ok, right]:
+            continue
+        (checked if ok is not None else rejected if was_rejected else accepted).append(pid)
+    return [*checked, *rejected, *(accepted[i] for i in _spread(len(accepted)))], before
+
+
+def readings_to_share(db: Database, sensor_id: int) -> dict:
+    """How many of a reading sensor's readings an export of the new ones would hold ("new", before
+    it is full), and how many went into an export before ("shared")."""
+    with db.session() as s:
+        new, shared = _readings_to_share(s, sensor_id, only_new=True)
+    return {"new": len(new), "shared": shared}
+
+
+def mark_shared(db: Database, shared: list[tuple[int, list]]) -> None:
+    """Notes in each exported reading what its answer was (``probs["shared"]``: [read_ok,
+    correct_value]), once the export was sent: an export of the new ones leaves it out until it is
+    answered (again)."""
+    table = cast(Table, Prediction.__table__)
+    # Details stored as SQL NULL or as JSON null become an object holding only the mark.
+    details = case((func.json_type(table.c.probs) == "object", table.c.probs), else_=literal_column("'{}'"))
+    marked = func.json_set(details, "$.shared", func.json(bindparam("mark")))
+    update = table.update().where(table.c.id == bindparam("pid")).values(probs=marked)
+    with db.session() as s:
+        for start in range(0, len(shared), 500):
+            chunk = shared[start : start + 500]
+            s.connection().execute(update, [{"pid": pid, "mark": json.dumps(mark)} for pid, mark in chunk])
+
+
+def _rows(db: Database, ids: list[int]):
+    """The readings of ``ids`` in that order, read from the database a few at a time."""
+    from .settings import READING
+
+    size = READING["export_load_rows"]
+    for start in range(0, len(ids), size):
+        chunk = ids[start : start + size]
+        with db.session() as s:
+            found = {row.id: row for row in s.scalars(select(Prediction).where(Prediction.id.in_(chunk)))}
+        yield from (found[pid] for pid in chunk if pid in found)
+
+
+def export_readings(
+    db: Database, storage: Storage, sensor_id: int, target: Path, reader: str, meter: str = "", only_new: bool = False
+) -> tuple[str, list[tuple[int, list]]]:
     """Writes a reading sensor's readings to share to ``target`` (one ZIP).
 
-    The readings checked by hand come first, then the ones nobody checked (marked "unchecked",
-    accepted or rejected), each newest first; every image is the region crop of the stored frame. The ZIP
-    stays under ``READING["export_max_mb"]``; the readings that did not fit are counted.
-    ``meter``: what the user says the meter is. Returns the suggested download filename; raises
-    LookupError when there is nothing to export.
+    The readings checked by hand come first, each newest first, then the rejected ones nobody
+    checked, then the accepted ones nobody checked (both marked "unchecked"), spread over their time
+    when not all fit; every image is the region crop of the stored frame. The ZIP stays under
+    ``READING["export_max_mb"]``; the readings that did not fit are counted. ``meter``: what the
+    user says the meter is. ``only_new``: only the readings not exported yet or answered since.
+    Returns the suggested download filename and, for ``mark_shared`` once it was sent, each exported
+    reading with its answer; raises LookupError when there is nothing to export.
     """
     from . import dials, imaging, readers
     from .settings import READING, merge_reading
@@ -216,25 +304,19 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             raise KeyError(sensor_id)
         settings = merge_reading(sensor.reading)
         wheels = readers.uses_wheels(settings)
-        mine = (Prediction.sensor_id == sensor_id, Prediction.frame.is_not(None))
-        newest = Prediction.created_at.desc()
-        rows = [
-            *s.scalars(select(Prediction).where(*mine, Prediction.read_ok.is_not(None)).order_by(newest)),
-            *s.scalars(select(Prediction).where(*mine, Prediction.read_ok.is_(None)).order_by(newest)),
-        ]
+        ids, _ = _readings_to_share(s, sensor_id, only_new)
         current = sensor.roi
         slug = sensor.slug
-    oldest = min((row.created_at for row in rows), default=None)
+        made = sensor.created_at
     budget = READING["export_max_mb"] * 1_000_000
     items: list[dict] = []
+    shared: list[tuple[int, list]] = []
     listed = 0  # length of the readings so far in readings.json
     left_out = 0
     with target.open("wb") as file, zipfile.ZipFile(file, "w", zipfile.ZIP_DEFLATED) as archive:
-        for row in rows:
+        place = {pid: i for i, pid in enumerate(ids)}
+        for row in _rows(db, ids):
             if not row.frame or not (path := storage.history_path(sensor_id, row.frame)).exists():
-                continue
-            if left_out:  # full
-                left_out += 1
                 continue
             details = row.probs or {}
             frame = imaging.decode(path.read_bytes())
@@ -261,8 +343,8 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
             # Room for readings.json still to come: it compresses to well under a fifth.
             weight = len(image) + sum(len(d) for d in dial_images)
             if items and file.tell() + weight + listed // 4 + 100_000 > budget:
-                left_out += 1
-                continue
+                left_out = len(ids) - place[row.id]  # full: this one and every one after it
+                break
             name = f"images/{len(items) + 1:04d}.jpg"
             archive.writestr(name, image, compress_type=zipfile.ZIP_STORED)  # JPEG does not shrink
             dial_files = []
@@ -281,7 +363,8 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "answer": ANSWERS[row.read_ok],
                     "right_value": row.correct_value,
                     "date": row.created_at.date().isoformat(),  # the day only
-                    "seconds": round((row.created_at - oldest).total_seconds()) if oldest else 0,
+                    # since the sensor was made: the same in every export, so several go together
+                    "seconds": round((row.created_at - made).total_seconds()),
                     "region": "as read" if region_then else "current",
                     "straightened": bool(corners),
                     "box": inside,
@@ -295,8 +378,9 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                 }
             )
             listed += len(json.dumps(items[-1]))
+            shared.append((row.id, [row.read_ok, row.correct_value]))
         if not items:
-            raise LookupError("No readings to export yet")
+            raise LookupError("No new readings since the last export" if only_new else "No readings to export yet")
         manifest = {
             "format": READINGS_FORMAT,
             "app_version": VERSION,
@@ -318,13 +402,14 @@ def export_readings(db: Database, storage: Storage, sensor_id: int, target: Path
                     "max_rate",
                 )
             },
+            "only_new": only_new,
             "left_out": left_out,
             "readings": items,
         }
         archive.writestr("readings.json", json.dumps(manifest, indent=2, ensure_ascii=False))
         archive.writestr("README.txt", READINGS_README)
         archive.writestr("LICENSE.txt", READINGS_LICENSE)
-    return f"visionstate-readings-{slug}.zip"
+    return f"visionstate-readings-{slug}.zip", shared
 
 
 def read_manifest(path: Path) -> dict:

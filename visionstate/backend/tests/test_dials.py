@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from visionstate import dials, imaging, readers
+from visionstate import bundle, dials, imaging, readers
 from visionstate.main import create_app
 from visionstate.settings import READING, extra_digits, merge_reading, value_decimals
 
@@ -515,6 +515,6 @@ def test_a_meter_with_pointer_dials(settings):
         with zipfile.ZipFile(io.BytesIO(export)) as archive:
             manifest = json.loads(archive.read("readings.json"))
             entry = manifest["readings"][0]
-            assert manifest["format"] == 7 and len(manifest["settings"]["dials"]) == 4
+            assert manifest["format"] == bundle.READINGS_FORMAT and len(manifest["settings"]["dials"]) == 4
             assert [d["file"] for d in entry["dials"]] == [f"images/0001-dial{k}.jpg" for k in range(1, 5)]
             assert Image.open(archive.open(entry["dials"][0]["file"])).size == (READING["dial_size"],) * 2

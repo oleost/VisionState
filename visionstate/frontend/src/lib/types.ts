@@ -294,6 +294,8 @@ export interface ReadingQuality {
     /** Accepted readings nobody checked whose frame is kept (they go into the export too). */
     unchecked: number;
   };
+  /** Readings to share: not exported yet or answered since ("new"), and exported before ("shared"). */
+  export: { new: number; shared: number };
   items: Prediction[];
 }
 

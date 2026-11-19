@@ -637,7 +637,10 @@ objects the region stays a border.
   each dial as it was read and where its needle was found. Each image is cut with the region the reading was
   made in, so moving the region later does not spoil the readings from before. Write what the
   meter is in *What meter is this?* (make, type, camera, light) first. The ZIP stays under 24 MB
-  so GitHub takes it (about 1,000 readings, newest first). Look through the ZIP, then share it in
+  so GitHub takes it (about 1,000 readings): the checked ones first, then the rejected ones, then
+  accepted ones from all through the time when not all of them fit. Once you have exported,
+  **Export new readings** makes a ZIP of only the readings not exported yet, and of those you
+  answered since — the next one to share; **All readings** makes one of everything again. Look through the ZIP, then share it in
   [GitHub Discussions](https://github.com/oleost/VisionState/discussions): that shows what goes
   wrong where. Shared, the images are public domain (CC0; the README and LICENSE inside the ZIP
   say so). Nothing leaves your Home Assistant unless you share the file yourself.

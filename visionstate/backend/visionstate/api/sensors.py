@@ -631,17 +631,19 @@ def reading_quality(sensor_id: int, request: Request) -> dict:
             "periods": periods,
             "daily": daily,
             "verified": verified,
+            "export": bundle.readings_to_share(rt.db, sensor_id),
             "items": [prediction_view(p) for p in items],
         }
 
 
 @router.get("/{sensor_id}/reading-export")
 async def reading_export(
-    sensor_id: int, request: Request, background: BackgroundTasks, meter: str = ""
+    sensor_id: int, request: Request, background: BackgroundTasks, meter: str = "", new: bool = False
 ) -> FileResponse:
-    """A ZIP of the readings to share (checked ones, then accepted ones nobody checked), under
+    """A ZIP of the readings to share (checked ones, then the ones nobody checked), under
     GitHub's file size: only the region of each, what was read, the answer.
-    ``meter``: what the user says the meter is."""
+    ``meter``: what the user says the meter is; ``new``: only the readings not exported before (or
+    answered since). Once the file was sent, its readings are noted as exported."""
     rt = runtime(request)
     await asyncio.to_thread(check_sensor, rt, sensor_id, KIND_READING)
     reader = await asyncio.to_thread(rt.db.get_text, "reader", readers.DEFAULT_READER)
@@ -649,11 +651,14 @@ async def reading_export(
     os.close(fd)
     tmp = Path(name)
     try:
-        filename = await asyncio.to_thread(bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader, meter)
+        filename, shared = await asyncio.to_thread(
+            bundle.export_readings, rt.db, rt.storage, sensor_id, tmp, reader, meter, new
+        )
     except LookupError as err:
         tmp.unlink(missing_ok=True)
         raise HTTPException(404, str(err)) from err
     background.add_task(tmp.unlink, missing_ok=True)
+    background.add_task(bundle.mark_shared, rt.db, shared)  # after it was sent (a thread: not on the loop)
     return FileResponse(tmp, media_type="application/zip", filename=filename)
 
 
