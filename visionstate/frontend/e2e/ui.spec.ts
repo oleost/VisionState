@@ -709,7 +709,7 @@ test('a counter the camera sees turned is read with its region straightened', as
   await expect(fields.locator('.cell')).toHaveCount(7);
   await expect(fields.locator('.divider')).toHaveCount(6);
   const insideRegion = await fields.evaluate((svg) => {
-    const corners = (svg.parentElement!.querySelector('polygon.outline') as SVGPolygonElement).points;
+    const corners = (svg.closest('.roi')!.querySelector('polygon.outline') as SVGPolygonElement).points;
     const inside = (x: number, y: number) => {
       let sign = 0;
       for (let i = 0; i < 4; i++) {
