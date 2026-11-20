@@ -26,8 +26,10 @@ esp32_camera:
   # A fresh snapshot waits for the camera's next picture, at most 1 / max_framerate after the last
   # (ESPHome's 10 fps made every snapshot 100 ms slower). Idle, idle_framerate applies.
   max_framerate: 25 fps
-  # Two buffers: a picture asked for is the newest the camera has (CAMERA_GRAB_LATEST).
-  frame_buffer_count: 2
+  # One buffer (ESPHome's default): the camera takes a picture when the last one is given back,
+  # not all the time. A fresh snapshot throws the one kept away and waits up to one picture for the
+  # next; two buffers saved that but kept memory and the camera's bus busy all the time.
+  frame_buffer_count: 1
   idle_framerate: 0.1 fps
 
 visionstate_stream:

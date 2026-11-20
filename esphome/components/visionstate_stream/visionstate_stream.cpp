@@ -49,9 +49,9 @@ static const int32_t CLIP_LEVEL = 32700;  // a sample this loud counts as clippe
 static const uint8_t SETTLE_PICTURES = 1;
 static const uint8_t SETTLE_PICTURES_RESIZED = 3;
 static const uint8_t SETTLE_PICTURES_CLOCK = 3;
-// Before those, the pictures the camera took before the change and keeps in its buffers
-// (frame_buffer_count in camera-*.yaml): they come at once (2026-11-16: after 7 and 42 ms).
-static const uint8_t KEPT_PICTURES = 2;
+// Before those, the pictures the camera took before the change and keeps: as many as it has frame
+// buffers (frame_buffer_count, set by set_kept_pictures): one waits in ESPHome's queue, a second
+// buffer holds the newest. They come at once (2026-11-16, two buffers: after 7 and 42 ms).
 // The picture sizes a snapshot can ask for (?size=), up to the one the camera's buffers were made for.
 struct PictureSize {
   const char *name;
@@ -790,7 +790,7 @@ uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
 
 void VisionStateStream::settle_(uint8_t pictures) {
   App.wake_loop_threadsafe();
-  for (uint8_t n = 0; n < KEPT_PICTURES; n++)
+  for (uint8_t n = 0; n < this->kept_pictures_; n++)
     this->take_image_(IMAGE_TIMEOUT_MS);
   uint32_t first = 0;
   for (uint8_t n = 0; n < pictures; n++) {

@@ -103,6 +103,8 @@ class VisionStateStream final : public Component
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   void set_camera(camera::Camera *camera) { this->camera_ = camera; }
+  /// The pictures the camera keeps from before a request: its frame_buffer_count.
+  void set_kept_pictures(uint8_t kept) { this->kept_pictures_ = kept; }
   void on_camera_image(const std::shared_ptr<camera::CameraImage> &image) override;
   /// The picture turned or mirrored on the camera chip (packages/camera-orientation.yaml): "Normal",
   /// "Mirrored", "Upside down" or "Upside down, mirrored", from ESPHome's default for the camera.
@@ -173,6 +175,7 @@ class VisionStateStream final : public Component
 #endif
 #ifdef USE_VISIONSTATE_CAMERA
   camera::Camera *camera_{nullptr};
+  uint8_t kept_pictures_{1};
   SemaphoreHandle_t image_ready_{nullptr};
   std::shared_ptr<camera::CameraImage> image_;
   volatile bool waiting_for_image_{false};

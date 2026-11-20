@@ -11,6 +11,7 @@ import esphome.codegen as cg
 from esphome.components import esp32_camera, light, microphone, ota, sensor
 from esphome.components.esp32 import include_builtin_idf_component
 import esphome.config_validation as cv
+from esphome.core import CORE
 from esphome.const import CONF_ID, CONF_MICROPHONE, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 
 AUTO_LOAD = ["audio", "camera", "ring_buffer", "sensor"]
@@ -118,6 +119,15 @@ def FINAL_VALIDATE_SCHEMA(config):  # noqa: N802 - the name ESPHome looks for
     )(config)
 
 
+def _frame_buffer_count(camera_id):
+    """The camera's frame_buffer_count: as many pictures it keeps from before a request."""
+    cameras = CORE.config.get("esp32_camera", [])
+    for camera in cameras if isinstance(cameras, list) else [cameras]:
+        if camera[CONF_ID] == camera_id:
+            return camera[esp32_camera.CONF_FRAME_BUFFER_COUNT]
+    return 1
+
+
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
@@ -145,6 +155,7 @@ async def to_code(config):
         cg.add_define("USE_VISIONSTATE_CAMERA")
         cam = await cg.get_variable(config[CONF_CAMERA])
         cg.add(var.set_camera(cam))
+        cg.add(var.set_kept_pictures(_frame_buffer_count(config[CONF_CAMERA])))
         if CONF_CAMERA_POWER_DOWN_PIN in config:
             cg.add_define("USE_VISIONSTATE_CAMERA_POWER_DOWN")
             cg.add(var.set_camera_power_down_pin(config[CONF_CAMERA_POWER_DOWN_PIN]))
