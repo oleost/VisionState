@@ -419,4 +419,7 @@ ESP32-CAMs run on.
   for it (the frame round the meter is dark). By eye: at full the digits are faint on a white
   wash, at half better, at 25 % the clearest, at 10 % clear but greyer. The reader read 750.826
   at every strength, sure 0.83 at full and 0.97-0.98 at 50, 25 and 10 %. No stripes at any
-  strength at 40 kHz.
+  strength at 40 kHz. In steps of 5 between 25 % and half (two rounds each, the same to within a
+  point): burnt out none at 25 and 30 %, 4 % at 35 %, 30 % at 40 %, 51 % at 45 %, 63 % at half;
+  read the same, sure 0.96-0.98 at each. By eye the digits are clear at all of them; from 35 %
+  the white of the face starts to burn out. For this meter 30 % is the most light without loss.
