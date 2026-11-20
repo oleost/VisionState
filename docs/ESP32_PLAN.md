@@ -412,3 +412,11 @@ ESP32-CAMs run on.
   picture, which the camera reads a line at a time, about 56 µs a line) and `gamma_correct: 1.0`
   (ESPHome's curve for eyes would give about a seventh of the light at half). Two snapshots that
   ask for different strengths while it is on: the last one asked.
+- **Measured on the maintainer's water meter (2026-11-20, an ESP32-CAM with an OV3660, the meter a
+  few centimetres away, *Meters and displays*, automatic exposure):** the share of burnt-out pixels
+  (a channel at 250 or more) in the counter's region was 86 % at full, 85 % at 75 %, 62 % at half
+  and none at 25 % and 10 %, the same in a second round; the automatic exposure did not make up
+  for it (the frame round the meter is dark). By eye: at full the digits are faint on a white
+  wash, at half better, at 25 % the clearest, at 10 % clear but greyer. The reader read 750.826
+  at every strength, sure 0.83 at full and 0.97-0.98 at 50, 25 and 10 %. No stripes at any
+  strength at 40 kHz.
