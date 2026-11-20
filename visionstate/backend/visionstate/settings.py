@@ -466,7 +466,7 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.6.0",
+    "firmware_version": "1.7.0",
     # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
     # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
     "password_action": "stream_password",
@@ -850,11 +850,14 @@ CAMERA_SETTING_KEYS = {
     "clock_mhz": "clock",
     "exposure_ms": "exposure",
     "gain": "gain",
+    "ae_level": "ae",
 }
 CAMERA_SIZES = ("640x480", "800x600", "1024x768", "1280x1024", "1600x1200")
 CAMERA_CLOCKS_MHZ = (20, 10)
 CAMERA_GAINS = (2, 4, 8, 16, 32, 64, 128)  # the gain ceiling
-CAMERA_LIMITS = {"quality": (6, 40), "exposure_ms": (1, 500)}  # JPEG quality: lower is better
+# JPEG quality: lower is better. ae_level: how bright the automatic exposure aims (-2 to 2, firmware
+# 1.7.0 on; 0 is the camera's own aim).
+CAMERA_LIMITS = {"quality": (6, 40), "exposure_ms": (1, 500), "ae_level": (-2, 2)}
 # The exposure a sensor gets when its exposure is switched from automatic to fixed: short, so what
 # moves stays sharp (the "movement" preset's until 0.15.0b23).
 CAMERA_FIXED_EXPOSURE_MS = 15
@@ -867,22 +870,23 @@ CAMERA_PRESETS = {
         # JPEG quality 10, as in Espressif's own example (8 until 0.15.0b19: safe too, but no one else's).
         # 10 MHz: at 20 MHz an OV3660 gave thin lines across most detailed 1600x1200 pictures (none in
         # 30 at 10 MHz, 2026-11-17); a meter needs no fast pictures, and gets twice the longest exposure.
-        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 10, "exposure_ms": 0, "gain": 4},
+        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 10, "exposure_ms": 0, "gain": 4, "ae_level": 0},
     },
     "movement": {
         "name": "People, cars and animals",
         "description": "Automatic exposure: short in good light, so what moves stays sharp, longer in poor light",
         # Automatic since 0.15.0b23: a fixed 15 ms was nearly black in a dim room at any gain, and the
         # automatic exposure as sharp in a lit one (an OV3660, 2026-11-17). Gain up to 32 for the dark.
-        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32},
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32, "ae_level": 0},
     },
     "states": {
         "name": "States",
         "description": "Still things: a door, a gate, a light",
-        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
+        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4, "ae_level": 0},
     },
 }
-# A preset's values before they were changed: a sensor that has them follows the preset to its new ones.
+# A preset's values before they were changed: a sensor that has them follows the preset to its new ones
+# (written without ae_level, which settings from before 0.16.0b3 do not have).
 CAMERA_PRESETS_BEFORE = {
     "meter": [
         {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
@@ -1244,9 +1248,12 @@ def merge_triggers(stored: dict | None) -> dict:
     camera = dict(merged.get("camera") or {})
     if not camera and old_use in CAMERA_PRESETS:
         camera = dict(CAMERA_PRESETS[old_use]["settings"])
+    plain = {k: v for k, v in camera.items() if not (k == "ae_level" and v == 0)}
     for key, before in CAMERA_PRESETS_BEFORE.items():
-        if camera in before:
+        if plain in before:
             camera = dict(CAMERA_PRESETS[key]["settings"])
+    if camera:
+        camera.setdefault("ae_level", 0)  # settings from before the exposure level (0.16.0b3)
     merged["camera"] = camera or None
     return merged
 

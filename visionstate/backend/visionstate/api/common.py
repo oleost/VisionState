@@ -168,6 +168,7 @@ class CameraSettingsIn(BaseModel):
     clock_mhz: int
     exposure_ms: int = Field(ge=0, le=CAMERA_LIMITS["exposure_ms"][1])  # 0: automatic
     gain: int
+    ae_level: int = Field(0, ge=CAMERA_LIMITS["ae_level"][0], le=CAMERA_LIMITS["ae_level"][1])
 
     @model_validator(mode="after")
     def _known(self) -> CameraSettingsIn:

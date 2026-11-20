@@ -319,6 +319,11 @@ def said_settings(header: str) -> dict | None:
             settings[key] = value if value != "unknown" else None
         elif key == "exposure_ms" and value == "auto":
             settings[key] = 0
+        elif key == "ae_level":  # -2 to 2 (firmware 1.7.0 on)
+            try:
+                settings[key] = int(value)
+            except ValueError:
+                settings[key] = None
         else:
             try:
                 settings[key] = int(value) if int(value) >= 0 else None

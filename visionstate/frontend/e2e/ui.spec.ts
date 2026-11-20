@@ -2768,7 +2768,11 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await page.getByLabel('Camera clock').selectOption('20');
     await expect(setup).toHaveValue('');
     await expect(setup.locator('option:checked')).toHaveText('Custom');
+    // With automatic exposure, how bright it aims; it goes with the rest.
+    await expect(page.getByLabel('Exposure level')).toHaveValue('0');
+    await page.getByLabel('Exposure level').selectOption('1');
     await page.getByLabel('Exposure', { exact: true }).selectOption('fixed');
+    await expect(page.getByLabel('Exposure level')).toHaveCount(0); // a fixed exposure aims at nothing
     await page.getByLabel('Exposure time').fill('25');
     await page.getByLabel('Exposure time').blur();
     await press(page.getByRole('button', { name: 'Save changes' }), info);
@@ -2776,9 +2780,9 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await expect
       .poll(async () => {
         const s = await cameraState();
-        return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain}`;
+        return `${s.size} ${s.quality} ${s.clock} ${s.exposure} ${s.gain} ${s.ae}`;
       }, { timeout: 30_000 })
-      .toBe('1600x1200 10 20 25 4');
+      .toBe('1600x1200 10 20 25 4 1');
     await expectNoHorizontalOverflow(page);
     await expectNoClipping(page, '.btn, .card');
 

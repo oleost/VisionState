@@ -662,6 +662,15 @@ static CameraSettings asked_settings(const char *query) {
     if (asked.gain < 0)
       ESP_LOGW(TAG, "Unknown gain ceiling: %s", value);
   }
+  if (httpd_query_key_value(query, "ae", value, sizeof(value)) == ESP_OK) {
+    char *end = nullptr;
+    long level = strtol(value, &end, 10);
+    if (end != value && *end == '\0' && level >= -2 && level <= 2) {
+      asked.ae_level = static_cast<int>(level);
+    } else {
+      ESP_LOGW(TAG, "Exposure level out of -2 to 2: %s", value);
+    }
+  }
   return asked;
 }
 
@@ -678,9 +687,12 @@ static std::string settings_text(const CameraSettings &now) {
   } else if (now.exposure_ms == 0) {
     snprintf(exposure, sizeof(exposure), "auto");
   }
-  char text[112];
-  snprintf(text, sizeof(text), "size=%s&quality=%d&clock=%d&exposure=%s&gain=%d", size, now.quality, now.clock_mhz,
-           exposure, now.gain >= 0 ? 2 << now.gain : -1);
+  char ae[8] = "unknown";
+  if (now.ae_level != AE_LEVEL_UNKNOWN)
+    snprintf(ae, sizeof(ae), "%d", now.ae_level);
+  char text[128];
+  snprintf(text, sizeof(text), "size=%s&quality=%d&clock=%d&exposure=%s&gain=%d&ae=%s", size, now.quality,
+           now.clock_mhz, exposure, now.gain >= 0 ? 2 << now.gain : -1, ae);
   return text;
 }
 
@@ -751,8 +763,7 @@ uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
   }
   if (asked.exposure_ms >= 0 && (asked.exposure_ms != now.exposure_ms || (timing && asked.exposure_ms > 0))) {
     if (asked.exposure_ms == 0) {
-      s->set_exposure_ctrl(s, 1);
-      s->set_ae_level(s, 0);
+      s->set_exposure_ctrl(s, 1);  // its level is the sensor's own (?ae=), or as the device's file set it
     } else {
       // Fixed, so something moving stays sharp; the automatic gain keeps it bright.
       float line_us = LINE_US_20MHZ * 20.0f / static_cast<float>(now.clock_mhz > 0 ? now.clock_mhz : 20);
@@ -761,6 +772,13 @@ uint8_t VisionStateStream::apply_settings_(const CameraSettings &asked) {
       s->set_aec_value(s, std::max(1, std::min(lines, MAX_EXPOSURE_LINES)));
     }
     now.exposure_ms = asked.exposure_ms;
+    settle = std::max(settle, SETTLE_PICTURES);
+  }
+  // How bright the automatic exposure aims (?ae=, -2 to 2): the target it settles in. Not asked for
+  // (an older VisionState), it stays as the device's file set it (esp32_camera ae_level, 0 when not).
+  if (asked.ae_level != AE_LEVEL_UNKNOWN && asked.ae_level != now.ae_level) {
+    s->set_ae_level(s, asked.ae_level);
+    now.ae_level = asked.ae_level;
     settle = std::max(settle, SETTLE_PICTURES);
   }
   if (settle > 0) {

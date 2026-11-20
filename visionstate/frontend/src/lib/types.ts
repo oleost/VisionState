@@ -45,6 +45,8 @@ export interface CameraSettings {
   clock_mhz: number;
   exposure_ms: number;
   gain: number;
+  /** How bright the automatic exposure aims, -2 to 2 (0: the camera's own aim). */
+  ae_level: number;
 }
 
 export interface CameraPreset {
@@ -881,7 +883,7 @@ export interface AppConfig {
     /** The exposure a sensor gets when it is switched to fixed (settings.CAMERA_FIXED_EXPOSURE_MS). */
     fixed_exposure_ms: number;
     gains: number[];
-    limits: Record<'quality' | 'exposure_ms', [number, number]>;
+    limits: Record<'quality' | 'exposure_ms' | 'ae_level', [number, number]>;
   };
   /** When a sensor's light is switched on: key → name. */
   light_when: Record<string, string>;

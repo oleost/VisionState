@@ -34,7 +34,9 @@ struct httpd_req;  // NOLINT(readability-identifier-naming)
 namespace esphome::visionstate_stream {
 
 #ifdef USE_VISIONSTATE_CAMERA
-/// How a sensor wants the camera set up for its picture (?size=&quality=&clock=&exposure=&gain= on a
+/// An exposure level not asked for, or not known yet (the levels themselves go from -2 to 2).
+static const int AE_LEVEL_UNKNOWN = -99;
+/// How a sensor wants the camera set up for its picture (?size=&quality=&clock=&exposure=&gain=&ae= on a
 /// snapshot, VisionState's settings for the sensor); -1: not asked for, or not known yet.
 struct CameraSettings {
   int size{-1};         // framesize_t
@@ -42,6 +44,7 @@ struct CameraSettings {
   int clock_mhz{-1};    // the camera's clock (XCLK): 20 or 10 MHz
   int exposure_ms{-1};  // 0: automatic, more: fixed this long (about)
   int gain{-1};         // gainceiling_t: 0 is 2x, 6 is 128x
+  int ae_level{AE_LEVEL_UNKNOWN};  // how bright the automatic exposure aims: -2 to 2
 };
 #endif
 

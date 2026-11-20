@@ -26,8 +26,8 @@ DARK = io.BytesIO()
 Image.new("RGB", (64, 48), (4, 4, 4)).save(DARK, "JPEG")
 
 METER = CAMERA_PRESETS["meter"]["settings"]
-STATES_QUERY = "size=800x600&quality=10&clock=20&exposure=auto&gain=4"
-METER_QUERY = "size=1600x1200&quality=10&clock=10&exposure=auto&gain=4"
+STATES_QUERY = "size=800x600&quality=10&clock=20&exposure=auto&gain=4&ae=0"
+METER_QUERY = "size=1600x1200&quality=10&clock=10&exposure=auto&gain=4&ae=0"
 
 
 class Camera(BaseHTTPRequestHandler):
@@ -50,7 +50,7 @@ class Camera(BaseHTTPRequestHandler):
         if "use=" in self.path:
             cls.use = query["use"][0]
         if "size" in query:
-            keys = ("size", "quality", "clock", "exposure", "gain")
+            keys = ("size", "quality", "clock", "exposure", "gain", "ae")
             cls.now = "&".join(f"{k}={query[k][0]}" for k in keys if k in query)
         asked_flash = self.flash and "flash=" in self.path
         # With dark=: the flash only when the picture it keeps ready is dark (as the firmware does).
@@ -101,12 +101,20 @@ def test_each_kind_starts_from_a_preset_and_the_name_follows_the_values():
     movement = CAMERA_PRESETS["movement"]["settings"]
     assert merge_triggers({"camera": {**movement, "exposure_ms": 15, "gain": 16}})["camera"] == movement
     assert merge_triggers({"camera": {**METER, "quality": 9}})["camera"]["quality"] == 9  # custom stays
+    # Settings from before the exposure level (0.16.0b3) get the camera's own aim, 0: still the preset.
+    old = {k: v for k, v in METER.items() if k != "ae_level"}
+    assert merge_triggers({"camera": old})["camera"] == METER
+    assert merge_triggers({"camera": {**old, "quality": 8, "clock_mhz": 20}})["camera"] == METER
+    assert camera_preset({**METER, "ae_level": 1}) is None  # brighter than the preset: custom
 
 
 def test_what_a_camera_says_and_what_it_is_asked():
     said = said_settings(METER_QUERY)
     assert said == METER
     assert said_settings("size=unknown&quality=-1&clock=-1&exposure=unknown&gain=-1") is None
+    assert said_settings(METER_QUERY.replace("ae=0", "ae=-1"))["ae_level"] == -1  # a level below 0 is one
+    assert said_settings(METER_QUERY.replace("ae=0", "ae=unknown")) is None
+    assert "ae_level" not in said_settings(METER_QUERY.replace("&ae=0", ""))  # firmware before 1.7.0
     uses = CameraUses()
     assert uses.query("http://cam/snapshot.jpg", METER) is None  # not known as ours yet
     uses.ours["http://cam/snapshot.jpg"] = "settings"
@@ -150,7 +158,14 @@ def test_a_camera_of_ours_is_set_up_with_each_sensors_settings(settings, camera,
         custom = {**triggers, "camera": {**METER, "clock_mhz": 10, "exposure_ms": 15}}
         assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": custom}).status_code == 200
         assert wait_for(lambda: any("clock=10&exposure=15" in p for p in Camera.asked), timeout=20)
-        for bad in ({"size": "4000x3000"}, {"clock_mhz": 13}, {"gain": 3}, {"quality": 2}, {"exposure_ms": 9999}):
+        for bad in (
+            {"size": "4000x3000"},
+            {"clock_mhz": 13},
+            {"gain": 3},
+            {"quality": 2},
+            {"exposure_ms": 9999},
+            {"ae_level": 3},
+        ):
             refused = {**triggers, "camera": {**METER, **bad}}
             assert client.patch(f"/api/v1/sensors/{meter}", json={"triggers": refused}).status_code == 422
     # Said in the log, to look into it later; never with the camera's password.

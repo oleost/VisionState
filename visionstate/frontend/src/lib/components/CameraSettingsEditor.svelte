@@ -1,6 +1,6 @@
 <script lang="ts">
   // How an ESP32 camera of ours is set up for this sensor's pictures (stored in the sensor's triggers:
-  // camera; null is its kind's preset), sent with each snapshot. A preset fills the six settings in;
+  // camera; null is its kind's preset), sent with each snapshot. A preset fills the settings in;
   // the name shown is the preset whose values they are, or Custom. Choices and limits from GET /config.
   import { app } from '../app.svelte';
   import type { CameraSettings, SensorCamera, Triggers } from '../types';
@@ -24,7 +24,8 @@
     a.quality === b.quality &&
     a.clock_mhz === b.clock_mhz &&
     a.exposure_ms === b.exposure_ms &&
-    a.gain === b.gain;
+    a.gain === b.gain &&
+    (a.ae_level ?? 0) === (b.ae_level ?? 0);
   const preset = $derived(
     settings && cfg ? (Object.entries(cfg.presets).find(([, p]) => same(p.settings, settings))?.[0] ?? '') : '',
   );
@@ -38,7 +39,8 @@
     if (settings) triggers.camera = { ...settings, ...part };
   }
   function describe(s: CameraSettings): string {
-    const exposure = s.exposure_ms ? `exposure ${s.exposure_ms} ms` : 'automatic exposure';
+    const level = s.ae_level ? ` ${s.ae_level > 0 ? '+' : ''}${s.ae_level}` : '';
+    const exposure = s.exposure_ms ? `exposure ${s.exposure_ms} ms` : `automatic exposure${level}`;
     const size = s.size.replace('x', '×');
     return `${size} · quality ${s.quality} · ${s.clock_mhz} MHz · ${exposure} · gain up to ${s.gain}×`;
   }
@@ -123,6 +125,25 @@
         <option value="fixed">Fixed</option>
       </select>
     </label>
+    {#if !settings.exposure_ms}
+      <label class="line">
+        <span class="col" style="gap:0">
+          <span class="small">Exposure level</span>
+          <span class="xsmall faint">How bright the automatic exposure aims; higher is brighter.</span>
+        </span>
+        <select
+          class="input sm"
+          value={String(settings.ae_level ?? 0)}
+          aria-label="Exposure level"
+          onchange={(e) => change({ ae_level: Number((e.currentTarget as HTMLSelectElement).value) })}
+        >
+          {#each { length: cfg.limits.ae_level[1] - cfg.limits.ae_level[0] + 1 } as _, i (i)}
+            {@const level = cfg.limits.ae_level[0] + i}
+            <option value={String(level)}>{level > 0 ? `+${level}` : level}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     {#if settings.exposure_ms}
       <label class="line">
         <span class="col" style="gap:0">

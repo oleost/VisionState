@@ -27,7 +27,7 @@ GET /camera.ts                   a camera with sound: H.264 video and the same s
 GET /play?sound=siren            plays a sound once in both: siren, dog_bark, smoke_alarm, speech (the CC0
                                  recordings of backend/tests/assets/sounds) or chime (a drawn doorbell);
                                  &gain=0.1 plays it quieter (a siren then scores about 0.6, not 0.9)
-GET /esp32/snapshot.jpg?size=800x600&quality=10&clock=20&exposure=auto&gain=4
+GET /esp32/snapshot.jpg?size=800x600&quality=10&clock=20&exposure=auto&gain=4&ae=0
                                  an ESP32 camera of ours (esphome/, firmware 1.5.0 on): the drawn garage door,
                                  set up with a sensor's settings (they stay until a snapshot asks otherwise) and
                                  saying so (X-VisionState-Camera: settings, X-VisionState-Camera-Settings);
@@ -101,7 +101,7 @@ def render() -> bytes:
 
 # An ESP32 camera of ours (/esp32/...): how it is set up, as its firmware keeps it ("unknown" until
 # a snapshot asks for something).
-ESP32_SETTINGS = ("size", "quality", "clock", "exposure", "gain")
+ESP32_SETTINGS = ("size", "quality", "clock", "exposure", "gain", "ae")
 ESP32 = dict.fromkeys(ESP32_SETTINGS, "unknown")
 
 class Handler(BaseHTTPRequestHandler):

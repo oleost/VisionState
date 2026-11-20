@@ -386,6 +386,17 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
    after the stable release (the maintainer).
 4. Before the stable 0.15.0: the maintainer's own cameras on 1.5.3 (*Install* in the Builder).
 
+**Pictures in two brightnesses (issue #86, 2026-11-20):** that user's OV2640 gives pictures at two
+levels, one about half as bright as the other, each for hours at a time; with his old firmware they
+were all alike (about 70 mean grey in the counter's region, against about 55 and 110-130 since).
+Gain ceiling 16× did not change it. The camera driver turns the 50 Hz banding filter on for an
+OV2640 in both firmwares, and 1024×768 is the same sensor mode in both. What differed: his old file
+had `ae_level: 1`, and our firmware set the level to 0 at every automatic exposure, over the file;
+and ours keeps two frame buffers (one tried on 2026-11-16 for another fault, its effect on the
+pictures not seen). Firmware 1.7.0 leaves the level to the sensor's *Exposure level* (`&ae=`), or
+to the file when VisionState does not send one. Being tested, one at a time: the flash at 35 %,
+one frame buffer, then *Exposure level* +1.
+
 ## 8. Flash strength (the maintainer, 2026-11-20)
 
 The flash was always full. The maintainer's own water meter came out somewhat overexposed with

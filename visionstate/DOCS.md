@@ -713,8 +713,9 @@ quality (lower is sharper and larger), the camera's clock (20 MHz, or 10 MHz: fe
 second and longer exposures, worth a try when its pictures have a colour cast; at 1280×1024 and
 larger, 20 MHz can give thin lines across a detailed picture, and 10 MHz does not), the exposure
 (automatic, or fixed for a time in milliseconds, about: short keeps what moves sharp; at most
-the time the camera takes for one picture, about 70 ms at 1600×1200 and 20 MHz) and the gain
-ceiling (higher is brighter in poor light, and noisier). A *Preset* fills them in — *Meters and
+the time the camera takes for one picture, about 70 ms at 1600×1200 and 20 MHz), with automatic
+exposure its *Exposure level* (-2 to +2: how bright it aims, 0 the camera's own; firmware 1.7.0
+on) and the gain ceiling (higher is brighter in poor light, and noisier). A *Preset* fills them in — *Meters and
 displays* for a reading sensor, *People, cars and animals* for an object sensor, *States* for a
 state sensor, which is where a new sensor starts — and a setting changed by hand makes them
 *Custom*. Below them is how the camera said it is set up with its last picture, how often it
