@@ -110,9 +110,11 @@
       <div class="col" style="gap:6px">
         <!-- The first step's frame until the test has one: the first test loads the reader, and may fail. -->
         <RoiEditor src={result?.image ?? frame} bind:roi editable quad={reading.straighten}>
-          {#if reading.display === 'counter'}
-            <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} straightened={reading.straighten} />
-          {/if}
+          {#snippet overlay()}
+            {#if reading.display === 'counter'}
+              <DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} straightened={reading.straighten} />
+            {/if}
+          {/snippet}
         </RoiEditor>
         <StraightenSwitch bind:checked={reading.straighten} counter={reading.display === 'counter'} />
         <div class="row wrap" style="gap:8px"><RegionButtons bind:roi quad={reading.straighten} /></div>

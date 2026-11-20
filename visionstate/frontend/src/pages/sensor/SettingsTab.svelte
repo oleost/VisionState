@@ -343,7 +343,9 @@
             interval={10_000}
             light={triggers.light_entity ? { entity: triggers.light_entity, delay: triggers.light_delay_s } : null}
           >
-            {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} {straightened} />{/if}
+            {#snippet overlay()}
+              {#if readingSensor && reading.display === 'counter'}<DigitCells {roi} digits={reading.digits} whole={reading.counter_reader === 'wheels'} {straightened} />{/if}
+            {/snippet}
           </LiveFrame>
         </div>
         {/if}

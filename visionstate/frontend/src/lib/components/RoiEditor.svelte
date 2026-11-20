@@ -5,8 +5,13 @@
   // corner to remove it. Works with mouse and touch (pointer events).
   // `quad`: a region that is straightened (a reading sensor's): always four corners, its top edge
   // (the first) drawn thick and marked "Top" — dragging the corners turns it and undoes perspective.
-  import type { Snippet } from 'svelte';
+  // While editing, the view zooms in on the region (with some of the picture round it), so its corners
+  // are easy to place on a phone: when it opens with a region and when a new one has been drawn. The
+  // button in its corner switches between that and the whole picture. ``overlay``: drawn over the
+  // picture where it is (zoomed with it: digit fields, boxes); ``children``: over the frame (badges).
+  import { untrack, type Snippet } from 'svelte';
   import { app } from '../app.svelte';
+  import Icon from './Icon.svelte';
   import { clamp01, fromPoints, midpoints, toPoints, type Pt } from '../roi';
   import type { Roi } from '../types';
 
@@ -21,6 +26,7 @@
     editable = false,
     dim = true,
     quad = false,
+    overlay,
     children,
   }: {
     src: string | null;
@@ -28,6 +34,7 @@
     editable?: boolean;
     dim?: boolean;
     quad?: boolean;
+    overlay?: Snippet;
     children?: Snippet;
   } = $props();
 
@@ -35,6 +42,18 @@
   const LONG_PRESS_MS = 600; // hold a corner this long (without moving) to remove it
   const MOVE_TOLERANCE = 0.01; // pointer movement that still counts as "not moved"
   const DOUBLE_TAP_MS = 400; // two presses on the same corner within this time remove it
+  // Zoomed in on a region: as much picture round it on each side as ZOOM_MARGIN of its larger side,
+  // plus ZOOM_PAD; not closer than ZOOM_MIN of the picture, and not at all when that would show
+  // ZOOM_USELESS of it or more.
+  const ZOOM_MARGIN = 0.15;
+  const ZOOM_PAD = 0.03;
+  const ZOOM_MIN = 0.2;
+  const ZOOM_USELESS = 0.85;
+  // The view moves only when the region let go of comes this close to its edge (a share of the view),
+  // or when it has become so much smaller that the view could be closer by ZOOM_TIGHTER: small
+  // adjustments leave it where it is.
+  const ZOOM_EDGE = 0.06;
+  const ZOOM_TIGHTER = 0.7;
 
   const maxPoints = $derived(app.config?.roi_max_points ?? 32);
   const points = $derived<Pt[]>(roi ? toPoints(roi) : []);
@@ -54,6 +73,50 @@
     points.length ? `M0 0H1V1H0Z M${points.map((p) => `${p[0]} ${p[1]}`).join(' L')}Z` : '',
   );
 
+  // Zoomed in (the button switches it). The view follows the region when it is let go of (and when
+  // it changes otherwise: Turn, Reset) if it needs to, and stays put while it is dragged, so nothing
+  // moves under the finger.
+  type View = { x: number; y: number; s: number };
+  let zoom = $state(true);
+  let dragging = $state(false);
+  // The part of the picture shown (a square in the picture's own 0-1 units, so it keeps its shape).
+  let view = $state<View | null>(null);
+  $effect(() => {
+    if (dragging) return;
+    const pts = points;
+    const next = editable && zoom && src ? viewFor(pts) : null;
+    untrack(() => {
+      if (!next) view = null;
+      else if (!view || outgrown(view, pts, next)) view = next;
+    });
+  });
+  /** Whether the region has come close to the view's edge, or the view could be much closer. */
+  function outgrown(v: View, pts: Pt[], next: View): boolean {
+    const m = v.s * ZOOM_EDGE;
+    // An edge of the view on the picture's own edge cannot move further: never near there.
+    const [left, right, up, down] = [v.x > 0, v.x + v.s < 1, v.y > 0, v.y + v.s < 1];
+    const near = pts.some(
+      ([x, y]) => (left && x < v.x + m) || (right && x > v.x + v.s - m) || (up && y < v.y + m) || (down && y > v.y + v.s - m),
+    );
+    return near || next.s < v.s * ZOOM_TIGHTER;
+  }
+
+  function viewFor(pts: Pt[]): View | null {
+    if (!pts.length) return null;
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const side = Math.max(x1 - x0, y1 - y0);
+    const s = Math.max(ZOOM_MIN, side * (1 + 2 * ZOOM_MARGIN) + 2 * ZOOM_PAD);
+    if (s >= ZOOM_USELESS) return null;
+    const fit = (centre: number) => Math.min(Math.max(centre - s / 2, 0), 1 - s);
+    return { x: fit((x0 + x1) / 2), y: fit((y0 + y1) / 2), s };
+  }
+  const canZoom = $derived(editable && !!viewFor(points));
+  /** Where a point of the picture is in the frame, in percent. */
+  const at = (p: Pt): [number, number] =>
+    view ? [((p[0] - view.x) / view.s) * 100, ((p[1] - view.y) / view.s) * 100] : [p[0] * 100, p[1] * 100];
+
   let box: HTMLDivElement;
   let drag: Drag | null = null;
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
@@ -61,12 +124,14 @@
 
   function point(e: PointerEvent): Pt {
     const r = box.getBoundingClientRect();
-    return [clamp01((e.clientX - r.left) / r.width), clamp01((e.clientY - r.top) / r.height)];
+    const [x, y] = [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+    return view ? [clamp01(view.x + x * view.s), clamp01(view.y + y * view.s)] : [clamp01(x), clamp01(y)];
   }
 
   function capture(e: PointerEvent) {
     e.stopPropagation();
     e.preventDefault();
+    dragging = true;
     try {
       box.setPointerCapture(e.pointerId); // keep receiving moves when the pointer leaves the image
     } catch {
@@ -103,6 +168,7 @@
       if (drag?.mode === 'vertex' && !drag.moved) {
         removeVertex(index);
         drag = null;
+        dragging = false;
       }
     }, LONG_PRESS_MS);
   }
@@ -144,7 +210,9 @@
     clearTimeout(pressTimer);
     if (drag?.mode === 'new' && roi && (roi.w < MIN_SIZE || roi.h < MIN_SIZE)) roi = null;
     if (roi && (roi.w < MIN_SIZE || roi.h < MIN_SIZE) && drag && drag.mode !== 'new') roi = fromPoints(drag.orig);
+    if (drag?.mode === 'new' && roi) zoom = true; // placed: closer, to set its corners
     drag = null;
+    dragging = false;
   }
 </script>
 
@@ -159,27 +227,38 @@
     onpointercancel={end}
     role="presentation"
   >
-    {#if src}
-      <img {src} alt="Camera frame" draggable="false" />
-    {:else}
-      <div class="placeholder"></div>
-    {/if}
+    <div
+      class="stage"
+      style:transform={view ? `scale(${1 / view.s}) translate(${-view.x * 100}%, ${-view.y * 100}%)` : null}
+    >
+      {#if src}
+        <img {src} alt="Camera frame" draggable="false" />
+      {:else}
+        <div class="placeholder"></div>
+      {/if}
+      {@render overlay?.()}
+    </div>
 
     {#if points.length}
-      <svg class="shape" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+      <svg
+        class="shape"
+        viewBox={view ? `${view.x} ${view.y} ${view.s} ${view.s}` : '0 0 1 1'}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
         {#if dim}<path d={dimPath} fill-rule="evenodd" class="dim" />{/if}
         <polygon points={polygonAttr} class="outline" class:solid={editable} onpointerdown={startMove} role="presentation" />
         {#if top}<line x1={top.a[0]} y1={top.a[1]} x2={top.b[0]} y2={top.b[1]} class="top" />{/if}
       </svg>
       {#if top}
-        <span class="top-label" style:left="{top.label[0] * 100}%" style:top="{top.label[1] * 100}%" data-testid="roi-top">Top</span>
+        <span class="top-label" style:left="{at(top.label)[0]}%" style:top="{at(top.label)[1]}%" data-testid="roi-top">Top</span>
       {/if}
       {#if editable}
         {#each edges as m, i (i)}
           <span
             class="handle add"
-            style:left="{m[0] * 100}%"
-            style:top="{m[1] * 100}%"
+            style:left="{at(m)[0]}%"
+            style:top="{at(m)[1]}%"
             onpointerdown={(e) => startInsert(e, i)}
             title="Drag to add a corner"
             role="presentation">+</span
@@ -188,14 +267,26 @@
         {#each points as p, i (i)}
           <span
             class="handle corner"
-            style:left="{p[0] * 100}%"
-            style:top="{p[1] * 100}%"
+            style:left="{at(p)[0]}%"
+            style:top="{at(p)[1]}%"
             onpointerdown={(e) => startVertex(e, i)}
             title={quad ? 'Drag to move' : 'Drag to move · double-click, double-tap or hold to remove'}
             role="presentation"
           ></span>
         {/each}
       {/if}
+    {/if}
+    {#if editable && (view || canZoom)}
+      <button
+        type="button"
+        class="btn sm zoom"
+        onpointerdown={(e) => e.stopPropagation()}
+        onclick={() => (zoom = !view)}
+        data-testid="roi-zoom"
+      >
+        <Icon name={view ? 'zoom-out' : 'zoom-in'} size={14} />
+        {view ? 'Whole picture' : 'Zoom in'}
+      </button>
     {/if}
     {@render children?.()}
   </div>
@@ -228,6 +319,16 @@
   .roi.editable {
     cursor: crosshair;
     touch-action: none; /* drawing, not scrolling — only while editing; a shown frame must scroll */
+  }
+  .stage {
+    position: relative;
+    transform-origin: 0 0;
+  }
+  .zoom {
+    position: absolute;
+    right: var(--space-2);
+    bottom: var(--space-2);
+    opacity: 0.92;
   }
   img {
     display: block;

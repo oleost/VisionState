@@ -120,7 +120,7 @@
   <!-- The first step's frame until the test has one: the first test loads the detector, and may fail. -->
   <div class="row wrap region-actions"><RegionButtons bind:roi /></div>
   <RoiEditor src={image ?? frame} bind:roi editable>
-    <DetectionBoxes {detections} {classes} />
+    {#snippet overlay()}<DetectionBoxes {detections} {classes} />{/snippet}
   </RoiEditor>
 </TestCard>
 <HaPreview>

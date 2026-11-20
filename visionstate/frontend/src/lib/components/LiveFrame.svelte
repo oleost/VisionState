@@ -22,6 +22,7 @@
     showLive = true,
     frameId = $bindable(null),
     light = null,
+    overlay,
     children,
   }: {
     sensorId: number;
@@ -35,6 +36,8 @@
     showLive?: boolean;
     frameId?: string | null;
     light?: { entity: string; delay: number } | null;
+    /** Drawn over the picture where it is (RoiEditor `overlay`): zoomed with it. */
+    overlay?: Snippet;
     children?: Snippet;
   } = $props();
 
@@ -99,7 +102,7 @@
   <div class="light-slot"><LightHold entity={light.entity} delay={light.delay} bind:ready={lightReady} /></div>
 {/if}
 <div class="live">
-  <RoiEditor src={url} bind:roi {editable} {quad}>
+  <RoiEditor src={url} bind:roi {editable} {quad} {overlay}>
     {#if showLive && updated}
       <span class="badge" class:frozen>
         <span class="dot" style:background={frozen ? 'var(--c-info)' : 'var(--c-danger)'}></span>

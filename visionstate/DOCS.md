@@ -40,6 +40,9 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
       For an object that sits at an angle, shape the box: drag a corner to move it, drag a **+** on
       an edge to add a corner, and double-click / double-tap (or press and hold) a corner to remove
       it. Everything outside the shape is ignored. **Reset to rectangle** goes back to a plain box.
+      Once a box is placed, the picture zooms in on it, so its corners are easy to set on a phone;
+      it moves along only when a corner comes near its edge. **Whole picture** (in the picture's
+      corner) shows all of it again, **Zoom in** goes back.
    3. Optionally choose when it should check the camera — for example when your motion
       sensor or garage opener changes (see *When it checks* below) — and whether it should stay
       out of Home Assistant for now (see *What a sensor has in Home Assistant* below). You can skip
