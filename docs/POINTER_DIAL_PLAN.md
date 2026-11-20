@@ -270,6 +270,18 @@ Left (for whoever takes it on):
   The cast came when that camera moved to our ESP32 firmware (1 of the same meter's 173 pictures
   before it; two other ESP32-CAMs with it show none), so the camera is where it is fixed first; the
   reader's part waits until after the next stable release.
+- **A dim picture hides the needle the same way** (issue #86, exports of 2026-11-18 and -20: the
+  same camera, a third to a half of its pictures at half the usual brightness, the flash on). Built:
+  when what is red enough does not reach `dial_needle_reach` of the radius, it grows into what is
+  joined to it and `dial_red_weak` of the contrast redder (`dials._needle_mask`). Tried on the dial
+  pictures of both exports (about 1,800, the wheel's fraction as truth) and tolbag's 1,446: the 5
+  dim needles not found and 1 read opposite were read right, 10 others moved by 0.3 at most (the
+  larger moves nearer the needle by eye, one less sure), none of tolbag's. On bright pictures made
+  dim (half the brightness, a purple cast) the needles read sure and wrong went from 11 to 4. Not built: a lower threshold for a dim face —
+  on the whole dial (the cast became needle) or only when nothing is red enough (more needles
+  found, but more of them sure and wrong) — and the reach alone as a safety net (it turned 10
+  needles read right into none). Neither the pink pictures' needles (the same mechanism) nor the
+  reason for the dim pictures (asked in #86) are settled by it.
 - **By hand on a phone** (the UI routine in CLAUDE.md): placing four dials on a real meter face at
   390 px, and how small the face gets when the region is small in the picture.
 - **A meter whose last wheel snaps** instead of turning with the ×0.1 dial (§7): the *smooth* link

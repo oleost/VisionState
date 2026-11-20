@@ -38,7 +38,9 @@ as exported (the meter's face straightened).
 `meter_readings/` holds frames of three more meters with their dials' pictures, from the readings three
 users exported from VisionState and shared in
 [issue #59](https://github.com/oleost/VisionState/issues/59) under CC0 (the exports' LICENSE.txt),
-as exported. `readings.json` lists each frame's region and its value as read by eye, not the
+as exported. `pedro-0442-dial1.jpg` and `pedro-1005-dial1.jpg` (dim pictures, needles by eye at
+1.75 and 2.4) come from the same user's export in
+[issue #86](https://github.com/oleost/VisionState/issues/86), also under CC0. `readings.json` lists each frame's region and its value as read by eye, not the
 reader's or the user's answer (two answers in the export contradict the needles).
 
 `gas_test_dials.jpg` is the index of a US gas meter: four wheels with "00" painted after them and

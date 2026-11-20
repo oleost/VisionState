@@ -69,11 +69,23 @@ def _needle_mask(
     well as a bright one) and red at all (more red than green and blue: a black needle on a
     blue-grey face is redder than the face, but grey); where the dial has no red (a black needle, or
     a red one seen grey by an infrared camera at night), the dark part of its face joined to the
-    middle (``_dark_needle``; ``thin``: with thin lines taken away)."""
+    middle (``_dark_needle``; ``thin``: with thin lines taken away).
+
+    In a dim picture a red needle is only a little redder than the face, and often only the hub (or
+    a reflection on it) is red enough: what is red then stays near the middle, and the "tip" would
+    be a few pixels at the hub's edge, pointing anywhere. So when it does not reach
+    ``dial_needle_reach`` of the radius, it grows into what is joined to it and at least
+    ``dial_red_weak`` of the contrast redder than the face. A needle seen whole never comes there."""
     face = dist < 0.8 * radius
     redness = rgb[..., 0] - np.maximum(rgb[..., 1], rgb[..., 2])
-    red = (redness - np.median(redness[face]) > READING["dial_red_contrast"]) & (redness > 0) & face
+    above = redness - np.median(redness[face])
+    red = (above > READING["dial_red_contrast"]) & (redness > 0) & face
     if red[face].mean() >= READING["dial_min_needle"]:
+        if dist[red].max() < READING["dial_needle_reach"] * radius:
+            weak = (above > READING["dial_red_weak"] * READING["dial_red_contrast"]) & (redness > 0) & face
+            grown = _joined(weak, np.where(red, dist, np.inf), red)
+            if grown is not None:
+                red |= grown
         return red, face, False
     return *_dark_needle(rgb.mean(axis=2), dist, radius, thin), True
 

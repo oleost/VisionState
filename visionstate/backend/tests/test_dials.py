@@ -7,7 +7,7 @@ import zipfile
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from visionstate import bundle, dials, imaging, readers
 from visionstate.main import create_app
@@ -250,6 +250,26 @@ def test_holes_in_a_needle_do_not_turn_it_round(name, seen):
     needle = dials.read_needle(Image.open(ASSETS / "meter_readings" / f"zapadee-{name}.jpg").convert("RGB"))
     assert needle.position is not None and abs((needle.position - seen + 5) % 10 - 5) < 0.3, needle.position
     assert needle.certainty > 0.5
+
+
+@pytest.mark.parametrize(("name", "seen"), [("0442-dial1", 1.75), ("1005-dial1", 2.4)])
+def test_a_dim_red_needle_is_found_whole(name, seen):
+    # Real dim pictures (issue #86, an ESP32-CAM's flash at half the usual brightness): only the hub
+    # was red enough, and its edge was read as the tip — once on the opposite side, sure of it.
+    needle = dials.read_needle(Image.open(ASSETS / "meter_readings" / f"pedro-{name}.jpg").convert("RGB"))
+    assert needle.position is not None and abs((needle.position - seen + 5) % 10 - 5) < 0.3, needle.position
+    assert needle.certainty > 0.5
+
+
+def test_a_needle_seen_whole_is_not_grown():
+    # A clear needle reaches out by itself: what is only a little redder round it is never added.
+    face = Image.new("RGB", (96, 96), (200, 200, 200))
+    draw = ImageDraw.Draw(face)
+    draw.ellipse((40, 40, 56, 56), fill=(200, 30, 30))
+    draw.line((48, 48, 48, 14), fill=(200, 30, 30), width=4)
+    draw.line((48, 48, 82, 48), fill=(215, 196, 196), width=4)  # a pale red shadow, joined to the hub
+    needle = dials.read_needle(face)
+    assert needle.position is not None and abs((needle.position + 5) % 10 - 5) < 0.2, needle.position
 
 
 @pytest.mark.parametrize("off", [(0, 0), (0.16, 0), (0, 0.16), (-0.16, -0.16), (0.28, 0.08)])

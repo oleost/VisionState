@@ -304,6 +304,11 @@ READING = {
     "dial_min_needle": 0.01,
     "dial_spread_floor": 0.5,
     "dial_red_contrast": 20,
+    # In a dim picture often only the hub is that much redder: when what is found does not reach
+    # dial_needle_reach of the radius, it grows into what is joined to it and dial_red_weak of the
+    # contrast redder (docs/POINTER_DIAL_PLAN.md §10, issue #86).
+    "dial_needle_reach": 0.5,
+    "dial_red_weak": 0.5,
     "dial_hub_erode": 0.07,
     "dial_tip_share": 0.05,
     "dial_tip_reach": 0.9,  # and at least this share of the farthest one's distance (a thin tip: not its counterweight)
