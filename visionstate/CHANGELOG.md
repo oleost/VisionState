@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0b4
+
+**Fresh pictures from ESP32 cameras after a pause.**
+
+### Fixed
+
+- **An ESP32 camera of ours** could send a picture up to 10 s old when it had been idle a while.
+  The firmware now keeps one picture buffer instead of two, so every picture is taken after it is
+  asked for. Needs firmware 1.8.0 (*Install* in the ESPHome app).
+
 ## 0.16.0b3
 
 **A closer look while placing a region, and the camera's exposure level.**

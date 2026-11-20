@@ -340,8 +340,16 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
   pictures (2026-11-16: 80 flash pictures in the dark, 268 readings since October). The user whose
   camera does (an OV2640, they believe; not the test camera's OV3660) had run it at 20 MHz before
   our firmware, at 1024×768, JPEG quality 12, `ae_level: 1` and ESPHome's single frame buffer (ours
-  keeps two, so the camera takes pictures all the time). The first three are now their sensor's to
-  try; the frame buffers are not a setting.
+  kept two until firmware 1.8.0, see the next point). The first four are now their sensor's to try.
+- **One frame buffer (firmware 1.8.0, 2026-11-20):** with two buffers the camera took pictures all
+  the time, and a snapshot after a pause could still be one the camera kept from its last idle
+  picture: on the test camera (OV3660) pointed at a clock, two of six snapshots asked 9 s apart
+  were 9-10 s old (the idle interval is 10 s), although the one kept in ESPHome's queue was thrown
+  away. With one buffer (ESPHome's and AI on the Edge's default) the camera takes a picture only
+  when the last is given back; the snapshot throws the kept one away and waits for the next: 18 of
+  18 fresh (a second or less, the clock's step), at about one picture's time more (about 450 ms
+  against 300 ms at 1600×1200, 10 MHz). The pictures thrown away follow `frame_buffer_count`, so a
+  device file that keeps two still gets fresh ones. Flash pictures were lit and fresh as before.
 - **No picture after an install (issue #86, firmware 1.5.0):** that OV2640 gave no picture after
   every install of our firmware ("Got invalid frame from camera" from the start) until the device
   was restarted; not with their old firmware, and not with one frame buffer either. The
@@ -392,8 +400,8 @@ were all alike (about 70 mean grey in the counter's region, against about 55 and
 Gain ceiling 16× did not change it. The camera driver turns the 50 Hz banding filter on for an
 OV2640 in both firmwares, and 1024×768 is the same sensor mode in both. What differed: his old file
 had `ae_level: 1`, and our firmware set the level to 0 at every automatic exposure, over the file;
-and ours keeps two frame buffers (one tried on 2026-11-16 for another fault, its effect on the
-pictures not seen). Firmware 1.7.0 leaves the level to the sensor's *Exposure level* (`&ae=`), or
+and ours kept two frame buffers (one tried on 2026-11-16 for another fault, its effect on the
+pictures not seen; one since firmware 1.8.0). Firmware 1.7.0 leaves the level to the sensor's *Exposure level* (`&ae=`), or
 to the file when VisionState does not send one. Being tested, one at a time: the flash at 35 %,
 one frame buffer, then *Exposure level* +1.
 

@@ -98,9 +98,10 @@ restarted: issue #86).
 A picture that came out broken (the camera stopped sending part way, and the driver handed out
 the rest of an older one with it: a strip of picture over grey) is taken again before it is sent.
 Switching takes a few pictures: a new picture size or clock about 0.5 s (1600×1200 at 10 MHz
-about 1 s), a new exposure one picture. The snapshot is always taken after the request, so it is fresh: Home Assistant's camera
-entity gives the picture the camera kept ready after the last fetch instead, as old as the time
-since then.
+about 1 s), a new exposure one picture. The snapshot is always taken after the request, so it is fresh: the picture
+the camera kept ready is thrown away (one per frame buffer; the camera packages keep one), and the
+next is waited for, at most one picture's time. Home Assistant's camera entity gives the picture
+the camera kept ready after the last fetch instead, as old as the time since then.
 
 ## Boards and wiring
 
