@@ -901,7 +901,7 @@ the camera (the first step of the wizard, or **Settings → General**). VisionSt
   in daylight needs none);
 - **an ESP32 camera of ours with its own flash** (firmware 1.4.0 on) takes the picture with the
   flash itself, that long after it came on (*Flash on before the picture*, at most 10 s), and
-  switches it off again. *Flash strength* sets how strong (default 50 %; firmware 1.6.0 on, older
+  switches it off again. *Flash strength* sets how strong (default 35 %; firmware 1.6.0 on, older
   firmware lights it fully): close up, a full flash is reflected by the glass over a meter and
   burns out the bright parts, and the LED gets hot. Lower it when the picture has bright spots or
   glare, raise it when it is dark. Nothing goes through Home Assistant for it, so the picture is lit even

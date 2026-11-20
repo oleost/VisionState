@@ -263,7 +263,7 @@ def test_a_camera_of_ours_takes_its_picture_with_its_own_flash(settings, camera)
         asked = sum("flash=500" in p for p in Camera.asked)
         assert wait_for(lambda: sum("flash=500" in p for p in Camera.asked) >= asked + 3, timeout=20)
         assert ("light.cam_flash", True) not in ha.switched
-        assert all("flash_level=50" in p for p in Camera.asked if "flash=500" in p)  # half, by default
+        assert all("flash_level=35" in p for p in Camera.asked if "flash=500" in p)  # the default
         # The camera reached by its name: found by its address all the same.
         Camera.asked.clear()
         named = url.replace("127.0.0.1", "localhost")
@@ -339,6 +339,6 @@ def test_the_flash_is_as_strong_as_the_sensor_says(settings, camera):  # noqa: F
         client.app.state.runtime.ha = FlashHa("127.0.0.1")
         flash_sensor(client, url, "light.cam_flash", flash_level=80)
         assert wait_for(lambda: sum("flash_level=80" in p for p in Camera.asked) >= 2, timeout=20)
-        assert not any("flash_level=50" in p for p in Camera.asked)
+        assert not any("flash_level=35" in p for p in Camera.asked)
         body = {"source_type": "http", "source": url, "name": "X", "triggers": {"flash_level": 0}}
         assert client.post("/api/v1/sensors", json=body).status_code == 422

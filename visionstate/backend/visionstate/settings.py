@@ -832,10 +832,10 @@ TRIGGER_DEFAULTS = {
     # and the light switched on only when that frame is darker than RUNTIME["light_dark_below"].
     "light_when": "always",
     # How strong an ESP32 camera's own flash is for this sensor's pictures, in percent of full (the
-    # firmware's &flash_level=, 1.6.0 on; older firmware lights it fully). Half: full is too much
-    # close up, the glass over a meter reflects it and bright parts burn out, and the LED gets hot and
-    # the board draws a lot. Half is what AI-on-the-edge-device starts its ESP32-CAM meter readers with.
-    "flash_level": 50,
+    # firmware's &flash_level=, 1.6.0 on; older firmware lights it fully). Full is too much close up:
+    # the glass over a meter reflects it and bright parts burn out, and the LED gets hot and the board
+    # draws a lot. 35: the most light before the white of a meter's face burnt out (docs/ESP32_PLAN.md §8).
+    "flash_level": 35,
     # How an ESP32 camera of ours (esphome/) is set up for this sensor's pictures: the keys of
     # CAMERA_SETTING_KEYS, sent with each snapshot. None: its kind's preset (CAMERA_PRESET_BY_KIND).
     # Only for a camera that answers as ours (an X-VisionState-Camera header); ignored for any other.

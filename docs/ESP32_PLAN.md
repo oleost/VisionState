@@ -393,11 +393,12 @@ it, and a weaker flash saves power and heat, which matters with the weak power s
 ESP32-CAMs run on.
 
 - **Decided:** each sensor sets how strong its camera's own flash is (*Flash strength*, percent,
-  `triggers.flash_level`), default half; the firmware (1.6.0) lights it at half too unless a
-  snapshot asks otherwise (`&flash_level=`). Not kept back for old sensors (the maintainer: no
-  backward compatibility here): they get half as well. A light switched through Home Assistant is
+  `triggers.flash_level`), default 35 % (first half; 35 % after the measurements below, the
+  maintainer); the firmware (1.6.0) lights it at 35 % too unless a snapshot asks otherwise
+  (`&flash_level=`). Not kept back for old sensors (the maintainer: no backward compatibility
+  here): they get the default as well. A light switched through Home Assistant is
   not dimmed.
-- **Why half (looked up 2026-11-20):** AI-on-the-edge-device, the widely used ESP32-CAM meter
+- **Why not full (looked up 2026-11-20):** AI-on-the-edge-device, the widely used ESP32-CAM meter
   reader, starts its flash at 50 of 100 ([its parameters](https://jomjol.github.io/AI-on-the-edge-device-docs/Parameters/))
   and lists a lower flash among the cures for reflections ([reference image](https://jomjol.github.io/AI-on-the-edge-device-docs/Reference-Image/));
   its users report pictures spoiled by a flash too strong for the plastic cover
@@ -423,3 +424,22 @@ ESP32-CAMs run on.
   point): burnt out none at 25 and 30 %, 4 % at 35 %, 30 % at 40 %, 51 % at 45 %, 63 % at half;
   read the same, sure 0.96-0.98 at each. By eye the digits are clear at all of them; from 35 %
   the white of the face starts to burn out. For this meter 30 % is the most light without loss.
+- **Looked up after (2026-11-20), for the default and the setting's text:**
+  - *Current:* AI-Thinker's figures give the ESP32-CAM 180 mA at 5 V with the flash off and 310 mA
+    with it full ([JLCPCB's guide](https://jlcpcb.com/blog/esp32-cam-guide)); the LED has no
+    resistor of its own, only a transistor ([makerguides](https://www.makerguides.com/control-esp32-cam-flash-led/)).
+    At 35 % the flash's share is about a third of that 130 mA (not measured here).
+  - *Stripes:* a line taking its light over an exposure of a whole number of the LED's cycles has
+    no stripe; the fewer cycles an exposure holds, the more one can show, worst at a weak flash and
+    a short exposure ([Imatest on flicker](https://www.imatest.com/wp-content/uploads/2020/03/Describing_Sampling_flicker_Talk_EI2020-1.pdf),
+    [ENTTEC](https://support.enttec.com/pixel/pixel-general-knowledge/why-do-leds-flicker-on-camera)).
+    At 40 kHz an exposure of 1 ms holds 40 cycles; none showed down to 10 %.
+  - *Noise:* gain raises the noise with the picture; only more light or a longer exposure lowers
+    it ([vision-systems.com](https://www.vision-systems.com/directory/blog/14064929/configuring-a-camera-how-exposure-time-and-gain-impact-image-noise)).
+    A meter stands still, so the automatic exposure may take longer instead: *Meters and displays*
+    keeps the gain ceiling at 4.
+  - *Lenses:* ESP32-CAMs come with a 66° lens or a wide 120°/160° one (distorted at the edges), and
+    some ("night vision") without an infrared filter, which turns sunlit and incandescent-lit
+    pictures pink or purple ([Swann](https://support.swann.com/hc/en-us/articles/22884570136217));
+    the flash's white LED has little infrared. The lens is set to a distance and glued; close up it
+    can be turned to focus (water meter users do), not something the firmware can change.

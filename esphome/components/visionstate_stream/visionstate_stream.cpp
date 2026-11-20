@@ -83,10 +83,11 @@ static RTC_NOINIT_ATTR uint32_t restarted_for_camera;
 // picture takes 0.2-0.5 s, and the first one after the flash came on was lit already (2026-11-15).
 static const uint32_t FLASH_SETTLE_MAX_MS = 10000;
 static const uint32_t FLASH_ON_TIMEOUT_MS = 1000;  // the main loop switches it on
-// How strong the flash is (&flash_level=<1-100>, percent of full) when a snapshot does not say: half.
+// How strong the flash is (&flash_level=<1-100>, percent of full) when a snapshot does not say: 35 %
+// (the most light without the white of a meter's face burning out, measured close up, 2026-11-20).
 // Full is too much close up: the meter's glass reflects it into the lens and the bright parts burn
 // out, the LED gets hot and the board draws a lot (issue #86). VisionState asks for each sensor's.
-static const int FLASH_LEVEL_DEFAULT = 50;
+static const int FLASH_LEVEL_DEFAULT = 35;
 
 // How light a picture is: the mean of its pixels (0-255), decoded at 1/8 of its size (a 1600x1200
 // picture as 200x150: quick, and little memory). -1 when it cannot be decoded.

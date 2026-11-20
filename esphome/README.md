@@ -13,7 +13,7 @@ what is still to check are in [`docs/ESP32_PLAN.md`](../docs/ESP32_PLAN.md).
 | Address | What |
 |---|---|
 | `http://visionstate:<password>@<device>:8081/audio.wav` | the microphone: an endless WAV stream, 16 kHz, mono, 16 bits |
-| `http://visionstate:<password>@<device>:8081/snapshot.jpg` | the camera: a picture taken after the request; `?flash=<ms>`: with the ESP32-CAM's flash, that long after it came on, and the flash off again after it (one already on is left on); `&flash_level=<1-100>`: how strong, in percent of full (half when not said); `&dark=<0-255>`: only when the picture the camera keeps ready is darker than that (its mean brightness), said in `X-VisionState-Flashed` |
+| `http://visionstate:<password>@<device>:8081/snapshot.jpg` | the camera: a picture taken after the request; `?flash=<ms>`: with the ESP32-CAM's flash, that long after it came on, and the flash off again after it (one already on is left on); `&flash_level=<1-100>`: how strong, in percent of full (35 when not said); `&dark=<0-255>`: only when the picture the camera keeps ready is darker than that (its mean brightness), said in `X-VisionState-Flashed` |
 
 In VisionState, a sound sensor takes the first as its *RTSP or stream* source, and an image
 sensor the second as its *HTTP snapshot URL*. The password is hidden in VisionState's logs and

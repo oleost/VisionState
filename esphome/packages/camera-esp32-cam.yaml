@@ -58,5 +58,5 @@ light:
     default_transition_length: 0s
     # Brightness is the share of the time the LED is on, so half is half the light (ESPHome's default
     # curve, made for eyes, would give a seventh of it at half). A snapshot asks how strong
-    # (&flash_level=), half when it does not say.
+    # (&flash_level=), 35 % when it does not say.
     gamma_correct: 1.0
