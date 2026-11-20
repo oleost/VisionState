@@ -418,6 +418,11 @@ one frame buffer, then *Exposure level* +1.
 - **Asked of him (2026-11-20):** update to 0.16.0b3 and firmware 1.7.0, one frame buffer, then
   *Exposure level* +1 with a gain ceiling of 16× or more, and to try *Flash strength* (100 % as
   before, and lower), one change at a time, looking in History for the dark pictures after each.
+- **His old gain ceiling was 2×** (found later the same night): his file set no `agc_gain_ceiling`,
+  so ESPHome's default applied, and `aec2` was off; the 16× tried went the other way. Asked next:
+  his old setup copied all at once (Custom 1024×768, quality 12, 20 MHz, automatic exposure, gain
+  ceiling 2×, *Exposure level* +1, flash 100 %, one frame buffer, the default since firmware 1.8.0);
+  if the dark pictures go, put back one thing at a time.
 - **Reading his answer:** a change that ends the two levels (pictures steady like his old ~70)
   points to the cause; dark pictures that still come for hours mean it was not that one. If none
   helps, what is left to compare with his old firmware is the driver's own defaults that ours sets
