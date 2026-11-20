@@ -83,6 +83,10 @@ static RTC_NOINIT_ATTR uint32_t restarted_for_camera;
 // picture takes 0.2-0.5 s, and the first one after the flash came on was lit already (2026-11-15).
 static const uint32_t FLASH_SETTLE_MAX_MS = 10000;
 static const uint32_t FLASH_ON_TIMEOUT_MS = 1000;  // the main loop switches it on
+// How strong the flash is (&flash_level=<1-100>, percent of full) when a snapshot does not say: half.
+// Full is too much close up: the meter's glass reflects it into the lens and the bright parts burn
+// out, the LED gets hot and the board draws a lot (issue #86). VisionState asks for each sensor's.
+static const int FLASH_LEVEL_DEFAULT = 50;
 
 // How light a picture is: the mean of its pixels (0-255), decoded at 1/8 of its size (a 1600x1200
 // picture as 200x150: quick, and little memory). -1 when it cannot be decoded.
@@ -522,12 +526,18 @@ void VisionStateStream::apply_flash_() {
   if (this->flash_ == nullptr)
     return;
   bool wanted = this->flash_holders_.load() > 0;
+  int level = this->flash_level_.load();
   if (wanted && !this->flash_lit_.load()) {
     if (!this->flash_->remote_values.is_on()) {
-      this->flash_->turn_on().set_brightness(1.0f).set_transition_length(0).perform();
+      this->flash_->turn_on().set_brightness(level / 100.0f).set_transition_length(0).perform();
       this->flash_ours_ = true;
+      this->flash_level_lit_ = level;
     }
     this->flash_lit_.store(true);
+  } else if (wanted && this->flash_ours_ && level != this->flash_level_lit_) {
+    // Another snapshot wants it stronger or weaker while it is on: the one asked last.
+    this->flash_->turn_on().set_brightness(level / 100.0f).set_transition_length(0).perform();
+    this->flash_level_lit_ = level;
   } else if (!wanted && this->flash_lit_.load()) {
     if (this->flash_ours_)
       this->flash_->turn_off().set_transition_length(0).perform();
@@ -871,7 +881,8 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
   bool kept_taken = false;
 #ifdef USE_VISIONSTATE_FLASH
   // ?flash=<ms>: the picture taken with the flash, that long after it came on (the pictures taken
-  // meanwhile thrown away); the flash goes off again after it. With &dark=<0-255>, only when the
+  // meanwhile thrown away); the flash goes off again after it. &flash_level=<1-100>: how strong, in
+  // percent of full (FLASH_LEVEL_DEFAULT when not said). With &dark=<0-255>, only when the
   // picture the camera keeps ready is darker than that (its mean brightness): the camera looks all
   // the time, so it knows whether it is dark without a picture taken for it. Said to VisionState,
   // which asks so (X-VisionState-Flash), and whether the flash was used (X-VisionState-Flashed).
@@ -893,6 +904,10 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
       }
       httpd_resp_set_hdr(req, "X-VisionState-Flashed", wanted ? "1" : "0");
       if (wanted) {
+        int level = FLASH_LEVEL_DEFAULT;
+        if (httpd_query_key_value(query, "flash_level", value, sizeof(value)) == ESP_OK)
+          level = std::clamp<int>(atoi(value), 1, 100);
+        this->flash_level_.store(level);
         this->flash_holders_++;
         flashed = true;
         uint32_t asked = millis();

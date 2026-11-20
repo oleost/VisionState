@@ -204,6 +204,7 @@ class Triggers(BaseModel):
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
     light_when: str = TRIGGER_DEFAULTS["light_when"]  # settings.LIGHT_WHEN
+    flash_level: int = Field(TRIGGER_DEFAULTS["flash_level"], ge=_tlo["flash_level"], le=_thi["flash_level"])
     # An ESP32 camera of ours: its settings for this sensor; None: its kind's preset.
     camera: CameraSettingsIn | None = None
 

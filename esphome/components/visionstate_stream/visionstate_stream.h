@@ -193,6 +193,8 @@ class VisionStateStream final : public Component
   std::atomic<int> flash_holders_{0};   // snapshots that want the flash on now
   bool flash_ours_{false};              // switched on here, so switched off here again
   std::atomic<bool> flash_lit_{false};  // the main loop has it on for the snapshots
+  std::atomic<int> flash_level_{0};     // how strong the snapshots want it (percent of full)
+  int flash_level_lit_{0};              // and how strong it was switched on here
   // The last snapshot used the flash: the picture kept ready after it was taken while it was still
   // on, so it says nothing about whether it is dark.
   std::atomic<bool> kept_lit_{false};

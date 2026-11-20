@@ -3,7 +3,8 @@ HTTP on a port of its own, behind a user name and password like a camera's.
 
     GET /audio.wav     16 kHz mono PCM16, chunked, until the listener goes away
     GET /snapshot.jpg  a picture taken after the request (one thrown away first, see fresh_snapshot);
-                       ?flash=<ms>: with the camera's flash, that long after it came on
+                       ?flash=<ms>: with the camera's flash, that long after it came on;
+                       &flash_level=<1-100>: how strong (percent of full, half when not said)
 """
 
 import esphome.codegen as cg

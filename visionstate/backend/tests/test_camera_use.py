@@ -241,8 +241,8 @@ class FlashHa:
         pass
 
 
-def flash_sensor(client, url: str, light: str, when: str = "always") -> int:
-    triggers = {"light_entity": light, "light_delay_s": 0.5, "light_when": when, "burst_duration_s": 0}
+def flash_sensor(client, url: str, light: str, when: str = "always", **more) -> int:
+    triggers = {"light_entity": light, "light_delay_s": 0.5, "light_when": when, "burst_duration_s": 0, **more}
     body = {"source_type": "http", "source": url, "interval_s": 1, "name": "Door", "triggers": triggers}
     return client.post("/api/v1/sensors", json={**body, "states": [{"name": "Open"}, {"name": "Closed"}]}).json()["id"]
 
@@ -263,6 +263,7 @@ def test_a_camera_of_ours_takes_its_picture_with_its_own_flash(settings, camera)
         asked = sum("flash=500" in p for p in Camera.asked)
         assert wait_for(lambda: sum("flash=500" in p for p in Camera.asked) >= asked + 3, timeout=20)
         assert ("light.cam_flash", True) not in ha.switched
+        assert all("flash_level=50" in p for p in Camera.asked if "flash=500" in p)  # half, by default
         # The camera reached by its name: found by its address all the same.
         Camera.asked.clear()
         named = url.replace("127.0.0.1", "localhost")
@@ -327,3 +328,17 @@ def test_a_lamp_only_when_it_is_dark_on_a_home_assistant_camera(settings):  # no
         ha.dark = True
         assert wait_for(lambda: ("light.hall", True) in ha.switched, timeout=20)
         assert wait_for(lambda: ("light.hall", False) in ha.switched, timeout=20)  # and off again
+
+
+def test_the_flash_is_as_strong_as_the_sensor_says(settings, camera):  # noqa: F811
+    """A sensor's flash strength is sent with the picture it asks for with the flash; out of its
+    limits it is refused."""
+    Camera.flash = True
+    url = f"http://127.0.0.1:{camera.server_address[1]}/snapshot.jpg"
+    with TestClient(create_app(settings)) as client:
+        client.app.state.runtime.ha = FlashHa("127.0.0.1")
+        flash_sensor(client, url, "light.cam_flash", flash_level=80)
+        assert wait_for(lambda: sum("flash_level=80" in p for p in Camera.asked) >= 2, timeout=20)
+        assert not any("flash_level=50" in p for p in Camera.asked)
+        body = {"source_type": "http", "source": url, "name": "X", "triggers": {"flash_level": 0}}
+        assert client.post("/api/v1/sensors", json=body).status_code == 422

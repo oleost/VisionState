@@ -42,6 +42,10 @@ output:
     # Not channel 0: the camera's clock (XCLK) runs on LEDC channel 0 and timer 0, and the flash
     # there took it over, so the camera took no new pictures (only the one it had ready).
     channel: 2
+    # Dimmed by switching it on and off this fast: the camera reads its picture a line at a time
+    # (about 56 µs a line at 20 MHz), and at ESPHome's 1 kHz each line would catch the LED on or off
+    # for a different share of its exposure: stripes across a dimmed picture.
+    frequency: 40kHz
 
 light:
   - platform: monochromatic
@@ -52,3 +56,7 @@ light:
     # Full at once: ESPHome fades a light in over a second, and pictures taken meanwhile were dark or
     # had a colour cast (the exposure and the white balance followed a light that kept changing).
     default_transition_length: 0s
+    # Brightness is the share of the time the LED is on, so half is half the light (ESPHome's default
+    # curve, made for eyes, would give a seventh of it at half). A snapshot asks how strong
+    # (&flash_level=), half when it does not say.
+    gamma_correct: 1.0

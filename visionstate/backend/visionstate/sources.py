@@ -375,9 +375,11 @@ class FrameGrabber:
         flash_ms: int | None = None,
         dark: int | None = None,
         camera: dict | None = None,
+        flash_level: int | None = None,
     ) -> bytes:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
-        came on (only for one that said it can: CameraUses.flash); with ``dark``, only when the
+        came on (only for one that said it can: CameraUses.flash), ``flash_level`` percent of full
+        (None: as strong as the camera makes it when not told); with ``dark``, only when the
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
         ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
 
@@ -391,7 +393,7 @@ class FrameGrabber:
                 if source_type == "ha_camera":
                     data = await self.ha.snapshot(source)
                 else:
-                    data = await self._get_limited(source, flash_ms, dark, camera)
+                    data = await self._get_limited(source, flash_ms, dark, camera, flash_level)
                 if not imaging.jpeg_broken(data):
                     return data
                 log.warning(
@@ -404,12 +406,17 @@ class FrameGrabber:
             raise SourceError(describe(err)) from err
 
     async def _get_limited(
-        self, url: str, flash_ms: int | None = None, dark: int | None = None, camera: dict | None = None
+        self,
+        url: str,
+        flash_ms: int | None = None,
+        dark: int | None = None,
+        camera: dict | None = None,
+        flash_level: int | None = None,
     ) -> bytes:
         """The body of a snapshot URL, refused when it is larger than RUNTIME["max_frame_mb"]. A
         camera of ours (one that answered with X-VisionState-Camera) is asked to be set up with the
         sensor's settings first (CameraUses.query), and for the picture with its own flash
-        (?flash=<ms>) when asked."""
+        (?flash=<ms>&flash_level=<percent>) when asked."""
         asked = url
         uses = self.camera_uses
         query = uses.query(url, camera)
@@ -418,6 +425,8 @@ class FrameGrabber:
         timeout = RUNTIME["http_timeout_s"]
         if flash_ms is not None and url in uses.flash:
             asked = f"{asked}{'&' if '?' in asked else '?'}flash={flash_ms}"
+            if flash_level is not None:
+                asked = f"{asked}&flash_level={flash_level}"
             if dark is not None:
                 asked = f"{asked}&dark={dark}"
             timeout += flash_ms / 1000  # the camera takes the picture that much later

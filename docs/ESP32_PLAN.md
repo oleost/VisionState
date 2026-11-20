@@ -385,3 +385,30 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
 3. The dial misreads that the pink pictures cause, in the reader: `POINTER_DIAL_PLAN.md` §10,
    after the stable release (the maintainer).
 4. Before the stable 0.15.0: the maintainer's own cameras on 1.5.3 (*Install* in the Builder).
+
+## 8. Flash strength (the maintainer, 2026-11-20)
+
+The flash was always full. The maintainer's own water meter came out somewhat overexposed with
+it, and a weaker flash saves power and heat, which matters with the weak power supplies many
+ESP32-CAMs run on.
+
+- **Decided:** each sensor sets how strong its camera's own flash is (*Flash strength*, percent,
+  `triggers.flash_level`), default half; the firmware (1.6.0) lights it at half too unless a
+  snapshot asks otherwise (`&flash_level=`). Not kept back for old sensors (the maintainer: no
+  backward compatibility here): they get half as well. A light switched through Home Assistant is
+  not dimmed.
+- **Why half (looked up 2026-11-20):** AI-on-the-edge-device, the widely used ESP32-CAM meter
+  reader, starts its flash at 50 of 100 ([its parameters](https://jomjol.github.io/AI-on-the-edge-device-docs/Parameters/))
+  and lists a lower flash among the cures for reflections ([reference image](https://jomjol.github.io/AI-on-the-edge-device-docs/Reference-Image/));
+  its users report pictures spoiled by a flash too strong for the plastic cover
+  ([#499](https://github.com/jomjol/AI-on-the-edge-device/issues/499)), and one of its collaborators
+  advises a higher gain ceiling with a weaker flash against reflections, warning that with a very
+  high ceiling the flash's strength hardly shows, since the exposure makes up for it
+  ([#3360](https://github.com/jomjol/AI-on-the-edge-device/issues/3360)). At full the ESP32-CAM's
+  LED gets "worryingly hot" ([arduino-esp32 #7742](https://github.com/espressif/arduino-esp32/issues/7742)),
+  and switching it on is a known cause of the board's brown-outs. No measurements of its current
+  per strength were found.
+- **Built:** the flash's LED output at 40 kHz (ESPHome's 1 kHz would put stripes in a dimmed
+  picture, which the camera reads a line at a time, about 56 µs a line) and `gamma_correct: 1.0`
+  (ESPHome's curve for eyes would give about a seventh of the light at half). Two snapshots that
+  ask for different strengths while it is on: the last one asked.

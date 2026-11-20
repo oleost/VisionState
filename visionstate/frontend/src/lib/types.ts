@@ -32,6 +32,8 @@ export interface Triggers {
   light_delay_s: number;
   /** When the light is switched on (config light_when): 'always', or 'dark' (only for a dark frame). */
   light_when: string;
+  /** How strong an ESP32 camera's own flash is for this sensor's pictures, in percent of full. */
+  flash_level: number;
   /** How an ESP32 camera of ours is set up for this sensor's pictures; null = its kind's preset. */
   camera: CameraSettings | null;
 }
@@ -802,7 +804,7 @@ export interface AppConfig {
   quality: { min_samples_per_state: number; min_night_samples: number; cv_folds: number };
   trigger_defaults: Triggers;
   trigger_limits: Record<
-    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold' | 'light_delay_s',
+    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold' | 'light_delay_s' | 'flash_level',
     [number, number]
   >;
   light_domains: string[];

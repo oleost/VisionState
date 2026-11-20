@@ -1,7 +1,7 @@
 <script lang="ts">
   // The light for the camera (part of the image source): a lamp or the camera's flash for a dark
   // place, for every check or only when the frame is dark. Stored in the sensor's triggers
-  // (light_entity, light_delay_s, light_when); limits and choices from GET /config. An ESP32 camera
+  // (light_entity, light_delay_s, light_when, flash_level); limits and choices from GET /config. An ESP32 camera
   // of ours offers its flash, and the editor says how the light chosen is switched: by the camera
   // itself for its picture, or through Home Assistant, and why (POST camera-light).
   import { untrack } from 'svelte';
@@ -140,6 +140,25 @@
         /> s</span
       >
     </label>
+    {#if own}
+      <label class="line">
+        <span class="col" style="gap:0">
+          <span class="small">Flash strength</span>
+          <span class="xsmall faint">Lower if the picture has bright spots or glare; higher if it is dark.</span>
+        </span>
+        <span class="row"
+          ><input
+            class="input sm num"
+            type="number"
+            min={limits.flash_level[0]}
+            max={limits.flash_level[1]}
+            step="5"
+            bind:value={triggers.flash_level}
+            aria-label="Flash strength"
+          /> %</span
+        >
+      </label>
+    {/if}
     {#if triggers.change_detection}
       <p class="xsmall faint">Change detection compares frames without the light.</p>
     {/if}

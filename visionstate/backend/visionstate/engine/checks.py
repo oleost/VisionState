@@ -144,7 +144,9 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         with timing.step("grab"):
             flash_ms = round(min(cfg.triggers["light_delay_s"], ESPHOME["flash_max_s"]) * 1000)  # the camera's limit
             dark = RUNTIME["light_dark_below"] if only_dark else None
-            data = await self.grabber.grab(cfg.source_type, cfg.source, flash_ms, dark, self.camera_for(cfg))
+            data = await self.grabber.grab(
+                cfg.source_type, cfg.source, flash_ms, dark, self.camera_for(cfg), cfg.triggers["flash_level"]
+            )
         lit = self.camera_uses.flashed.get(cfg.source, True) if only_dark else True
         return self.live_state(cfg.id).remember(data), data, lit
 

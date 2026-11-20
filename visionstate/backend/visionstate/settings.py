@@ -466,7 +466,7 @@ ESPHOME = {
     "refresh": "0s",
     # The firmware's version (esphome/packages/common.yaml, project version): a device of ours that
     # reports an older one is told to install again.
-    "firmware_version": "1.5.3",
+    "firmware_version": "1.6.0",
     # The action a device of ours (firmware 1.3.0 on, esphome/packages/stream-password.yaml) answers
     # with its stream's password and address: Home Assistant names it esphome.<device>_<action>.
     "password_action": "stream_password",
@@ -831,6 +831,11 @@ TRIGGER_DEFAULTS = {
     # When the light is switched on: one of LIGHT_WHEN. "dark": a frame is taken without it first,
     # and the light switched on only when that frame is darker than RUNTIME["light_dark_below"].
     "light_when": "always",
+    # How strong an ESP32 camera's own flash is for this sensor's pictures, in percent of full (the
+    # firmware's &flash_level=, 1.6.0 on; older firmware lights it fully). Half: full is too much
+    # close up, the glass over a meter reflects it and bright parts burn out, and the LED gets hot and
+    # the board draws a lot. Half is what AI-on-the-edge-device starts its ESP32-CAM meter readers with.
+    "flash_level": 50,
     # How an ESP32 camera of ours (esphome/) is set up for this sensor's pictures: the keys of
     # CAMERA_SETTING_KEYS, sent with each snapshot. None: its kind's preset (CAMERA_PRESET_BY_KIND).
     # Only for a camera that answers as ours (an X-VisionState-Camera header); ignored for any other.
@@ -894,6 +899,7 @@ TRIGGER_LIMITS = {
     "change_interval_s": (0.5, 60.0),
     "change_threshold": (0.005, 0.5),
     "light_delay_s": (0.0, 30.0),
+    "flash_level": (1, 100),
 }
 TRIGGER_MAX_ENTITIES = 20
 TRIGGER_STATE_MAX_LENGTH = 255  # Home Assistant's own limit for a state
