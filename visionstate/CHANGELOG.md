@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0b3
+
+**A closer look while placing a region, and the camera's exposure level.**
+
+### New
+
+- **The region editor zooms in** on a region once it is placed, so its corners are easy to set on
+  a phone. *Whole picture* in the picture's corner shows all of it again.
+- **Exposure level** for an ESP32 camera of ours (*Camera set-up*): how bright the automatic
+  exposure aims, -2 to +2. Needs firmware 1.7.0 (*Install* in the ESPHome app).
+
 ## 0.16.0b2
 
 **A gentler flash for ESP32 cameras, and dial needles found in dim pictures.**
