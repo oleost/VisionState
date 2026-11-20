@@ -2704,6 +2704,7 @@ test('an ESP32 of ours that Home Assistant has: offered first as the source, its
   await expect(offer).toHaveCount(0);
   await expect(page.getByTestId('light-status')).toContainText("The camera's own flash");
   await expect(page.getByLabel('Flash on before the picture')).toHaveAttribute('max', '10');
+  await expect(page.getByLabel('Flash strength')).toHaveValue('35'); // the default, from GET /config
   await expectNoHorizontalOverflow(page);
   await expectNoClipping(page, '.btn, .cam');
   errors.expectNone();
@@ -2798,6 +2799,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await press(offer.getByRole('button', { name: "Use the camera's flash" }), info);
     await expect(page.getByTestId('light-status')).toContainText('the camera switches it on for each picture itself');
     await expect(page.getByLabel('Flash on before the picture')).toBeVisible();
+    await expect(page.getByLabel('Flash strength')).toHaveValue('35');
     await expectNoHorizontalOverflow(page); // the long id breaks inside its chip
     await press(page.getByRole('button', { name: `Remove ${flash}` }), info);
     const pick = page.getByLabel('Light to switch on');
@@ -2805,6 +2807,7 @@ test('an ESP32 camera of ours: its set-up in the sensor settings, and the camera
     await pick.press('Enter');
     await expect(page.getByTestId('light-status')).toContainText('does not take its pictures from that device');
     await expect(page.getByLabel('Wait before taking the frame')).toBeVisible();
+    await expect(page.getByLabel('Flash strength')).toHaveCount(0); // only for the camera's own flash
     await expect(offer).toContainText(flash); // its own flash still offered
     await expectNoHorizontalOverflow(page);
     await page.unroute('**/api/v1/camera-light');

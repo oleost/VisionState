@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.16.0b2
+
+**A gentler flash for ESP32 cameras, and dial needles found in dim pictures.**
+
+### Changed
+
+- **An ESP32 camera's own flash** now defaults to 35 % instead of 100 %, set per sensor with
+  *Flash strength*. Needs firmware 1.6.0 (*Install* in the ESPHome app).
+
+### Fixed
+
+- **Pointer dials in dim pictures:** a red needle of which a dim picture showed only the hub is
+  read whole again, instead of not at all or the wrong way round.
+
 ## 0.16.0b1
 
 **Turning dials: how fast gas or water runs, and readings to share that stay small.**
