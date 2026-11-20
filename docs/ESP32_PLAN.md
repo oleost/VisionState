@@ -397,6 +397,25 @@ pictures not seen). Firmware 1.7.0 leaves the level to the sensor's *Exposure le
 to the file when VisionState does not send one. Being tested, one at a time: the flash at 35 %,
 one frame buffer, then *Exposure level* +1.
 
+- **Export 15 (2026-11-20):** still app 0.16.0b1 with the new firmware, so the flash was at 35 %
+  with no way to change it; the green and pink casts came back; nothing wrong was accepted.
+- **Measured on the maintainer's OV3660s (2026-11-20):** *Exposure level* only works when the gain
+  ceiling leaves the automatic exposure room. At 4× (the meter preset) a camera in a dim spot is
+  already at full gain and −2 and +2 come out alike (water meter with the flash at 35 %: 82 against
+  83 mean grey; test camera 74 against 75). At 16× the test camera gave 111 against 136, at 128×
+  103-110 against 153; the water meter at 128× 90 against 145 (flash 35 %) and 103 against 117
+  (flash 5 %). So for that user *Exposure level* +1 needs a gain ceiling of 16× or more.
+- **His old flash strength is not known:** it was set in Home Assistant (a light at 1 kHz with
+  ESPHome's default gamma 2.8), not in his file; 100 % there may be much brighter than 35 % here.
+- **Asked of him (2026-11-20):** update to 0.16.0b3 and firmware 1.7.0, one frame buffer, then
+  *Exposure level* +1 with a gain ceiling of 16× or more, and to try *Flash strength* (100 % as
+  before, and lower), one change at a time, looking in History for the dark pictures after each.
+- **Reading his answer:** a change that ends the two levels (pictures steady like his old ~70)
+  points to the cause; dark pictures that still come for hours mean it was not that one. If none
+  helps, what is left to compare with his old firmware is the driver's own defaults that ours sets
+  differently (check `apply_settings_` against what ESPHome's `esp32_camera` writes), and settling
+  until the brightness is steady instead of a fixed time (not built).
+
 ## 8. Flash strength (the maintainer, 2026-11-20)
 
 The flash was always full. The maintainer's own water meter came out somewhat overexposed with
