@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0b5
+
+**A clean restart for ESP32 cameras after a firmware install.**
+
+### Fixed
+
+- **An ESP32 camera of ours** could crash while restarting after a firmware install, when
+  VisionState asked it for a picture at that moment. It came back on its own, but now restarts
+  cleanly. The camera also uses ESPHome's current way of setting up its control bus, so a newer
+  ESPHome keeps building it. Needs firmware 1.8.1 (*Install* in the ESPHome app).
+
 ## 0.16.0b4
 
 **Fresh pictures from ESP32 cameras after a pause.**

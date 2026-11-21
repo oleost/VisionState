@@ -91,7 +91,9 @@ restarts, set in Home Assistant or in the sensor's settings in VisionState, and 
 `horizontal_mirror` itself gives its orientation there instead, as the choice overrides them.
 
 While new firmware is installed the camera is powered down (`camera_power_down_pin`, the ESP32-CAM's
-power-down pin), so it starts afresh after the restart; and a camera that gives no picture 30 s after
+power-down pin), so it starts afresh after the restart. Meanwhile, and while the device restarts, a
+snapshot is answered at once with 503 (*Firmware is being installed*) instead of waiting for a
+picture that will not come; and a camera that gives no picture 30 s after
 start-up has the device restart once (an ESP32-CAM's OV2640 gave none after an install until it was
 restarted: issue #86).
 

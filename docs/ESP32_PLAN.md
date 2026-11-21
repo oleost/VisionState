@@ -361,6 +361,17 @@ clock): *Camera use* on the device is replaced by six settings that belong to ea
   that user confirmed on 2026-11-16 that the camera now comes up after an install (0.15.0b22).
   Not known yet which of the two did it: the device's log after an install says so ("The camera
   gave no picture … restarting once" is the safety net; without it, the power-down was enough).
+- **A crash at the restart after an install (firmware 1.8.1, 2026-11-21):** the maintainer's test
+  camera reported "Task wdt" on core 1 after an install. A snapshot that came while the camera was
+  powered down waited for its pictures (5 s each, several after a change of settings), and the
+  restart waited for the snapshot server to stop. Reproduced on the test camera with snapshots
+  switching between two sizes during an install (the device restarts anyway, so nothing was lost
+  but the clean restart). Since 1.8.1 a snapshot is refused (503) from the start of an install and
+  during the restart, and one that is waiting stops waiting: two installs under the same load
+  restarted cleanly.
+- **The camera's control bus (firmware 1.8.1):** the camera packages give it an `i2c:` bus of its
+  own (`vs_camera_i2c`) instead of esp32_camera's deprecated `i2c_pins`, which also failed next to
+  a device file's own `i2c:` block.
 
 **Measured on an OV3660 (2026-11-17), changed in firmware 1.5.3 and 0.15.0b23:**
 - **The gain ceiling did nothing:** the camera driver's `set_gainceiling` writes the gainceiling_t
