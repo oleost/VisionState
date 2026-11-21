@@ -4,11 +4,12 @@
     python scripts/seed_demo.py --app c088851d_visionstate      # an installed app, through Ingress
 
 - Driveway (objects): people, cars, a bicycle and a cat; Tom (the man on the left) is recognised
-  by his face, taught on this camera from this picture and from one of him alone (demo_tom), and
-  from a photo of him (demo_tom_photo, as with Add photos on the People page); the silver car is
-  taught as the own label "Our car". The faces are small (the pictures are 1586 px wide), so the
-  sensor looks for faces down to 26 px; the girl's is too small to call her a stranger, so she
-  counts as a person.
+  by his face, taught on this camera from this picture and from one of him alone (demo_tom), from
+  a photo of him (demo_tom_photo, as with Add photos on the People page) and by answering yes to
+  "Is this Tom?" (as in Review). The silver car is taught as the own label "Our car" and has the
+  plate MK19 HBW, which the sensor reads with the default plate model. The faces are small (the
+  pictures are about 1600 px wide), so the sensor looks for faces down to 26 px; the girl's is
+  too small to call her a stranger, so she counts as a person.
 - Garage door (states): trained on 36 frames drawn from one photo (closed, open, partial).
 - Water meter (reading): the wheels of a real water meter, one of them half way between digits.
 - Hallway (sound), only with ``--sound <stream URL>``: listens for a smoke alarm, a siren, a dog,
@@ -274,6 +275,7 @@ def main() -> None:
             "objects": {
                 "classes": ["person", "car", "bicycle", "cat"],
                 "faces": {"enabled": True, "ask_unknown": False, "min_face_px": 26},
+                "plates": {"enabled": True},
             },
             "interval_s": 10,
         }
@@ -349,6 +351,20 @@ def main() -> None:
         if r.status_code >= 400 or not r.json()["added"]:
             sys.exit(f"Tom's photo: {r.status_code} {r.text[:300]}")
         print(f"Tom: {r.json()['faces']} faces taught")
+
+        # His face on the driveway is not much like his other pictures, so the sensor asks "Is this
+        # Tom?" at first; it is answered yes, as in Review, until he is recognised.
+        def tom_recognised():
+            view = api.call("GET", f"/sensors/{driveway['id']}")
+            if any(d.get("label") == "tom" for d in view["objects"]["detections"]):
+                return True
+            for item in api.call("GET", "/review", params={"sensor": driveway["id"]})["items"]:
+                if ((item.get("probs") or {}).get("ask") or {}).get("label") == "tom":
+                    api.call("POST", f"/review/{item['id']}", json={"action": "yes"})
+            return False
+
+        wait("Tom recognised on the driveway", tom_recognised)
+        print("Tom: recognised on the driveway")
     else:
         tom_alone = None
     if driveway:
@@ -380,6 +396,25 @@ def main() -> None:
             },
         )
         print("Our car: taught")
+        # Its plate: the car the teaching made is one of the household's cars (shared by every camera).
+        car = next(c for c in api.call("GET", "/cars") if c["name"] == "Our car")
+        if not car["plate"]:
+            api.call(
+                "PUT",
+                f"/cars/{car['key']}",
+                json={"name": car["name"], "plate": "MK19 HBW", "parent": car["parent"]},
+            )
+
+        def named_by_plate():
+            view = api.call("GET", f"/sensors/{driveway['id']}")
+            return any(
+                (d.get("plate") or {}).get("state") == "match"
+                for d in view["objects"]["detections"]
+            )
+
+        # The plate model loads (or downloads) once a sensor reads plates.
+        wait("Our car named by its plate", named_by_plate, timeout=600)
+        print("Our car: read by its plate MK19 HBW")
     if meter:
         value = wait(
             "the water meter",
