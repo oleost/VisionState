@@ -8,15 +8,21 @@ substitutions:
   # The largest picture it can give: every size a sensor asks for fits in it.
   camera_resolution: 1600x1200
 
+# The camera's control bus, a bus of its own (esp32_camera's i2c_pins is deprecated, and fails
+# next to a device file's own i2c: block). A list, so a device file's own buses are added to it.
+i2c:
+  - id: vs_camera_i2c
+    sda: GPIO40
+    scl: GPIO39
+    scan: false
+
 esp32_camera:
   id: vs_camera
   name: Camera
   external_clock:
     pin: GPIO10
     frequency: 20MHz
-  i2c_pins:
-    sda: GPIO40
-    scl: GPIO39
+  i2c_id: vs_camera_i2c
   data_pins: [GPIO15, GPIO17, GPIO18, GPIO16, GPIO14, GPIO12, GPIO11, GPIO48]
   vsync_pin: GPIO38
   href_pin: GPIO47
