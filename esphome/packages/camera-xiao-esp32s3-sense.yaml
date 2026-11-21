@@ -9,7 +9,8 @@ substitutions:
   camera_resolution: 1600x1200
 
 # The camera's control bus, a bus of its own (esp32_camera's i2c_pins is deprecated, and fails
-# next to a device file's own i2c: block). A list, so a device file's own buses are added to it.
+# next to a device file's own i2c: block). A list: a device file's own i2c: written as a list is
+# added to it (one written without the dash replaces it).
 i2c:
   - id: vs_camera_i2c
     sda: GPIO40
