@@ -2,7 +2,8 @@
   // Boxes around detected objects, drawn over an image (place inside RoiEditor, which is the
   // positioned frame). Boxes are normalised to the whole frame. Labels never overlap: the most
   // certain object gets its label above the box, the next one inside the box if that is free,
-  // and a label that fits nowhere is left out (the box stays). Boxes filtered away by what the
+  // and a label that fits nowhere is left out (the box stays). The labels are drawn over every box
+  // (a box listed later never covers another one's label). Boxes filtered away by what the
   // sensor was taught are dashed and grey. With `onpick`, every box can be tapped. A face found in a
   // person box (a sensor that recognises faces) is drawn as a small rounded box inside it.
   import { pct } from '../format';
@@ -106,13 +107,9 @@
         style:--c={color}
         aria-label="{tagText(d)}: correct it"
         onclick={() => onpick(i)}
-      >
-        {#if placement[i]}<span class="tag" class:inside={placement[i] === 'inside'}>{tagText(d)}</span>{/if}
-      </button>
+      ></button>
     {:else}
-      <div class="box" class:filtered={d.filtered} style:left style:top style:width={w} style:height={h} style:--c={color}>
-        {#if placement[i]}<span class="tag" class:inside={placement[i] === 'inside'}>{tagText(d)}</span>{/if}
-      </div>
+      <div class="box" class:filtered={d.filtered} style:left style:top style:width={w} style:height={h} style:--c={color}></div>
     {/if}
   {/each}
   {#each detections as d, i (i)}
@@ -126,6 +123,33 @@
         style:height="{(d.face.box[3] - d.face.box[1]) * 100}%"
         style:--c={objectColor(classes, d.label ?? d.key)}
       ></div>
+    {/if}
+  {/each}
+  {#each detections as d, i (i)}
+    {#if placement[i]}
+      {@const color = d.filtered ? 'var(--c-unknown)' : objectColor(classes, d.label ?? d.key)}
+      {#if onpick}
+        <!-- Tapping the label picks its box, as before; the box's button is the one a keyboard or screen reader uses. -->
+        <button
+          type="button"
+          class="tag pickable"
+          class:inside={placement[i] === 'inside'}
+          style:left="{d.box[0] * 100}%"
+          style:top="{d.box[1] * 100}%"
+          style:--c={color}
+          tabindex="-1"
+          aria-hidden="true"
+          onclick={() => onpick(i)}>{tagText(d)}</button
+        >
+      {:else}
+        <span
+          class="tag"
+          class:inside={placement[i] === 'inside'}
+          style:left="{d.box[0] * 100}%"
+          style:top="{d.box[1] * 100}%"
+          style:--c={color}>{tagText(d)}</span
+        >
+      {/if}
     {/if}
   {/each}
 </div>
@@ -160,10 +184,12 @@
   .box.selected {
     border-width: 3px;
   }
+  /* At the box's top left corner: above it (over its top border), or inside it. */
   .tag {
     position: absolute;
-    left: -2px;
-    bottom: 100%;
+    transform: translateY(calc(-100% + 2px));
+    margin: 0;
+    border: none;
     padding: 1px 6px;
     border-radius: 3px 3px 0 0;
     background: var(--c);
@@ -171,7 +197,12 @@
     font-size: var(--fs-xs);
     font-weight: 600;
     line-height: 15px;
+    font-family: inherit;
     white-space: nowrap;
+  }
+  .tag.pickable {
+    pointer-events: auto;
+    cursor: pointer;
   }
   .face {
     position: absolute;
@@ -184,8 +215,7 @@
     opacity: 0.7;
   }
   .tag.inside {
-    bottom: auto;
-    top: -2px;
+    transform: none;
     border-radius: 3px 0 3px 0;
   }
 </style>
