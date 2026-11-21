@@ -183,7 +183,7 @@ Many users run Home Assistant on phones and tablets.
   watch it `--headed` or step through it `--ui`; after a failure `npx playwright show-trace
   test-results/<test>/trace.zip`.
 - **Demo sensors:** `python scripts/seed_demo.py --url <app> --images <camera>` seeds one sensor of
-  each kind (Driveway with Tom and "Our car", Garage door, Water meter, and with `--sound <stream>`
+  each kind (Driveway with Tom and "Our car MK19 HBW", Garage door, Water meter, and with `--sound <stream>`
   the sound sensor Hallway) on any instance: locally
   with `--images http://127.0.0.1:8765/photo` (the fake camera), or on an installed app with
   `--app <slug>` (photos from GitHub). Running it twice changes nothing.

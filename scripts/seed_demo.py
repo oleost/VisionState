@@ -6,8 +6,9 @@
 - Driveway (objects): people, cars, a bicycle and a cat; Tom (the man on the left) is recognised
   by his face, taught on this camera from this picture and from one of him alone (demo_tom), from
   a photo of him (demo_tom_photo, as with Add photos on the People page) and by answering yes to
-  "Is this Tom?" (as in Review). The silver car is taught as the own label "Our car" and has the
-  plate MK19 HBW, which the sensor reads with the default plate model. The faces are small (the
+  "Is this Tom?" (as in Review). The silver car is taught as the own label "Our car", then has
+  the plate MK19 HBW and is called "Our car MK19 HBW"; the sensor reads it with the default plate
+  model. The faces are small (the
   pictures are about 1600 px wide), so the sensor looks for faces down to 26 px; the girl's is
   too small to call her a stranger, so she counts as a person.
 - Garage door (states): trained on 36 frames drawn from one photo (closed, open, partial).
@@ -397,12 +398,13 @@ def main() -> None:
         )
         print("Our car: taught")
         # Its plate: the car the teaching made is one of the household's cars (shared by every camera).
-        car = next(c for c in api.call("GET", "/cars") if c["name"] == "Our car")
+        # The plate is in its name too, so its box shows that the plate was read.
+        car = next(c for c in api.call("GET", "/cars") if c["key"] == "our_car")
         if not car["plate"]:
             api.call(
                 "PUT",
                 f"/cars/{car['key']}",
-                json={"name": car["name"], "plate": "MK19 HBW", "parent": car["parent"]},
+                json={"name": "Our car MK19 HBW", "plate": "MK19 HBW", "parent": car["parent"]},
             )
 
         def named_by_plate():

@@ -56,7 +56,7 @@ The demo sensors (`scripts/seed_demo.py`, the README screenshots) use:
 
 | File | What | Source |
 |---|---|---|
-| `demo_driveway.jpg` | A driveway seen from above: Tom and a girl with a parcel, cars (the silver one's plate MK19 HBW readable), a bicycle and a cat; sharpened lightly (unsharp mask) | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
+| `demo_driveway.jpg` | A driveway seen from above: Tom and a girl with a parcel, two cars (the silver one's plate MK19 HBW readable), a bicycle and a cat; sharpened lightly (unsharp mask) | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
 | `demo_tom.jpg` | Tom alone on the same driveway: a face to teach on the camera | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
 | `demo_tom_photo.jpg` | Tom close up, as a photo from a phone: a face to teach with Add photos | Made by the maintainer with Google Gemini (AI, no real people), CC0 |
 | `demo_garage.jpg` | A garage door from inside, cut; the script draws it open and half open | [Utility building interior view of wood panel overhead garage doors](https://commons.wikimedia.org/wiki/File:UTILITY_BUILDING_INTERIOR_VIEW_OF_WOOD_PANEL_OVERHEAD_GARAGE_DOORS,_LOOKING_NORTHWEST._-_Tucson_Plant_Materials_Center,_General_Utility_Building,_3241_North_Romero_Road,_HABS_ARIZ,10-TUCSO,32C-7.tif), HABS (public domain) |
