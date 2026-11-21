@@ -176,6 +176,10 @@ class VisionStateStream final : public Component
 #ifdef USE_VISIONSTATE_CAMERA
   camera::Camera *camera_{nullptr};
   uint8_t kept_pictures_{1};
+  // Firmware is being installed, or the device restarts: snapshots are refused and a picture is no
+  // longer waited for. A snapshot that waited for one the powered-down camera never gave kept the
+  // server busy, the restart waited for it, and the watchdog restarted the device (2026-11-21).
+  std::atomic<bool> stopping_{false};
   SemaphoreHandle_t image_ready_{nullptr};
   std::shared_ptr<camera::CameraImage> image_;
   volatile bool waiting_for_image_{false};

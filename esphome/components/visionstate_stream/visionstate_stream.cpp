@@ -400,6 +400,9 @@ void VisionStateStream::dump_config() {
 }
 
 void VisionStateStream::on_shutdown() {
+#ifdef USE_VISIONSTATE_CAMERA
+  this->stopping_.store(true);
+#endif
   if (this->httpd_ != nullptr) {
     httpd_stop(this->httpd_);
     this->httpd_ = nullptr;
@@ -832,9 +835,11 @@ void VisionStateStream::on_ota_global_state(ota::OTAState state, float progress,
   // afresh after the restart (the camera driver powers it up at start-up). Up again if it failed.
   if (state == ota::OTA_STARTED) {
     ESP_LOGI(TAG, "Firmware is installed: the camera is powered down until the restart");
+    this->stopping_.store(true);
     gpio_set_level(static_cast<gpio_num_t>(this->camera_power_down_pin_), 1);
   } else if (state == ota::OTA_ERROR || state == ota::OTA_ABORT) {
     gpio_set_level(static_cast<gpio_num_t>(this->camera_power_down_pin_), 0);
+    this->stopping_.store(false);
   }
 }
 #endif
@@ -851,13 +856,15 @@ std::shared_ptr<camera::CameraImage> VisionStateStream::take_image_(uint32_t tim
   // - the camera hands pictures out in the main loop, which sleeps while nothing happens.
   // Both only showed with nobody listening: a listener's sound keeps the cores and the loop busy.
   bool got = false;
-  while (!got && millis() - asked < timeout_ms) {
+  while (!got && millis() - asked < timeout_ms && !this->stopping_.load()) {
     this->camera_->request_image(camera::WEB_REQUESTER);
     App.wake_loop_threadsafe();
     got = xSemaphoreTake(this->image_ready_, pdMS_TO_TICKS(WAKE_EVERY_MS)) == pdTRUE;
   }
   if (!got) {
     this->waiting_for_image_ = false;
+    if (this->stopping_.load())
+      return nullptr;
     ESP_LOGW(TAG, "The camera gave no picture in %" PRIu32 " ms", timeout_ms);
     return nullptr;
   }
@@ -876,6 +883,11 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
 #else
   if (this->camera_ == nullptr)
     return not_found(req, HTTPD_404_NOT_FOUND);
+  if (this->stopping_.load()) {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_hdr(req, "Retry-After", "60");
+    return httpd_resp_sendstr(req, "Firmware is being installed");
+  }
   // The sensor's settings (?size=&quality=&clock=&exposure=&gain=): the camera set up so first (it
   // stays so until a snapshot asks otherwise), and the pictures taken before it settled thrown away.
   char query[160];
@@ -930,7 +942,7 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
         this->flash_holders_++;
         flashed = true;
         uint32_t asked = millis();
-        while (!this->flash_lit_.load() && millis() - asked < FLASH_ON_TIMEOUT_MS) {
+        while (!this->flash_lit_.load() && millis() - asked < FLASH_ON_TIMEOUT_MS && !this->stopping_.load()) {
           App.wake_loop_threadsafe();
           delay(WAKE_EVERY_MS);
         }
@@ -941,7 +953,7 @@ esp_err_t VisionStateStream::handle_snapshot_(httpd_req_t *req) {
           this->take_image_(IMAGE_TIMEOUT_MS);  // thrown away: taken before the camera caught up
           if (taken++ == 0)
             first = millis();
-        } while (millis() - lit < settle);
+        } while (millis() - lit < settle && !this->stopping_.load());
         if (taken >= 2)
           this->frame_ms_ = (millis() - first) / (taken - 1);
         kept_taken = false;  // the one after these is thrown away as well (taken as the light came)
