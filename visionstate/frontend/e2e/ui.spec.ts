@@ -632,6 +632,16 @@ test('new turning dial sensor through the wizard: a flow from a needle going rou
   await page.getByLabel('Source URL').fill(DIAL_URL(3.3));
   await toDetect(page, info);
 
+  // The first read (of a counter, the default) is slow, so the dial is chosen while it is under way:
+  // it must be read again as a dial (CI once showed the counter's "No needle found" for good).
+  await page.route(
+    '**/api/v1/preview/read',
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
+    },
+    { times: 1 },
+  );
   await press(page.getByRole('radio', { name: /Reading/ }), info);
   await press(page.getByRole('radio', { name: /Turning dial/ }), info);
   // A dial gives a flow: no modes to choose, no decimals; the needle is read on the whole picture.

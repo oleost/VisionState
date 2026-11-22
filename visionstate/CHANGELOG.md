@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0b7
+
+**The new sensor wizard reads what you chose.**
+
+### Fixed
+
+- **New reading sensor:** a choice made while the first test read was still under way (such as
+  *Turning dial* right after *Reading*) was not read again, so the test kept showing the first
+  result, for a turning dial "No needle found", until something else was changed. It now reads
+  again, and an older result never replaces a newer one.
+
 ## 0.16.0b6
 
 **Fewer wrong names asked about at the door.**

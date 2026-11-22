@@ -36,17 +36,25 @@
   const digitsRead = $derived(reading.digits + extraDigits(reading));
   const dial = $derived(reading.display === 'dial');
 
-  /** Read a fresh frame with the current region and settings (also called when the light is on). */
+  /** Read a fresh frame with the current region and settings (also called when the light is on).
+   * Only the last read asked for is shown; a choice made while a read was under way (the first
+   * one too, before the retest below starts) is read again when it comes back. */
+  let asked = 0;
+  const choices = () => JSON.stringify([roi, reading]);
   export async function test() {
+    const n = ++asked;
+    const sent = choices();
     busy = true;
     error = '';
     try {
-      result = await api.previewRead(sourceType, source, roi, reading);
+      const read = await api.previewRead(sourceType, source, roi, reading);
+      if (n === asked) result = read;
     } catch (err) {
-      error = (err as Error).message;
-    } finally {
-      busy = false;
+      if (n === asked) error = (err as Error).message;
     }
+    if (n !== asked) return; // a newer read is under way
+    busy = false;
+    if (untrack(choices) !== sent) test();
   }
 
   onMount(() => {
