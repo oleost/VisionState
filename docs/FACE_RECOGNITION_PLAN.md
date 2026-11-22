@@ -537,3 +537,29 @@ Where the build differs from §3–§9:
   taught from answers — origin `review` — before the ones taught by hand, faces that may have the
   wrong name never); otherwise the answer stands without teaching anything. Teaching a full person
   by hand or from photos is refused with what to do.
+- **Wrong names asked about at a backlit doorbell** (the maintainer's, 2026-11-22, AuraFace): in a
+  week no face reached a match; every face was asked about at 0.28–0.40, and the wrong names
+  scored as high as the right ones. The faces were large (up to 460 px) and sharp, so the gate let
+  them through, but backlit, seen from below, under winter hats and grainy from the camera's own
+  processing: the same person's phone photos came 0.45–0.89 to each other and 0.15 (median) to
+  their doorbell faces. Measured on the 131 faces of 7 people taught there, each face compared
+  with the others not taken within 15 minutes of it:
+  - the **length of the raw embedding** (before it is made unit length) falls with the face's
+    quality — the property MagFace and AdaFace are built on. Only faces of 13 or more (AuraFace)
+    left, the questions with a wrong name fell from 26 % to 9 %; SFace's lengths are smaller (at
+    8: from 26 % to 12 %; both with the mirror mean below). The NASA test photos are 19.6–24.6 (AuraFace) and 10.7–13.6 (SFace), and still
+    14.8 and 9.4 at the least when made dark, small, blurred or squeezed to a 60-px JPEG at quality
+    15, so a good camera is not gated. A face below the recogniser's `min_quality` is *poor*: no
+    face, like a blurry one (it keeps a name the box had);
+  - the **mean of the face and its mirror image** named more right (top-1 98 → 103 of 124 with
+    AuraFace, 98 → 104 with SFace), as these models are usually evaluated; on the clean NASA
+    photos it changed little (the same person 0.63 → 0.65, different people at most 0.17 → 0.19).
+    It costs a second run of the recogniser per usable face (AuraFace about 60 → 120 ms on a
+    desktop, SFace 20 → 35 ms), only for faces that pass every check: a poor face is known from
+    the first run and not run mirrored. It is on for every recogniser, not a setting: nothing a
+    user sees tells them when to turn it off, and the detector takes most of a check's time;
+  - with both, AuraFace named 50 of the 73 good faces at a `match_similarity` of 0.35 without a
+    wrong one (19 at 0.40 before), so its match is 0.35; a name below `sure_similarity` (0.5)
+    still needs a second check that agrees. SFace's limits stay as they were.
+  One household and one camera: the numbers are a start, to be checked against the answers of
+  more doorbells.

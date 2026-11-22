@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.16.0b6
+
+**Fewer wrong names asked about at the door.**
+
+### Changed
+
+- **Face recognition looks at each face twice:** as it is and mirrored, and goes by the mean of
+  the two. It named more faces right on a backlit doorbell. It takes the face model about twice
+  as long per face it can use; *Compare and manage the models* under Settings → AI model now
+  shows a face model's time per face.
+- **A face too dark or grainy to tell who** (often a face against a bright sky) is no longer
+  named or asked about: it counts as no face, like a blurry one, and the **Live** tab says so and
+  suggests the camera's HDR or backlight compensation. Such faces got the wrong name most often.
+- **AuraFace names a person sooner** (from a similarity of 0.35, was 0.40), as the two changes
+  above leave fewer poor faces. A name below its sure line still needs a second check that agrees.
+- Taught faces are computed again once after the update, as when the face model is changed.
+
 ## 0.16.0b5
 
 **A clean restart for ESP32 cameras after a firmware install.**

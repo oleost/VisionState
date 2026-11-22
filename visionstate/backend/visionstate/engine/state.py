@@ -381,7 +381,7 @@ class LiveState:
         default_factory=dict
     )  # own label/person -> when the review asked (this cooldown)
     # Faces: what the face search gave for the last person boxes it looked at ("ok" or the
-    # problem: "none", "cut", "small", "turned", "blurry", "unsure"), for "a usable face in 9 of 40".
+    # problem: "none", "cut", "small", "turned", "blurry", "unsure", "poor"), for "a usable face in 9 of 40".
     face_stats: deque = field(default_factory=lambda: deque(maxlen=FACES["stats_window"]))
     face_frame: tuple[int, int] | None = None  # the size of the last frame looked at for faces
     face_min_px: float | None = None  # the smallest face (its width) it was looked at with

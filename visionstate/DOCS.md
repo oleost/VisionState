@@ -294,7 +294,9 @@ everyone.
   names in the app's `models` folder by hand.
 - **Does my camera see faces well enough?** The **Live** tab draws a small rounded box around
   each face it finds in a person, and says for each person what it saw: a name, *face too small*,
-  *face turned away*, *face cut off by the edge*, *face blurry* or *no face seen*, and how many of
+  *face turned away*, *face cut off by the edge*, *face blurry*, *face too dark or grainy to tell
+  who* (often a face against a bright sky: the camera's HDR or backlight compensation helps) or
+  *no face seen*, and how many of
   the last people it looked at had a usable face. A face it cannot use counts as no face, never as
   an unknown person. When faces are rarely usable, the card says the likely reason (for faces too
   small, also the size of the camera's pictures).
@@ -1081,9 +1083,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   detector is only loaded while at least one object sensor exists.
 - **Faces** (object sensors that recognise faces): never included — downloaded when a sensor
   first turns face recognition on. Faces are found with **YuNet** (OpenCV Zoo, MIT) and told
-  apart by **SFace** (Apache-2.0, 39 MB with YuNet, about 10 ms per face; fine on a Raspberry Pi 4)
-  or, for a fast PC, **AuraFace v1** (Apache-2.0, 261 MB, about 600 MB of memory, about six
-  times as slow per face), which tells faces apart better in poor light and at an angle. YuNet
+  apart by **SFace** (Apache-2.0, 39 MB with YuNet, a few tens of ms per face; fine on a
+  Raspberry Pi 4) or, for a fast PC, **AuraFace v1** (Apache-2.0, 261 MB, about 600 MB of memory, three to
+  four times as slow per face), which tells faces apart better in poor light and at an angle. YuNet
   was trained on a research data set and SFace's paper names research data sets too (their
   terms are not commercial); AuraFace's makers say its data allows commercial use. Switching
   computes every taught face again with the new model (*Learning faces… 12/40* on the sensors'
@@ -1109,8 +1111,9 @@ The models, chosen under **Settings → AI model** for all sensors of a kind (sm
   on); the file is published by VisionState.
 
 **Compare and manage the models** (under the choices) lists every model, from the smallest to
-the largest, with its rough memory use, time per check, how accurate it is compared with the
-others and whether it is included, downloaded or still to download. A downloaded model that is
+the largest, with its rough memory use, time per check (for a face model: per face), how
+accurate it is compared with the others and whether it is included, downloaded or still to
+download. A downloaded model that is
 not in use can be deleted there to free the disk (it is downloaded again when chosen); a face
 model only while no sensor recognises faces with it. A choice you made stays when a later
 version recommends another model.

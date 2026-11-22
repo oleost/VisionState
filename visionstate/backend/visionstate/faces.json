@@ -29,12 +29,13 @@
       "sure_similarity": 0.6,
       "ask_similarity": 0.32,
       "keep_similarity": 0.4,
+      "min_quality": 8.0,
       "license": "Apache-2.0",
       "data": "The model's paper trained it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, research data sets (non-commercial terms).",
       "source": "https://huggingface.co/opencv/face_recognition_sface",
       "bundled": false,
       "ram_mb": 60,
-      "time_ms": 20,
+      "time_ms": 35,
       "accuracy": 3
     },
     "auraface-v1": {
@@ -46,16 +47,17 @@
       "input_size": 112,
       "mean": 127.5,
       "std": 127.5,
-      "match_similarity": 0.4,
+      "match_similarity": 0.35,
       "sure_similarity": 0.5,
       "ask_similarity": 0.28,
       "keep_similarity": 0.3,
+      "min_quality": 13.0,
       "license": "Apache-2.0",
       "data": "Trained on a commercial data set that its makers say allows commercial use.",
       "source": "https://huggingface.co/fal/AuraFace-v1",
       "bundled": false,
       "ram_mb": 600,
-      "time_ms": 60,
+      "time_ms": 120,
       "accuracy": 5
     }
   }

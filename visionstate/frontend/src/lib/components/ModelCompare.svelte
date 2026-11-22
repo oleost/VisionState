@@ -52,7 +52,7 @@
               </span>
               <span class="facts xsmall muted">
                 <span>~{ram(m)} RAM</span>
-                <span>~{time(m.time_ms)} per check</span>
+                <span>~{time(m.time_ms)} per {kind.per}</span>
                 <span>{!m.installed ? `download ${mb(m.size)}` : m.downloaded ? `downloaded, ${mb(m.size)}` : 'included'}</span>
                 <span class="accuracy" aria-label={`Accuracy ${m.accuracy} of 5`} title="Accuracy compared with the others">
                   {#each [1, 2, 3, 4, 5] as n (n)}<span class="pip" class:on={n <= m.accuracy}></span>{/each}

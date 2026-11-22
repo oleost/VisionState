@@ -5,11 +5,11 @@ The face models are declared in ``faces.json``: one face detector (YuNet: a face
 points — the eyes, the nose tip and the mouth corners) and the recognisers the user can choose
 from (a face embedding from a face aligned on those five points). None of them is bundled: they
 are downloaded when a sensor first turns face recognition on. Entries are never changed or
-removed once released (their texts, footprint and similarity limits may be).
+removed once released (their texts, footprint, similarity and quality limits may be).
 
 A face is only looked for in the upper part of a person box the object detector found, cut from
-the full frame. A face that fails the quality gate (too small, blurry, turned away, unsure) is
-*no face*, never someone unknown. A usable face is compared with the faces the user taught for
+the full frame. A face that fails the quality gate (too small, blurry, turned away, unsure, or too
+poor for the recogniser to tell who: ``poor``) is *no face*, never someone unknown. A usable face is compared with the faces the user taught for
 each person; see ``identify``.
 """
 
@@ -31,8 +31,9 @@ from .settings import FACE_DEFAULTS, FACE_TUNABLE, FACES
 REGISTRY_FILE = Path(__file__).with_name("faces.json")
 
 # How a face becomes an embedding besides the model (see ``Recogniser.embed``); part of the key of
-# cached embeddings, so a change here recomputes them. 2: the brightness of the face is evened out.
-EMBEDDING_VERSION = 2
+# cached embeddings, so a change here recomputes them. 2: the brightness of the face is evened out;
+# 3: the embedding is the mean of the face's and its mirror image's.
+EMBEDDING_VERSION = 3
 
 # Where the five points of a face go in a 112 × 112 aligned face (the ArcFace template, which
 # SFace uses too): right eye, left eye (as seen in the picture: left, right), nose tip, mouth corners.
@@ -81,6 +82,10 @@ class RecogniserSpec:
     sure_similarity: float
     ask_similarity: float
     keep_similarity: float
+    # The length of the model's raw embedding (before it is made unit length) below which a face
+    # is too poor to tell who it is (``Recogniser.embed_with_quality``): this length falls with
+    # the face's quality (backlight, noise, a face seen from below). 0: no such gate.
+    min_quality: float
     license: str
     data: str  # what it was trained on, as its makers say
     source: str
@@ -133,6 +138,7 @@ def load_registry() -> tuple[FaceDetectorSpec, str, dict[str, RecogniserSpec]]:
             sure_similarity=float(v["sure_similarity"]),
             ask_similarity=float(v["ask_similarity"]),
             keep_similarity=float(v["keep_similarity"]),
+            min_quality=float(v.get("min_quality", 0.0)),
             license=v.get("license", ""),
             data=v.get("data", ""),
             source=v.get("source", ""),
@@ -378,7 +384,8 @@ def cut_off(face: Face, frame: tuple[int, int]) -> bool:
 
 
 def problem(face: Face, aligned: Image.Image, min_face_px: float, frame: tuple[int, int]) -> str | None:
-    """Why a face cannot be used ("cut", "small", "turned", "blurry", "unsure"), or None.
+    """Why a face cannot be used ("cut", "small", "turned", "blurry", "unsure"), or None. A face that
+    passes can still be too poor to tell who it is: "poor", known only once it is embedded.
 
     ``face`` in the pixels of the frame of size ``frame``; ``min_face_px`` is the sensor's
     smallest face (its width)."""
@@ -431,14 +438,37 @@ class Recogniser:
 
     def embed(self, faces: list[Image.Image]) -> np.ndarray:
         """One embedding per aligned face; one at a time (some models take a batch of one only)."""
-        vectors = []
+        return self._embed(faces, skip_poor=False)[0]
+
+    def embed_with_quality(self, faces: list[Image.Image]) -> tuple[np.ndarray, list[float]]:
+        """One unit-length embedding per aligned face, and each face's quality: the length of the
+        model's raw embedding of it (see ``RecogniserSpec.min_quality``).
+
+        The embedding is the mean of the face's and its mirror image's (made unit length again),
+        as these models are usually evaluated: on a backlit doorbell it named more faces right. It
+        costs a second run of the model per face, so a face below ``min_quality`` (not named at
+        all) is not run mirrored: its embedding is of the face alone."""
+        return self._embed(faces, skip_poor=True)
+
+    def _embed(self, faces: list[Image.Image], skip_poor: bool) -> tuple[np.ndarray, list[float]]:
+        vectors, qualities = [], []
         for face in faces:
-            arr = np.asarray(even_light(face), dtype=np.float32)
-            arr = ((arr - self.spec.mean) / self.spec.std).transpose(2, 0, 1)[None]
-            with self._lock:
-                out = np.asarray(self.session.run(None, {self.input_name: arr})[0])[0]
-            vectors.append(out / max(float(np.linalg.norm(out)), 1e-8))
-        return np.stack(vectors).astype(np.float32) if vectors else np.zeros((0, 0), dtype=np.float32)
+            even = even_light(face)
+            raw = [self._raw(even)]
+            quality = float(np.linalg.norm(raw[0]))
+            if not (skip_poor and quality < self.spec.min_quality):
+                raw.append(self._raw(ImageOps.mirror(even)))
+            qualities.append(quality)
+            mean = sum(r / max(float(np.linalg.norm(r)), 1e-8) for r in raw)
+            vectors.append(mean / max(float(np.linalg.norm(mean)), 1e-8))
+        stacked = np.stack(vectors).astype(np.float32) if vectors else np.zeros((0, 0), dtype=np.float32)
+        return stacked, qualities
+
+    def _raw(self, face: Image.Image) -> np.ndarray:
+        arr = np.asarray(face, dtype=np.float32)
+        arr = ((arr - self.spec.mean) / self.spec.std).transpose(2, 0, 1)[None]
+        with self._lock:
+            return np.asarray(self.session.run(None, {self.input_name: arr})[0])[0]
 
 
 @dataclass

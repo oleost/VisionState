@@ -5,6 +5,7 @@ The photos are NASA portraits (public domain, tests/assets/README.md): Suni Will
 """
 
 import asyncio
+import dataclasses
 import io
 import json
 import zipfile
@@ -13,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 from sqlalchemy import delete, func, select
 
 from visionstate import detectors, faces
@@ -186,6 +187,7 @@ def test_every_face_model_is_pinned_and_described():
         t = spec.thresholds
         assert t["ask_similarity"] < t["keep_similarity"] < t["match_similarity"] < t["sure_similarity"]
         assert spec.footprint.ram_mb > 0 and spec.footprint.time_ms > 0
+        assert spec.min_quality > 0  # each model's own length of a raw embedding (faces.json)
     ranks = [s.footprint.accuracy for s in sorted(faces.RECOGNISERS.values(), key=lambda s: s.footprint.time_ms)]
     assert ranks == sorted(ranks)
 
@@ -245,6 +247,38 @@ def test_every_face_model_tells_people_apart_in_real_photos(spec):
     # A crew of nine: the two of them, and nobody else is taken for them.
     named = [faces.decide(faces.identify(idx, v), limits) for _, v, _ in photo_faces(recogniser, "face_group")]
     assert named.count("ask") == 0 and named.count("match") >= 2
+
+
+@pytest.mark.parametrize("spec", [on_disk(s) for s in faces.RECOGNISERS.values()])
+def test_a_good_face_is_never_too_poor_and_its_mirror_image_is_the_same_face(spec, monkeypatch):
+    """A face below the model's min_quality is too poor to tell who it is (a backlit doorbell). The
+    NASA portraits must stay well above it, also made dark, small or squeezed to a tiny JPEG; and
+    as the embedding is the mean of a face and its mirror image, both give the same one."""
+    recogniser = faces.Recogniser(spec, MODEL_DIR / spec.filename)
+    image = Image.open(ASSETS / "face_williams_2018.jpg").convert("RGB")
+    [face] = faces.FaceDetector(faces.DETECTOR, MODEL_DIR / faces.DETECTOR.filename).detect([image])
+    assert face is not None
+    aligned = faces.align(image, face)
+    dark = aligned.point(lambda v: v // 4)
+    buf = io.BytesIO()
+    aligned.resize((28, 28)).save(buf, "JPEG", quality=15)
+    squeezed = Image.open(buf).convert("RGB").resize(aligned.size)
+    vectors, qualities = recogniser.embed_with_quality([aligned, dark, squeezed, ImageOps.mirror(aligned)])
+    assert min(qualities) > spec.min_quality, qualities
+    assert qualities[0] > spec.min_quality * 1.4  # the clean face: far from the line
+    assert float(vectors[0] @ vectors[3]) > 0.999
+    assert np.allclose(recogniser.embed([aligned]), vectors[:1])
+    # A face below the line is not named, so it is not run a second time mirrored; a taught face
+    # (embed) always is, or the faces it is compared with would not be alike.
+    runs = []
+    raw = recogniser._raw
+    monkeypatch.setattr(recogniser, "_raw", lambda face: runs.append(face) or raw(face))
+    recogniser.spec = dataclasses.replace(spec, min_quality=1e6)
+    poor_vectors, _ = recogniser.embed_with_quality([aligned])
+    assert len(runs) == 1
+    assert float(poor_vectors[0] @ vectors[0]) < 0.9999  # the face alone, not the mean
+    recogniser.embed([aligned])
+    assert len(runs) == 3
 
 
 @requires_faces
@@ -485,6 +519,43 @@ def test_a_face_question_is_answered_in_the_review_queue(settings):  # noqa: F81
         assert live(client, sid)["butch"]["last_seen"]
         seen = {p["key"]: p["seen"]["at"] for p in client.get("/api/v1/people").json()["people"]}
         assert seen["butch"]
+
+
+@requires_faces
+def test_a_face_too_poor_to_tell_who_is_no_face(settings):  # noqa: F811
+    """A face that passes the size and sharpness checks but whose embedding is too short for the
+    model (faces.RecogniserSpec.min_quality) is "poor": never named, asked about or a stranger."""
+    camera = PhotoCamera("face_williams_2006")
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = camera
+        sid = create(client, objects=faces_patch(True, ask_unknown=True)["objects"], interval_s=1).json()["id"]
+        assert wait_for(lambda: person_with_face(client, sid), timeout=90)
+        frame_id, person = person_with_face(client, sid)
+        body = {"frame_id": frame_id, "box": person["box"], "new_person": "Suni"}
+        assert client.post(f"/api/v1/sensors/{sid}/faces", json=body).status_code == 201
+        assert wait_for(lambda: live(client, sid).get("suni", {}).get("on"), timeout=30)
+        recogniser = rt.face_model.recogniser
+        recogniser.spec = dataclasses.replace(recogniser.spec, min_quality=1e6)
+
+        def poor():
+            faces_seen = [(d.get("face") or {}) for d in view(client, sid)["objects"]["detections"]]
+            return any(f.get("problem") == "poor" and f.get("box") for f in faces_seen)
+
+        assert wait_for(poor, timeout=30)
+        assert view(client, sid)["objects"]["face_stats"]["problems"].get("poor")
+        assert live(client, sid)["suni"]["on"]  # the box keeps the name it had
+        camera.name = "face_wilmore"  # somebody else, as poor: no question, no stranger
+        frames = {view(client, sid)["live"]["frame_id"]}
+
+        def checked_again():  # three checks of Butch at least
+            frames.add(view(client, sid)["live"]["frame_id"])
+            return len(frames) > 3 and poor()
+
+        assert wait_for(checked_again, timeout=60)
+        items = client.get("/api/v1/review").json()["items"]
+        assert not [i for i in items if (i["probs"].get("ask") or {}).get("face")]
+        assert not live(client, sid).get(FACE_UNKNOWN_KEY, {}).get("on")
 
 
 @requires_faces

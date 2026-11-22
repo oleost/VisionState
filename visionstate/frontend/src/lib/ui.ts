@@ -160,27 +160,31 @@ export const MODEL_KINDS = [
     key: 'backbones',
     title: 'State sensors',
     text: 'Turns the region into numbers that a small model per sensor learns your states from. A larger model tells similar states (and taught objects) apart better.',
+    per: 'check',
   },
   {
     key: 'detectors',
     title: 'Object sensors',
     text: 'Finds people, vehicles and animals. Larger models find more small, far-off and partly hidden objects.',
+    per: 'check',
   },
   {
     key: 'face_models',
     title: 'Faces (object sensors)',
     text: 'Tells who a person is from their face; downloaded when a sensor recognises faces. Its size includes the face finder.',
+    per: 'face',
   },
   {
     key: 'plate_models',
     title: 'Licence plates (object sensors)',
     text: 'Finds and reads the plate of a vehicle; downloaded when a sensor reads plates. Its size includes the plate finder.',
+    per: 'check',
   },
-  { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.' },
-  { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.' },
+  { key: 'readers', title: 'Displays', text: 'Reads the digits of a display; small helps on unusual fonts.', per: 'check' },
+  { key: 'wheel_readers', title: 'Mechanical counters', text: 'Reads each wheel of a counter.', per: 'check' },
 ] as const;
 export const MODEL_COMPARE_NOTE =
-  'Rough numbers: extra memory once loaded, and time per check on 4 cores of a desktop PC. A Raspberry Pi 4 takes about 20–40 times as long; a check only runs when it is due or something changed.';
+  'Rough numbers: extra memory once loaded, and time on 4 cores of a desktop PC. A Raspberry Pi 4 takes about 20–40 times as long; a check only runs when it is due or something changed.';
 
 export const SAMPLE_ORIGINS: Record<string, string> = {
   snapshot: 'Snapshot',

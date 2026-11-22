@@ -292,8 +292,12 @@ left are in [`FACE_RECOGNITION_PLAN.md`](FACE_RECOGNITION_PLAN.md). In short:
   not the distance between the eyes, which shrinks as a head turns —, detector score, how far it
   is turned, sharpness) makes a bad face *no face*, never *unknown*. A usable face is aligned on
   its five points (Umeyama + Pillow, no OpenCV), its brightness evened out (`faces.even_light`: a
-  face in front of a bright sky is nearly black) and embedded; cached embeddings carry
-  `faces.EMBEDDING_VERSION`, so a change to that step recomputes them.
+  face in front of a bright sky is nearly black) and embedded as the mean of the face and its
+  mirror image; cached embeddings carry `faces.EMBEDDING_VERSION`, so a change to that step
+  recomputes them. The length of the model's raw embedding falls with the face's quality: below
+  the recogniser's `min_quality` the face is *poor* — no face too, never named or asked about
+  (`faces.Recogniser.embed_with_quality`). The mirror image doubles the recogniser's time per
+  usable face (its `time_ms` counts both); a poor face is not run mirrored, as it is not named.
 - A person's score is the mean similarity to their `top_k` closest taught faces. Thresholds belong
   to the recogniser's registry entry (cosine values of one model mean nothing for another): a
   match needs `match_similarity` and `FACES["margin"]` over the next person, and is published at
