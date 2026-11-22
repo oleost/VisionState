@@ -195,8 +195,9 @@ Many users run Home Assistant on phones and tablets.
   connected to: both use the same client ID and push each other off every few seconds (on a test
   broker that is in use, `VISIONSTATE_DISCOVERY_PREFIX` keeps the entities out of Home Assistant,
   but not that).
-  The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Show the
-  maintainer before publishing.
+  The Home Assistant screenshots (`ha-*.png`) are taken by hand on a real Home Assistant. Then
+  `python scripts/promo_collage.py` puts them all on `docs/promo/collage.png` (to share; what it is
+  made of: `docs/promo/README.md`). Show the maintainer before publishing.
 
 ## Test pitfalls found the hard way
 
