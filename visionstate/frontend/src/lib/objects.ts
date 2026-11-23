@@ -91,9 +91,9 @@ export const FACE_PROBLEMS: Record<FaceProblem, string> = {
   cut: 'face cut off by the edge',
   small: 'face too small',
   turned: 'face turned away',
-  blurry: 'face blurry',
+  blurry: 'face blurry', // no longer given (a blurry face is 'poor'), but in older history rows
   unsure: 'face unclear',
-  poor: 'face too dark or grainy to tell who',
+  poor: 'face too blurry, dark or grainy to tell who',
 };
 
 /** What the face search says about a person box, in a few words ("" when nothing was looked at). */

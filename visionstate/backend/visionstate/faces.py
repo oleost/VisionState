@@ -8,9 +8,11 @@ are downloaded when a sensor first turns face recognition on. Entries are never 
 removed once released (their texts, footprint, similarity and quality limits may be).
 
 A face is only looked for in the upper part of a person box the object detector found, cut from
-the full frame. A face that fails the quality gate (too small, blurry, turned away, unsure, or too
-poor for the recogniser to tell who: ``poor``) is *no face*, never someone unknown. A usable face is compared with the faces the user taught for
-each person; see ``identify``.
+the full frame. A face that fails the quality gate (cut off, too small, turned away, unsure, or too
+poor for the recogniser to tell who: ``poor``, which is how a blurry face fails) is *no face*,
+never someone unknown. A usable face is compared with the faces the user taught for each person;
+see ``identify``. Only a face seen clearly (``clearly_seen``: big, straight and sharp) that matches
+nobody counts towards an unknown person.
 """
 
 from __future__ import annotations
@@ -355,10 +357,26 @@ def align(image: Image.Image, face: Face, size: int = 112) -> Image.Image:
     return image.convert("RGB").transform((size, size), Image.Transform.AFFINE, data, Image.Resampling.BILINEAR)
 
 
-def sharpness(aligned: Image.Image) -> float:
-    """Variance of the Laplacian of an aligned face (grey): low = blurry."""
+def in_frame(face: Face, frame: tuple[int, int], size: int = 112) -> np.ndarray:
+    """Which pixels of the face aligned at ``size`` (see ``align``) come from inside the frame:
+    where the aligned face reaches past the frame's edge, it is filled with black."""
+    m = similarity_transform(np.array(face.points, dtype=np.float64), TEMPLATE_112 * (size / 112))
+    inv = np.linalg.inv(m[:, :2])
+    ys, xs = np.mgrid[0:size, 0:size].astype(np.float64) + 0.5
+    sx, sy = inv @ (np.stack([xs.ravel(), ys.ravel()]) - m[:, 2:])
+    w, h = frame
+    return ((sx >= 0) & (sx < w) & (sy >= 0) & (sy < h)).reshape(size, size)
+
+
+def sharpness(aligned: Image.Image, inside: np.ndarray | None = None) -> float:
+    """Variance of the Laplacian of an aligned face (grey): low = blurry. ``inside`` (see
+    ``in_frame``): only the pixels from the frame count, as a black edge would look sharp."""
     g = np.asarray(aligned.convert("L"), dtype=np.float32)
     lap = 4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
+    if inside is not None:
+        lap = lap[inside[1:-1, 1:-1] & inside[:-2, 1:-1] & inside[2:, 1:-1] & inside[1:-1, :-2] & inside[1:-1, 2:]]
+        if lap.size < 2:
+            return 0.0
     return float(lap.var())
 
 
@@ -383,9 +401,12 @@ def cut_off(face: Face, frame: tuple[int, int]) -> bool:
     return not inside or x1 <= 0 or y1 <= 0 or x2 >= w - 1 or y2 >= h - 1
 
 
-def problem(face: Face, aligned: Image.Image, min_face_px: float, frame: tuple[int, int]) -> str | None:
-    """Why a face cannot be used ("cut", "small", "turned", "blurry", "unsure"), or None. A face that
-    passes can still be too poor to tell who it is: "poor", known only once it is embedded.
+def problem(face: Face, min_face_px: float, frame: tuple[int, int]) -> str | None:
+    """Why a face cannot be used ("cut", "small", "turned", "unsure"), or None. A face that passes
+    can still be too poor to tell who it is: "poor", known only once it is embedded (``poor``). A
+    blurry face is judged that way too, not by its sharpness: the sharpness of a face says more
+    about the camera (its noise, its lens, the face's size in pixels) than about whether the face
+    model can tell who it is (docs/FACE_RECOGNITION_PLAN.md §12).
 
     ``face`` in the pixels of the frame of size ``frame``; ``min_face_px`` is the sensor's
     smallest face (its width)."""
@@ -397,19 +418,25 @@ def problem(face: Face, aligned: Image.Image, min_face_px: float, frame: tuple[i
         return "unsure"
     if turn(face) > FACES["max_turn"] or face.eye_distance < face.width * FACES["turned_eye_share"]:
         return "turned"
-    if sharpness(aligned) < FACES["min_sharpness"]:
-        return "blurry"
     return None
 
 
-def clearly_seen(face: Face, min_face_px: float) -> bool:
+def poor(quality: float, spec: RecogniserSpec) -> bool:
+    """Whether a face is too poor for the recogniser to tell who it is: its raw embedding is
+    shorter than the model's ``min_quality`` (dark, grainy or blurry; see ``Recogniser.embed_with_quality``)."""
+    return quality < spec.min_quality
+
+
+def clearly_seen(face: Face, aligned: Image.Image, min_face_px: float, frame: tuple[int, int]) -> bool:
     """Whether a usable face is seen well enough that matching nobody makes it a stranger: big
-    enough, nearly straight at the camera (a turned face may just not look like its photos) and
-    surely a face."""
+    enough, nearly straight at the camera (a turned face may just not look like its photos), surely
+    a face and sharp (a blurry face of someone taught often passes ``min_quality`` and looks like
+    nobody). ``aligned``: the face aligned from the frame of size ``frame``."""
     return (
         face.width >= min_face_px * FACES["unknown_size"]
         and turn(face) <= FACES["unknown_max_turn"]
         and face.score >= FACES["unknown_min_score"]
+        and sharpness(aligned, in_frame(face, frame, aligned.width)) >= FACES["unknown_min_sharpness"]
     )
 
 
@@ -450,13 +477,17 @@ class Recogniser:
         all) is not run mirrored: its embedding is of the face alone."""
         return self._embed(faces, skip_poor=True)
 
+    def quality(self, face: Image.Image) -> float:
+        """An aligned face's quality alone, as ``embed_with_quality`` gives it (one run of the model)."""
+        return float(np.linalg.norm(self._raw(even_light(face))))
+
     def _embed(self, faces: list[Image.Image], skip_poor: bool) -> tuple[np.ndarray, list[float]]:
         vectors, qualities = [], []
         for face in faces:
             even = even_light(face)
             raw = [self._raw(even)]
             quality = float(np.linalg.norm(raw[0]))
-            if not (skip_poor and quality < self.spec.min_quality):
+            if not (skip_poor and poor(quality, self.spec)):
                 raw.append(self._raw(ImageOps.mirror(even)))
             qualities.append(quality)
             mean = sum(r / max(float(np.linalg.norm(r)), 1e-8) for r in raw)

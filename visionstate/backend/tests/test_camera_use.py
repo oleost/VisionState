@@ -95,11 +95,15 @@ def test_each_kind_starts_from_a_preset_and_the_name_follows_the_values():
     assert "camera_use" not in merge_triggers({"camera_use": "meter"})
     assert merge_triggers({})["camera"] is None
     # A sensor on a preset's old values follows it to its new ones (meter: quality 8 until 0.15.0b19,
-    # 20 MHz until 0.15.0b23; movement: a fixed 15 ms until 0.15.0b23).
+    # 20 MHz until 0.15.0b23; movement: a fixed 15 ms until 0.15.0b23, 800x600 until 0.16.0b8).
     assert merge_triggers({"camera": {**METER, "quality": 8, "clock_mhz": 20}})["camera"] == METER
     assert merge_triggers({"camera": {**METER, "clock_mhz": 20}})["camera"] == METER
     movement = CAMERA_PRESETS["movement"]["settings"]
-    assert merge_triggers({"camera": {**movement, "exposure_ms": 15, "gain": 16}})["camera"] == movement
+    assert (
+        merge_triggers({"camera": {**movement, "size": "800x600", "exposure_ms": 15, "gain": 16}})["camera"] == movement
+    )
+    assert merge_triggers({"camera": {**movement, "size": "800x600"}})["camera"] == movement
+    assert merge_triggers({"camera": {**movement, "size": "800x600", "ae_level": 1}})["camera"]["size"] == "800x600"
     assert merge_triggers({"camera": {**METER, "quality": 9}})["camera"]["quality"] == 9  # custom stays
     # Settings from before the exposure level (0.16.0b3) get the camera's own aim, 0: still the preset.
     old = {k: v for k, v in METER.items() if k != "ae_level"}

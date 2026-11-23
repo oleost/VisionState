@@ -432,7 +432,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 else:
                     taken.append(face.box)
                     min_px = limits["min_face_px"]
-                    problem = faces.problem(face, aligned, min_px, (image.width, image.height)) or ""
+                    problem = faces.problem(face, min_px, (image.width, image.height)) or ""
             entry: dict = {"problem": problem or None}
             if face is not None:
                 w, h = image.width, image.height
@@ -448,14 +448,14 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 vectors, qualities = await asyncio.to_thread(
                     model.recogniser.embed_with_quality, [a for _, _, a in usable]
                 )
-        poor = model.recogniser.spec.min_quality
-        for n, (i, face, _aligned) in enumerate(usable):
-            if qualities and qualities[n] < poor:
-                # Usable by its size and sharpness, but too poor for the model to tell who it is
-                # (backlight, noise, seen from below): such faces got the wrong name most often.
+        frame = (image.width, image.height)
+        for n, (i, face, aligned) in enumerate(usable):
+            if qualities and faces.poor(qualities[n], model.recogniser.spec):
+                # Usable by its size and angle, but too poor for the model to tell who it is
+                # (backlight, noise, blur, seen from below): such faces got the wrong name most often.
                 result[i]["face"]["problem"] = "poor"
                 continue
-            clear = faces.clearly_seen(face, limits["min_face_px"])
+            clear = faces.clearly_seen(face, aligned, limits["min_face_px"], frame)
             self._name_face(result[i], previous, index, vectors[n] if index.ids else None, limits, settings, clear)
         for i in searched:
             live.face_stats.append(result[i]["face"].get("problem") or "ok")

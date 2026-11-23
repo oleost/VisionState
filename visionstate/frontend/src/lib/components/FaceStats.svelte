@@ -36,8 +36,8 @@
     {:else if main === 'cut'}
       Faces here are often cut off by the edge of the picture. A camera that sees people whole helps.
     {:else if main === 'poor'}
-      Faces here are mostly too dark or grainy to tell who it is, often against a bright sky. Turn on the camera's
-      HDR (WDR) or backlight compensation, or give the faces more light.
+      Faces here are mostly too blurry, dark or grainy to tell who it is, often against a bright sky. Turn on the
+      camera's HDR (WDR) or backlight compensation, or give the faces more light (it also keeps moving faces sharp).
     {:else if main === 'turned' || main === 'none'}
       Faces here are rarely usable: people seldom face this camera. A camera that people walk towards helps.
     {:else}

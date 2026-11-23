@@ -72,25 +72,41 @@ def test_turn_eye_distance_and_quality_gate():
     sideways = face_at([(40, 50), (80, 50), (85, 70), (45, 90), (75, 90)])
     assert straight.eye_distance == 40 and straight.width == 60
     assert faces.turn(straight) == 0 and faces.turn(sideways) > FACES["max_turn"]
-    sharp = Image.effect_noise((112, 112), 60).convert("RGB")
-    assert faces.problem(straight, sharp, 30, FRAME) is None
-    assert faces.problem(straight, sharp, 61, FRAME) == "small"  # the face's width, not its eyes
-    assert faces.problem(half, sharp, 30, FRAME) is None
-    assert faces.problem(sideways, sharp, 30, FRAME) == "turned"
+    assert faces.problem(straight, 30, FRAME) is None
+    assert faces.problem(straight, 61, FRAME) == "small"  # the face's width, not its eyes
+    assert faces.problem(half, 30, FRAME) is None
+    assert faces.problem(sideways, 30, FRAME) == "turned"
     # A profile: eyes close together for the width of the face is turned, however big it is.
     profile = faces.Face((10, 10, 70, 80), ((40, 40), (44, 40), (30, 55), (38, 65), (42, 65)), 0.9)
-    assert faces.problem(profile, sharp, 30, FRAME) == "turned"
-    assert faces.problem(profile, sharp, 61, FRAME) == "small"
-    assert faces.problem(face_at(straight.points, score=0.5), sharp, 30, FRAME) == "unsure"
-    assert faces.problem(straight, Image.new("RGB", (112, 112), (90, 90, 90)), 30, FRAME) == "blurry"
-    # Matching nobody makes a stranger only of a face seen clearly: big enough and nearly straight.
-    assert faces.clearly_seen(straight, 30) and not faces.clearly_seen(straight, 45)
-    assert not faces.clearly_seen(half, 30)
-    assert not faces.clearly_seen(face_at(straight.points, score=0.8), 30)
+    assert faces.problem(profile, 30, FRAME) == "turned"
+    assert faces.problem(profile, 61, FRAME) == "small"
+    assert faces.problem(face_at(straight.points, score=0.5), 30, FRAME) == "unsure"
+    # Matching nobody makes a stranger only of a face seen clearly: big enough, nearly straight
+    # and sharp (a blurry face is not "no face": the face model's quality decides that).
+    sharp = Image.effect_noise((112, 112), 60).convert("RGB")
+    flat = Image.new("RGB", (112, 112), (90, 90, 90))
+    assert faces.clearly_seen(straight, sharp, 30, FRAME) and not faces.clearly_seen(straight, sharp, 45, FRAME)
+    assert not faces.clearly_seen(straight, flat, 30, FRAME)
+    assert not faces.clearly_seen(half, sharp, 30, FRAME)
+    assert not faces.clearly_seen(face_at(straight.points, score=0.8), sharp, 30, FRAME)
     # Cut by the edge of the frame (a person leaning into the camera): the eyes are guessed.
-    assert faces.problem(straight, sharp, 30, (200, 85)) == "cut"
+    assert faces.problem(straight, 30, (200, 85)) == "cut"
     top = faces.Face((143, 0, 258, 74), ((174, -4), (225, 0), (198, 17), (175, 35), (214, 38)), 0.79)
     assert faces.cut_off(top, (480, 640)) and not faces.cut_off(straight, FRAME)
+
+
+def test_the_black_edge_of_a_face_by_the_frames_edge_is_not_sharpness():
+    """A face close to the frame's edge, not cut: its aligned square reaches past the edge, where
+    it is black. That edge is not detail: a flat, blurry face there is not seen clearly."""
+    near = face_at([(20, 50), (60, 50), (40, 70), (25, 90), (55, 90)])
+    assert not faces.cut_off(near, FRAME)
+    aligned = faces.align(Image.new("RGB", FRAME, (90, 90, 90)), near)
+    inside = faces.in_frame(near, FRAME)
+    white = np.asarray(faces.align(Image.new("RGB", FRAME, (255, 255, 255)), near).convert("L")) > 127
+    assert not inside.all() and (white == inside).mean() > 0.98  # where align filled in black
+    assert faces.sharpness(aligned) > FACES["unknown_min_sharpness"]  # the black edge alone
+    assert faces.sharpness(aligned, inside) == 0
+    assert not faces.clearly_seen(near, aligned, 20, FRAME)
 
 
 def test_head_region_is_the_top_of_a_standing_person_and_all_of_a_close_up():
@@ -218,7 +234,7 @@ def photo_faces(recogniser, name):
         assert face is not None, f"no face in a person box of {name}"
         moved = face.moved(region[0], region[1], 1.0)
         aligned = faces.align(image, moved)
-        assert faces.problem(moved, aligned, 30, image.size) is None
+        assert faces.problem(moved, 30, image.size) is None
         result.append((person.box[0], recogniser.embed([aligned])[0], moved))
     return result
 
@@ -281,18 +297,38 @@ def test_a_good_face_is_never_too_poor_and_its_mirror_image_is_the_same_face(spe
     assert len(runs) == 3
 
 
-@requires_faces
-def test_a_blurred_or_small_face_is_no_face():
-    image = Image.open(ASSETS / "face_williams_2018.jpg").convert("RGB")
+@pytest.mark.parametrize("spec", [on_disk(s) for s in faces.RECOGNISERS.values()])
+def test_a_soft_face_is_named_and_a_blurred_one_is_never_a_stranger(spec):
+    """A soft face (a small camera: about 90 px wide, its detail spread over 2 px) was once
+    "blurry" by its sharpness, yet both models tell who it is: it is usable. A face blurred far
+    more (6 px) can pass the model's quality (AuraFace), but looks like nobody: it is never taken
+    for a stranger. A tiny face is too small."""
+    recogniser = faces.Recogniser(spec, MODEL_DIR / spec.filename)
     finder = faces.FaceDetector(faces.DETECTOR, MODEL_DIR / faces.DETECTOR.filename)
+    image = Image.open(ASSETS / "face_williams_2018.jpg").convert("RGB")
     [face] = finder.detect([image])
-    assert face is not None and faces.problem(face, faces.align(image, face), 30, image.size) is None
+    assert face is not None and faces.problem(face, 30, image.size) is None
+    [(_, williams_2006, _)] = photo_faces(recogniser, "face_williams_2006")
+    [(_, wilmore, _)] = photo_faces(recogniser, "face_wilmore")
+    idx = index([("williams", williams_2006), ("wilmore", wilmore)])
+    scale = 90 / face.width
+    small = image.resize((round(image.width * scale), round(image.height * scale)), Image.Resampling.LANCZOS)
+    soft_image = small.filter(ImageFilter.GaussianBlur(2))
+    [soft] = finder.detect([soft_image])
+    assert soft is not None and faces.problem(soft, 30, soft_image.size) is None
+    aligned = faces.align(soft_image, soft)
+    assert faces.sharpness(aligned) < FACES["unknown_min_sharpness"]  # what made it "blurry"
+    vectors, [quality] = recogniser.embed_with_quality([aligned])
+    assert not faces.poor(quality, spec)
+    assert faces.decide(faces.identify(idx, vectors[0]), spec.thresholds) == "match"
+    assert faces.identify(idx, vectors[0]).label == "williams"
     blurred = image.filter(ImageFilter.GaussianBlur(6))
-    [soft] = finder.detect([blurred])
-    assert soft is None or faces.problem(soft, faces.align(blurred, soft), 30, blurred.size) in ("blurry", "unsure")
+    [smeared] = finder.detect([blurred])
+    if smeared is not None and faces.problem(smeared, 30, blurred.size) is None:
+        assert not faces.clearly_seen(smeared, faces.align(blurred, smeared), 30, blurred.size)
     tiny = image.resize((image.width // 8, image.height // 8))
-    [small] = finder.detect([tiny])
-    assert small is None or faces.problem(small, faces.align(tiny, small), 30, tiny.size) == "small"
+    [small_face] = finder.detect([tiny])
+    assert small_face is None or faces.problem(small_face, 30, tiny.size) == "small"
 
 
 # --- the sensor --------------------------------------------------------------------------------------

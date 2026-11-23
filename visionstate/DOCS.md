@@ -294,8 +294,9 @@ everyone.
   names in the app's `models` folder by hand.
 - **Does my camera see faces well enough?** The **Live** tab draws a small rounded box around
   each face it finds in a person, and says for each person what it saw: a name, *face too small*,
-  *face turned away*, *face cut off by the edge*, *face blurry*, *face too dark or grainy to tell
-  who* (often a face against a bright sky: the camera's HDR or backlight compensation helps) or
+  *face turned away*, *face cut off by the edge*, *face too blurry, dark or grainy to tell who*
+  (often a face against a bright sky: the camera's HDR or backlight compensation helps; or someone
+  moving fast in poor light: more light helps) or
   *no face seen*, and how many of
   the last people it looked at had a usable face. A face it cannot use counts as no face, never as
   an unknown person. When faces are rarely usable, the card says the likely reason (for faces too

@@ -38,8 +38,8 @@ PROBLEMS = {
     "cut": "The edge of the picture cuts the face here. Pick a moment where the whole face is in view.",
     "small": "The face is too small here. Pick a moment where the person is closer to the camera.",
     "turned": "The face is turned away too far here. Pick a moment where they look towards the camera.",
-    "blurry": "The face is blurry here. Pick a sharper moment.",
     "unsure": "This does not clearly look like a face. Pick another moment.",
+    "poor": "The face is too blurry, dark or grainy here to tell who it is. Pick a clearer moment.",
 }
 
 
@@ -49,8 +49,8 @@ PHOTO_PROBLEMS = {
     "cut": "The edge of this photo cuts the face.",
     "small": "The face is too small in this photo: take it closer.",
     "turned": "The face is turned away in this photo: look at the camera.",
-    "blurry": "This photo is blurry.",
     "unsure": "This does not clearly look like a face.",
+    "poor": "The face in this photo is too blurry, dark or grainy to tell who it is.",
 }
 
 
@@ -156,7 +156,19 @@ async def _find(
     if face is None or aligned is None:
         return image, origin, None, None, "none"
     min_px = rt.face_limits(cfg)["min_face_px"]
-    return image, origin, face, aligned, faces.problem(face, aligned, min_px, (image.width, image.height))
+    return image, origin, face, aligned, await _problem(model, face, aligned, min_px, (image.width, image.height))
+
+
+async def _problem(
+    model: faces.FaceModel, face: faces.Face, aligned: Image.Image, min_px: float, frame: tuple[int, int]
+) -> str | None:
+    """Why a face cannot be taught: the quality gate of a check, "poor" included (a face too
+    blurry, dark or grainy for the face model to tell who it is is never named, so not taught)."""
+    problem = faces.problem(face, min_px, frame)
+    if problem:
+        return problem
+    quality = await asyncio.to_thread(model.recogniser.quality, aligned)
+    return "poor" if faces.poor(quality, model.recogniser.spec) else None
 
 
 def _config(rt: Runtime, sensor_id: int) -> SensorConfig:
@@ -454,7 +466,9 @@ async def add_photos(
         problems: list[str] = []
         for image in pictures:
             face, aligned = await rt.face_in_photo(model, image)
-            problem = "none" if face is None or aligned is None else faces.problem(face, aligned, min_px, image.size)
+            problem = (
+                "none" if face is None or aligned is None else await _problem(model, face, aligned, min_px, image.size)
+            )
             if problem or face is None:
                 problems.append(problem or "none")
                 continue

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.16.0b8
+
+**Faces named on a small camera too.**
+
+### Changed
+
+- **A soft face is no longer turned away for its sharpness.** The sharpness check measured the
+  camera (its noise, its pixels, the JPEG) more than the face: on an ESP32 camera of ours it turned
+  away most faces the face model named right. A face too blurry to tell who is now left to the face
+  model's own quality check (*too blurry, dark or grainy to tell who*). Sharpness still decides
+  whether a face that matches nobody is seen clearly enough to count as an *Unknown person*.
+- **Teaching a face** from a frame or a photo refuses the same faces that are never named, instead
+  of faces that only looked soft.
+- **ESP32 cameras of ours take 1600 × 1200 pictures** for *People, cars and animals* (was
+  800 × 600), so faces further away get enough pixels to tell who. Sensors still on the old
+  set-up follow by themselves; one set up by hand keeps its own.
+
 ## 0.16.0b7
 
 **The new sensor wizard reads what you chose.**

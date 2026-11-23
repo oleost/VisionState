@@ -392,7 +392,8 @@ export interface Detection {
 /**
  * The face search in one person box: `box` the face (normalised to the frame), `problem` why it
  * cannot be used (null: usable) — 'none' no face, 'cut' by the frame's edge, 'small', 'turned',
- * 'blurry', 'unsure', 'poor' (too dark or grainy for the face model to tell who); `state` what a
+ * 'unsure', 'poor' (too blurry, dark or grainy for the face model to tell who; 'blurry' only in
+ * older history rows); `state` what a
  * usable face is: 'match' (it is `label`), 'pending' (a second check must agree), 'ask' (maybe
  * `candidate`), 'unknown', 'unclear' (matched nobody, but too small or turned to call a stranger).
  */

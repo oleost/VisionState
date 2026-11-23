@@ -563,3 +563,35 @@ Where the build differs from §3–§9:
     still needs a second check that agrees. SFace's limits stay as they were.
   One household and one camera: the numbers are a start, to be checked against the answers of
   more doorbells.
+- **Sharpness is not a reason to turn a face away** (the maintainer's ESP32 camera, 2026-11-23):
+  indoors at 800 × 600 (the *People, cars and animals* preset) 11 of 13 faces were *blurry*, about
+  90 px wide, while both models named the maintainer at 0.48–0.57 (the next person 0.33). The
+  same 1600 × 1200 pictures made smaller came from a sharpness of 31 down to 15 and were still
+  named at 0.58. The variance of the Laplacian measures the camera more than the face: its noise
+  (backlit doorbell faces with plain motion blur scored 189–417, above the line, and the 2 of 86
+  real doorbell faces under it were dark, not blurred), the size of the face in pixels, the
+  JPEG's block noise (a better JPEG scored lower) and the black where an aligned face reaches past
+  the frame's edge (380 and more). Measured on 117 faces (the doorbell's taught ones, the test
+  photos, the ESP32's), each made 40–140 px wide, blurred (Gaussian 0.8–4 px, motion 7–21 px),
+  squeezed to a poor JPEG or darkened — 4860 faces compared with the others not taken within 15
+  minutes of them:
+  - the recogniser's `min_quality` already turns away what blur spoils: SFace named nobody wrong
+    (82 before it) and asked with a wrong name 242 times instead of 1409; AuraFace 28 (42) and
+    533 (922). Blurred faces mostly end as *poor* or unnamed, not named wrong;
+  - a sharpness limit on top turned away right and wrong names alike: today's (25) kept 26 % of
+    the good names and 25 % of the bad ones (SFace; AuraFace 30 % and 18 %), and none of five
+    other measures (at the face's own size, against its contrast, after `even_light`, a re-blur
+    ratio) did better than keeping 90 % of the good names with 75–94 % of the bad ones. On the
+    real faces none of them told the soft ESP32 faces from the motion-blurred doorbell ones either;
+    the recogniser's quality did better: of six motion-blurred doorbell faces it put four under
+    AuraFace's line (11.2–12.8) and five under SFace's (5.5–7.6), the ESP32's well above (16–17
+    and 10–11);
+  - but a strongly blurred face of someone taught can pass `min_quality` and look like nobody:
+    28 % of AuraFace's (6 % of sharp ones; SFace 3 % and 1 %) — towards *Unknown person*.
+  So a blurry face is *poor* (the text says blurry, dark or grainy), and sharpness only decides
+  whether a face that matched nobody is seen clearly enough to be a stranger
+  (`FACES["unknown_min_sharpness"]`, measured only on what is inside the frame; it let 15 of those
+  172 through). Teaching a face from a frame or a photo checks the same quality: a *poor* face is
+  refused, as it is never named. A larger picture still helps a small camera: on the ESP32,
+  faces went from about 90 px to 150–185 px at 1280 × 1024 and 1600 × 1200 (its 20 MHz clock; at
+  10 MHz the longer exposure blurred them), and the share of usable faces from 2 in 13 to 35 in 40.

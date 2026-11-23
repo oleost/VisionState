@@ -676,14 +676,14 @@ FACES = {
     "region_margin": 0.1,
     "detect_score": 0.6,  # a face the face detector finds at all
     "nms_iou": 0.3,
-    # Quality gate. The face detector's score, how far the face is turned sideways (see faces.turn:
-    # 0 straight, ~0.35 about 30 degrees, ~0.6 about 45) and the sharpness of the aligned face
-    # (variance of the Laplacian at 112 px: sharp faces 32+ down to 13 px between the eyes, the
-    # same faces blurred by 2 px at most 19). A profile has its eyes close together for its width:
-    # 0.41-0.50 of it looking at the camera, a profile 0.08; below turned_eye_share it is turned.
+    # Quality gate. The face detector's score and how far the face is turned sideways (see faces.turn:
+    # 0 straight, ~0.35 about 30 degrees, ~0.6 about 45). A profile has its eyes close together for
+    # its width: 0.41-0.50 of it looking at the camera, a profile 0.08; below turned_eye_share it is
+    # turned. A blurry face is left to the recogniser's min_quality (faces.json): a limit on its
+    # sharpness turned away faces of a soft camera that the recogniser named right
+    # (docs/FACE_RECOGNITION_PLAN.md §12).
     "min_score": 0.75,
     "max_turn": 0.55,
-    "min_sharpness": 25.0,
     "turned_eye_share": 0.3,
     # A face that matched nobody counts towards Unknown person only when it is clearly seen: this
     # many times the smallest face, turned at most this far, and found with at least this detector
@@ -691,9 +691,13 @@ FACES = {
     # a bit turned, 0.66-0.78 at 0.26-0.35), but not matching anyone may only mean the angle: "not
     # sure who", never a stranger. On a phone camera real faces scored 0.86-0.94 and things taken
     # for a face (a wall, a second face on a profile with the eyes in the wrong place) 0.60-0.79.
+    # And sharp: the variance of the Laplacian of the aligned face (112 px, only what is inside the
+    # frame) at least unknown_min_sharpness. A blurred face of someone taught can pass the
+    # recogniser's min_quality and look like nobody (AuraFace: a third of strongly blurred faces).
     "unknown_size": 1.5,
     "unknown_max_turn": 0.35,
     "unknown_min_score": 0.85,
+    "unknown_min_sharpness": 25.0,
     "top_k": 3,  # a person's score: the mean similarity to their this many closest taught faces
     "margin": 0.05,  # a match must beat the next person by this much
     # Unknown person: a person box whose usable face matched nobody in this many checks in a row
@@ -877,7 +881,10 @@ CAMERA_PRESETS = {
         "description": "Automatic exposure: short in good light, so what moves stays sharp, longer in poor light",
         # Automatic since 0.15.0b23: a fixed 15 ms was nearly black in a dim room at any gain, and the
         # automatic exposure as sharp in a lit one (an OV3660, 2026-11-17). Gain up to 32 for the dark.
-        "settings": {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32, "ae_level": 0},
+        # 1600x1200 since 0.16.0b8: a face a metre or two away was about 90 px wide at 800x600 and
+        # 185 at 1600x1200, so faces (and plates) stay big enough further away; at 20 MHz (10 MHz
+        # blurred faces: a longer exposure), no line glitches in 60 pictures on an OV3660 (2026-11-23).
+        "settings": {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32, "ae_level": 0},
     },
     "states": {
         "name": "States",
@@ -892,7 +899,10 @@ CAMERA_PRESETS_BEFORE = {
         {"size": "1600x1200", "quality": 8, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
         {"size": "1600x1200", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 4},
     ],
-    "movement": [{"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16}],
+    "movement": [
+        {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 15, "gain": 16},
+        {"size": "800x600", "quality": 10, "clock_mhz": 20, "exposure_ms": 0, "gain": 32},
+    ],
 }
 CAMERA_PRESET_BY_KIND = {KIND_READING: "meter", KIND_OBJECTS: "movement", KIND_STATES: "states"}
 # When a sensor's light is switched on for a check (triggers.light_when), with the names shown.
