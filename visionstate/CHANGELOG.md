@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.16.0b10
+
+**A look at a face that cannot be used says so.**
+
+### Fixed
+
+- **The best look of a visit without a usable face** was listed in the history as *face seen (tap
+  the person to name them)*, but tapping the person only said why that face could not be used. The
+  row now says it right away: *no usable face (face turned away)*, and the same goes for rows
+  already in the history.
+
 ## 0.16.0b9
 
 **Named when walking out and back in.**

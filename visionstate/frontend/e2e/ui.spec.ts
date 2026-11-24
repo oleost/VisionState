@@ -873,6 +873,44 @@ test('a history frame opens in full', async ({ page, request }, info) => {
   await request.patch(`api/v1/sensors/${id}`, { data: { enabled: true } });
 });
 
+test('a face row offers naming only when a face there can be used', async ({ page, request }) => {
+  const errors = watchErrors(page);
+  const id = await seededFaceSensorId(request);
+  // Two face rows as a check records them: a usable face nobody is named for, and the best look of a
+  // visit that showed no usable face (turned away, and smaller ones too small).
+  const face = (problem: string | null, px: number) => ({
+    key: 'person',
+    score: 0.9,
+    box: [0.4, 0.3, 0.6, 0.9],
+    face: { box: [0.45, 0.32, 0.5, 0.4], problem, face_px: px },
+  });
+  const row = (rowId: number, detections: object[]) => ({
+    id: rowId,
+    sensor_id: id,
+    created_at: new Date().toISOString(),
+    state_key: 'person',
+    published_key: 'face',
+    confidence: 0.9,
+    probs: {},
+    is_change: false,
+    review_reason: null,
+    reviewed: false,
+    has_frame: false,
+    detections,
+    read_ok: null,
+    correct_value: null,
+  });
+  await page.route('**/api/v1/history?*', async (route) => {
+    const real = await (await route.fetch()).json();
+    const items = [row(900001, [face(null, 180)]), row(900002, [face('small', 20), face('turned', 51), face('cut', 30)])];
+    await route.fulfill({ json: { ...real, items, total: items.length } });
+  });
+  await page.goto(`#/sensors/${id}/history`);
+  await expect(page.getByText('face seen (tap the person to name them)')).toHaveCount(1);
+  await expect(page.getByText('no usable face (face turned away)')).toBeVisible();
+  errors.expectNone();
+});
+
 test('reading sensor shows its value everywhere', async ({ page, request }) => {
   const errors = watchErrors(page);
   const id = await seededReadingSensorId(request);

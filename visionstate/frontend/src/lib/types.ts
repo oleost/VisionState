@@ -991,7 +991,7 @@ export interface Prediction {
   has_clip?: boolean;
   clip_video?: boolean;
   /** Object sensors: state_key = the class or own label, published_key = 'on' | 'off' | 'filtered' | 'ask' |
-   * 'face' (a face nobody is named for). */
+   * 'face' (a face nobody is named for, or a visit's best look when no face could be used). */
   detections: Detection[] | null;
   /** Reading sensors: did the reader read the right number (null = not verified)? */
   read_ok: boolean | null;

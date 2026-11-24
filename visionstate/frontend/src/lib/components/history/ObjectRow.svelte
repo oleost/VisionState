@@ -4,7 +4,7 @@
   // the frame with its boxes, which can be corrected (or a person named) there.
   import { api } from '../../api';
   import { dateTime, pct } from '../../format';
-  import { objectColor, objectCount, objectKeys, objectName } from '../../objects';
+  import { FACE_PROBLEMS, objectColor, objectCount, objectKeys, objectName } from '../../objects';
   import type { Prediction, Sensor } from '../../types';
   import Icon from '../Icon.svelte';
   import TeachableFrame from '../TeachableFrame.svelte';
@@ -34,6 +34,17 @@
     ...new Set((p.detections ?? []).filter((d) => d.taught).map((d) => objectName(d.label ?? d.key, own))),
   ]);
 
+  // A face row where no face could be used is the best look of a visit that showed no usable face
+  // (follow_face_burst in engine/objects.py): nobody can be named from it, so it says why.
+  const unusable = $derived.by(() => {
+    if (p.published_key !== 'face') return '';
+    const faces = (p.detections ?? []).flatMap((d) => (d.face?.box ? [d.face] : []));
+    if (!faces.length || faces.some((f) => !f.problem)) return '';
+    const rank = (f: (typeof faces)[number]) => (f.problem === 'poor' ? 1e6 : 0) + (f.face_px ?? 0);
+    const best = faces.reduce((a, b) => (rank(b) > rank(a) ? b : a));
+    return best.problem ? `· no usable face (${FACE_PROBLEMS[best.problem]})` : '';
+  });
+
   const WHAT: Record<string, string> = {
     on: 'detected',
     off: 'cleared',
@@ -57,7 +68,9 @@
       <span class="row wrap" style="gap:8px">
         <strong class="row" style="gap:8px" class:muted={filtered}>
           <span class="dot" class:ring={filtered} style:background={on ? objectColor(classes, p.state_key) : 'var(--c-unknown)'}></span>
-          {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{p.published_key === 'face' && taught.length
+          {objectName(p.state_key, own)}{p.published_key === 'ask' ? '' : ' '}{unusable
+            ? unusable
+            : p.published_key === 'face' && taught.length
             ? '· face seen'
             : p.published_key === 'plate'
               ? `· plate ${plate?.text ?? ''}${plate?.event === 'unknown_plate' ? ' (not one of your cars)' : ''}`
