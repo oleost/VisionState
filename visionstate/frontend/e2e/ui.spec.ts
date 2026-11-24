@@ -27,6 +27,7 @@ import {
   hold,
   hasTouchScreen,
   isTouch,
+  openAppSettings,
   playSirenUntilAsked,
   press,
   seededCounterSensorId,
@@ -1685,7 +1686,7 @@ test('the wheel reader shows in Settings and is offered to counters read as text
   request,
 }, info) => {
   const errors = watchErrors(page);
-  await page.goto('#/settings');
+  await openAppSettings(page);
   const wheels = page.getByTestId('wheel-reader');
   await expect(wheels).toContainText('VisionState wheel reader v2');
   await expect(wheels.getByRole('link', { name: 'source' })).toHaveAttribute('href', /huggingface\.co/);
@@ -1748,7 +1749,7 @@ test('the wheel reader shows in Settings and is offered to counters read as text
 test('a backup of everything is downloaded and restored', async ({ page, request }, info) => {
   test.setTimeout(180_000); // the restore stops and starts every sensor
   const errors = watchErrors(page);
-  await page.goto('#/settings');
+  await openAppSettings(page);
   const card = page.getByTestId('backup');
   await card.scrollIntoViewIfNeeded();
   // Everything ticked, the sensors always; camera passwords only when ticked.
@@ -1757,9 +1758,8 @@ test('a backup of everything is downloaded and restored', async ({ page, request
   await expect(card.getByRole('checkbox', { name: /History/ })).toBeChecked();
   await expect(card.getByRole('checkbox', { name: /Camera passwords/ })).not.toBeChecked();
   const download = card.getByRole('link', { name: /Download backup/ });
-  // The sizes come a moment later and make the lines longer: on a phone that moves the boxes, and
-  // a tap before then can land beside the one meant.
-  await expect(download).toContainText('about');
+  // The sizes came with the page (openAppSettings): they make the lines longer, and on a phone
+  // that moves the boxes, so a tap before then can land beside the one meant.
   await press(card.getByRole('checkbox', { name: /Downloaded AI models/ }), info);
   await expect(download).toHaveAttribute('href', /leave_out=models/);
   await expectNoHorizontalOverflow(page);
@@ -1786,7 +1786,7 @@ test('a backup of everything is downloaded and restored', async ({ page, request
 test('the AI models can be compared, and the teaching and face limits set for all object sensors', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   try {
-    await page.goto('#/settings');
+    await openAppSettings(page);
     await press(page.getByRole('button', { name: 'Compare and manage the models' }), info);
     const compare = page.getByTestId('model-compare');
     await expect(compare.getByText('D-FINE L (most accurate)')).toBeVisible();
@@ -1843,9 +1843,11 @@ test('the AI models can be compared, and the teaching and face limits set for al
 
 test('storage limits can be changed', async ({ page }, info) => {
   const errors = watchErrors(page);
-  await page.goto('#/settings');
-  await expect(page.getByText('History frames', { exact: true })).toBeVisible();
-  await expect(page.getByText('Training images', { exact: true })).toBeVisible();
+  await openAppSettings(page);
+  // "Training images" is a part of the backup too: look in the Storage card only.
+  const card = page.locator('section', { has: page.getByRole('heading', { name: 'Storage' }) });
+  await expect(card.getByText('History frames', { exact: true })).toBeVisible();
+  await expect(card.getByText('Training images', { exact: true })).toBeVisible();
   const save = page.getByRole('button', { name: 'Save storage limits' });
   await expect(save).toBeDisabled(); // nothing changed yet
   const maxGb = page.getByText('… but at most').locator('xpath=..').locator('input');
@@ -1861,7 +1863,7 @@ test('storage limits can be changed', async ({ page }, info) => {
 test('the review reminder can be set', async ({ page, request }, info) => {
   const errors = watchErrors(page);
   try {
-    await page.goto('#/settings');
+    await openAppSettings(page);
     const card = page.locator('section', { has: page.getByRole('heading', { name: 'Review reminder' }) });
     await expect(card.getByLabel('Remind me in Home Assistant')).toBeChecked(); // on by default
     await expect(card.getByLabel('Remind again while they still wait')).not.toBeChecked();
@@ -2441,7 +2443,7 @@ test('thresholds from the answers: the card on Settings, for a state sensor and 
 
 test('the threads per AI model are chosen with the models, applied without a restart', async ({ page, request }, info) => {
   const errors = watchErrors(page);
-  await page.goto('#/settings');
+  await openAppSettings(page);
   const field = page.getByTestId('inference-threads');
   const select = field.getByRole('combobox', { name: 'Threads per AI model' });
   await expect(select).toHaveValue('0');
@@ -2464,7 +2466,7 @@ test('the speed test: a model measured on a sensor, the sensors paused meanwhile
   test.setTimeout(120_000);
   const errors = watchErrors(page);
   const sensorId = await seededSensorId(request);
-  await page.goto('#/settings');
+  await openAppSettings(page);
   await press(page.getByTestId('speed-test-link').getByRole('link', { name: 'Open the speed test' }), info);
   const form = page.getByTestId('speed-test');
   await form.getByRole('combobox', { name: 'Sensor to test with' }).selectOption(String(sensorId));
@@ -2938,7 +2940,7 @@ test('licence plates: turned on after a sheet, a car added, named by its plate o
 });
 
 test('a plate model that states no licence is chosen only after accepting that', async ({ page }, info) => {
-  await page.goto('#/settings');
+  await openAppSettings(page);
   const select = page.getByRole('combobox', { name: 'Licence plates (object sensors)' });
   await select.scrollIntoViewIfNeeded();
   const options = await select.locator('option').allTextContents();

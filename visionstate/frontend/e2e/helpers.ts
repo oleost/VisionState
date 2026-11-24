@@ -183,6 +183,18 @@ export async function sensorTabs(page: Page): Promise<string[]> {
   return names;
 }
 
+/** The app's Settings page with every card loaded. Each card fetches its own data and grows from a
+ * line ("Loading…") to its full height when it comes: the Storage card, which counts the history,
+ * often comes last. A tap before then can land beside what was meant, as the cards below it move. */
+export async function openAppSettings(page: Page) {
+  await page.goto('#/settings');
+  for (const name of ['Apply', 'Save review rules', 'Save teaching limits', 'Save face limits', 'Save reminder', 'Save storage limits']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByTestId('backup').getByRole('link', { name: /Download backup/ })).toContainText('about');
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+}
+
 /** Opens another section of a sensor's Settings (on a phone: back to the list first). */
 export async function settingsSection(page: Page, info: TestInfo, name: string) {
   const back = page.locator('.settings .back');
