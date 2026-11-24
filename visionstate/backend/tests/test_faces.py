@@ -724,6 +724,50 @@ def test_a_face_too_poor_to_tell_who_is_no_face(settings):  # noqa: F811
 
 
 @requires_faces
+def test_a_person_whose_face_is_hidden_in_the_check_is_named_by_the_faces_seen_before_it(settings):  # noqa: F811
+    """The check's own frame shows no face (here: painted over), but the stream saw the face
+    between the checks (sources.Look, from RtspStream's scan): apply_faces recognises those looks
+    with the real models and names the person from them. The looks are taken once: the next check
+    without new ones does not name anyone from them."""
+    from visionstate.sources import Look
+
+    camera = PhotoCamera("face_williams_2006")
+    with TestClient(create_app(settings)) as client:
+        rt = client.app.state.runtime
+        rt.grabber = camera
+        sid = create(client, objects=faces_patch(True)["objects"], interval_s=1).json()["id"]
+        assert wait_for(lambda: person_with_face(client, sid), timeout=90)
+        frame_id, person = person_with_face(client, sid)
+        body = {"frame_id": frame_id, "box": person["box"], "new_person": "Suni"}
+        assert client.post(f"/api/v1/sensors/{sid}/faces", json=body).status_code == 201
+        assert client.patch(f"/api/v1/sensors/{sid}", json={"enabled": False}).status_code == 200
+        wait_for(lambda: rt.face_index is not None and len(rt.face_index.ids) == 1, timeout=30)
+
+        photo = Image.open(ASSETS / "face_williams_2006.jpg").convert("RGB")
+        w, h = photo.size
+        x1, y1, x2, y2 = person["face"]["box"]
+        hidden = photo.copy()
+        hidden.paste((128, 128, 128), (int(x1 * w) - 5, int(y1 * h) - 5, int(x2 * w) + 5, int(y2 * h) + 5))
+        model = rt.face_model
+        face = model.detector.detect([photo])[0]
+        assert face is not None
+        look = Look(faces.look_rank(face, 30, photo.size), 0.0, photo, (0, 0), photo.size, face, 0)
+        cfg = rt.load_sensor(sid)
+        found = [{"key": "person", "box": person["box"], "score": person["score"]}]
+
+        def check(looks: list) -> dict:
+            rt.live_state(sid).face_looks = looks
+            return client.portal.call(rt.apply_faces, cfg, hidden, found, [])[0]
+
+        named = check([look, dataclasses.replace(look)])
+        assert named["face"]["problem"] == "none"  # nothing in the check's own frame
+        assert named["label"] == "suni" and named["face"]["between"] and named["match"]["label"] == "suni"
+        assert rt.live_state(sid).face_looks == []  # taken
+        alone = check([])
+        assert "label" not in alone and "between" not in alone["face"]
+
+
+@requires_faces
 def test_a_full_person_can_still_be_answered_about(settings, monkeypatch):  # noqa: F811
     """GitHub #87: "Is this Kari?" about a person with the most faces could not be answered. By
     hand a full person is refused with what to do; an answer replaces a near copy with a face that

@@ -1153,8 +1153,9 @@ RUNTIME = {
     # A Home Assistant camera looked at for a face is read through its own stream in Home Assistant
     # (FrameGrabber._grab_ha_stream); one that cannot stream is asked again after this long.
     "ha_stream_retry_s": 600.0,
-    # Looking for a face (a person there): of the frames a stream kept open decoded since the last
-    # check, the one sharpest where the face is looked for, at most this many seconds old.
+    # Looking for a face (a person there) without the face scan (FACES["scan_*"]: no face model
+    # yet, or its scan failed): of the frames a stream kept open decoded since the last check, the
+    # one sharpest where the face is looked for, at most this many seconds old.
     "rtsp_pick_window_s": 1.5,
     "max_image_megapixels": 60,
     "loop_retry_s": 30.0,  # a sensor's loop failed unexpectedly (database busy): try again after this

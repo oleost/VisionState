@@ -427,11 +427,6 @@ class FrameGrabber:
 
         return opener
 
-    def picked(self, source: str) -> dict | None:
-        """How the last frame of a stream kept open was picked (RtspStream.picked), for diagnosis."""
-        stream = self._streams.get(source)
-        return stream.picked if stream is not None else None
-
     def looks(self, source: str) -> list[Look]:
         """The looks at faces the last grab of a stream with a scan saw (RtspStream.looks), taken:
         asked again, nothing (a snapshot taken meanwhile must not get the looks of an older frame)."""

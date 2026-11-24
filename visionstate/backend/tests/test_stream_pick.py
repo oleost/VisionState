@@ -151,7 +151,9 @@ def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
 def test_a_home_assistant_camera_is_read_through_its_own_stream_while_a_face_is_looked_for(monkeypatch):
     """A Home Assistant camera looked at for a face is read like an RTSP stream, through its own
     stream in Home Assistant (asked for when it opens: its address holds a token). Snapshots are
-    taken while it opens, and for a camera that cannot stream (not asked again for a while)."""
+    taken while it opens (it is not closed meanwhile for being unused), and for a camera that
+    cannot stream (not asked again for a while); a stream that stopped is opened again. The looks
+    of a scan are given once: a snapshot after them must not get them too."""
     import asyncio
 
     from visionstate.sources import FrameGrabber, SourceError
@@ -173,8 +175,11 @@ def test_a_home_assistant_camera_is_read_through_its_own_stream_while_a_face_is_
                 raise SourceError(f"{entity_id}: does not support streaming")
             return "http://supervisor/core/api/hls/abc/master_playlist.m3u8", {"Authorization": "Bearer t"}
 
+    may_open = threading.Event()
+
     def run(self):  # frames come from here once the address is known, until the stream is closed
         try:
+            may_open.wait(5)
             opened.append(self._opener())
         except Exception as err:  # noqa: BLE001 - as RtspStream._run: the error ends the stream
             self._error = SourceError(str(err))
@@ -183,20 +188,50 @@ def test_a_home_assistant_camera_is_read_through_its_own_stream_while_a_face_is_
             time.sleep(0.01)
 
     monkeypatch.setattr(RtspStream, "_run", run)
+    monkeypatch.setitem(sources.FACES, "scan_interval_s", 0.0)
     ha = FakeHA()
+
+    def scan(crops, offsets, size):
+        return [((1, 1.0), "a face") for _ in crops]
+
+    async def until_ready(entity_id: str) -> None:
+        for _ in range(200):
+            if grabber_ref[0]._streams[entity_id].ready:
+                return
+            await asyncio.sleep(0.02)
+
+    grabber_ref: list = []
 
     async def scenario() -> None:
         grabber = FrameGrabber(ha)  # type: ignore[arg-type]
+        grabber_ref.append(grabber)
         try:
             assert await grabber.grab("ha_camera", "camera.door", focus=HEAD) == snap  # opening
-            for _ in range(100):
-                if grabber._streams["camera.door"].ready:
-                    break
-                await asyncio.sleep(0.02)
-            assert sharpness_of(await grabber.grab("ha_camera", "camera.door", focus=HEAD)) > 100  # from the stream
+            stream = grabber._streams["camera.door"]
+            stream._asked_at -= 60  # long unused: still kept while it opens
+            assert await grabber.grab("ha_camera", "camera.door", focus=HEAD) == snap
+            assert time.monotonic() - stream._asked_at < 5
+            may_open.set()
+            await until_ready("camera.door")
+            assert sharpness_of(await grabber.grab("ha_camera", "camera.door", focus=HEAD, scan=scan)) > 100
             url, options, _ = opened[0]
             assert url.endswith(".m3u8") and "Bearer t" in options["headers"] and options["live_start_index"] == "-1"
+            await asyncio.sleep(0.1)
+            assert sharpness_of(await grabber.grab("ha_camera", "camera.door", focus=HEAD, scan=scan)) > 100
+            assert [look.found for look in grabber.looks("camera.door")][:1] == ["a face"]
+            assert grabber.looks("camera.door") == []  # given once
             assert await grabber.grab("ha_camera", "camera.door") == snap  # no face looked for: a snapshot
+
+            # A stream that stopped after it ran is opened again (a snapshot meanwhile).
+            stream.close()
+            for _ in range(200):
+                if not stream.alive:
+                    break
+                await asyncio.sleep(0.02)
+            assert await grabber.grab("ha_camera", "camera.door", focus=HEAD) == snap
+            assert grabber._streams["camera.door"] is not stream and "camera.door" not in grabber._no_stream
+            await until_ready("camera.door")
+            assert sharpness_of(await grabber.grab("ha_camera", "camera.door", focus=HEAD)) > 100
 
             # A camera that cannot stream: snapshots, and its stream is not asked for again soon.
             ha.can_stream = False

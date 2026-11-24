@@ -346,11 +346,12 @@ everyone.
   who stays (on the steps, in the garden) gets one such burst, not one every few minutes; someone
   who comes clearly closer again (out with their back to the camera, then back to the door) gets
   another. On a camera's stream (`rtsp://`, or the stream in Home Assistant of a camera there
-  that can stream) the face detector also looks at several frames a second between these checks: each check takes the frame with the best look at the face (one
-  that can be used, then the widest and most straight at the camera) and recognises the best
-  looks of the moments before it too, and two that agree name the person in that check. A stream
-  therefore sees many more faces than snapshots, which can also be a few seconds old. Each check
-  takes a little longer for it, while someone is there.
+  that can stream) the face detector also looks at several frames a second between these
+  checks: each check takes the frame with the best look at the face (one that can be used, then
+  the widest and most straight at the camera) and recognises the best looks of the moments before
+  it too, and two that agree name the person in that check. A stream therefore sees many more
+  faces than snapshots, which can also be a few seconds old. Each check takes a little longer for
+  it, while someone is there.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
   match names the person; a less certain one needs a second check that agrees (one of the last
   few with a usable face). When the person goes before one does, it asks in the review queue
