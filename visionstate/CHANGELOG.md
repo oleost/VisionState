@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.16.0b12
+
+**Faces looked for between the checks on Home Assistant cameras too.**
+
+### Changed
+
+- **A camera in Home Assistant is read through its own stream while a face is looked for**, as
+  a camera's `rtsp://` address is since 0.16.0b11: the face detector looks at several frames a
+  second between the checks, and a check takes the best look at the face instead of one snapshot,
+  which can also be seconds old. This works for any camera Home Assistant can stream (Reolink,
+  ONVIF, UniFi, a generic camera with a stream address…). Snapshots are taken while the stream
+  opens, and for a camera that cannot stream.
+
 ## 0.16.0b11
 
 **Faces looked for between the checks.**

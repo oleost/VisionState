@@ -20,7 +20,9 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
   are asked for often (a burst of checks, the live view), so those come at once instead of after
   a new connection each time. While a sensor looks for a face, it looks at the stream's frames
   between its checks too, where the face was: the check takes the frame with the best look at
-  the face, and recognises a few other good looks with it.
+  the face, and recognises a few other good looks with it. A camera in Home Assistant that can
+  stream is read through its own stream in Home Assistant for that (snapshots while it opens,
+  and for a camera that cannot stream).
   A sound sensor needs a stream with sound: a camera's stream with its microphone on, or an HTTP
   audio stream (an ESP32 microphone).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
@@ -343,12 +345,12 @@ everyone.
   turn) or show their face, until they are named or gone, and for half a minute at most. Someone
   who stays (on the steps, in the garden) gets one such burst, not one every few minutes; someone
   who comes clearly closer again (out with their back to the camera, then back to the door) gets
-  another. On a camera's stream (`rtsp://`) the face detector also looks at several frames a
-  second between these checks: each check takes the frame with the best look at the face (one
+  another. On a camera's stream (`rtsp://`, or the stream in Home Assistant of a camera there
+  that can stream) the face detector also looks at several frames a second between these checks: each check takes the frame with the best look at the face (one
   that can be used, then the widest and most straight at the camera) and recognises the best
   looks of the moments before it too, and two that agree name the person in that check. A stream
-  therefore sees many more faces than a camera's snapshot in Home Assistant, which can also be a
-  few seconds old. Each check takes a little longer for it, while someone is there.
+  therefore sees many more faces than snapshots, which can also be a few seconds old. Each check
+  takes a little longer for it, while someone is there.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
   match names the person; a less certain one needs a second check that agrees (one of the last
   few with a usable face). When the person goes before one does, it asks in the review queue

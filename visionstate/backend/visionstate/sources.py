@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 import re
 import threading
 import time
@@ -346,6 +347,7 @@ class FrameGrabber:
         self._rtsp = ThreadPoolExecutor(max_workers=RUNTIME["rtsp_workers"], thread_name_prefix="rtsp")
         self._streams: dict[str, RtspStream] = {}  # streams kept open while frames come often
         self._last_grab: dict[str, float] = {}  # when each stream address was last grabbed
+        self._no_stream: dict[str, float] = {}  # Home Assistant cameras that could not stream, and when
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -379,15 +381,65 @@ class FrameGrabber:
             stream = self._streams[url] = RtspStream(url, max(keep_open, RUNTIME["rtsp_pick_window_s"]))
         return stream.grab(focus, scan)
 
+    async def _grab_ha_stream(
+        self, entity_id: str, focus: Sequence[Sequence[float]], scan: Scan | None
+    ) -> bytes | None:
+        """A frame of a Home Assistant camera's own stream while a face is looked for, picked as from an
+        RTSP stream (RtspStream.grab): the frames between two checks, not one snapshot (which can
+        also be seconds old). None: take a snapshot instead, while the stream opens (Home Assistant
+        starts it and waits for its first segments: seconds) or when the camera cannot stream (asked
+        again after RUNTIME["ha_stream_retry_s"])."""
+        now = time.monotonic()
+        if now - self._no_stream.get(entity_id, -math.inf) < RUNTIME["ha_stream_retry_s"]:
+            return None
+        stream = self._streams.get(entity_id)
+        if stream is not None and not stream.alive:
+            self._streams.pop(entity_id).close()
+            if not stream.ready:  # it never gave a frame: the camera cannot stream (or is off)
+                self._no_stream[entity_id] = now
+                log.info("%s: no stream from Home Assistant (%s), snapshots are used", entity_id, stream.error)
+                return None
+            stream = None  # it ran and stopped: opened again
+        if stream is None:
+            loop = asyncio.get_running_loop()
+            keep = max(RUNTIME["rtsp_keep_open_s"], RUNTIME["rtsp_pick_window_s"])
+            self._streams[entity_id] = RtspStream(entity_id, keep, opener=self._ha_opener(entity_id, loop))
+            return None
+        if not stream.ready:
+            stream.touch()
+            return None
+        try:
+            return await asyncio.get_running_loop().run_in_executor(self._rtsp, stream.grab, focus, scan)
+        except SourceError:
+            self._streams.pop(entity_id, None)
+            stream.close()
+            return None
+
+    def _ha_opener(self, entity_id: str, loop: asyncio.AbstractEventLoop) -> Opener:
+        """How a Home Assistant camera's own stream is opened (on the stream's thread): its address is
+        asked for each time, as its token lasts only while the stream runs."""
+
+        def opener() -> tuple[str, dict[str, str], float]:
+            asked = asyncio.run_coroutine_threadsafe(self.ha.stream_address(entity_id), loop)
+            url, headers = asked.result(RUNTIME["http_timeout_s"])
+            check_source("rtsp", url)  # FFmpeg would open a local file as well
+            return url, ha_stream_options(headers), SOUND["ha_open_s"]
+
+        return opener
+
     def picked(self, source: str) -> dict | None:
         """How the last frame of a stream kept open was picked (RtspStream.picked), for diagnosis."""
         stream = self._streams.get(source)
         return stream.picked if stream is not None else None
 
     def looks(self, source: str) -> list[Look]:
-        """The looks at faces the last grab of a stream with a scan saw (RtspStream.looks)."""
+        """The looks at faces the last grab of a stream with a scan saw (RtspStream.looks), taken:
+        asked again, nothing (a snapshot taken meanwhile must not get the looks of an older frame)."""
         stream = self._streams.get(source)
-        return list(stream.looks) if stream is not None else []
+        if stream is None:
+            return []
+        looks, stream.looks = stream.looks, []
+        return looks
 
     async def grab(
         self,
@@ -406,12 +458,17 @@ class FrameGrabber:
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
         ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
         ``focus``: an RTSP stream's frame sharpest in these normalised boxes, or with ``scan`` the
-        best look at a face there (_grab_stream).
+        best look at a face there (_grab_stream); a Home Assistant camera's own stream the same way
+        when it can stream (_grab_ha_stream).
 
         A broken picture (imaging.jpeg_broken: it ends early, the rest an older one's) is asked for
         again once, and is an error the second time: it would be read as grey."""
         check_source(source_type, source)
         try:
+            if source_type == "ha_camera" and focus and self.ha.enabled:
+                data = await self._grab_ha_stream(source, focus, scan)
+                if data is not None:
+                    return data
             if source_type == "rtsp":  # frames VisionState encodes itself
                 return await asyncio.get_running_loop().run_in_executor(
                     self._rtsp, self._grab_stream, source, focus, scan
@@ -511,6 +568,17 @@ def describe(err: httpx.HTTPError) -> str:
 STREAM_OPTIONS = {"rtsp_transport": "tcp", "timeout": "10000000"}  # FFmpeg's socket timeout, in µs
 
 
+def ha_stream_options(headers: dict[str, str]) -> dict[str, str]:
+    """FFmpeg's options for a camera's own stream in Home Assistant (HLS, HomeAssistant.stream_address):
+    its headers, from the newest segment (as little behind as HLS allows), and time to open: Home
+    Assistant answers the playlist once the stream's first segment exists (SOUND["ha_open_s"])."""
+    return {
+        "headers": "".join(f"{k}: {v}\r\n" for k, v in headers.items()),
+        "live_start_index": "-1",
+        "timeout": str(int(SOUND["ha_open_s"] * 1_000_000)),
+    }
+
+
 def _jpeg(frame) -> bytes:  # noqa: ANN001 - an av.VideoFrame
     buf = io.BytesIO()
     frame.to_image().save(buf, format="JPEG", quality=90)
@@ -592,6 +660,12 @@ def crop_rgb(frame, box: tuple[int, int, int, int]) -> Image.Image:  # noqa: ANN
 Scan = Callable[[list[Image.Image], list[tuple[int, int]], tuple[int, int]], list[tuple[tuple, object] | None]]
 
 
+# How a stream whose address must be asked for each time is opened (Home Assistant's own stream
+# of a camera: its address holds a token valid while the stream runs): address, FFmpeg's options,
+# how long it may take to open. Runs on the stream's thread.
+Opener = Callable[[], tuple[str, dict[str, str], float]]
+
+
 @dataclass
 class Look:
     """A look at a face between two checks (RtspStream with a scan): the head region cut from a
@@ -618,8 +692,9 @@ class RtspStream:
     frame every FACES["scan_interval_s"] and keeps the best look of each FACES["scan_slot_s"]: the
     next grab gives the frame of the best look instead, and ``looks`` the others (best first)."""
 
-    def __init__(self, url: str, keep_open: float):
+    def __init__(self, url: str, keep_open: float, opener: Opener | None = None):
         self.url, self.keep_open = url, keep_open
+        self._opener = opener
         self._changed = threading.Condition()
         self._frame = None
         self._frame_at = 0.0
@@ -645,6 +720,20 @@ class RtspStream:
     @property
     def alive(self) -> bool:
         return self._thread.is_alive()
+
+    @property
+    def ready(self) -> bool:
+        """Whether a frame was decoded yet (a stream through Home Assistant takes seconds to open)."""
+        return self._frame is not None
+
+    @property
+    def error(self) -> str:
+        return str(self._error or "")
+
+    def touch(self) -> None:
+        """Count as asked for now: a stream still opening is not closed for being unused."""
+        with self._changed:
+            self._asked_at = time.monotonic()
 
     def close(self) -> None:
         with self._changed:
@@ -770,7 +859,8 @@ class RtspStream:
         from av.error import FFmpegError
 
         try:
-            with av.open(self.url, options=STREAM_OPTIONS, timeout=10) as container:
+            url, options, timeout = self._opener() if self._opener else (self.url, STREAM_OPTIONS, 10.0)
+            with av.open(url, options=options, timeout=timeout) as container:
                 for frame in container.decode(video=0):
                     if not self._add(frame, _grey):
                         return
@@ -1032,11 +1122,8 @@ class AudioStream:
             if self._ha is not None and self._loop is not None:
                 asked = asyncio.run_coroutine_threadsafe(self._ha.stream_address(self.url), self._loop)
                 url, headers = asked.result(RUNTIME["http_timeout_s"])
-                options["headers"] = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
-                options["live_start_index"] = "-1"  # from the newest segment: as little behind as HLS allows
+                options = ha_stream_options(headers)
                 open_s = SOUND["ha_open_s"]
-                # Home Assistant answers the playlist once the stream's first segment exists.
-                options["timeout"] = str(int(open_s * 1_000_000))
             else:
                 url = self.url
             check_source("rtsp", url)  # FFmpeg would open a local file as well

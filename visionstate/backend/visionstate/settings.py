@@ -1150,6 +1150,9 @@ RUNTIME = {
     "rtsp_workers": 4,  # RTSP grabs at once (on threads of their own, see sources.FrameGrabber)
     # An RTSP stream grabbed again within this many seconds is kept open (sources.FrameGrabber); 0: never.
     "rtsp_keep_open_s": 5.0,
+    # A Home Assistant camera looked at for a face is read through its own stream in Home Assistant
+    # (FrameGrabber._grab_ha_stream); one that cannot stream is asked again after this long.
+    "ha_stream_retry_s": 600.0,
     # Looking for a face (a person there): of the frames a stream kept open decoded since the last
     # check, the one sharpest where the face is looked for, at most this many seconds old.
     "rtsp_pick_window_s": 1.5,

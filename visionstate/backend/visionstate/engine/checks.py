@@ -314,10 +314,11 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         return live.remember(data), data
 
     def face_focus(self, cfg: SensorConfig) -> list[list[float]] | None:
-        """While looking for a face (FACES["burst_*"]) on a stream: where the faces were looked for
+        """While looking for a face (FACES["burst_*"]) on a stream (an RTSP address, or a Home
+        Assistant camera's own stream: FrameGrabber._grab_ha_stream): where the faces were looked for
         in the last check (normalised), so the stream gives the best look at a face there (RtspStream)."""
         live = self.live_state(cfg.id)
-        if cfg.source_type != "rtsp" or not cfg.faces_on or live.face_burst.until <= time.time():
+        if cfg.source_type not in ("rtsp", "ha_camera") or not cfg.faces_on or live.face_burst.until <= time.time():
             return None
         n = 10000  # faces.head_region works in pixels
         boxes = [

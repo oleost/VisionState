@@ -237,3 +237,51 @@ the household is carried over (`recheck_every`).
 **Left:** real cameras at night on a main stream (infrared on a reflecting plate), the open model's text finder on
 plates at an angle, a plate reader that is open *and* made for plates (trained on plates drawn by
 our own code, like the wheel reader), and letters outside A–Z (Ü, Ø).
+
+## 11. Next: reading a plate while a car passes (proposed 2026-11-24, not decided)
+
+**Status:** a proposal from building the same for faces (docs/FACE_RECOGNITION_PLAN.md §12,
+0.16.0b9–b12). The maintainer asked for it to be written down for a later session; whether and
+how to build it is still theirs to decide. Nothing of it is built.
+
+**Why.** A car driving in shows a readable plate for a few seconds, like a face walking up to a
+door; the regular checks (every `interval_s`, or a change-detection burst) may miss them all. Faces
+had the same problem, and what fixed it there:
+
+- *a burst of checks* while someone nobody is named for is there (`logic.steer_face_burst`,
+  `FACES["burst_*"]`): about one a second, going on while they walk away and starting again when
+  they come closer. Plates have no burst of their own;
+- *looking between the checks* on a stream kept open (`sources.RtspStream` with a `Scan`, the
+  `Look`s it keeps, `FACES["scan_*"]`): a cheap detector (YuNet for faces) on the region where the
+  thing was in the last check, in a frame every `FACES["scan_interval_s"]`, keeping the best look
+  of each `FACES["scan_slot_s"]`; the check analyses the frame of the best look and recognises a few
+  of the others too. On a recording of three walks the sharpest-frame pick named the person in two,
+  the scan in all three (at a check every 1, 2 or 3 s), and nobody wrongly. A Home Assistant camera
+  is read through its own stream for this (`FrameGrabber._grab_ha_stream`);
+- *agreement across observations*: two looks that agree name the person in the same check; a
+  name never confirmed is asked about when the visit ends.
+
+**Proposal.**
+
+1. Make the burst general: "something to identify is there and not identified yet" (an unnamed
+   face, or a vehicle without a known plate) keeps the burst going; `steer_face_burst` and
+   `FaceBurst` become a shared burst with the reasons as inputs, not a copy for plates.
+2. A plate `Scan`: the plate finder (`plates.PlateModel`'s detector; YOLO finders are fast) on each
+   vehicle box of the last check, grown as the vehicle moves, ranked by the plate's width in pixels,
+   its finder score and how level it is (`plates.straighten` gives the angle). `RtspStream` already
+   takes any `Scan`; the focus would be the vehicles' boxes instead of the head regions (one stream,
+   one scan: a scan that runs both finders when both are looked for).
+3. Read the best few looks of each check (the reader is the expensive part) and count agreement
+   the way `PLATES["same_plate_distance"]` already does for reads in a row: two reads of the same
+   plate from different moments name the car in that check.
+4. Keep everything that already exists for plates: events and their cooldown, `recheck_every`
+   for a car named by an exact read, unknown plates, learning a car's look.
+
+**How to test it first** (as for faces): record a car driving in and out a few times from the
+stream, replay the recording through the ways of picking frames, and compare (plates read right,
+how soon, wrong reads). Recording tool and replay scripts: the maintainer's local folder
+(not in the repository); the recordings stay local.
+
+**Open questions for the maintainer:** which camera sees cars arrive; whether a vehicle without a known plate should start a burst at all on a busy road
+(a limit per hour, or only in the sensor's region); whether to do it before or after faces at
+night.
