@@ -417,6 +417,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                     result[i]["label"] = face_before["label"]
                 elif face_before.get("unknown", 0) >= FACES["unknown_after"] and not face_before.get("named"):
                     result[i]["label"] = FACE_UNKNOWN_KEY
+        looks, live.face_looks = live.face_looks, []
         if not searched:
             return result
         seen = await self.find_faces(model, image, [result[i]["box"] for i in searched])
@@ -442,6 +443,7 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             result[i]["face"] = entry
             if not problem and face is not None and aligned is not None:
                 usable.append((i, face, aligned))
+        between = await self._looks_between(model, index, limits, looks, result, searched) if index.ids else {}
         vectors, qualities = np.zeros((0, 0), dtype=np.float32), []
         if usable and index.ids:
             async with timing.slot(self._sem):
@@ -456,13 +458,100 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 result[i]["face"]["problem"] = "poor"
                 continue
             clear = faces.clearly_seen(face, aligned, limits["min_face_px"], frame)
-            self._name_face(result[i], previous, index, vectors[n] if index.ids else None, limits, settings, clear)
+            agree = {label for label, _, decision, _ in between.get(i, []) if decision == "match"}
+            vector = vectors[n] if index.ids else None
+            self._name_face(result[i], previous, index, vector, limits, settings, clear, agree)
         for i in searched:
             live.face_stats.append(result[i]["face"].get("problem") or "ok")
         for i in searched:
             if result[i]["face"].get("problem"):
                 self._keep_name(result[i], previous)  # no usable face now: keep what the box was
+        for i, seen_between in between.items():
+            self._name_between(result[i], previous, seen_between, limits)
         return result
+
+    async def _looks_between(
+        self,
+        model: faces.FaceModel,
+        index: faces.FaceIndex,
+        limits: dict[str, float],
+        looks: list,
+        result: list[dict],
+        searched: list[int],
+    ) -> dict[int, list[tuple[str, float, str, int | None]]]:
+        """Who the faces a stream saw between two checks are (sources.Look from RtspStream: the best
+        look of each FACES["scan_slot_s"], best first): up to FACES["scan_faces"] that the face
+        detector found usable, other than the one in the frame of this check, each recognised.
+        Each goes to the person box of this check whose head it is nearest (within a box width of
+        its head region: the person moved). {box index: [(label, similarity, decision, example id)]}."""
+        wanted = [look for look in looks if not look.picked and look.rank[0] == 1][: FACES["scan_faces"]]
+        if not wanted or not searched:
+            return {}
+        size = model.recogniser.spec.input_size
+        owners, aligned = [], []
+        for look in wanted:
+            face: faces.Face = look.found
+            cx = (face.box[0] + face.box[2]) / 2 / look.size[0]
+            cy = (face.box[1] + face.box[3]) / 2 / look.size[1]
+            best, best_distance = None, 1.0
+            for i in searched:
+                x1, y1, x2, y2 = (v / 10000 for v in faces.head_region(result[i]["box"], 10000, 10000))
+                width = max(x2 - x1, 1e-6)
+                distance = (max(x1 - cx, cx - x2, 0.0) + max(y1 - cy, cy - y2, 0.0)) / width
+                if distance < best_distance:
+                    best, best_distance = i, distance
+            if best is None:
+                continue
+            owners.append(best)
+            aligned.append(faces.align(look.crop, face.moved(-look.offset[0], -look.offset[1], 1.0), size))
+        if not aligned:
+            return {}
+        async with timing.slot(self._sem):
+            vectors, qualities = await asyncio.to_thread(model.recogniser.embed_with_quality, aligned)
+        seen: dict[int, list[tuple[str, float, str, int | None]]] = {}
+        for i, vector, quality in zip(owners, vectors, qualities, strict=True):
+            if faces.poor(quality, model.recogniser.spec):
+                continue
+            identity = faces.identify(index, vector)
+            if identity.label is not None:
+                decision = faces.decide(identity, limits)
+                seen.setdefault(i, []).append((identity.label, identity.similarity, decision, identity.example_id))
+        return seen
+
+    @staticmethod
+    def _name_between(
+        det: dict, previous: list[dict], seen: list[tuple[str, float, str, int | None]], limits: dict[str, float]
+    ) -> None:
+        """A person box not named by the face in this check's frame is named by the faces seen
+        between the checks (_looks_between): one sure match, two that agree, or one that agrees with
+        who the box's last usable face looked most like. Not when this check's own face looked like
+        someone else. One match alone is remembered as who they look most like, for the next face."""
+        face = det.get("face")
+        if face is None or face.get("state") == "match":
+            return
+        own = face.get("candidate") if face.get("state") in ("pending", "ask") else None
+        matches = [s for s in seen if s[2] == "match" and (own is None or s[0] == own)]
+        if not matches:
+            return
+        face_before = (same_box(previous, det["box"]) or {}).get("face") or {}
+        named_before = face_before.get("label") if face_before.get("state") == "match" else None
+        before = face_before.get("candidate") or named_before
+        best = max(matches, key=lambda s: s[1])
+        label = best[0]
+        agreeing = [s for s in matches if s[0] == label]
+        sure = best[1] >= limits["sure_similarity"]
+        if sure or len(agreeing) >= 2 or before == label:
+            face.update({"label": label, "state": "match", "sure": sure, "named": True, "between": True})
+            face["similarity"] = max(face.get("similarity") or 0.0, best[1])
+            det["label"] = label
+            det["match"] = {"id": best[3], "label": label, "similarity": best[1]}
+            det.pop("maybe", None)
+            det.pop("ask", None)
+            return
+        if not face.get("candidate"):
+            face["candidate"] = label  # the next usable face that agrees names them (_name_face)
+        if "maybe" not in det:
+            det["maybe"] = {"id": best[3], "label": label, "similarity": best[1], "face": True}
 
     def _name_face(
         self,
@@ -473,9 +562,11 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         limits: dict[str, float],
         settings: dict,
         clear: bool = True,
+        agree: set[str] | None = None,
     ) -> None:
         """Who the usable face of a person box is (see apply_faces). ``clear``: seen well enough
-        (faces.clearly_seen) that matching nobody counts towards Unknown person."""
+        (faces.clearly_seen) that matching nobody counts towards Unknown person. ``agree``: who the
+        faces seen between the checks matched (_looks_between): a match not sure alone agrees with them."""
         face = det["face"]
         before = same_box(previous, det["box"])
         face_before = (before or {}).get("face") or {}
@@ -488,7 +579,11 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
         named = bool(face_before.get("named")) or named_before is not None
         face.update({"similarity": identity.similarity, "candidate": identity.label, "age": 0, "named": named})
         if decision == "match" and identity.label is not None:
-            agreed = named_before == identity.label or face_before.get("candidate") == identity.label
+            agreed = (
+                named_before == identity.label
+                or face_before.get("candidate") == identity.label
+                or identity.label in (agree or set())
+            )
             if identity.similarity >= limits["sure_similarity"] or agreed:
                 sure = identity.similarity >= limits["sure_similarity"]
                 face.update({"label": identity.label, "state": "match", "sure": sure, "named": True})

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.0b11
+
+**Faces looked for between the checks.**
+
+### Changed
+
+- **On a camera's stream (`rtsp://`) the face detector looks at several frames a second
+  between the checks** while someone is there, where their face was. A check takes the frame
+  with the best look at the face (one that can be used, then the widest and most straight at the
+  camera) instead of the sharpest, and recognises the best looks of the moments before it too:
+  two that agree name the person in that check. On a recording of someone walking up to a
+  doorbell three times, they were named in all three walks instead of two, and with a check only
+  every two or three seconds in all three instead of one. A check takes a little longer while
+  someone is there.
+
 ## 0.16.0b10
 
 **A look at a face that cannot be used says so.**

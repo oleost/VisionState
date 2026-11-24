@@ -421,6 +421,14 @@ def problem(face: Face, min_face_px: float, frame: tuple[int, int]) -> str | Non
     return None
 
 
+def look_rank(face: Face, min_face_px: float, frame: tuple[int, int]) -> tuple[int, float]:
+    """How good a look at a face is before it is recognised (higher is better): one it can use
+    (``problem`` None) first, then the wider, the surer and the straighter at the camera. Picks the
+    frames of a stream worth recognising (FACES["scan_*"]): cheap, as only the face detector ran."""
+    usable = 1 if problem(face, min_face_px, frame) is None else 0
+    return usable, face.width * face.score * (1.0 - min(turn(face), 1.0))
+
+
 def poor(quality: float, spec: RecogniserSpec) -> bool:
     """Whether a face is too poor for the recogniser to tell who it is: its raw embedding is
     shorter than the model's ``min_quality`` (dark, grainy or blurry; see ``Recogniser.embed_with_quality``)."""

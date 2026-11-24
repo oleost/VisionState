@@ -17,7 +17,7 @@ from ..mqtt import topics
 from ..redact import redact
 from ..settings import ESPHOME, RUNTIME, UNKNOWN_STATE, camera_settings
 from ..shared_frames import SharedFrame
-from ..sources import SourceError
+from ..sources import Scan, SourceError
 from .base import RuntimeBase
 from .logic import next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
@@ -300,16 +300,22 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         timing.captured()
         focus = self.face_focus(cfg)
+        live = self.live_state(cfg.id)
         with timing.step("grab"):
             if focus:
-                data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg), focus=focus)
+                scan = self.face_scan(cfg)
+                data = await self.grabber.grab(
+                    cfg.source_type, cfg.source, camera=self.camera_for(cfg), focus=focus, scan=scan
+                )
+                live.face_looks = self.grabber.looks(cfg.source) if scan is not None else []
             else:
                 data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
-        return self.live_state(cfg.id).remember(data), data
+                live.face_looks = []
+        return live.remember(data), data
 
     def face_focus(self, cfg: SensorConfig) -> list[list[float]] | None:
         """While looking for a face (FACES["burst_*"]) on a stream: where the faces were looked for
-        in the last check (normalised), so the stream gives the frame sharpest there (RtspStream)."""
+        in the last check (normalised), so the stream gives the best look at a face there (RtspStream)."""
         live = self.live_state(cfg.id)
         if cfg.source_type != "rtsp" or not cfg.faces_on or live.face_burst.until <= time.time():
             return None
@@ -320,6 +326,27 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             if d["key"] == "person" and not d.get("filtered")
         ]
         return boxes or None
+
+    def face_scan(self, cfg: SensorConfig) -> Scan | None:
+        """How a stream looks for faces between two checks (RtspStream): the face detector on the
+        head regions it cuts out, each face ranked by faces.look_rank. None: no face model yet."""
+        model = self.wanted_faces()
+        if model is None:
+            return None
+        min_px = self.face_limits(cfg)["min_face_px"]
+        detector = model.detector
+
+        def scan(crops: list, offsets: list[tuple[int, int]], size: tuple[int, int]) -> list:
+            result: list[tuple[tuple, object] | None] = []
+            for face, (dx, dy) in zip(detector.detect(crops), offsets, strict=True):
+                if face is None:
+                    result.append(None)
+                    continue
+                moved = face.moved(dx, dy, 1.0)
+                result.append((faces.look_rank(moved, min_px, size), moved))
+            return result
+
+        return scan
 
     async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
         """A frame for a check without a light: together with the other sensors on the camera asking now."""

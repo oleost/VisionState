@@ -369,6 +369,9 @@ class LiveState:
     force_paused: bool = False  # the forced check was asked for by the user: also when paused
     burst_until: float = 0.0
     face_burst: FaceBurst = field(default_factory=FaceBurst)
+    # The looks at faces a stream saw between the last two checks (sources.Look, best first):
+    # recognised too by the check that grabbed them (FacesMixin.apply_faces), then let go.
+    face_looks: list = field(default_factory=list)
     last_probe: float = 0.0
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning

@@ -9,7 +9,7 @@ import re
 import threading
 import time
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
@@ -17,11 +17,12 @@ from typing import cast
 
 import httpx
 import numpy as np
+from PIL import Image
 
 from . import imaging
 from .ha_events import camera_stream, discovered, fetch_registries, integration_names, websocket_url
 from .redact import redact
-from .settings import CAMERA_SETTING_KEYS, RUNTIME, SOUND, SUPERVISOR_URL, Settings, camera_preset
+from .settings import CAMERA_SETTING_KEYS, FACES, RUNTIME, SOUND, SUPERVISOR_URL, Settings, camera_preset
 
 log = logging.getLogger(__name__)
 
@@ -352,7 +353,7 @@ class FrameGrabber:
             stream.close()
         self._rtsp.shutdown(wait=False, cancel_futures=True)
 
-    def _grab_stream(self, url: str, focus: Sequence[Sequence[float]] | None = None) -> bytes:
+    def _grab_stream(self, url: str, focus: Sequence[Sequence[float]] | None = None, scan: Scan | None = None) -> bytes:
         """A frame of an RTSP stream (on an RTSP thread).
 
         A check now and then connects for one frame (connecting and waiting for a key frame take a
@@ -362,7 +363,7 @@ class FrameGrabber:
 
         ``focus`` (normalised boxes: where faces are looked for while a person is there): the stream
         is opened at once, and of the frames decoded since the last grab the one sharpest there is
-        taken (RtspStream.grab).
+        taken, or with a ``scan`` the one with the best look at a face (RtspStream.grab).
         """
         keep_open = RUNTIME["rtsp_keep_open_s"]
         now = time.monotonic()
@@ -376,12 +377,17 @@ class FrameGrabber:
             return grab_rtsp(url)
         if stream is None:
             stream = self._streams[url] = RtspStream(url, max(keep_open, RUNTIME["rtsp_pick_window_s"]))
-        return stream.grab(focus)
+        return stream.grab(focus, scan)
 
     def picked(self, source: str) -> dict | None:
         """How the last frame of a stream kept open was picked (RtspStream.picked), for diagnosis."""
         stream = self._streams.get(source)
         return stream.picked if stream is not None else None
+
+    def looks(self, source: str) -> list[Look]:
+        """The looks at faces the last grab of a stream with a scan saw (RtspStream.looks)."""
+        stream = self._streams.get(source)
+        return list(stream.looks) if stream is not None else []
 
     async def grab(
         self,
@@ -392,20 +398,24 @@ class FrameGrabber:
         camera: dict | None = None,
         flash_level: int | None = None,
         focus: Sequence[Sequence[float]] | None = None,
+        scan: Scan | None = None,
     ) -> bytes:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
         came on (only for one that said it can: CameraUses.flash), ``flash_level`` percent of full
         (None: as strong as the camera makes it when not told); with ``dark``, only when the
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
         ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
-        ``focus``: an RTSP stream's frame sharpest in these normalised boxes (_grab_stream).
+        ``focus``: an RTSP stream's frame sharpest in these normalised boxes, or with ``scan`` the
+        best look at a face there (_grab_stream).
 
         A broken picture (imaging.jpeg_broken: it ends early, the rest an older one's) is asked for
         again once, and is an error the second time: it would be read as grey."""
         check_source(source_type, source)
         try:
             if source_type == "rtsp":  # frames VisionState encodes itself
-                return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source, focus)
+                return await asyncio.get_running_loop().run_in_executor(
+                    self._rtsp, self._grab_stream, source, focus, scan
+                )
             for attempt in (1, 2):
                 if source_type == "ha_camera":
                     data = await self.ha.snapshot(source)
@@ -547,6 +557,56 @@ def _grey(frame) -> np.ndarray:  # noqa: ANN001 - an av.VideoFrame
     return frame.to_ndarray(format="gray")
 
 
+def crop_rgb(frame, box: tuple[int, int, int, int]) -> Image.Image:  # noqa: ANN001 - an av.VideoFrame
+    """A part of a decoded frame (pixels x1, y1, x2, y2) as an RGB picture, without converting the
+    whole frame first: a 2560 × 1920 frame takes about 20 ms to convert, its head region well
+    under 1 ms. Planar 4:2:0 YUV (what H.264 decodes to) is converted here, as FFmpeg does (BT.601,
+    limited range unless the format says full); any other format through FFmpeg."""
+    x1, y1, x2, y2 = box
+    name = frame.format.name
+    if name not in ("yuv420p", "yuvj420p"):
+        return frame.to_image().crop(box)
+    x1, y1 = x1 & ~1, y1 & ~1  # the colour planes have one sample for 2 × 2 pixels
+
+    def plane(n: int, top: int, bottom: int, left: int, right: int) -> np.ndarray:
+        p = frame.planes[n]
+        rows = np.frombuffer(p, np.uint8).reshape(p.height, p.line_size)
+        return rows[top:bottom, left:right].astype(np.float32)
+
+    y = plane(0, y1, y2, x1, x2)
+    u = plane(1, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2).repeat(2, 0).repeat(2, 1)[: y.shape[0], : y.shape[1]]
+    v = plane(2, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2).repeat(2, 0).repeat(2, 1)[: y.shape[0], : y.shape[1]]
+    u, v = u - 128.0, v - 128.0
+    if name == "yuvj420p":
+        r, g, b = y + 1.402 * v, y - 0.344 * u - 0.714 * v, y + 1.772 * u
+    else:
+        y = (y - 16.0) * 1.164
+        r, g, b = y + 1.596 * v, y - 0.392 * u - 0.813 * v, y + 2.017 * u
+    rgb = np.clip(np.stack([r, g, b], axis=-1), 0, 255).astype(np.uint8)
+    return Image.fromarray(rgb, "RGB")
+
+
+# What a stream's face scan makes of the head regions cut from one frame (their pictures, where
+# each was cut, the frame's size): for each, a look's rank (higher is better) and what was found,
+# or None. Given by the engine (ChecksMixin.face_scan), which knows the face detector.
+Scan = Callable[[list[Image.Image], list[tuple[int, int]], tuple[int, int]], list[tuple[tuple, object] | None]]
+
+
+@dataclass
+class Look:
+    """A look at a face between two checks (RtspStream with a scan): the head region cut from a
+    frame, where (``offset``, in the frame of ``size``), what the scan found there and its rank."""
+
+    rank: tuple
+    at: float  # time.monotonic() when the frame was decoded
+    crop: Image.Image
+    offset: tuple[int, int]
+    size: tuple[int, int]
+    found: object
+    region: int  # which of the focus boxes it was cut from (the person of the last check)
+    picked: bool = False  # in the frame the grab gave
+
+
 class RtspStream:
     """An RTSP stream kept open: a thread of its own decodes it and keeps the newest frame, until
     no frame was asked for in ``keep_open`` seconds or the stream fails (see FrameGrabber._grab_stream).
@@ -554,7 +614,9 @@ class RtspStream:
     While a grab gave ``focus`` (where faces are looked for), every frame decoded is also scored by
     how sharp it is there, and the next grab takes the sharpest of the frames since the last one
     (within RUNTIME["rtsp_pick_window_s"]): of a person walking up, the frames between two checks
-    are blurred by their steps in turn."""
+    are blurred by their steps in turn. With a ``scan`` too, the face detector looks there in a
+    frame every FACES["scan_interval_s"] and keeps the best look of each FACES["scan_slot_s"]: the
+    next grab gives the frame of the best look instead, and ``looks`` the others (best first)."""
 
     def __init__(self, url: str, keep_open: float):
         self.url, self.keep_open = url, keep_open
@@ -568,6 +630,12 @@ class RtspStream:
         self._newest_score = 0.0
         self._scored = 0  # frames scored since the last grab
         self.picked: dict | None = None  # how the last grab chose its frame (frames, age, scores)
+        self._scan: Scan | None = None
+        self._scanned_at = 0.0
+        self._slots: dict[tuple[int, int], Look] = {}  # the best look of each slot and focus box
+        self._top: tuple[Look, object] | None = None  # the best look since the last grab, and its frame
+        self._scan_failed = False
+        self.looks: list[Look] = []  # what the last grab's scan saw since the one before, best first
         self._error: SourceError | None = None
         self._asked_at = time.monotonic()
         self._closed = False
@@ -583,10 +651,11 @@ class RtspStream:
             self._closed = True
             self._changed.notify_all()
 
-    def grab(self, focus: Sequence[Sequence[float]] | None = None) -> bytes:
+    def grab(self, focus: Sequence[Sequence[float]] | None = None, scan: Scan | None = None) -> bytes:
         """A frame decoded after this call (never an old one), or the stream's error. With ``focus``
         given at the last grab too: the sharpest frame there since that grab, which may be up to
-        RUNTIME["rtsp_pick_window_s"] older than this call."""
+        RUNTIME["rtsp_pick_window_s"] older than this call; with a ``scan`` too, the frame of the best
+        look at a face since then (up to FACES["scan_window_s"] old), and ``looks`` all of them."""
         asked = time.monotonic()
         with self._changed:
             self._asked_at = asked
@@ -596,7 +665,16 @@ class RtspStream:
             )
             if self._frame_at > asked:
                 frame = self._frame
-                if self._focus and focus and self._best is not None:
+                window = FACES["scan_window_s"]
+                looks = [look for look in self._slots.values() if asked - look.at <= window]
+                looks.sort(key=lambda look: look.rank, reverse=True)
+                self.looks = looks if focus and scan else []
+                top = self._top if self._top is not None and asked - self._top[0].at <= window else None
+                if self._focus and focus and scan and top is not None:
+                    top[0].picked = True
+                    self.picked = {"looks": len(looks), "age_s": round(self._frame_at - top[0].at, 3)}
+                    frame = top[1]
+                elif self._focus and focus and self._best is not None:
                     self.picked = {
                         "frames": self._scored,
                         "age_s": round(self._frame_at - self._best_at, 3),
@@ -607,7 +685,9 @@ class RtspStream:
                 else:
                     self.picked = None
                 self._focus = [list(b) for b in focus] if focus else None
+                self._scan = scan if focus else None
                 self._best, self._best_score, self._best_at, self._scored = None, -1.0, 0.0, 0
+                self._slots, self._top = {}, None
             elif self._error is not None:
                 raise self._error
             else:
@@ -616,11 +696,31 @@ class RtspStream:
 
     def _add(self, frame, grey) -> bool:  # noqa: ANN001 - an av.VideoFrame and _grey
         """A frame decoded: the newest now, and scored while a grab gave a focus. False: stop."""
-        focus = self._focus
+        focus, scan = self._focus, self._scan
         score = focus_sharpness(grey(frame), focus) if focus else 0.0
+        looks: list[Look] = []
+        if focus and scan is not None and time.monotonic() - self._scanned_at >= FACES["scan_interval_s"]:
+            self._scanned_at = time.monotonic()
+            looks = self._look(frame, focus, scan)
         with self._changed:
             now = time.monotonic()
             self._frame, self._frame_at = frame, now
+            if looks and self._focus is focus:
+                slot = int(now / FACES["scan_slot_s"])
+                for look in looks:
+                    look.at = now
+                    kept = self._slots.get((slot, look.region))
+                    if kept is None or look.rank > kept.rank:
+                        self._slots[(slot, look.region)] = look
+                    if (
+                        self._top is None
+                        or look.rank > self._top[0].rank
+                        or now - self._top[0].at > FACES["scan_window_s"]
+                    ):
+                        self._top = (look, frame)
+                old = [key for key, look in self._slots.items() if now - look.at > FACES["scan_window_s"]]
+                for key in old:
+                    del self._slots[key]
             if focus and self._focus is focus:  # not scored for a focus given meanwhile
                 self._newest_score = score
                 self._scored += 1
@@ -629,6 +729,41 @@ class RtspStream:
                     self._best, self._best_score, self._best_at = frame, score, now
             self._changed.notify_all()
             return not (self._closed or time.monotonic() - self._asked_at > self.keep_open)
+
+    def _look(self, frame, focus: list[list[float]], scan: Scan) -> list[Look]:  # noqa: ANN001 - an av.VideoFrame
+        """The face scan of one frame: each focus box FACES["scan_grow"] wider on every side, cut out
+        and given to ``scan``; a look for each where it found something. A scan that fails is
+        logged once and finds nothing (the stream goes on: the sharpest frame is still taken)."""
+        w, h = frame.width, frame.height
+        grow = FACES["scan_grow"]
+        regions, boxes = [], []
+        for n, (x1, y1, x2, y2) in enumerate(focus):
+            bw, bh = (x2 - x1) * w, (y2 - y1) * h
+            # Even, as the colour planes of 4:2:0 YUV have one sample for 2 × 2 pixels (crop_rgb).
+            box = (
+                max(0, int(x1 * w - grow * bw)) & ~1,
+                max(0, int(y1 * h - grow * bh)) & ~1,
+                min(w, int(x2 * w + grow * bw) + 1),
+                min(h, int(y2 * h + grow * bh) + 1),
+            )
+            if box[2] - box[0] >= 8 and box[3] - box[1] >= 8:
+                regions.append(n)
+                boxes.append(box)
+        if not boxes:
+            return []
+        try:
+            crops = [crop_rgb(frame, box) for box in boxes]
+            found = scan(crops, [(box[0], box[1]) for box in boxes], (w, h))
+        except Exception:  # noqa: BLE001 - a broken scan must not stop the stream
+            if not self._scan_failed:
+                log.exception("Looking for faces in a stream failed")
+                self._scan_failed = True
+            return []
+        return [
+            Look(rank=result[0], at=0.0, crop=crop, offset=(box[0], box[1]), size=(w, h), found=result[1], region=n)
+            for n, box, crop, result in zip(regions, boxes, crops, found, strict=True)
+            if result is not None
+        ]
 
     def _run(self) -> None:
         import av

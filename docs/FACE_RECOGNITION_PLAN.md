@@ -622,3 +622,27 @@ Where the build differs from §3–§9:
     before one cut off or turned, then the widest);
   - with one answer from the review taught, the maintainer was named on both of the last two
     walks (0.55 and 0.51, at 76 and 227 px).
+- **Looking between the checks.** The same day the doorbell, now on its stream, missed the
+  maintainer again: walking out with their back to the camera, back looking down at a phone. To try
+  ways of choosing frames without walking each time, three walks were recorded from the stream
+  (3 minutes, about 20 frames a second, kept locally) and replayed through the face pipeline
+  against the people taught on that Home Assistant:
+  - usable faces were there: in 6 of 27, 6 of 30 and 10 of 21 seconds of the three walks (up to
+    98, 97 and 431 px), but the sharpest frame where the face is gave a usable one in only 1, 5
+    and 5 of those checks. Sharpness says little about whether someone looks at the camera;
+  - the face detector on the head regions of a frame every `FACES["scan_interval_s"]` (about 12 ms
+    a frame on a desktop CPU), ranked by `faces.look_rank`, found a usable face in every second
+    that had one; every third frame did nearly as well as every one;
+  - recognising the best look of each `FACES["scan_slot_s"]` since the last check (up to
+    `FACES["scan_faces"]`) and taking two that agree as confirmation named the maintainer in all
+    three walks with a check every 1, 2 or 3 s (the sharpest frame: two, one and one), and nobody
+    wrongly; at most two looks a walk were a question about a taught person who looks alike
+    (margin under 0.05);
+  - averaging the embeddings of the good looks (as in C-FAN) named no one more than voting did;
+  - Frigate's way, replayed with our models (every face of a tracked person recognised, up to 12
+    attempts, gated by size and detector score only, a weighted mean of the scores) was quicker in
+    the first two walks but named a look-alike taught person in the third: its attempts went on small
+    faces looking down, and it has no limit for a face turned away;
+  - very close to the door (about 400 px) similarity was lower (0.33–0.37) than at 50–90 px
+    (0.42–0.48): the camera looks down at a close face through a wide lens. Not a matter of
+    choosing frames; open.

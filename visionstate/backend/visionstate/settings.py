@@ -737,6 +737,22 @@ FACES = {
     "burst_absent_checks": 2,
     "burst_progress": 1.1,
     "burst_again_closer": 1.3,
+    # Looking for a face on a stream kept open (RtspStream): between two checks, the face detector
+    # looks where the faces were in the last check (its head regions, scan_grow of their size wider
+    # on every side: the person moves) in a frame every scan_interval_s, and the best look of every
+    # scan_slot_s (a face it can use first, then the widest, surest and most straight at the camera:
+    # faces.look_rank) is kept, for at most scan_window_s. A check analyses the frame of the best,
+    # and up to scan_faces of the others are recognised too: two of them that agree name the person
+    # in that check. The frame sharpest where the face is was taken before; a face looking down
+    # or away is as sharp, and on a recording of the maintainer walking up three times a check
+    # named them in all three walks this way, against two the sharpest way (one check a second; at
+    # one in two or three seconds, three against one), and named nobody wrongly
+    # (docs/FACE_RECOGNITION_PLAN.md §12).
+    "scan_interval_s": 0.15,
+    "scan_slot_s": 0.5,
+    "scan_window_s": 5.0,
+    "scan_faces": 4,
+    "scan_grow": 0.3,
     # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
     # images, ZIP archives and videos): at most this many faces are added from one upload, and a
     # video gives a frame every this many seconds (turning the head gives several angles).

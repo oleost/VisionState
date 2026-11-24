@@ -224,6 +224,105 @@ def test_a_name_not_sure_alone_is_taken_when_an_earlier_face_agreed():
     assert "label" not in usable([poor([det])])  # too long ago: pending again
 
 
+def test_a_look_worth_recognising_is_usable_wide_sure_and_straight():
+    """What a stream's face scan keeps between two checks (faces.look_rank): a face that can be
+    used before one that cannot (however wide), then the wider, the surer, the straighter."""
+    straight = face_at([(40, 50), (80, 50), (60, 70), (45, 90), (75, 90)])
+    half = face_at([(40, 50), (80, 50), (72, 70), (45, 90), (75, 90)])
+    wide = face_at([(140, 150), (220, 150), (180, 190), (150, 230), (210, 230)])
+    sideways = face_at([(140, 150), (220, 150), (245, 190), (150, 230), (210, 230)])
+    rank = [faces.look_rank(f, 30, FRAME) for f in (straight, half, wide, sideways)]
+    assert rank[2] > rank[0] > rank[1] > rank[3]  # the wide profile is turned: last
+    assert faces.look_rank(face_at(straight.points, score=0.8), 30, FRAME) < rank[0]
+
+
+def test_faces_seen_between_two_checks_name_the_person():
+    """The faces a stream saw between two checks (FacesMixin._name_between, from _looks_between):
+    two that agree, one sure, or one that agrees with the face before name a person box whose own
+    face in this check could not; a match not sure alone agrees with them (_name_face). They do
+    not name a box whose own face looked like someone else."""
+    from visionstate.engine.faces import FacesMixin
+
+    idx = index([("kari", unit(1, 0, 0)), ("eva", unit(0, 1, 0))])
+    box = [0.1, 0.1, 0.5, 0.9]
+    between = (LIMITS["match_similarity"] + LIMITS["sure_similarity"]) / 2
+    sure = LIMITS["sure_similarity"] + 0.05
+    kari = unit(between, (1 - between**2) ** 0.5 * 0.2, (1 - between**2) ** 0.5)  # match, not sure
+
+    def turned_away(seen: list, before: list[dict] | None = None) -> dict:
+        det = {"key": "person", "box": box, "face": {"problem": "turned"}}
+        FacesMixin._keep_name(det, before or [])
+        FacesMixin._name_between(det, before or [], seen, LIMITS)
+        return det
+
+    two = turned_away([("kari", between, "match", 1), ("kari", between - 0.01, "match", 1)])
+    assert two["label"] == "kari" and two["face"]["between"] and two["match"]["label"] == "kari"
+    assert turned_away([("kari", sure, "match", 1)])["face"]["sure"]
+    one = turned_away([("kari", between, "match", 1)])
+    assert "label" not in one and one["face"]["candidate"] == "kari" and one["maybe"]["label"] == "kari"
+    assert turned_away([("kari", between, "match", 1)], [one])["label"] == "kari"  # agrees with the one before
+    assert "label" not in turned_away([("kari", between, "match", 1), ("eva", between, "match", 2)])
+    assert "label" not in turned_away([("kari", between, "ask", 1), ("kari", between, "ask", 1)])
+
+    # This check's own face, not sure alone: named when a face between agrees.
+    det = {"key": "person", "box": box, "face": {"problem": None}}
+    FacesMixin._name_face(None, det, [], idx, kari, LIMITS, {"ask_unknown": False}, True, {"kari"})  # type: ignore[arg-type]
+    assert det["label"] == "kari"
+    # ... but not by faces between that looked like someone else.
+    det = {"key": "person", "box": box, "face": {"problem": None}}
+    FacesMixin._name_face(None, det, [], idx, kari, LIMITS, {"ask_unknown": False}, True, {"eva"})  # type: ignore[arg-type]
+    assert det["face"]["state"] == "pending"
+    FacesMixin._name_between(det, [], [("eva", between, "match", 2), ("eva", between, "match", 2)], LIMITS)
+    assert "label" not in det
+
+
+def test_faces_seen_between_two_checks_go_to_the_nearest_person():
+    """_looks_between: the usable looks a stream kept, other than the one in the check's frame,
+    are recognised and each given to the person box whose head it is nearest; a look far from
+    every person, one the scan found unusable and one too poor for the recogniser are left out."""
+    from types import SimpleNamespace
+
+    from visionstate.engine.faces import FacesMixin
+    from visionstate.sources import Look
+
+    idx = index([("kari", unit(1, 0, 0)), ("eva", unit(0, 1, 0))])
+    size = (1000, 1000)
+    result = [
+        {"key": "person", "box": [0.1, 0.1, 0.3, 0.9]},  # head region about x 0.08-0.32, y 0.08-0.37
+        {"key": "person", "box": [0.6, 0.1, 0.8, 0.9]},
+    ]
+
+    def look(cx: float, cy: float, usable: int = 1, picked: bool = False, vector=None) -> Look:
+        x, y = cx * size[0], cy * size[1]
+        face = faces.Face(
+            (x - 20, y - 25, x + 20, y + 25),
+            ((x - 10, y - 5), (x + 10, y - 5), (x, y + 5), (x - 8, y + 15), (x + 8, y + 15)),
+            0.9,
+        )
+        crop = Image.new("RGB", (200, 200), (128, 128, 128))
+        return Look((usable, 1.0), 0.0, crop, (int(x) - 100, int(y) - 100), size, face, 0, picked)
+
+    looks = [
+        look(0.2, 0.2),  # kari's box
+        look(0.7, 0.25),  # eva's box
+        look(0.2, 0.25, picked=True),  # in the check's own frame: already recognised
+        look(0.2, 0.22, usable=0),  # the scan found it turned
+        look(0.45, 0.95),  # far from both
+        look(0.68, 0.2),  # eva's box, too poor to tell
+    ]
+    vectors = [unit(1, 0, 0), unit(0, 1, 0), unit(0, 1, 0)]
+    qualities = [30.0, 30.0, 1.0]
+    spec = SimpleNamespace(input_size=112, min_quality=13.0)
+    model = SimpleNamespace(
+        recogniser=SimpleNamespace(
+            spec=spec, embed_with_quality=lambda faces_: (np.stack(vectors[: len(faces_)]), qualities[: len(faces_)])
+        )
+    )
+    me = SimpleNamespace(_sem=asyncio.Semaphore(1))
+    seen = asyncio.run(FacesMixin._looks_between(me, model, idx, LIMITS, looks, result, [0, 1]))  # type: ignore[arg-type]
+    assert seen == {0: [("kari", 1.0, "match", 1)], 1: [("eva", 1.0, "match", 2)]}
+
+
 def test_every_face_model_is_pinned_and_described():
     for spec in (faces.DETECTOR, *faces.RECOGNISERS.values()):
         assert "/resolve/" in spec.url and len(spec.sha256) == 64 and spec.size > 0
