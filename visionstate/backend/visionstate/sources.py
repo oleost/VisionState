@@ -9,6 +9,7 @@ import re
 import threading
 import time
 from collections import deque
+from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
@@ -351,13 +352,17 @@ class FrameGrabber:
             stream.close()
         self._rtsp.shutdown(wait=False, cancel_futures=True)
 
-    def _grab_stream(self, url: str) -> bytes:
+    def _grab_stream(self, url: str, focus: Sequence[Sequence[float]] | None = None) -> bytes:
         """A frame of an RTSP stream (on an RTSP thread).
 
         A check now and then connects for one frame (connecting and waiting for a key frame take a
         second or more). Frames asked for again within RUNTIME["rtsp_keep_open_s"] (a burst of
         checks, someone watching the live view) come from the stream kept open meanwhile; it is
         closed once nobody asked for that long, as decoding it costs CPU all the while.
+
+        ``focus`` (normalised boxes: where faces are looked for while a person is there): the stream
+        is opened at once, and of the frames decoded since the last grab the one sharpest there is
+        taken (RtspStream.grab).
         """
         keep_open = RUNTIME["rtsp_keep_open_s"]
         now = time.monotonic()
@@ -367,11 +372,16 @@ class FrameGrabber:
             stream = self._streams.pop(url)
             stream.close()
             stream = None
-        if stream is None and (keep_open <= 0 or last is None or now - last > keep_open):
+        if stream is None and not focus and (keep_open <= 0 or last is None or now - last > keep_open):
             return grab_rtsp(url)
         if stream is None:
-            stream = self._streams[url] = RtspStream(url, keep_open)
-        return stream.grab()
+            stream = self._streams[url] = RtspStream(url, max(keep_open, RUNTIME["rtsp_pick_window_s"]))
+        return stream.grab(focus)
+
+    def picked(self, source: str) -> dict | None:
+        """How the last frame of a stream kept open was picked (RtspStream.picked), for diagnosis."""
+        stream = self._streams.get(source)
+        return stream.picked if stream is not None else None
 
     async def grab(
         self,
@@ -381,19 +391,21 @@ class FrameGrabber:
         dark: int | None = None,
         camera: dict | None = None,
         flash_level: int | None = None,
+        focus: Sequence[Sequence[float]] | None = None,
     ) -> bytes:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
         came on (only for one that said it can: CameraUses.flash), ``flash_level`` percent of full
         (None: as strong as the camera makes it when not told); with ``dark``, only when the
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
         ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
+        ``focus``: an RTSP stream's frame sharpest in these normalised boxes (_grab_stream).
 
         A broken picture (imaging.jpeg_broken: it ends early, the rest an older one's) is asked for
         again once, and is an error the second time: it would be read as grey."""
         check_source(source_type, source)
         try:
             if source_type == "rtsp":  # frames VisionState encodes itself
-                return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source)
+                return await asyncio.get_running_loop().run_in_executor(self._rtsp, self._grab_stream, source, focus)
             for attempt in (1, 2):
                 if source_type == "ha_camera":
                     data = await self.ha.snapshot(source)
@@ -510,15 +522,52 @@ def grab_rtsp(url: str) -> bytes:
     raise SourceError("No video frame received")
 
 
+def focus_sharpness(grey: np.ndarray, focus: Sequence[Sequence[float]]) -> float:
+    """How sharp a frame (grey, 2-D) is where faces are looked for: the mean variance of the
+    Laplacian in the normalised boxes ``focus``. A person walking is blurred in some frames and
+    sharp in others; the background, the same in each, adds the same to every frame."""
+    h, w = grey.shape
+    values = []
+    for x1, y1, x2, y2 in focus:
+        crop = grey[max(0, int(y1 * h)) : min(h, int(y2 * h) + 1), max(0, int(x1 * w)) : min(w, int(x2 * w) + 1)]
+        if crop.shape[0] < 3 or crop.shape[1] < 3:
+            continue
+        g = crop.astype(np.float32)
+        lap = 4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
+        values.append(float(lap.var()))
+    return sum(values) / len(values) if values else 0.0
+
+
+def _grey(frame) -> np.ndarray:  # noqa: ANN001 - an av.VideoFrame
+    """A decoded frame's brightness: the Y plane as it is (no conversion) when it is YUV."""
+    if frame.format.name.startswith(("yuv", "nv12", "nv21")):
+        plane = frame.planes[0]
+        rows = np.frombuffer(plane, np.uint8).reshape(plane.height, plane.line_size)
+        return rows[:, : plane.width]
+    return frame.to_ndarray(format="gray")
+
+
 class RtspStream:
     """An RTSP stream kept open: a thread of its own decodes it and keeps the newest frame, until
-    no frame was asked for in ``keep_open`` seconds or the stream fails (see FrameGrabber._grab_stream)."""
+    no frame was asked for in ``keep_open`` seconds or the stream fails (see FrameGrabber._grab_stream).
+
+    While a grab gave ``focus`` (where faces are looked for), every frame decoded is also scored by
+    how sharp it is there, and the next grab takes the sharpest of the frames since the last one
+    (within RUNTIME["rtsp_pick_window_s"]): of a person walking up, the frames between two checks
+    are blurred by their steps in turn."""
 
     def __init__(self, url: str, keep_open: float):
         self.url, self.keep_open = url, keep_open
         self._changed = threading.Condition()
         self._frame = None
         self._frame_at = 0.0
+        self._focus: list[list[float]] | None = None
+        self._best = None  # the sharpest frame in focus since the last grab, its score and time
+        self._best_score = -1.0
+        self._best_at = 0.0
+        self._newest_score = 0.0
+        self._scored = 0  # frames scored since the last grab
+        self.picked: dict | None = None  # how the last grab chose its frame (frames, age, scores)
         self._error: SourceError | None = None
         self._asked_at = time.monotonic()
         self._closed = False
@@ -534,8 +583,10 @@ class RtspStream:
             self._closed = True
             self._changed.notify_all()
 
-    def grab(self) -> bytes:
-        """A frame decoded after this call (never an old one), or the stream's error."""
+    def grab(self, focus: Sequence[Sequence[float]] | None = None) -> bytes:
+        """A frame decoded after this call (never an old one), or the stream's error. With ``focus``
+        given at the last grab too: the sharpest frame there since that grab, which may be up to
+        RUNTIME["rtsp_pick_window_s"] older than this call."""
         asked = time.monotonic()
         with self._changed:
             self._asked_at = asked
@@ -545,11 +596,39 @@ class RtspStream:
             )
             if self._frame_at > asked:
                 frame = self._frame
+                if self._focus and focus and self._best is not None:
+                    self.picked = {
+                        "frames": self._scored,
+                        "age_s": round(self._frame_at - self._best_at, 3),
+                        "score": round(self._best_score, 1),
+                        "newest_score": round(self._newest_score, 1),
+                    }
+                    frame = self._best
+                else:
+                    self.picked = None
+                self._focus = [list(b) for b in focus] if focus else None
+                self._best, self._best_score, self._best_at, self._scored = None, -1.0, 0.0, 0
             elif self._error is not None:
                 raise self._error
             else:
                 raise SourceError("No video frame received" if ready else "The stream stopped sending frames")
         return _jpeg(frame)
+
+    def _add(self, frame, grey) -> bool:  # noqa: ANN001 - an av.VideoFrame and _grey
+        """A frame decoded: the newest now, and scored while a grab gave a focus. False: stop."""
+        focus = self._focus
+        score = focus_sharpness(grey(frame), focus) if focus else 0.0
+        with self._changed:
+            now = time.monotonic()
+            self._frame, self._frame_at = frame, now
+            if focus and self._focus is focus:  # not scored for a focus given meanwhile
+                self._newest_score = score
+                self._scored += 1
+                stale = now - self._best_at > RUNTIME["rtsp_pick_window_s"]
+                if self._best is None or score > self._best_score or stale:
+                    self._best, self._best_score, self._best_at = frame, score, now
+            self._changed.notify_all()
+            return not (self._closed or time.monotonic() - self._asked_at > self.keep_open)
 
     def _run(self) -> None:
         import av
@@ -558,11 +637,8 @@ class RtspStream:
         try:
             with av.open(self.url, options=STREAM_OPTIONS, timeout=10) as container:
                 for frame in container.decode(video=0):
-                    with self._changed:
-                        self._frame, self._frame_at = frame, time.monotonic()
-                        self._changed.notify_all()
-                        if self._closed or time.monotonic() - self._asked_at > self.keep_open:
-                            return
+                    if not self._add(frame, _grey):
+                        return
         except FFmpegError as err:
             with self._changed:
                 self._error = SourceError(redact(str(err)))

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from .. import backbones, esphome, imaging, timing
+from .. import backbones, esphome, faces, imaging, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
@@ -299,9 +299,27 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         timing.captured()
+        focus = self.face_focus(cfg)
         with timing.step("grab"):
-            data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
+            if focus:
+                data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg), focus=focus)
+            else:
+                data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
         return self.live_state(cfg.id).remember(data), data
+
+    def face_focus(self, cfg: SensorConfig) -> list[list[float]] | None:
+        """While looking for a face (FACES["burst_*"]) on a stream: where the faces were looked for
+        in the last check (normalised), so the stream gives the frame sharpest there (RtspStream)."""
+        live = self.live_state(cfg.id)
+        if cfg.source_type != "rtsp" or not cfg.faces_on or live.face_burst.until <= time.time():
+            return None
+        n = 10000  # faces.head_region works in pixels
+        boxes = [
+            [v / n for v in faces.head_region(d["box"], n, n)]
+            for d in live.detections
+            if d["key"] == "person" and not d.get("filtered")
+        ]
+        return boxes or None
 
     async def _grab_for_check(self, cfg: SensorConfig) -> tuple[str, bytes, SharedFrame | None]:
         """A frame for a check without a light: together with the other sensors on the camera asking now."""

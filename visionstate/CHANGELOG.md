@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.16.0b9
+
+**Named when walking out and back in.**
+
+### Changed
+
+- **Looking for a face goes on while someone walks away**, as they may turn and come back, and
+  starts again when they come clearly closer. Before, someone who walked out with their back to
+  the camera used up the visit's search, and their face on the way back to the door was missed.
+- **On a camera's stream (`rtsp://`) the sharpest frame is taken** while a face is looked for: of
+  the frames since the last check, the one sharpest where the face is, not just the newest. A
+  stream also comes without the few seconds' delay a camera's snapshot in Home Assistant can have,
+  so for faces at a door it is the better source.
+- **A name not sure enough on its own is confirmed by a face a few checks before it**, not only by
+  the check just before: the steps in between often give faces too blurred or dark to use.
+- **A visit that ends with a name it never confirmed asks about it** in the review queue (*Is this
+  Kari?*), unless someone was named on that visit. The answer teaches the face that came closest,
+  which is what makes the camera name that person next time.
+- **A visit without a usable face keeps its best look at one** in the history, with why it could
+  not be used (too dark, turned away…), so you can see what the camera saw.
+
 ## 0.16.0b8
 
 **Faces named on a small camera too.**

@@ -194,6 +194,36 @@ def test_only_a_clearly_seen_face_that_matches_nobody_is_a_stranger():
     assert check(False, [det])["label"] == FACE_UNKNOWN_KEY
 
 
+def test_a_name_not_sure_alone_is_taken_when_an_earlier_face_agreed():
+    """A match below sure_similarity needs the face before it to look like the same person. A
+    walker's usable faces come with blurred or dipped ones between: the last usable face's
+    candidate counts for FACES["candidate_keep_checks"] checks without one."""
+    from visionstate.engine.faces import FacesMixin
+
+    idx = index([("kari", unit(1, 0, 0)), ("eva", unit(0, 1, 0))])
+    box = [0.1, 0.1, 0.5, 0.9]
+    between = (LIMITS["match_similarity"] + LIMITS["sure_similarity"]) / 2
+    kari = unit(between, (1 - between**2) ** 0.5 * 0.2, (1 - between**2) ** 0.5)  # match, not sure
+
+    def usable(before: list[dict]) -> dict:
+        det = {"key": "person", "box": box, "face": {"problem": None}}
+        FacesMixin._name_face(None, det, before, idx, kari, LIMITS, {"ask_unknown": False})  # type: ignore[arg-type]
+        return det
+
+    def poor(before: list[dict]) -> dict:
+        det = {"key": "person", "box": box, "face": {"problem": "poor"}}
+        FacesMixin._keep_name(det, before)
+        return det
+
+    first = usable([])
+    assert first["face"]["state"] == "pending" and "label" not in first
+    det = first
+    for _ in range(FACES["candidate_keep_checks"]):
+        det = poor([det])
+    assert usable([det])["label"] == "kari"  # agreed with the face a few checks before
+    assert "label" not in usable([poor([det])])  # too long ago: pending again
+
+
 def test_every_face_model_is_pinned_and_described():
     for spec in (faces.DETECTOR, *faces.RECOGNISERS.values()):
         assert "/resolve/" in spec.url and len(spec.sha256) == 64 and spec.size > 0

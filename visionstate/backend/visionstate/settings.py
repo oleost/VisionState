@@ -700,6 +700,9 @@ FACES = {
     "unknown_min_sharpness": 25.0,
     "top_k": 3,  # a person's score: the mean similarity to their this many closest taught faces
     "margin": 0.05,  # a match must beat the next person by this much
+    # A match not sure enough on its own is taken when the face before it looked most like the same
+    # person: the last usable face counts for this many checks without one in between.
+    "candidate_keep_checks": 3,
     # Unknown person: a person box whose usable face matched nobody in this many checks in a row
     # (the same box: it overlaps the last check's by keep_iou in TEACH) and that never had a name.
     "unknown_after": 2,
@@ -723,13 +726,17 @@ FACES = {
     # nobody is named for checks again every burst_interval_s (or the sensor's burst pace if
     # faster), until everyone in view is named, nobody was seen in burst_absent_checks checks in a
     # row, burst_idle_checks checks in a row brought neither a usable face nor a person coming
-    # closer (a box or face burst_progress times larger than before), or after burst_max_s. Then not
-    # again until the person has gone: someone sitting on the steps gets one burst, not one an hour.
+    # closer (a box or face burst_progress times larger than before) or walking away (a box that
+    # shrank as much since the last check: they may turn and come back), or after burst_max_s. Then not
+    # again until the person has gone, or their box grew burst_again_closer times the smallest it
+    # was since: someone sitting on the steps gets one burst, not one an hour, but someone who
+    # walked out with their back to the camera gets another as they turn and come back.
     "burst_interval_s": 1.0,
     "burst_max_s": 30.0,
     "burst_idle_checks": 6,
     "burst_absent_checks": 2,
     "burst_progress": 1.1,
+    "burst_again_closer": 1.3,
     # Photos and short videos from a phone (People page; the same upload as a state sensor's, so
     # images, ZIP archives and videos): at most this many faces are added from one upload, and a
     # video gives a frame every this many seconds (turning the head gives several angles).
@@ -1127,6 +1134,9 @@ RUNTIME = {
     "rtsp_workers": 4,  # RTSP grabs at once (on threads of their own, see sources.FrameGrabber)
     # An RTSP stream grabbed again within this many seconds is kept open (sources.FrameGrabber); 0: never.
     "rtsp_keep_open_s": 5.0,
+    # Looking for a face (a person there): of the frames a stream kept open decoded since the last
+    # check, the one sharpest where the face is looked for, at most this many seconds old.
+    "rtsp_pick_window_s": 1.5,
     "max_image_megapixels": 60,
     "loop_retry_s": 30.0,  # a sensor's loop failed unexpectedly (database busy): try again after this
     "night_colorfulness": 4.0,  # mean channel difference below this = greyscale/IR image

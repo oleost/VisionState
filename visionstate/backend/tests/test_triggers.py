@@ -583,6 +583,80 @@ def test_a_face_burst_follows_a_person_walking_up_to_the_door():
     assert steer_face_burst(fb, [person(0.2)], t + 50) == "start"
 
 
+def test_a_face_burst_starts_again_when_someone_turns_back_to_the_door():
+    """Someone walks out with their back to the camera (the burst runs out without a face), turns
+    and comes back: coming FACES["burst_again_closer"] times closer than they were starts another."""
+    fb, t = LiveState().face_burst, 0.0
+    back = {"problem": "none"}
+    assert steer_face_burst(fb, [person(0.6, back)], t) == "start"  # at the door, walking away
+    for n in range(1, 10):  # walking away keeps it going: they may turn
+        assert steer_face_burst(fb, [person(0.6 * 0.8**n, back)], t + n) is None
+    low = 0.6 * 0.8**9
+    stops = [steer_face_burst(fb, [person(low, back)], t + 10 + n) for n in range(FACES["burst_idle_checks"])]
+    assert stops[-1] == "stop"  # standing there with their back to the camera: over
+    assert steer_face_burst(fb, [person(low, back)], t + 20) is None  # still there: no new one
+    assert steer_face_burst(fb, [person(low * 1.2, back)], t + 21) is None  # a step: not enough
+    assert steer_face_burst(fb, [person(low * FACES["burst_again_closer"] * 1.01, back)], t + 22) == "start"
+    # Named meanwhile: coming closer again starts nothing.
+    named = {"problem": None, "box": [0.45, 0.2, 0.5, 0.25], "face_px": 60, "state": "match", "label": "kari"}
+    assert steer_face_burst(fb, [person(0.5, named)], t + 23) == "stop"
+    assert steer_face_burst(fb, [person(0.3, named)], t + 24) is None
+    assert steer_face_burst(fb, [person(0.6, named)], t + 25) is None
+
+
+def test_a_face_burst_keeps_its_best_look_and_its_closest_unconfirmed_name():
+    """What a burst that named nobody leaves behind (engine.objects.note_look): the best look at a
+    face for the history (a whole face before a turned one, then the widest), and the closest name
+    not yet confirmed (a "pending" match), which is asked about when the burst ends."""
+    from visionstate.engine.objects import note_look
+
+    fb = LiveState().face_burst
+    turned = person(0.5, {"problem": "turned", "box": [0.4, 0.1, 0.5, 0.2], "face_px": 300})
+    poor = person(0.4, {"problem": "poor", "box": [0.4, 0.1, 0.5, 0.2], "face_px": 120})
+    note_look(fb, "a", [turned])  # type: ignore[arg-type]
+    note_look(fb, "b", [poor])  # type: ignore[arg-type]
+    assert fb.best_look is not None and fb.best_look[1] == "b" and fb.pending is None and not fb.named
+    maybe = {"id": 1, "label": "kari", "similarity": 0.45, "face": True}
+    pending = {**person(0.6, {"problem": None, "box": [0.4, 0.1, 0.5, 0.2], "face_px": 200, "state": "pending"})}
+    note_look(fb, "c", [{**pending, "maybe": maybe}])  # type: ignore[arg-type]
+    note_look(fb, "d", [{**pending, "maybe": {**maybe, "similarity": 0.4}}])  # type: ignore[arg-type]
+    assert fb.best_look[1] == "c" and fb.pending is not None and fb.pending[:2] == (0.45, "c")
+    named = person(0.7, {"problem": None, "box": [0.4, 0.1, 0.5, 0.2], "face_px": 220, "state": "match"})
+    note_look(fb, "e", [named])  # type: ignore[arg-type]
+    assert fb.named
+
+
+def test_a_visit_asks_about_a_name_it_never_confirmed_unless_someone_was_named():
+    """A burst that ends with a "pending" name nobody confirmed asks about it (the person went in
+    before a second look agreed); not when someone was named on this visit, also in an earlier
+    burst of it (named, then a burst started again as they came closer)."""
+    from visionstate.engine.objects import follow_face_burst
+
+    maybe = {"id": 1, "label": "kari", "similarity": 0.45, "face": True}
+    face = {"problem": None, "box": [0.4, 0.1, 0.5, 0.2], "face_px": 200}
+    pending = {**person(0.4, {**face, "state": "pending"}), "maybe": maybe}
+
+    def visit(fb, checks: list[list[dict]], t0: float) -> list:
+        return [follow_face_burst(fb, "frame", found, t0 + n, 0.0) for n, found in enumerate(checks)]  # type: ignore[arg-type]
+
+    gone = [[], []]  # FACES["burst_absent_checks"]
+    fb = LiveState().face_burst
+    steps = visit(fb, [[person(0.2, {"problem": "none"})], [pending], *gone], 0)
+    assert steps[0][0] == "start" and steps[-1][1] is not None and steps[-1][1][0] == "ask"
+    assert steps[-1][1][2][0]["maybe"] == maybe  # the check with the pending face is asked about
+    # Named, the burst over; coming closer starts one again, which ends with a pending face.
+    fb = LiveState().face_burst
+    named = person(0.3, {**face, "state": "match", "label": "kari"})
+    steps = visit(fb, [[person(0.2, {"problem": "none"})], [named], [person(0.25, {"problem": "none"})]], 100)
+    assert steps[1][0] == "stop" and fb.named
+    steps = visit(fb, [[{**pending, "box": [0.4, 0.3, 0.5, 0.9]}], *gone], 110)
+    assert steps[0][0] == "start" and fb.named
+    assert all(left is None for _, left in steps)  # named on this visit: nothing to ask
+    # The next visit starts afresh: a pending face is asked about again.
+    steps = visit(fb, [[person(0.2, {"problem": "none"})], [pending], *gone], 200)
+    assert steps[-1][1] is not None and steps[-1][1][0] == "ask"
+
+
 def test_a_face_burst_ends_without_progress_and_after_its_time():
     # Standing still with their back to the camera: over after burst_idle_checks checks.
     fb = LiveState().face_burst

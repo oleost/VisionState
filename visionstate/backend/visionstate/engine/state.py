@@ -284,7 +284,17 @@ class FaceBurst:
     absent: int = 0  # checks in a row without a person
     best_height: float = 0.0  # the tallest person box (share of the frame) of this burst
     best_face: float = 0.0  # the widest face (pixels) of this burst
-    spent: bool = False  # this visit had its burst: none again until the person has gone
+    last_height: float = 0.0  # the tallest person box of the last check
+    spent: bool = False  # this visit had its burst: none again until the person has gone or comes closer
+    low_height: float = 0.0  # spent: the smallest person box since (coming closer than that starts one again)
+    started: float = 0.0  # when the burst (the last one) started
+    named: bool = False  # someone was named on this visit (nothing asked about then)
+    # The best look at a face during it: (rank, frame, what the check found); kept in the history
+    # when the burst ends without anyone named or a usable face kept (engine.objects.note_look).
+    best_look: tuple | None = None
+    # The closest name it never confirmed: (similarity, frame, what the check found); asked about
+    # when the burst ends without anyone named.
+    pending: tuple | None = None
 
 
 @dataclass

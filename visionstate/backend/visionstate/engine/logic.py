@@ -199,7 +199,7 @@ def steer_face_burst(burst: FaceBurst, found: list[dict], now: float) -> str | N
     if not people:
         burst.absent += 1
         if burst.absent >= FACES["burst_absent_checks"]:
-            burst.spent = False  # gone: the next visit gets a burst of its own
+            burst.spent, burst.low_height = False, 0.0  # gone: the next visit gets a burst of its own
             return _end_face_burst(burst, spent=False)
         return None
     burst.absent = 0
@@ -207,17 +207,30 @@ def steer_face_burst(burst: FaceBurst, found: list[dict], now: float) -> str | N
     height = max(d["box"][3] - d["box"][1] for d in people)
     width = max(float((d.get("face") or {}).get("face_px") or 0) for d in people)
     if burst.until == 0.0:
-        if burst.spent or not unnamed:
+        if burst.spent:
+            # Spent on this visit, unless they come clearly closer than they have been since:
+            # someone who walked out with their back to the camera and turns to come back.
+            again = burst.low_height > 0 and height >= burst.low_height * FACES["burst_again_closer"]
+            burst.low_height = min(burst.low_height, height) if burst.low_height else height
+            if not (again and unnamed):
+                return None
+        if not unnamed:
             return None
         burst.until, burst.idle, burst.best_height, burst.best_face = now + FACES["burst_max_s"], 0, height, width
+        burst.started, burst.low_height, burst.last_height = now, 0.0, height
         return "start"
     if not unnamed or now >= burst.until:
+        burst.low_height = height
         return _end_face_burst(burst, spent=True)  # everyone named, or the time is up
     usable = any((d.get("face") or {}).get("box") and not (d.get("face") or {}).get("problem") for d in unnamed)
     closer = height > burst.best_height * FACES["burst_progress"] or width > burst.best_face * FACES["burst_progress"]
-    burst.idle = 0 if usable or closer else burst.idle + 1
+    # Walking away (the box shrinking) is no reason to stop: they may turn and come back.
+    away = height * FACES["burst_progress"] < burst.last_height
+    burst.idle = 0 if usable or closer or away else burst.idle + 1
+    burst.last_height = height
     burst.best_height, burst.best_face = max(burst.best_height, height), max(burst.best_face, width)
     if burst.idle >= FACES["burst_idle_checks"]:
+        burst.low_height = height
         return _end_face_burst(burst, spent=True)  # standing turned away, or no face to be had
     return None
 

@@ -20,7 +20,7 @@ from .faces import FacesMixin
 from .logic import steer_face_burst, update_tracks
 from .plates import PlatesMixin, identified_by
 from .publishing import PublishingMixin
-from .state import ObjectTrack, SensorConfig
+from .state import FaceBurst, ObjectTrack, SensorConfig
 from .teaching import TeachingMixin
 
 log = logging.getLogger(__name__)
@@ -70,9 +70,11 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
         # Something that was there is missing: look again soon instead of at the next interval.
         missing = any(t.on and 0 < t.misses < DETECTION["clear_misses"] for t in live.tracks.values())
         live.recheck_at = now + DETECTION["recheck_s"] if missing else 0.0
+        left: tuple[str, Image.Image, list[dict]] | None = None  # what a burst that ended left behind
         if cfg.faces_on:
             await self.update_people(cfg)  # each person's own entity: where they are seen
-            if steer_face_burst(live.face_burst, found, now) == "start":
+            steered, left = follow_face_burst(live.face_burst, image, found, now, live.face_logged[0])
+            if steered == "start":
                 live.last_trigger = {"source": "person", "detail": "looking for a face", "at": now}
         plate_events = await self.announce_plates(cfg, found) if cfg.plates_on else []
         if cfg.plates_on:
@@ -136,9 +138,19 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
         await self._record_filtered(cfg, image, found, now)
         if cfg.faces_on:
             await self._record_face(cfg, image, found, now)
+            if left is not None and left[0] == "look":
+                _, seen_in, seen = left
+                best = max((d for d in seen if (d.get("face") or {}).get("box")), key=lambda d: d["score"])
+                await asyncio.to_thread(self._record_detection, cfg.id, seen_in, "person", "face", best["score"], seen)
         for key, score in plate_events:
             await asyncio.to_thread(self._record_detection, cfg.id, image, key, "plate", score, found)
         await self._ask_unsure(cfg, image, found, now)
+        if left is not None and left[0] == "ask":
+            # A name a burst never confirmed (the person went in before a second look agreed):
+            # asked like an unsure face, so the answer teaches the face that came closest.
+            _, seen_in, seen = left
+            asked = [{**d, "ask": d["maybe"]} if d.get("maybe") else d for d in seen]
+            await self._ask_unsure(cfg, seen_in, asked, now)
         timing.lap("history")
 
     async def _record_face(self, cfg: SensorConfig, image: Image.Image, found: list[dict], now: float) -> None:
@@ -301,6 +313,51 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
                     detections=found,
                 )
             )
+
+
+def follow_face_burst(
+    burst: FaceBurst, image: Image.Image, found: list[dict], now: float, face_logged: float
+) -> tuple[str | None, tuple[str, Image.Image, list[dict]] | None]:
+    """After a check of a sensor that recognises faces: start or end its burst (logic.steer_face_burst,
+    returned) and keep what it saw (note_look). A burst that ends without anyone named on this visit
+    leaves ("ask", frame, found) with the closest name it never confirmed, to ask about; else
+    ("look", frame, found) with its best look at a face, unless a usable face was kept in the
+    history since it started (``face_logged``: when the last one was)."""
+    running = burst.until > 0.0
+    steered = steer_face_burst(burst, found, now)
+    if steered == "start":
+        burst.best_look, burst.pending = None, None
+        if not burst.spent:  # a new visit; one started again keeps who was named on this visit
+            burst.named = False
+    if running or steered == "start":
+        note_look(burst, image, found)
+    left = None
+    if steered == "stop" and running:
+        if not burst.named and burst.pending:
+            left = ("ask", *burst.pending[1:])
+        elif not burst.named and face_logged < burst.started and burst.best_look:
+            left = ("look", *burst.best_look[1:])
+        burst.best_look, burst.pending = None, None
+    return steered, left
+
+
+def note_look(burst: FaceBurst, image: Image.Image, found: list[dict]) -> None:
+    """Keep the best look at a face of a burst (FaceBurst.best_look): a usable face before one that
+    was not (too small, turned, poor), then the widest; and the closest name not yet confirmed
+    (FaceBurst.pending). Whether anyone was named is noted too."""
+    looks = [d["face"] for d in found if d["key"] == "person" and (d.get("face") or {}).get("box")]
+    if any(f.get("state") == "match" for f in looks):
+        burst.named = True
+    maybe = [d["maybe"]["similarity"] for d in found if d.get("maybe")]
+    if maybe and (burst.pending is None or max(maybe) > burst.pending[0]):
+        burst.pending = (max(maybe), image, found)
+    if not looks:
+        return
+    # A poor face is a whole face, seen straight on: a better look than one cut off, turned or unsure.
+    order = {None: 2, "poor": 1}
+    rank = max((order.get(f.get("problem"), 0), float(f.get("face_px") or 0)) for f in looks)
+    if burst.best_look is None or rank > burst.best_look[0]:
+        burst.best_look = (rank, image, found)
 
 
 def _timestamp(value: datetime) -> float:

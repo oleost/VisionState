@@ -595,3 +595,30 @@ Where the build differs from §3–§9:
   refused, as it is never named. A larger picture still helps a small camera: on the ESP32,
   faces went from about 90 px to 150–185 px at 1280 × 1024 and 1600 × 1200 (its 20 MHz clock; at
   10 MHz the longer exposure blurred them), and the share of usable faces from 2 in 13 to 35 in 40.
+- **Walking out and back** (the maintainer's doorbell, 2026-11-24): walking out of the door and
+  back gave no usable face on the main instance, which took the camera's snapshot through Home
+  Assistant; a dev instance on the same camera's stream got one in the same moment. Every check of
+  six more walks was traced (frame, timings, faces):
+  - the snapshot through Home Assistant came 2–8 s after the moment it showed; on the stream a
+    check took about 1 s and its frame was about 1 s old;
+  - the burst for a face ended while the maintainer walked away with their back to the camera
+    (no face, not coming closer) and was spent for the visit, so turning back to the door got
+    none. A burst now goes on while the person walks away (their box shrinking), and starts
+    again when they come `FACES["burst_again_closer"]` times closer than they have been since;
+  - on a stream, the frames between two checks are blurred by the steps in turn: the sharpest of
+    them where the face is looked for (`sources.focus_sharpness`, the variance of the Laplacian)
+    is taken, out of 20–40 frames (`RUNTIME["rtsp_pick_window_s"]`); one check's newest frame
+    scored 164 against 3307 for the one picked;
+  - backlit faces of 60–280 px, straight at the camera, were *poor* (AuraFace quality 11–13).
+    Five ways of brightening them before the recogniser (gamma, equalising only the face's middle,
+    both, before the face detector) changed neither quality nor similarity (0.30–0.44 to the
+    maintainer, the next person 0.31–0.39): the light has to come from the camera. Its HDR on
+    gave 2 of 4 large faces over the line;
+  - a match below `sure_similarity` waited for the next check to agree, but the checks between
+    were *poor* and the person went in: now the last usable face's candidate counts for
+    `FACES["candidate_keep_checks"]` checks, and a visit that ends with a match nobody confirmed
+    asks about it (*Is this Kari?*) instead of dropping it, unless someone was named on the visit;
+  - a visit that showed no usable face keeps its best look at one in the history (a whole face
+    before one cut off or turned, then the widest);
+  - with one answer from the review taught, the maintainer was named on both of the last two
+    walks (0.55 and 0.51, at 76 and 227 px).

@@ -496,6 +496,13 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
                 det["match"] = {"id": identity.example_id, "label": identity.label, "similarity": identity.similarity}
             else:
                 face["state"] = "pending"  # a second check must agree first
+                # What to ask if none does before the person has gone (engine.objects.note_look).
+                det["maybe"] = {
+                    "id": identity.example_id,
+                    "label": identity.label,
+                    "similarity": identity.similarity,
+                    "face": True,
+                }
             return
         if decision == "ask" and identity.label is not None:
             face["state"] = "ask"
@@ -522,7 +529,8 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
 
     @staticmethod
     def _keep_name(det: dict, previous: list[dict]) -> None:
-        """A person box without a usable face this check keeps the name it had in the last one."""
+        """A person box without a usable face this check keeps the name it had in the last one, and
+        for a few checks who its last usable face looked most like."""
         face_before = (same_box(previous, det["box"]) or {}).get("face") or {}
         if face_before.get("state") == "match" and face_before.get("label"):
             det["face"].update(
@@ -539,3 +547,9 @@ class FacesMixin(ModelsMixin, PublishingMixin, RuntimeBase):
             det["face"].update({"unknown": face_before["unknown"], "named": bool(face_before.get("named"))})
             if face_before["unknown"] >= FACES["unknown_after"] and not face_before.get("named"):
                 det["label"] = det.get("label") or FACE_UNKNOWN_KEY
+        if face_before.get("candidate") and det["face"].get("state") != "match":
+            # Who the last usable face looked most like, kept over a few checks without one (a
+            # step blurs, the head dips): the next usable face that agrees names them (_name_face).
+            carried = face_before.get("carried", 0) + 1
+            if carried <= FACES["candidate_keep_checks"]:
+                det["face"].update({"candidate": face_before["candidate"], "carried": carried})

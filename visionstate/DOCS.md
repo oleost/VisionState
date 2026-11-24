@@ -18,7 +18,8 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
   generic camera…), or a direct HTTP snapshot URL (`http://` or `https://`) or stream URL
   (`rtsp://`, `rtsps://`, also an `http://` video stream). A stream is kept open while frames
   are asked for often (a burst of checks, the live view), so those come at once instead of after
-  a new connection each time.
+  a new connection each time. While a sensor looks for a face, it takes the sharpest of the
+  stream's frames since its last check, where the face is looked for.
   A sound sensor needs a stream with sound: a camera's stream with its microphone on, or an HTTP
   audio stream (an ESP32 microphone).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
@@ -327,7 +328,8 @@ everyone.
   replaces one of two that are nearly the same, or teaches nothing when it adds nothing new).
   Someone who was only there for a moment (at a doorbell) can be named afterwards: a
   face nobody is named for keeps a frame in the history (*Face seen, not named*; at most one a
-  minute, or a closer one).
+  minute, or a closer one). A visit that showed no usable face still keeps its best look at one
+  there, with why it could not be used (too dark, turned away…): what the camera saw.
 - **From photos**: on the **People** page, **Add a person** (a name, then **Add photos**) or
   **Add photos** on a person takes photos from the phone — its camera or gallery — or a short video
   turning the head a little (a frame every half second), or a ZIP of photos. The best face of each
@@ -336,11 +338,17 @@ everyone.
   from another angle and in other light. Photos can be added once a sensor recognises faces.
 - **When someone comes**: a person walking up to the camera shows a usable face for only a few
   seconds. When a check finds a person nobody is named for, the sensor checks about every second
-  for a while (*Person seen* on the **Live** tab): while they come closer or show their face,
-  until they are named or gone, and for half a minute at most. Someone who stays (on the steps,
-  in the garden) gets one such burst, not one every few minutes.
+  for a while (*Person seen* on the **Live** tab): while they come closer, walk away (they may
+  turn) or show their face, until they are named or gone, and for half a minute at most. Someone
+  who stays (on the steps, in the garden) gets one such burst, not one every few minutes; someone
+  who comes clearly closer again (out with their back to the camera, then back to the door) gets
+  another. On a camera's stream (`rtsp://`) these checks take the sharpest frame between them,
+  so a stream sees more faces than a camera's snapshot in Home Assistant, which can also be a
+  few seconds old.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
-  match names the person; a less certain one needs a second check that agrees. A person who stays
+  match names the person; a less certain one needs a second check that agrees (one of the last
+  few with a usable face). When the person goes before one does, it asks in the review queue
+  instead (*Is this Kari?*): an answer teaches the face that came closest. A person who stays
   where they were keeps the name while their face is turned away. Close to someone, but not
   clearly, it asks in the review queue: *Is this Kari?* — **Yes**, another person, a new person or
   *No, someone I do not know*. A face seen clearly (close enough, and nearly straight at the
