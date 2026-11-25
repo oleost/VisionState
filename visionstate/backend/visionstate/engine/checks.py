@@ -11,15 +11,15 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from .. import backbones, esphome, faces, imaging, timing
+from .. import backbones, esphome, faces, imaging, plates, timing
 from ..db import Prediction
 from ..mqtt import topics
 from ..redact import redact
-from ..settings import ESPHOME, RUNTIME, UNKNOWN_STATE, camera_settings
+from ..settings import ESPHOME, PLATES, RUNTIME, UNKNOWN_STATE, VEHICLE_CLASSES, camera_settings
 from ..shared_frames import SharedFrame
 from ..sources import Scan, SourceError
 from .base import RuntimeBase
-from .logic import next_check_at, percent, review_reason
+from .logic import in_burst, next_check_at, percent, review_reason
 from .objects import ObjectChecksMixin
 from .reading import ReadingChecksMixin
 from .sound import SoundMixin
@@ -216,7 +216,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         live = self.live_state(cfg.id)
         if not entity or live.light_off_task or not self.lights.held(entity, f"check:{cfg.id}"):
             return
-        wait = max(0.0, max(live.burst_until, live.face_burst.until) - time.time())
+        wait = max(0.0, max(live.burst_until, live.face_burst.until, live.plate_burst_until) - time.time())
 
         async def off() -> None:
             await asyncio.sleep(wait)
@@ -299,52 +299,93 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
 
     async def grab(self, cfg: SensorConfig) -> tuple[str, bytes]:
         timing.captured()
-        focus = self.face_focus(cfg)
         live = self.live_state(cfg.id)
+        now = time.time()
+        standby = self.keeps_stream(cfg)
+        burst = standby and in_burst(live, now)
+        focus, kinds = self.stream_focus(cfg)
         with timing.step("grab"):
+            scan = self.stream_scan(cfg, kinds) if focus else None
+            stream: dict = {"standby": True, "burst": burst} if standby else {}
             if focus:
-                scan = self.face_scan(cfg)
-                data = await self.grabber.grab(
-                    cfg.source_type, cfg.source, camera=self.camera_for(cfg), focus=focus, scan=scan
-                )
-                live.face_looks = self.grabber.looks(cfg.source) if scan is not None else []
-            else:
-                data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg))
-                live.face_looks = []
+                stream.update(focus=focus, scan=scan)
+            data = await self.grabber.grab(cfg.source_type, cfg.source, camera=self.camera_for(cfg), **stream)
+            looks = self.grabber.looks(cfg.source) if scan is not None else []
+        live.face_looks = [look for look in looks if isinstance(look.found, faces.Face)]
+        live.plate_looks = [look for look in looks if isinstance(look.found, plates.Found)]
         return live.remember(data), data
 
-    def face_focus(self, cfg: SensorConfig) -> list[list[float]] | None:
-        """While looking for a face (FACES["burst_*"]) on a stream (an RTSP address, or a Home
-        Assistant camera's own stream: FrameGrabber._grab_ha_stream): where the faces were looked for
-        in the last check (normalised), so the stream gives the best look at a face there (RtspStream)."""
+    @staticmethod
+    def keeps_stream(cfg: SensorConfig) -> bool:
+        """An object sensor with faces or plates on a stream keeps it open between its checks
+        (RUNTIME["stream_standby_s"]): a burst of checks then has every frame at once."""
+        return cfg.source_type in ("rtsp", "ha_camera") and (cfg.faces_on or cfg.plates_on)
+
+    def stream_focus(self, cfg: SensorConfig) -> tuple[list[list[float]], list[str]]:
+        """Where a stream (an RTSP address, or a Home Assistant camera's own stream:
+        FrameGrabber._grab_ha_stream) looks closely between the checks, and for what: the head
+        regions of the last check's persons while looking for a face (FACES["burst_*"]), and its
+        vehicles without a car named surely by its plate while a burst of checks runs (a trigger's,
+        or a face's), at most PLATES["max_vehicles"], the largest first. Normalised boxes, and
+        "face" or "plate" for each; none: nothing is looked for."""
         live = self.live_state(cfg.id)
-        if cfg.source_type not in ("rtsp", "ha_camera") or not cfg.faces_on or live.face_burst.until <= time.time():
-            return None
-        n = 10000  # faces.head_region works in pixels
-        boxes = [
-            [v / n for v in faces.head_region(d["box"], n, n)]
-            for d in live.detections
-            if d["key"] == "person" and not d.get("filtered")
-        ]
-        return boxes or None
+        now = time.time()
+        if cfg.source_type not in ("rtsp", "ha_camera"):
+            return [], []
+        boxes: list[list[float]] = []
+        kinds: list[str] = []
+        if cfg.faces_on and live.face_burst.until > now:
+            n = 10000  # faces.head_region works in pixels
+            for d in live.detections:
+                if d["key"] == "person" and not d.get("filtered"):
+                    boxes.append([v / n for v in faces.head_region(d["box"], n, n)])
+                    kinds.append("face")
+        if cfg.plates_on and in_burst(live, now):
+            vehicles = [
+                d["box"]
+                for d in live.detections
+                if d["key"] in VEHICLE_CLASSES
+                and not d.get("filtered")
+                and not ((d.get("plate") or {}).get("state") == "match" and (d.get("plate") or {}).get("sure"))
+            ]
+            vehicles.sort(key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))
+            for box in vehicles[: PLATES["max_vehicles"]]:
+                boxes.append(list(box))
+                kinds.append("plate")
+        return boxes, kinds
 
-    def face_scan(self, cfg: SensorConfig) -> Scan | None:
-        """How a stream looks for faces between two checks (RtspStream): the face detector on the
-        head regions it cuts out, each face ranked by faces.look_rank. None: no face model yet."""
-        model = self.wanted_faces()
-        if model is None:
+    def stream_scan(self, cfg: SensorConfig, kinds: list[str]) -> Scan | None:
+        """How a stream looks between two checks (RtspStream) in the regions of ``kinds``
+        (stream_focus): the face detector in a head region, each face ranked by faces.look_rank;
+        the plate finder in a vehicle's, its best plate ranked by plates.look_rank. None: neither
+        model is loaded yet."""
+        face_model = self.wanted_faces() if "face" in kinds else None
+        plate_model = self.wanted_plates() if "plate" in kinds else None
+        if face_model is None and plate_model is None:
             return None
-        min_px = self.face_limits(cfg)["min_face_px"]
-        detector = model.detector
+        min_px = self.face_limits(cfg)["min_face_px"] if face_model is not None else 0.0
 
-        def scan(crops: list, offsets: list[tuple[int, int]], size: tuple[int, int]) -> list:
-            result: list[tuple[tuple, object] | None] = []
-            for face, (dx, dy) in zip(detector.detect(crops), offsets, strict=True):
-                if face is None:
-                    result.append(None)
-                    continue
-                moved = face.moved(dx, dy, 1.0)
-                result.append((faces.look_rank(moved, min_px, size), moved))
+        def scan(crops: list, offsets: list[tuple[int, int]], size: tuple[int, int], regions: list[int]) -> list:
+            result: list[tuple[tuple, object] | None] = [None] * len(crops)
+            heads = [n for n, region in enumerate(regions) if kinds[region] == "face"]
+            if face_model is not None and heads:
+                for n, face in zip(heads, face_model.detector.detect([crops[n] for n in heads]), strict=True):
+                    if face is not None:
+                        moved = face.moved(offsets[n][0], offsets[n][1], 1.0)
+                        result[n] = (faces.look_rank(moved, min_px, size), moved)
+            if plate_model is not None:
+                for n, region in enumerate(regions):
+                    if kinds[region] != "plate":
+                        continue
+                    found = plate_model.finder.find(crops[n])
+                    if found:
+                        best = max(found, key=plates.look_rank)
+                        dx, dy = offsets[n]
+                        x1, y1, x2, y2 = best.box
+                        result[n] = (
+                            plates.look_rank(best),
+                            plates.Found((x1 + dx, y1 + dy, x2 + dx, y2 + dy), best.score),
+                        )
             return result
 
         return scan

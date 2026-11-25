@@ -18,11 +18,17 @@ number** from a display, or **listen** for sounds — sirens, a smoke alarm, a d
   generic camera…), or a direct HTTP snapshot URL (`http://` or `https://`) or stream URL
   (`rtsp://`, `rtsps://`, also an `http://` video stream). A stream is kept open while frames
   are asked for often (a burst of checks, the live view), so those come at once instead of after
-  a new connection each time. While a sensor looks for a face, it looks at the stream's frames
-  between its checks too, where the face was: the check takes the frame with the best look at
-  the face, and recognises a few other good looks with it. A camera in Home Assistant that can
-  stream is read through its own stream in Home Assistant for that (snapshots while it opens,
-  and for a camera that cannot stream).
+  a new connection each time. A sensor that recognises faces or reads plates keeps its stream open
+  all the time, decoding a frame every second or two (cheap) until something comes: then every
+  frame, from the second or two before. While it looks for a face or a plate, it looks at the
+  stream's frames between its checks too, where the face or the vehicle was: the check takes the
+  frame with the best look, and recognises or reads a few other good looks with it. A camera in
+  Home Assistant that can stream is read through its own stream in Home Assistant for that
+  (snapshots while it opens, and for a camera that cannot stream); that stream comes a few seconds
+  late (as in Home Assistant's own camera view), so such a sensor turns on that much later. For
+  faces and plates pick the camera's entity that streams its main stream: a Reolink camera's
+  *Clear* entity (switched off in Home Assistant at first: turn it on there), not its *Snapshots*
+  one, which cannot stream.
   A sound sensor needs a stream with sound: a camera's stream with its microphone on, or an HTTP
   audio stream (an ESP32 microphone).
 - amd64 (Intel/AMD) or aarch64 (Raspberry Pi 4/5, 64-bit OS). Any 64-bit Intel/AMD CPU works,
@@ -351,7 +357,8 @@ everyone.
   the widest and most straight at the camera) and recognises the best looks of the moments before
   it too, and two that agree name the person in that check. A stream therefore sees many more
   faces than snapshots, which can also be a few seconds old. Each check takes a little longer for
-  it, while someone is there.
+  it, while someone is there. A car that comes is checked about every second too (see *Reading
+  licence plates*), so whoever gets out of it is seen as they walk up.
 - **How it decides**: each face is compared with the faces you taught for each person. A clear
   match names the person; a less certain one needs a second check that agrees (one of the last
   few with a usable face). When the person goes before one does, it asks in the review queue
@@ -438,8 +445,15 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
 - **The Live tab** says what was read on each vehicle: *VS12345 · Our car*, *checking whose car*,
   *not one of your cars* or *reading*. The **History** keeps a row with the frame for each plate
   event (*Licence plate read* in the filter).
+- **When a car comes**: a car turning in shows its plate for a few seconds only. When a check
+  finds a vehicle not yet named by its plate that came or moved, the sensor checks about every
+  second until it has stood still for a while (*Vehicle seen* on the **Live** tab); a parked
+  car does not. On a camera's stream (as for faces, above) the plate finder also looks at the
+  vehicles several times a second between these checks: each check takes the frame with the best
+  look at a plate (the widest and surest) and reads a few other good looks too.
 - **How it decides**: a plate read exactly as one of your cars names the car at once. A read one
-  character off (a reader takes O for 0, I for 1, B for 8) names it when the next check agrees. A
+  character off (a reader takes O for 0, I for 1, B for 8) names it when the next check agrees,
+  or a read of the moments between the checks does. A
   car that stays keeps its name while its plate is not seen (from the side, too far). A plate
   that is not yours counts as unknown after it was read the same way twice. Each car or plate
   makes one event per visit: a car parked in view makes no new one until it has been gone for five

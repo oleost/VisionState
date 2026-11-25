@@ -315,24 +315,71 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 result[i]["label"] = before["car"]
                 continue
             todo.append((i, before))
+        live = self.live_state(cfg.id)
         todo.sort(
             key=lambda t: (
                 -((result[t[0]]["box"][2] - result[t[0]]["box"][0]) * (result[t[0]]["box"][3] - result[t[0]]["box"][1]))
             )
         )
         w, h = image.width, image.height
-        for n, (i, before) in enumerate(todo):
+        looks, live.plate_looks = live.plate_looks, []
+        boxes = {}
+        for n, (i, _) in enumerate(todo):
             x1, y1, x2, y2 = result[i]["box"]
             px = (max(0, round(x1 * w)), max(0, round(y1 * h)), min(w, round(x2 * w)), min(h, round(y2 * h)))
-            if n >= PLATES["max_vehicles"] or px[2] - px[0] < PLATES["min_vehicle_px"]:
+            if n < PLATES["max_vehicles"] and px[2] - px[0] >= PLATES["min_vehicle_px"]:
+                boxes[i] = px
+        between = await self._plates_between(model, looks, boxes, (w, h)) if boxes else {}
+        for i, before in todo:
+            px = boxes.get(i)
+            if px is None:
                 self._keep_car(result[i], before)
                 continue
             crop = image.crop(px)
             async with timing.slot(self._sem):
                 reads = await asyncio.to_thread(plates.read_plates, model, crop)
-            reads = [r for r in reads if r.score >= PLATES["min_score"]]
+            reads = [r for r in [*reads, *between.get(i, [])] if r.score >= PLATES["min_score"]]
             self._name_car(result[i], reads, before, cars, px, (w, h), cfg.objects["plates"]["look_distance"])
         return grouped(result, cars)
+
+    async def _plates_between(
+        self,
+        model: plates.PlateModel,
+        looks: list,
+        boxes: dict[int, tuple[int, int, int, int]],
+        size: tuple[int, int],
+    ) -> dict[int, list[plates.PlateRead]]:
+        """The plates a stream saw between two checks (sources.Look from RtspStream with the plate
+        scan, best first): up to PLATES["scan_reads"] other than the one in the frame of this
+        check, each read. Each goes to the vehicle box of this check (``boxes``: index -> pixels) it
+        is nearest (within a box width: the car moved), its box in that box's pixels.
+        {box index: [reads]}."""
+        wanted = [look for look in looks if not look.picked and look.size == size][: PLATES["scan_reads"]]
+        if not wanted:
+            return {}
+        seen: dict[int, list[plates.PlateRead]] = {}
+        for look in wanted:
+            found: plates.Found = look.found
+            x1, y1, x2, y2 = found.box  # in the frame
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            best, best_distance = None, 1.0
+            for i, (bx1, by1, bx2, by2) in boxes.items():
+                width = max(bx2 - bx1, 1)
+                distance = (max(bx1 - cx, cx - bx2, 0.0) + max(by1 - cy, cy - by2, 0.0)) / width
+                if distance < best_distance:
+                    best, best_distance = i, distance
+            if best is None:
+                continue
+            ox, oy = look.offset
+            in_crop = plates.Found((x1 - ox, y1 - oy, x2 - ox, y2 - oy), found.score)
+            async with timing.slot(self._sem):
+                read = await asyncio.to_thread(plates.read_look, model, look.crop, in_crop)
+            if read is None:
+                continue
+            px = boxes[best]
+            moved = (x1 - px[0], y1 - px[1], x2 - px[0], y2 - px[1])
+            seen.setdefault(best, []).append(plates.PlateRead(moved, read.text, read.score, read.found, between=True))
+        return seen
 
     @staticmethod
     def _keep_car(det: dict, before: dict) -> None:
@@ -395,9 +442,21 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
             "announced": before.get("announced"),
         }
         by_look = look is not None and m.key in group and m.distance <= look_distance
+        # Reads of the stream between the checks (plates.read_look) count as checks of their own: one
+        # more that agrees confirms a close read, and the same text read again counts for unknown.
+        others = [r for r in reads if r.between and r is not read]
+        if read.between:
+            entry["between"] = True
         if m.key is not None and (m.distance <= PLATES["match_distance"] or by_look):
             sure = m.distance == 0 or by_look
-            agreed = before.get("candidate") == m.key or (before.get("state") == "match" and before.get("car") == m.key)
+            agreed = (
+                before.get("candidate") == m.key
+                or (before.get("state") == "match" and before.get("car") == m.key)
+                or any(
+                    (o := plates.match(r.text, cars)).key == m.key and o.distance <= PLATES["match_distance"]
+                    for r in others
+                )
+            )
             if sure or agreed:
                 entry.update({"state": "match", "car": m.key, "sure": sure})
                 if by_look and m.distance > 0:
@@ -409,6 +468,7 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                     det["label"] = before["car"]  # still the car it was while the new read is checked
         else:
             count = before.get("count", 0) + 1 if before.get("text") == read.text else 1
+            count += sum(1 for r in others if r.text == read.text)
             entry.update({"state": "unknown" if count >= PLATES["unknown_after"] else "reading", "count": count})
             if look is not None and det.get("label") == look["key"] and not any(_has_plate(c) for c in same_look):
                 # The look names a car with no plate given (and no car that shares its look has one):

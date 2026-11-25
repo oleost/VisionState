@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from .. import change_limit, detectors, imaging, readers, sounds, teach
 from ..db import Face, ModelInfo, Sample, SampleLabel, Sensor
 from ..engine import LiveState, ObjectTrack, Runtime, SensorConfig, car_looks, with_shared
+from ..engine.logic import burst_pace
 from ..mqtt import entity_options, main_entities
 from ..settings import (
     CAMERA_CLOCKS_MHZ,
@@ -25,7 +26,6 @@ from ..settings import (
     FACE_DEFAULTS,
     FACE_LIMITS,
     FACE_UNKNOWN_KEY,
-    FACES,
     KIND_OBJECTS,
     KIND_READING,
     KIND_SOUND,
@@ -784,10 +784,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
         status = "ok"
     ids = entity_ids(rt, sensor)
     now = time.time()
-    paces = [merge_triggers(sensor.triggers)["burst_interval_s"]] if live and live.burst_until > now else []
-    if live and live.face_burst.until > now:
-        paces.append(FACES["burst_interval_s"])
-    pace = min(paces) if paces else None
+    pace = burst_pace(merge_triggers(sensor.triggers)["burst_interval_s"], live, now) if live else None
     camera = camera_view(rt, session, sensor)
     return {
         "id": sensor.id,
@@ -825,7 +822,7 @@ def sensor_view(rt: Runtime, session: Session, sensor: Sensor) -> dict:
             "confidence": live.confidence if live else 0.0,
             "probs": live.probs if live else {},
             "last_run": live.last_run if live else None,
-            # A burst of checks (a trigger's, or looking for a face while a person is there) and its pace.
+            # A burst of checks (a trigger's, looking for a face, reading a plate) and its pace.
             "in_burst": pace is not None,
             "burst_interval_s": pace,
             "change_score": live.change_score if live else None,

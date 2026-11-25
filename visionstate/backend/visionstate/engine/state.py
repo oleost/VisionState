@@ -367,11 +367,13 @@ class LiveState:
     changes: deque = field(default_factory=lambda: deque(maxlen=50))
     force: bool = False
     force_paused: bool = False  # the forced check was asked for by the user: also when paused
+    plate_burst_until: float = 0.0  # reading a plate (logic.steer_plate_burst)
     burst_until: float = 0.0
     face_burst: FaceBurst = field(default_factory=FaceBurst)
     # The looks at faces a stream saw between the last two checks (sources.Look, best first):
     # recognised too by the check that grabbed them (FacesMixin.apply_faces), then let go.
     face_looks: list = field(default_factory=list)
+    plate_looks: list = field(default_factory=list)  # the same for plates (PlatesMixin._plates_between)
     last_probe: float = 0.0
     signature: np.ndarray | None = None  # region thumbnail of the last classified frame
     change_score: float | None = None  # last measured difference, shown in the UI for tuning

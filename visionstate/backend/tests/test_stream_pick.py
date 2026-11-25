@@ -100,7 +100,7 @@ def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
             format="yuv420p"
         )
 
-    def scan(crops, offsets, size):
+    def scan(crops, offsets, size, regions):
         assert size == (64, 64) and all(x % 2 == 0 and y % 2 == 0 for x, y in offsets)
         return [
             ((1, float(np.asarray(c).mean())), round(float(np.asarray(c).mean())))
@@ -136,7 +136,7 @@ def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
         # A scan that fails is logged and finds nothing; the stream goes on.
         grab_then([bright(10)])
 
-        def broken(crops, offsets, size):
+        def broken(crops, offsets, size, regions):
             raise RuntimeError("model gone")
 
         grab_then([bright(10)], scan=broken)
@@ -191,7 +191,7 @@ def test_a_home_assistant_camera_is_read_through_its_own_stream_while_a_face_is_
     monkeypatch.setitem(sources.FACES, "scan_interval_s", 0.0)
     ha = FakeHA()
 
-    def scan(crops, offsets, size):
+    def scan(crops, offsets, size, regions):
         return [((1, 1.0), "a face") for _ in crops]
 
     async def until_ready(entity_id: str) -> None:

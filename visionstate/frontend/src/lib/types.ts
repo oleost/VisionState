@@ -690,7 +690,7 @@ export interface Live {
   probs: Record<string, number>;
   last_run: number | null;
   in_burst: boolean;
-  /** Seconds between checks of that burst (a trigger's, or looking for a face while a person is there). */
+  /** Seconds between checks of that burst (a trigger's, looking for a face while a person is there, reading a plate). */
   burst_interval_s?: number | null;
   change_score: number | null;
   last_trigger: TriggerInfo | null;

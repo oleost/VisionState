@@ -355,7 +355,14 @@ class FrameGrabber:
             stream.close()
         self._rtsp.shutdown(wait=False, cancel_futures=True)
 
-    def _grab_stream(self, url: str, focus: Sequence[Sequence[float]] | None = None, scan: Scan | None = None) -> bytes:
+    def _grab_stream(
+        self,
+        url: str,
+        focus: Sequence[Sequence[float]] | None = None,
+        scan: Scan | None = None,
+        standby: bool = False,
+        burst: bool = False,
+    ) -> bytes:
         """A frame of an RTSP stream (on an RTSP thread).
 
         A check now and then connects for one frame (connecting and waiting for a key frame take a
@@ -363,9 +370,11 @@ class FrameGrabber:
         checks, someone watching the live view) come from the stream kept open meanwhile; it is
         closed once nobody asked for that long, as decoding it costs CPU all the while.
 
-        ``focus`` (normalised boxes: where faces are looked for while a person is there): the stream
-        is opened at once, and of the frames decoded since the last grab the one sharpest there is
-        taken, or with a ``scan`` the one with the best look at a face (RtspStream.grab).
+        ``focus`` (normalised boxes: where faces or plates are looked for): the stream is opened at
+        once, and of the frames decoded since the last grab the one sharpest there is taken, or with
+        a ``scan`` the one with the best look (RtspStream.grab). ``standby`` (a sensor with faces or
+        plates): the stream stays open between the checks, decoding only its key frames
+        (RtspStream), and every frame while ``burst`` (a burst of checks) or a focus asks for it.
         """
         keep_open = RUNTIME["rtsp_keep_open_s"]
         now = time.monotonic()
@@ -375,18 +384,45 @@ class FrameGrabber:
             stream = self._streams.pop(url)
             stream.close()
             stream = None
-        if stream is None and not focus and (keep_open <= 0 or last is None or now - last > keep_open):
+        if stream is None and not (focus or standby) and (keep_open <= 0 or last is None or now - last > keep_open):
             return grab_rtsp(url)
         if stream is None:
-            stream = self._streams[url] = RtspStream(url, max(keep_open, RUNTIME["rtsp_pick_window_s"]))
+            stream = self._streams[url] = RtspStream(url, self._keep(standby), standby=standby)
+        self._steer(stream, standby, burst or bool(focus))
         return stream.grab(focus, scan)
 
+    @staticmethod
+    def _keep(standby: bool) -> float:
+        """How long a stream not asked for stays open."""
+        if standby:
+            return RUNTIME["stream_standby_s"]
+        return max(RUNTIME["rtsp_keep_open_s"], RUNTIME["rtsp_pick_window_s"])
+
+    def _steer(self, stream: RtspStream, standby: bool, every: bool) -> None:
+        """Whether a stream is on standby (a sensor with faces or plates asked for it within
+        RUNTIME["stream_standby_s"]: a grab without, such as the live view's, does not end that),
+        and whether it decodes every frame for a while (a burst of checks, a focus)."""
+        now = time.monotonic()
+        if standby:
+            stream.standby_until = now + RUNTIME["stream_standby_s"]
+        on = now < stream.standby_until
+        stream.standby, stream.keep_open = on, self._keep(on)
+        if every:
+            stream.every_frame(RUNTIME["rtsp_keep_open_s"])
+
     async def _grab_ha_stream(
-        self, entity_id: str, focus: Sequence[Sequence[float]], scan: Scan | None
+        self,
+        entity_id: str,
+        focus: Sequence[Sequence[float]] | None,
+        scan: Scan | None,
+        standby: bool = False,
+        burst: bool = False,
     ) -> bytes | None:
-        """A frame of a Home Assistant camera's own stream while a face is looked for, picked as from an
-        RTSP stream (RtspStream.grab): the frames between two checks, not one snapshot (which can
-        also be seconds old). None: take a snapshot instead, while the stream opens (Home Assistant
+        """A frame of a Home Assistant camera's own stream, for a sensor with faces or plates
+        (``standby``: kept open between the checks, see _grab_stream) or while one is looked for
+        (``focus``), picked as from an RTSP stream (RtspStream.grab): the frames between two checks,
+        not one snapshot (which can also be seconds old). The stream comes in chunks of seconds and
+        is paced (Pacer). None: take a snapshot instead, while the stream opens (Home Assistant
         starts it and waits for its first segments: seconds) or when the camera cannot stream (asked
         again after RUNTIME["ha_stream_retry_s"])."""
         now = time.monotonic()
@@ -402,9 +438,12 @@ class FrameGrabber:
             stream = None  # it ran and stopped: opened again
         if stream is None:
             loop = asyncio.get_running_loop()
-            keep = max(RUNTIME["rtsp_keep_open_s"], RUNTIME["rtsp_pick_window_s"])
-            self._streams[entity_id] = RtspStream(entity_id, keep, opener=self._ha_opener(entity_id, loop))
+            opener = self._ha_opener(entity_id, loop)
+            stream = RtspStream(entity_id, self._keep(standby), opener=opener, standby=standby, paced=True)
+            self._streams[entity_id] = stream
+            self._steer(stream, standby, burst or bool(focus))
             return None
+        self._steer(stream, standby, burst or bool(focus))
         if not stream.ready:
             stream.touch()
             return None
@@ -446,6 +485,8 @@ class FrameGrabber:
         flash_level: int | None = None,
         focus: Sequence[Sequence[float]] | None = None,
         scan: Scan | None = None,
+        standby: bool = False,
+        burst: bool = False,
     ) -> bytes:
         """A frame; ``flash_ms``: taken by a camera of ours with its own flash, that long after it
         came on (only for one that said it can: CameraUses.flash), ``flash_level`` percent of full
@@ -453,20 +494,21 @@ class FrameGrabber:
         picture the camera keeps ready is darker than that (CameraUses.flashed says whether it was).
         ``camera``: the sensor's settings for a camera of ours (settings.camera_settings).
         ``focus``: an RTSP stream's frame sharpest in these normalised boxes, or with ``scan`` the
-        best look at a face there (_grab_stream); a Home Assistant camera's own stream the same way
-        when it can stream (_grab_ha_stream).
+        best look there (_grab_stream); a Home Assistant camera's own stream the same way when it
+        can stream (_grab_ha_stream). ``standby``: the stream is kept open between the checks (a
+        sensor with faces or plates), decoding every frame while ``burst``.
 
         A broken picture (imaging.jpeg_broken: it ends early, the rest an older one's) is asked for
         again once, and is an error the second time: it would be read as grey."""
         check_source(source_type, source)
         try:
-            if source_type == "ha_camera" and focus and self.ha.enabled:
-                data = await self._grab_ha_stream(source, focus, scan)
+            if source_type == "ha_camera" and (focus or standby) and self.ha.enabled:
+                data = await self._grab_ha_stream(source, focus, scan, standby, burst)
                 if data is not None:
                     return data
             if source_type == "rtsp":  # frames VisionState encodes itself
                 return await asyncio.get_running_loop().run_in_executor(
-                    self._rtsp, self._grab_stream, source, focus, scan
+                    self._rtsp, self._grab_stream, source, focus, scan, standby, burst
                 )
             for attempt in (1, 2):
                 if source_type == "ha_camera":
@@ -649,10 +691,13 @@ def crop_rgb(frame, box: tuple[int, int, int, int]) -> Image.Image:  # noqa: ANN
     return Image.fromarray(rgb, "RGB")
 
 
-# What a stream's face scan makes of the head regions cut from one frame (their pictures, where
-# each was cut, the frame's size): for each, a look's rank (higher is better) and what was found,
-# or None. Given by the engine (ChecksMixin.face_scan), which knows the face detector.
-Scan = Callable[[list[Image.Image], list[tuple[int, int]], tuple[int, int]], list[tuple[tuple, object] | None]]
+# What a stream's scan makes of the regions cut from one frame (their pictures, where each was cut,
+# the frame's size, and which of the focus boxes each is): for each, a look's rank (higher is
+# better) and what was found, or None. Given by the engine (ChecksMixin.stream_scan), which knows
+# the face detector and the plate finder and which focus box is a head and which a vehicle.
+Scan = Callable[
+    [list[Image.Image], list[tuple[int, int]], tuple[int, int], list[int]], list[tuple[tuple, object] | None]
+]
 
 
 # How a stream whose address must be asked for each time is opened (Home Assistant's own stream
@@ -663,8 +708,9 @@ Opener = Callable[[], tuple[str, dict[str, str], float]]
 
 @dataclass
 class Look:
-    """A look at a face between two checks (RtspStream with a scan): the head region cut from a
-    frame, where (``offset``, in the frame of ``size``), what the scan found there and its rank."""
+    """A look between two checks (RtspStream with a scan): the region cut from a frame (a head, or
+    a vehicle for its plate), where (``offset``, in the frame of ``size``), what the scan found
+    there and its rank."""
 
     rank: tuple
     at: float  # time.monotonic() when the frame was decoded
@@ -680,15 +726,28 @@ class RtspStream:
     """An RTSP stream kept open: a thread of its own decodes it and keeps the newest frame, until
     no frame was asked for in ``keep_open`` seconds or the stream fails (see FrameGrabber._grab_stream).
 
-    While a grab gave ``focus`` (where faces are looked for), every frame decoded is also scored by
-    how sharp it is there, and the next grab takes the sharpest of the frames since the last one
-    (within RUNTIME["rtsp_pick_window_s"]): of a person walking up, the frames between two checks
-    are blurred by their steps in turn. With a ``scan`` too, the face detector looks there in a
-    frame every FACES["scan_interval_s"] and keeps the best look of each FACES["scan_slot_s"]: the
-    next grab gives the frame of the best look instead, and ``looks`` the others (best first)."""
+    While a grab gave ``focus`` (where faces or plates are looked for), every frame decoded is also
+    scored by how sharp it is there, and the next grab takes the sharpest of the frames since the
+    last one (within RUNTIME["rtsp_pick_window_s"]): of a person walking up, the frames between two
+    checks are blurred by their steps in turn. With a ``scan`` too, the scan looks there in a frame
+    every FACES["scan_interval_s"] and keeps the best look of each FACES["scan_slot_s"]: the next
+    grab gives the frame of the best look instead, and ``looks`` the others (best first).
 
-    def __init__(self, url: str, keep_open: float, opener: Opener | None = None):
+    ``standby``: kept open for a sensor that may have to look closely at any moment (faces or
+    plates): only its key frames are decoded (one every second or two, cheap) until a grab asks
+    for every frame (``every_frame``, a burst of checks); the frames since the last key frame are
+    then decoded at once, so the frames of the moment that started the burst are not lost.
+    ``paced``: the frames are let through as fast as they were filmed (Pacer), for a stream that
+    comes in chunks (Home Assistant's: a few seconds of video at once, seconds late)."""
+
+    def __init__(
+        self, url: str, keep_open: float, opener: Opener | None = None, standby: bool = False, paced: bool = False
+    ):
         self.url, self.keep_open = url, keep_open
+        self.standby, self.paced = standby, paced
+        self.standby_until = 0.0  # FrameGrabber._steer: on standby until then (time.monotonic())
+        self._every_until = 0.0  # standby: every frame is decoded until then (time.monotonic())
+        self._given_at = 0.0  # when the frame the last grab gave was decoded
         self._opener = opener
         self._changed = threading.Condition()
         self._frame = None
@@ -730,6 +789,14 @@ class RtspStream:
         with self._changed:
             self._asked_at = time.monotonic()
 
+    def every_frame(self, seconds: float) -> None:
+        """Decode every frame for the next ``seconds`` (a standby stream decodes only key frames)."""
+        with self._changed:
+            self._every_until = max(self._every_until, time.monotonic() + seconds)
+
+    def _every(self) -> bool:
+        return not self.standby or time.monotonic() < self._every_until
+
     def close(self) -> None:
         with self._changed:
             self._closed = True
@@ -739,15 +806,19 @@ class RtspStream:
         """A frame decoded after this call (never an old one), or the stream's error. With ``focus``
         given at the last grab too: the sharpest frame there since that grab, which may be up to
         RUNTIME["rtsp_pick_window_s"] older than this call; with a ``scan`` too, the frame of the best
-        look at a face since then (up to FACES["scan_window_s"] old), and ``looks`` all of them."""
+        look since then (up to FACES["scan_window_s"] old), and ``looks`` all of them. A standby
+        stream decoding only its key frames gives the newest key frame not given before (waiting
+        for the next one only when it was)."""
         asked = time.monotonic()
         with self._changed:
             self._asked_at = asked
+            since = asked if self._every() else self._given_at
             ready = self._changed.wait_for(
-                lambda: self._frame_at > asked or self._error is not None or not self.alive,
+                lambda: self._frame_at > since or self._error is not None or not self.alive,
                 timeout=RUNTIME["http_timeout_s"],
             )
-            if self._frame_at > asked:
+            if self._frame_at > since:
+                self._given_at = self._frame_at
                 frame = self._frame
                 window = FACES["scan_window_s"]
                 looks = [look for look in self._slots.values() if asked - look.at <= window]
@@ -837,10 +908,10 @@ class RtspStream:
             return []
         try:
             crops = [crop_rgb(frame, box) for box in boxes]
-            found = scan(crops, [(box[0], box[1]) for box in boxes], (w, h))
+            found = scan(crops, [(box[0], box[1]) for box in boxes], (w, h), regions)
         except Exception:  # noqa: BLE001 - a broken scan must not stop the stream
             if not self._scan_failed:
-                log.exception("Looking for faces in a stream failed")
+                log.exception("Looking for faces or plates in a stream failed")
                 self._scan_failed = True
             return []
         return [
@@ -856,9 +927,7 @@ class RtspStream:
         try:
             url, options, timeout = self._opener() if self._opener else (self.url, STREAM_OPTIONS, 10.0)
             with av.open(url, options=options, timeout=timeout) as container:
-                for frame in container.decode(video=0):
-                    if not self._add(frame, _grey):
-                        return
+                self._decode(container)
         except FFmpegError as err:
             with self._changed:
                 self._error = SourceError(redact(str(err)))
@@ -868,6 +937,74 @@ class RtspStream:
         finally:
             with self._changed:
                 self._changed.notify_all()
+
+    def _decode(self, container) -> None:  # noqa: ANN001 - an av container
+        """Decode the stream's frames (every one, or only the key frames while on standby) until
+        it should stop. On standby, the packets since the last key frame are kept, so that a burst
+        decodes the frames from that key frame on at once."""
+        video = container.streams.video[0]
+        pacer = Pacer() if self.paced else None
+        since_key: list = []  # standby: packets after the last key frame, not decoded
+        for packet in container.demux(video):
+            if packet.dts is None:  # the empty packet at the end
+                continue
+            if self._closed:
+                return
+            if pacer is not None and packet.pts is not None:
+                if not self._wait(pacer.due(float(packet.pts * video.time_base))):
+                    return
+            if packet.is_keyframe:
+                since_key = []
+            if self._every():
+                todo, since_key = [*since_key, packet], []
+            elif packet.is_keyframe:
+                todo = [packet]  # decoded alone: the packets after it wait in since_key
+            else:
+                since_key.append(packet)
+                if len(since_key) > RUNTIME["stream_standby_max_packets"]:
+                    since_key = []  # no key frame for that long: never all decoded anyway
+                if time.monotonic() - self._asked_at > self.keep_open:
+                    return  # no frame decoded to notice it in _add
+                continue
+            for each in todo:
+                for frame in each.decode():
+                    if not self._add(frame, _grey):
+                        return
+
+    def _wait(self, seconds: float) -> bool:
+        """Wait (pacing a stream) unless closed meanwhile; False: closed."""
+        if seconds <= 0:
+            return True
+        with self._changed:
+            return not self._changed.wait_for(lambda: self._closed, timeout=seconds)
+
+
+class Pacer:
+    """Lets the frames of a stream through no faster than they were filmed, a constant time after.
+
+    Home Assistant gives a camera's stream as HLS, in chunks of seconds (its segments) that come
+    all at once, seconds after they were filmed. Decoded as they come, a check would see the last
+    frame of each chunk and never the moments in it (a plate readable for three seconds as a car
+    turns in). Paced, the frames come one by one as they were filmed, a little late: a frame that
+    came later than its time makes every later frame wait as much longer (the stream's lag), and
+    the lag shrinks by a hundredth of every wait, so a stream that came late once does not stay late."""
+
+    def __init__(self) -> None:
+        self._start: tuple[float, float] | None = None  # (time.monotonic(), its frame's time) of the first
+        self.lag = 0.0
+
+    def due(self, at: float) -> float:
+        """How long to wait before the frame filmed ``at`` (seconds in the stream's own time)."""
+        now = time.monotonic()
+        if self._start is None or abs((at - self._start[1]) - (now - self._start[0])) > 60 + self.lag:
+            self._start, self.lag = (now, at), 0.0  # the first frame, or the stream's clock jumped
+            return 0.0
+        wait = self._start[0] + (at - self._start[1]) + self.lag - now
+        if wait < 0:
+            self.lag -= wait
+            return 0.0
+        self.lag -= wait / 100
+        return wait
 
 
 @dataclass

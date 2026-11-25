@@ -783,6 +783,17 @@ PLATES = {
     "straighten_max_shear": 0.6,
     "straighten_gain": 1.1,
     "max_vehicles": 3,  # vehicle boxes looked at per check at most (the largest first)
+    # Reading a plate on a stream between the checks: while a burst of checks runs (a trigger's, or
+    # looking for a face), the stream's scan (sources.RtspStream, FACES["scan_interval_s"] and the
+    # other scan_* there) runs the plate finder on the vehicles of the last check, keeps the best
+    # look at a plate of every slot (plates.look_rank), the check analyses the frame of the best,
+    # and up to scan_reads of the others are read too (each read counts like a check's own: two that
+    # agree confirm a close read). A car turning in shows its plate for a few seconds only.
+    "scan_reads": 3,
+    # A vehicle not named surely by its plate that came or moved since the last check makes the
+    # sensor check every burst_interval_s for burst_hold_s more (engine.logic.steer_plate_burst).
+    "burst_interval_s": 1.0,
+    "burst_hold_s": 20.0,
     "min_vehicle_px": 60,  # a vehicle box narrower than this (frame pixels) is too far to read
     # A read is a car's plate when it is at most this far from it (plates.distance: a confusable
     # character costs 0.5, any other 1). Only an exact read names the car at once; a close one
@@ -1153,6 +1164,14 @@ RUNTIME = {
     # A Home Assistant camera looked at for a face is read through its own stream in Home Assistant
     # (FrameGrabber._grab_ha_stream); one that cannot stream is asked again after this long.
     "ha_stream_retry_s": 600.0,
+    # A sensor with faces or plates on a stream (an RTSP address, or a Home Assistant camera's own
+    # stream) keeps it open between the checks, decoding only its key frames, so that a burst of
+    # checks has every frame at once: opening one when something is seen takes a second or two
+    # (RTSP) to eight (Home Assistant), and a car's plate can be readable for only three as it
+    # turns in. Closed when not asked for in stream_standby_s; the packets after a key frame kept
+    # for a burst are dropped beyond stream_standby_max_packets (a camera with no key frames).
+    "stream_standby_s": 120.0,
+    "stream_standby_max_packets": 600,
     # Looking for a face (a person there) without the face scan (FACES["scan_*"]: no face model
     # yet, or its scan failed): of the frames a stream kept open decoded since the last check, the
     # one sharpest where the face is looked for, at most this many seconds old.

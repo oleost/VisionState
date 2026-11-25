@@ -354,6 +354,7 @@ export const TRIGGER_SOURCES: Record<string, string> = {
   entity: 'Entity changed',
   change: 'Image changed',
   person: 'Person seen',
+  vehicle: 'Vehicle seen',
 };
 
 /** Placeholder the backend puts where credentials were removed from an exported URL (redact.MASK). */

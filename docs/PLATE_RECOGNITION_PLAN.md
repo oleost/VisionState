@@ -238,11 +238,33 @@ the household is carried over (`recheck_every`).
 plates at an angle, a plate reader that is open *and* made for plates (trained on plates drawn by
 our own code, like the wheel reader), and letters outside A–Z (Ü, Ø).
 
-## 11. Next: reading a plate while a car passes (proposed 2026-11-24, not decided)
+## 11. Reading a plate while a car passes (proposed 2026-11-24, built 2026-11-25)
 
-**Status:** a proposal from building the same for faces (docs/FACE_RECOGNITION_PLAN.md §12,
-0.16.0b9–b12). The maintainer asked for it to be written down for a later session; whether and
-how to build it is still theirs to decide. Nothing of it is built.
+**Status:** built after a test with a car coming home (below), at the maintainer's request: a
+burst while a vehicle comes (`logic.steer_plate_burst`, `PLATES["burst_*"]`), the plate finder
+in the stream's scan (`ChecksMixin.stream_scan`, `plates.look_rank`) and reads between the checks
+(`PlatesMixin._plates_between`, `PLATES["scan_reads"]`) that count like a check's own. Points 1-4
+below were the proposal; the burst is a plate burst of its own beside the face burst rather than
+one shared burst, as the two end for different reasons (a person named or gone; a vehicle named
+or standing still).
+
+**What the test showed** (the maintainer's doorbell, a car turning in and someone walking from it
+to the door, recorded from the camera's stream and replayed; kept locally):
+
+- the plate was read exactly on most frames for about 3.6 s as the car turned in (finder and
+  reader on every fourth frame: the exact plate, reader score 0.85-1.0, plates 47-96 px wide),
+  and not at all once it was parked (side-on);
+- change detection did not see the car coming: the region changed by 0.001-0.002 (the default
+  threshold is 0.04) until the car was in the drive, and by 0.004-0.014 as the person walked up;
+  the regular checks (every 10 s there) found the car only after its plate could no longer be
+  read. Whether the plate is read on arrival depends on a check finding the car in those seconds:
+  a shorter interval or a camera that looks along the drive helps;
+- the whole app replayed against a copy of that Home Assistant's sensors, people and cars (the
+  camera faked as a Home Assistant camera whose stream comes 6-8 s late, as measured there):
+  with the stream kept open (`RUNTIME["stream_standby_s"]`) and the plate burst holding for
+  `PLATES["burst_hold_s"]`, the car was named by its plate and the person by their face in the
+  runs after these were added; before the hold was long enough, one run missed the person (found
+  only at the door).
 
 **Why.** A car driving in shows a readable plate for a few seconds, like a face walking up to a
 door; the regular checks (every `interval_s`, or a change-detection burst) may miss them all. Faces

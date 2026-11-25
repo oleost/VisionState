@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.16.0b13
+
+**Faces and plates ready before someone comes.**
+
+### Changed
+
+- **A sensor that recognises faces or reads plates keeps its camera's stream open** (`rtsp://`, or
+  a camera's own stream in Home Assistant), decoding only a frame every second or two until
+  something comes, then every frame from just before. In 0.16.0b12 a Home Assistant camera's
+  stream was opened only when a person was seen, and Home Assistant takes about eight seconds to
+  open one: on a doorbell, someone walking from the car to the door was inside before it ran.
+  Replayed through the whole app, that walk now names them as they come.
+- **A Home Assistant camera's stream is played as it was filmed.** It comes in chunks of a few
+  seconds, a few seconds late; the frames are now let through one by one, so no moment of a chunk
+  is skipped (a sensor on such a stream turns on those few seconds later).
+- **Plates are read between the checks too.** A vehicle not yet known by its plate that comes or
+  moves makes the sensor check about every second until it stands still (*Vehicle seen* on the
+  **Live** tab), which also covers whoever gets out of it. On a stream the plate finder looks at
+  the vehicles several times a second between these checks: a check takes the frame with the best
+  look at a plate and reads a few other good looks too, and a read of those moments that agrees
+  confirms one a character off. A plate is readable for only a few seconds as a car turns in.
+- For faces and plates, pick a camera entity that can stream: a Reolink camera's *Clear* entity
+  (switched off in Home Assistant at first), not its *Snapshots* one, which cannot.
+
 ## 0.16.0b12
 
 **Faces looked for between the checks on Home Assistant cameras too.**

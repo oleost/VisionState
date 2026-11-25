@@ -7,7 +7,7 @@ import math
 import zlib
 
 from .. import detectors, imaging, readers, teach
-from ..settings import DETECTION, FACES, RUNTIME, SOUND
+from ..settings import DETECTION, FACES, PLATES, RUNTIME, SOUND, TEACH, VEHICLE_CLASSES
 from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig, SoundTrack
 
 
@@ -164,7 +164,7 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
     """When the sensor loop should wake up next, and whether that is a full check or a cheap probe."""
     if live.last_run is None:
         return now, "full"
-    pace = burst_pace(cfg, live, now)
+    pace = burst_pace(cfg.triggers["burst_interval_s"], live, now)
     if pace is not None:
         full_at = live.last_run + pace
     elif cfg.triggers["regular"]:
@@ -184,12 +184,48 @@ def next_check_at(cfg: SensorConfig, live: LiveState, now: float) -> tuple[float
     return full_at, "full"
 
 
-def burst_pace(cfg: SensorConfig, live: LiveState, now: float) -> float | None:
-    """Seconds between checks while a burst runs (a trigger's, or looking for a face), or None."""
-    paces = [cfg.triggers["burst_interval_s"]] if now < live.burst_until else []
+def burst_pace(trigger_interval: float, live: LiveState, now: float) -> float | None:
+    """Seconds between checks while a burst runs (a trigger's, every ``trigger_interval``; looking
+    for a face; reading a plate), or None."""
+    paces = [trigger_interval] if now < live.burst_until else []
     if now < live.face_burst.until:
         paces.append(FACES["burst_interval_s"])
+    if now < live.plate_burst_until:
+        paces.append(PLATES["burst_interval_s"])
     return min(paces) if paces else None
+
+
+def in_burst(live: LiveState, now: float) -> bool:
+    """Whether any burst of checks runs (a trigger's, looking for a face, reading a plate)."""
+    return now < max(live.burst_until, live.face_burst.until, live.plate_burst_until)
+
+
+def steer_plate_burst(until: float, found: list[dict], previous: list[dict], now: float) -> float:
+    """After a check of a sensor that reads plates: until when to check every
+    PLATES["burst_interval_s"]. A vehicle not named surely by its plate that is new or moved since
+    the last check (not the same box: teach.box_iou) holds it PLATES["burst_hold_s"] longer: a car
+    turning in shows its plate for a few seconds only, maybe between two regular checks, and a
+    small change far away does not trigger a burst of its own. A parked car does not; a burst
+    ends when every vehicle is named surely."""
+    vehicles = [d for d in found if d["key"] in VEHICLE_CLASSES and not d.get("filtered")]
+    unnamed = [d for d in vehicles if not _named_by_plate(d)]
+    if not unnamed:
+        return 0.0
+    moving = [
+        d
+        for d in unnamed
+        if not any(
+            (p.get("key") in VEHICLE_CLASSES or p.get("was") in VEHICLE_CLASSES)
+            and teach.box_iou(p["box"], d["box"]) >= TEACH["keep_iou"]
+            for p in previous
+        )
+    ]
+    return max(until, now + PLATES["burst_hold_s"]) if moving else until
+
+
+def _named_by_plate(det: dict) -> bool:
+    plate = det.get("plate") or {}
+    return plate.get("state") == "match" and bool(plate.get("sure"))
 
 
 def steer_face_burst(burst: FaceBurst, found: list[dict], now: float) -> str | None:

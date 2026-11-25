@@ -17,7 +17,7 @@ from ..redact import redact
 from ..settings import DETECTION, FACE_UNKNOWN_KEY, FACES, KIND_OBJECTS, TEACH
 from .base import RuntimeBase
 from .faces import FacesMixin
-from .logic import steer_face_burst, update_tracks
+from .logic import steer_face_burst, steer_plate_burst, update_tracks
 from .plates import PlatesMixin, identified_by
 from .publishing import PublishingMixin
 from .state import FaceBurst, ObjectTrack, SensorConfig
@@ -59,6 +59,10 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
         if cfg.plates_on:
             with timing.step("plates"):
                 found = await self.apply_plates(cfg, image, found, live.detections)
+            started = live.plate_burst_until <= time.time()
+            live.plate_burst_until = steer_plate_burst(live.plate_burst_until, found, live.detections, time.time())
+            if started and live.plate_burst_until > time.time():
+                live.last_trigger = {"source": "vehicle", "detail": "reading a plate", "at": time.time()}
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
         live.frame_id, live.detections = frame_id, found  # together: the boxes belong to that frame

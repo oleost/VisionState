@@ -646,3 +646,13 @@ Where the build differs from §3–§9:
   - very close to the door (about 400 px) similarity was lower (0.33–0.37) than at 50–90 px
     (0.42–0.48): the camera looks down at a close face through a wide lens. Not a matter of
     choosing frames; open.
+- **A Home Assistant camera's own stream opened too late.** On 0.16.0b12 the doorbell, now a
+  Home Assistant camera, missed the maintainer coming home: its stream was asked for only when a
+  check found the person, and Home Assistant took about 8 s to open it (its HLS also comes in
+  chunks of about 6 s, 6-8 s late); the walk from the car to the door took about 10. Offline, 9
+  usable faces (84-251 px) of that walk all looked most like the maintainer (0.34-0.58). A sensor
+  with faces or plates now keeps its stream open between the checks, decoding only key frames
+  until a burst (`RUNTIME["stream_standby_s"]`), and a Home Assistant stream is paced as it was
+  filmed (`sources.Pacer`); a car that comes starts a burst too, which covers whoever gets out of it
+  (docs/PLATE_RECOGNITION_PLAN.md §11). Replayed through the whole app, the maintainer was named
+  while walking up. The entity matters: a Reolink camera's *Snapshots* entity cannot stream at all.

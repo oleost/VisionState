@@ -386,6 +386,22 @@ class PlateRead:
     text: str
     score: float  # the reader's confidence
     found: float  # the finder's confidence
+    between: bool = False  # read in a look of the stream between two checks (read_look)
+
+
+def look_rank(found: Found) -> tuple[int, float]:
+    """How good a look at a plate a stream's scan found (sources.Look): the wider and the surer, the
+    better (the reader reads a wide plate best). The 1 makes it as usable as a face that is."""
+    return 1, (found.box[2] - found.box[0]) * found.score
+
+
+def read_look(model: PlateModel, image: Image.Image, found: Found) -> PlateRead | None:
+    """The plate a stream's scan found in ``image`` (a region cut from a frame), read as
+    read_plates reads one; None when it does not read like a plate."""
+    read = _read(model, image, found.box)
+    if read is None or not looks_like_plate(read.text):
+        return None
+    return PlateRead(found.box, read.text, read.score, found.score, between=True)
 
 
 def _pad(box: tuple[float, float, float, float], image: Image.Image, share: float) -> tuple[int, int, int, int]:
