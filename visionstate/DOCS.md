@@ -447,8 +447,8 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
   event (*Licence plate read* in the filter).
 - **When a car comes**: a car turning in shows its plate for a few seconds only. When a check
   finds a vehicle not yet named by its plate that came or moved, the sensor checks about every
-  second until it has stood still for a while (*Vehicle seen* on the **Live** tab); a parked
-  car does not. On a camera's stream (as for faces, above) the plate finder also looks at the
+  second until it has stood still for a while (*Vehicle seen* on the **Live** tab), for a minute
+  and a half at most; a parked car does not, nor one half hidden that is found only now and then. On a camera's stream (as for faces, above) the plate finder also looks at the
   vehicles several times a second between these checks: each check takes the frame with the best
   look at a plate (the widest and surest) and reads a few other good looks too.
 - **How it decides**: a plate read exactly as one of your cars names the car at once. A read one

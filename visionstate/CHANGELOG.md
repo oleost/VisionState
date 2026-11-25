@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.0b14
+
+**Fixes for 0.16.0b13: no endless bursts, no growing lag.**
+
+### Fixed
+
+- **A parked car half hidden behind another** (found by the detector only now and then) counted
+  as a car coming each time it was found again, and kept the sensor checking every second, with
+  every frame of the stream decoded and the plate finder running, until the app used so much
+  memory that a full Home Assistant host stopped it. A vehicle where one was in the last minute has
+  not come, and a burst for a vehicle lasts a minute and a half at most.
+- **A Home Assistant camera's stream fell further and further behind** (half a minute within the
+  hour on a doorbell). It is let through a little faster while frames are waiting, and opened again
+  when it has fallen more than a few seconds behind (while nothing is looked for).
+
 ## 0.16.0b13
 
 **Faces and plates ready before someone comes.**

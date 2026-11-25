@@ -953,6 +953,9 @@ class RtspStream:
             if pacer is not None and packet.pts is not None:
                 if not self._wait(pacer.due(float(packet.pts * video.time_base))):
                     return
+                if pacer.behind > RUNTIME["stream_max_lag_s"] and not self._every():
+                    log.info("%s: the stream fell %.0f s behind, opened again", redact(self.url), pacer.behind)
+                    return  # FrameGrabber opens it again
             if packet.is_keyframe:
                 since_key = []
             if self._every():
@@ -986,25 +989,39 @@ class Pacer:
     all at once, seconds after they were filmed. Decoded as they come, a check would see the last
     frame of each chunk and never the moments in it (a plate readable for three seconds as a car
     turns in). Paced, the frames come one by one as they were filmed, a little late: a frame that
-    came later than its time makes every later frame wait as much longer (the stream's lag), and
-    the lag shrinks by a hundredth of every wait, so a stream that came late once does not stay late."""
+    came later than its time makes every later frame wait as much longer (the stream's lag). The
+    lag shrinks by RUNTIME["stream_pace_catch_up"] of the time that passes (the frames are let
+    through that much faster while they are there): a camera's clock runs a little slow or fast
+    (a doorbell's by 0.8 %, which made the lag grow by half a second a minute, to half a minute
+    within the hour), and a stream that came late once must not stay late."""
 
     def __init__(self) -> None:
         self._start: tuple[float, float] | None = None  # (time.monotonic(), its frame's time) of the first
+        self._last = 0.0  # time.monotonic() of the last frame asked about
         self.lag = 0.0
+        self._low: float | None = None  # the least lag since the first minute
 
     def due(self, at: float) -> float:
         """How long to wait before the frame filmed ``at`` (seconds in the stream's own time)."""
         now = time.monotonic()
-        if self._start is None or abs((at - self._start[1]) - (now - self._start[0])) > 60 + self.lag:
-            self._start, self.lag = (now, at), 0.0  # the first frame, or the stream's clock jumped
+        if self._start is None or abs((at - self._start[1]) - (now - self._start[0])) > 60 + abs(self.lag):
+            self._start, self.lag, self._last = (now, at), 0.0, now  # the first frame, or the clock jumped
             return 0.0
+        self.lag -= (now - self._last) * RUNTIME["stream_pace_catch_up"]
+        self._last = now
         wait = self._start[0] + (at - self._start[1]) + self.lag - now
         if wait < 0:
             self.lag -= wait
-            return 0.0
-        self.lag -= wait / 100
+            wait = 0.0
+        if now - self._start[0] > 60:
+            self._low = self.lag if self._low is None else min(self._low, self.lag)
         return wait
+
+    @property
+    def behind(self) -> float:
+        """How much later the stream comes than it did at its best (after its first minute): it
+        falls behind when frames come slower than they were filmed."""
+        return 0.0 if self._low is None else self.lag - self._low
 
 
 @dataclass

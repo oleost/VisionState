@@ -368,6 +368,9 @@ class LiveState:
     force: bool = False
     force_paused: bool = False  # the forced check was asked for by the user: also when paused
     plate_burst_until: float = 0.0  # reading a plate (logic.steer_plate_burst)
+    plate_burst_started: float = 0.0  # when it started (PLATES["burst_max_s"])
+    plate_burst_rest_until: float = 0.0  # a burst that ran too long: none again before then
+    vehicles_seen: list = field(default_factory=list)  # (box, when) of the last minute's vehicles (the same)
     burst_until: float = 0.0
     face_burst: FaceBurst = field(default_factory=FaceBurst)
     # The looks at faces a stream saw between the last two checks (sources.Look, best first):

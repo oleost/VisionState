@@ -18,7 +18,7 @@ from PIL import Image
 
 from visionstate import faces, plates, sources
 from visionstate.engine.checks import ChecksMixin
-from visionstate.engine.logic import burst_pace, in_burst, steer_plate_burst
+from visionstate.engine.logic import burst_pace, follow_plate_burst, in_burst, steer_plate_burst
 from visionstate.engine.plates import PlatesMixin
 from visionstate.engine.state import LiveState
 from visionstate.settings import FACES, PLATES, RUNTIME
@@ -60,16 +60,18 @@ def test_a_stream_that_comes_in_chunks_is_let_through_as_it_was_filmed(monkeypat
         clock[0] += pacer.due(at)  # the stream thread sleeps that long
         released.append((at, clock[0]))
 
+    catch_up = RUNTIME["stream_pace_catch_up"]  # let through that much faster while frames wait
     for k in range(12):  # the first chunk: 6 s of frames, all at once
         arrive(k * 0.5)
-    assert [round(t - 100, 1) for _, t in released] == pytest.approx([k * 0.5 for k in range(12)], abs=0.1)
+    gaps = [b[1] - a[1] for a, b in zip(released, released[1:], strict=False)]
+    assert all(0.5 * (1 - catch_up) - 0.01 < g <= 0.5 for g in gaps)  # one by one, not all at once
     clock[0] = 107.0  # the next chunk comes a second after its first frame was due
     for k in range(12, 24):
         arrive(k * 0.5)
     late = released[12:]
     assert late[0][1] == pytest.approx(107.0)
     gaps = [b[1] - a[1] for a, b in zip(late, late[1:], strict=False)]
-    assert all(0.45 < g < 0.51 for g in gaps)  # one by one again, a second later
+    assert all(0.5 * (1 - catch_up) - 0.01 < g <= 0.5 for g in gaps)  # one by one again, a second later
     clock[0] = 200.0
     assert pacer.due(5.0) == 0.0 and pacer.lag == 0.0  # back to the start: paced from here
 
@@ -317,19 +319,61 @@ def test_reads_between_the_checks_count_like_checks_of_their_own():
 
 def test_a_vehicle_not_known_by_its_plate_that_moves_makes_the_sensor_check_often():
     now = 1000.0
+    seen: list = []
     coming = {"key": "car", "box": [0.1, 0.4, 0.3, 0.6]}
     turned = {"key": "car", "box": [0.3, 0.45, 0.6, 0.75]}
-    until = steer_plate_burst(0.0, [coming], [], now)
+    until = steer_plate_burst(0.0, [coming], seen, now)
     assert until == now + PLATES["burst_hold_s"]
-    until = steer_plate_burst(until, [turned], [coming], now + 1)
+    until = steer_plate_burst(until, [turned], seen, now + 1)
     assert until == now + 1 + PLATES["burst_hold_s"]
-    # Parked (the same box as the last check): the burst is not held longer, and ends in time.
-    assert steer_plate_burst(until, [turned], [turned], now + 2) == until
+    # Parked (where it was): the burst is not held longer, and ends in time.
+    assert steer_plate_burst(until, [turned], seen, now + 2) == until
+    # A car half hidden behind it, found only now and then (main HA, 2026-11-25: two parked cars
+    # held a burst for an hour): back where it was a minute ago, it did not come.
+    behind = {"key": "car", "box": [0.42, 0.51, 0.57, 0.6]}
+    until = steer_plate_burst(until, [turned, behind], seen, now + 3)
+    assert until == now + 3 + PLATES["burst_hold_s"]  # the first time it is new
+    for k in range(4, 40):
+        found = [turned, behind] if k % 3 else [turned]
+        assert steer_plate_burst(until, found, seen, now + k) == until
+    # Gone long enough, the same place is new again.
+    assert steer_plate_burst(0.0, [behind], seen, now + 40 + PLATES["burst_seen_s"] + 1) > 0
     # Named surely by its plate: no reason to look at it.
-    known = {**turned, "box": [0.0, 0.0, 0.2, 0.2], "plate": {"state": "match", "sure": True}}
+    known = {**turned, "plate": {"state": "match", "sure": True}}
     assert steer_plate_burst(until, [known], [], now + 3) == 0.0
     live = LiveState()
     live.plate_burst_until = now + 5
     assert burst_pace(2.0, live, now) == PLATES["burst_interval_s"] and in_burst(live, now)
     assert burst_pace(2.0, live, now + 6) is None and not in_burst(live, now + 6)
     assert FACES["burst_interval_s"] > 0
+
+
+def test_a_stream_that_falls_behind_is_noticed(monkeypatch):
+    """A Home Assistant stream of a doorbell fell a second a minute behind (also read as fast as it
+    came): Pacer.behind says how much later it comes than at its best after the first minute."""
+    clock = [0.0]
+    monkeypatch.setattr(sources.time, "monotonic", lambda: clock[0])
+    pacer = Pacer()
+    at = 0.0
+    for _ in range(3000):  # 5 minutes of frames, 10 a second, coming 1.6 % slower than filmed
+        at += 0.1
+        clock[0] += 0.1016
+        clock[0] += pacer.due(at)
+    assert 3.0 < pacer.behind < 5.5
+
+
+def test_vehicles_moving_about_all_the_time_do_not_keep_the_sensor_checking_every_second():
+    live = LiveState()
+    now = 1000.0
+    k = 0
+    assert follow_plate_burst(live, [{"key": "car", "box": [0.0, 0.4, 0.1, 0.5]}], now)  # started
+    while live.plate_burst_until > now + k:  # a new car somewhere every second
+        k += 1
+        x = k * 0.0102  # a place no vehicle was before
+        assert not follow_plate_burst(live, [{"key": "car", "box": [x, 0.4, x + 0.01, 0.41]}], now + k)
+    assert PLATES["burst_max_s"] <= k <= PLATES["burst_max_s"] + 2
+    # Resting: a car that comes now starts none until burst_seen_s has passed.
+    assert not follow_plate_burst(live, [{"key": "car", "box": [0.5, 0.0, 0.6, 0.1]}], now + k + 1)
+    assert live.plate_burst_until == 0.0
+    later = now + k + PLATES["burst_seen_s"] + 1
+    assert follow_plate_burst(live, [{"key": "car", "box": [0.7, 0.0, 0.8, 0.1]}], later)

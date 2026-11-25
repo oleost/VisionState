@@ -794,6 +794,9 @@ PLATES = {
     # sensor check every burst_interval_s for burst_hold_s more (engine.logic.steer_plate_burst).
     "burst_interval_s": 1.0,
     "burst_hold_s": 20.0,
+    "burst_seen_s": 60.0,  # a vehicle where one was within this long has not come or moved
+    # A burst lasts this long at most; then none for burst_seen_s (vehicles moving about all the time).
+    "burst_max_s": 90.0,
     "min_vehicle_px": 60,  # a vehicle box narrower than this (frame pixels) is too far to read
     # A read is a car's plate when it is at most this far from it (plates.distance: a confusable
     # character costs 0.5, any other 1). Only an exact read names the car at once; a close one
@@ -1171,6 +1174,14 @@ RUNTIME = {
     # turns in. Closed when not asked for in stream_standby_s; the packets after a key frame kept
     # for a burst are dropped beyond stream_standby_max_packets (a camera with no key frames).
     "stream_standby_s": 120.0,
+    # A stream paced as it was filmed (sources.Pacer: Home Assistant's) is let through up to this
+    # much faster than filmed while frames are waiting, so its lag does not grow with a camera
+    # whose clock runs slow.
+    "stream_pace_catch_up": 0.1,
+    # A camera's stream through Home Assistant can fall further and further behind (a doorbell's by
+    # a second a minute, to half a minute within the hour, also read as fast as it came): one that
+    # came this many seconds later than when it opened is opened again, while nothing is looked for.
+    "stream_max_lag_s": 6.0,
     "stream_standby_max_packets": 600,
     # Looking for a face (a person there) without the face scan (FACES["scan_*"]: no face model
     # yet, or its scan failed): of the frames a stream kept open decoded since the last check, the

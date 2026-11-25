@@ -266,6 +266,14 @@ to the door, recorded from the camera's stream and replayed; kept locally):
   runs after these were added; before the hold was long enough, one run missed the person (found
   only at the door).
 
+**On the maintainer's Home Assistant (0.16.0b13):** two parked cars, one half behind the other,
+which the detector found only now and then, kept a burst going for an hour (each time it was
+found again it counted as come), and with every frame decoded and the plate finder running the
+app grew until the host (8 GB, Home Assistant itself using 3.2) ran out of memory and killed it.
+Since 0.16.0b14 a vehicle where one was in the last `PLATES["burst_seen_s"]` has not come, and a
+burst lasts `PLATES["burst_max_s"]` at most. The plate scan adds about 60 MB at the peak of a burst
+(measured on the recording).
+
 **Why.** A car driving in shows a readable plate for a few seconds, like a face walking up to a
 door; the regular checks (every `interval_s`, or a change-detection burst) may miss them all. Faces
 had the same problem, and what fixed it there:
