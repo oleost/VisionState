@@ -101,6 +101,11 @@ so retraining only runs the backbone on new or changed samples.
   `backbones.trim_memory`, as glibc kept the freed memory as well. With the default models the app
   is about 190 MB smaller (a test installation with nine sensors and faces: 943 → 677 MB) for
   about 6 % more time per check. The footprints of the detectors were measured again this way.
+  glibc also gives every thread (streams, model runs) memory of its own and keeps it, so the image
+  allows two (`MALLOC_ARENA_MAX` in `visionstate/Dockerfile`), and a stream's scan for faces and
+  plates trims after each scan too: a test installation with one doorbell sensor scanning faces and
+  plates on a stream peaked at 942 MB without these and at 853 MB with them, the same as before it
+  scanned on the stream at all (821 MB).
   ONNX Runtime's threads do not spin while they wait for work (`backbones.cpu_session`): by
   default they keep cores busy between runs, CPU taken from Home Assistant on the same machine.
   Measured again (2026-11-03, D-FINE N/S/M and DINOv2 small, spinning on against off): with no more
