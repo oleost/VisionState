@@ -81,6 +81,13 @@ def test_a_part_of_a_frame_is_converted_as_ffmpeg_does():
         ffmpeg = np.asarray(decoded.to_image().crop((8, 10, 40, 50)), np.int16)
         assert ours.shape == ffmpeg.shape == (40, 32, 3)
         assert np.abs(ours - ffmpeg).max() <= 3, name
+        # Every step-th pixel (a large region cut smaller for a scan): those pixels, as FFmpeg has them.
+        for step in (2, 4):
+            small = np.asarray(sources.crop_rgb(decoded, (8, 10, 40, 50), step), np.int16)
+            assert small.shape == ffmpeg[::step, ::step].shape, (name, step)
+            assert np.abs(small - ffmpeg[::step, ::step]).max() <= 3, (name, step)
+    assert sources._step((0, 0, 900, 300)) == 1 and sources._step((0, 0, 1500, 550)) == 2
+    assert sources._step((0, 0, 2560, 1000)) == 4
 
 
 def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
@@ -100,7 +107,7 @@ def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
             format="yuv420p"
         )
 
-    def scan(crops, offsets, size, regions):
+    def scan(crops, offsets, size, regions, steps):
         assert size == (64, 64) and all(x % 2 == 0 and y % 2 == 0 for x, y in offsets)
         return [
             ((1, float(np.asarray(c).mean())), round(float(np.asarray(c).mean())))
@@ -136,7 +143,7 @@ def test_a_grab_with_a_face_scan_takes_the_best_look(monkeypatch):
         # A scan that fails is logged and finds nothing; the stream goes on.
         grab_then([bright(10)])
 
-        def broken(crops, offsets, size, regions):
+        def broken(crops, offsets, size, regions, steps):
             raise RuntimeError("model gone")
 
         grab_then([bright(10)], scan=broken)
@@ -191,7 +198,7 @@ def test_a_home_assistant_camera_is_read_through_its_own_stream_while_a_face_is_
     monkeypatch.setitem(sources.FACES, "scan_interval_s", 0.0)
     ha = FakeHA()
 
-    def scan(crops, offsets, size, regions):
+    def scan(crops, offsets, size, regions, steps):
         return [((1, 1.0), "a face") for _ in crops]
 
     async def until_ready(entity_id: str) -> None:

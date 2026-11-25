@@ -202,6 +202,7 @@ def runtime(live: LiveState, face_model=None, plate_model=None) -> SimpleNamespa
         wanted_faces=lambda: face_model,
         wanted_plates=lambda: plate_model,
         face_limits=lambda cfg: {"min_face_px": 30.0},
+        _sem=asyncio.Semaphore(RUNTIME["max_concurrent_inferences"]),
     )
 
 
@@ -242,17 +243,46 @@ def test_a_stream_scan_runs_the_face_detector_on_heads_and_the_plate_finder_on_v
             return [plates.Found((5.0, 5.0, 25.0, 12.0), 0.6), plates.Found((10.0, 30.0, 70.0, 45.0), 0.8)]
 
     rt = runtime(LiveState(), SimpleNamespace(detector=FaceDetector()), SimpleNamespace(finder=Finder()))
-    scan = ChecksMixin.stream_scan(rt, config(), ["face", "plate", "plate"])
+    scan = ChecksMixin.stream_scan(rt, config(), ["face", "plate", "plate"])  # type: ignore[arg-type]
     assert scan is not None
     crop = Image.new("RGB", (80, 80))
     # The second vehicle region was too small to cut: the crops are of regions 0 and 2.
-    result = scan([crop, crop], [(100, 200), (300, 400)], (1000, 1000), [0, 2])
+    result = scan([crop, crop], [(100, 200), (300, 400)], (1000, 1000), [0, 2], [1, 1])
     face_rank, face = result[0]
     assert isinstance(face, faces.Face) and face.box[0] == 102.0 and face_rank[0] in (0, 1)
     plate_rank, plate = result[1]
     assert isinstance(plate, plates.Found) and plate.box == (310.0, 430.0, 370.0, 445.0)
     assert plate_rank == plates.look_rank(plates.Found((10.0, 30.0, 70.0, 45.0), 0.8))
     assert ChecksMixin.stream_scan(runtime(LiveState()), config(), ["face", "plate"]) is None
+    # Every model slot taken by the checks: this frame is not looked at (no third model's memory).
+    for _ in range(RUNTIME["max_concurrent_inferences"]):
+        asyncio.run(rt._sem.acquire())
+    assert scan([crop, crop], [(100, 200), (300, 400)], (1000, 1000), [0, 2], [1, 1]) == [None, None]
+
+
+def test_a_look_keeps_only_what_was_found_and_a_little_around_it(monkeypatch):
+    """A vehicle's region is megabytes; a look keeps the plate and RUNTIME["look_margin"] around it."""
+    monkeypatch.setitem(sources.FACES, "scan_interval_s", 0.0)
+    stop = threading.Event()
+    monkeypatch.setattr(RtspStream, "_run", lambda self: stop.wait())
+    stream = RtspStream("rtsp://camera/stream", keep_open=30)
+    frame = av.VideoFrame.from_ndarray(np.full((400, 600, 3), 90, np.uint8), format="rgb24").reformat(format="yuv420p")
+
+    def scan(crops, offsets, size, regions, steps):
+        ox, oy = offsets[0]
+        return [((1, 1.0), plates.Found((ox + 100.0, oy + 50.0, ox + 160.0, oy + 70.0), 0.9))]
+
+    try:
+        looks = stream._look(frame, [[0.1, 0.1, 0.9, 0.9]], scan)
+        (look,) = looks
+        margin = RUNTIME["look_margin"]
+        assert look.crop.width < 60 * (1 + 2 * margin) + 2 and look.crop.height < 20 * (1 + 2 * margin) + 2
+        x1, y1, _, _ = look.found.box
+        assert look.offset[0] <= x1 and look.offset[1] <= y1  # the plate is in the crop, at found - offset
+        assert x1 - look.offset[0] == pytest.approx(60 * margin, abs=2)
+    finally:
+        stop.set()
+        stream.close()
 
 
 # --- plates read between the checks -----------------------------------------------------------------

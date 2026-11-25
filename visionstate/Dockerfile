@@ -13,14 +13,16 @@ FROM python:3.14-slim-bookworm
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 # ORT_DISABLE_TELEMETRY: ONNX Runtime sends telemetry to Microsoft unless it is set (see
-# backend/visionstate/__init__.py).
+# backend/visionstate/__init__.py). MALLOC_ARENA_MAX: glibc gives every thread (streams, model
+# runs) memory of its own and keeps it; two arenas held less after a burst of checks (measured).
 ENV PYTHONDONTWRITEBYTECODE=1     ORT_DISABLE_TELEMETRY=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     VISIONSTATE_VERSION=${BUILD_VERSION} \
     VISIONSTATE_FRONTEND=/app/frontend/dist \
-    VISIONSTATE_BUNDLED_MODELS=/opt/visionstate/models
+    VISIONSTATE_BUNDLED_MODELS=/opt/visionstate/models \
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app/backend
 COPY backend/requirements.txt ./

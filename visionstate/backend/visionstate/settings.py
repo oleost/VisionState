@@ -790,6 +790,9 @@ PLATES = {
     # and up to scan_reads of the others are read too (each read counts like a check's own: two that
     # agree confirm a close read). A car turning in shows its plate for a few seconds only.
     "scan_reads": 3,
+    # The plate finder looks between the checks at most this often (more often than faces': a
+    # vehicle's region is larger and the finder's working memory over 100 MB).
+    "scan_interval_s": 0.3,
     # A vehicle not named surely by its plate that came or moved since the last check makes the
     # sensor check every burst_interval_s for burst_hold_s more (engine.logic.steer_plate_burst).
     "burst_interval_s": 1.0,
@@ -1178,6 +1181,13 @@ RUNTIME = {
     # much faster than filmed while frames are waiting, so its lag does not grow with a camera
     # whose clock runs slow.
     "stream_pace_catch_up": 0.1,
+    # A look between the checks (sources.Look) keeps the face or plate found with this much of its
+    # size around it on every side (aligning a face needs a little room), not its whole region.
+    "look_margin": 0.6,
+    # A region looked at between the checks is cut at every so many pixels that its longest side is
+    # at most this: a vehicle's region at full size made the stream's thread convert megabytes
+    # several times a second (on Linux about 200 MB more held, measured).
+    "scan_side": 960,
     # A camera's stream through Home Assistant can fall further and further behind (a doorbell's by
     # a second a minute, to half a minute within the hour, also read as fast as it came): one that
     # came this many seconds later than when it opened is opened again, while nothing is looked for.

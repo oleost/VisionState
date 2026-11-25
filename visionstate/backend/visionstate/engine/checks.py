@@ -365,27 +365,35 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
             return None
         min_px = self.face_limits(cfg)["min_face_px"] if face_model is not None else 0.0
 
-        def scan(crops: list, offsets: list[tuple[int, int]], size: tuple[int, int], regions: list[int]) -> list:
+        sem = self._sem
+        plates_at = [0.0]  # when the plate finder last ran (PLATES["scan_interval_s"])
+
+        def scan(
+            crops: list, offsets: list[tuple[int, int]], size: tuple[int, int], regions: list[int], steps: list[int]
+        ) -> list:
             result: list[tuple[tuple, object] | None] = [None] * len(crops)
+            if sem.locked():
+                # As many model runs as RUNTIME["max_concurrent_inferences"] allows are running (the
+                # checks'): this frame is not looked at, rather than one more model's memory at once.
+                return result
             heads = [n for n, region in enumerate(regions) if kinds[region] == "face"]
             if face_model is not None and heads:
                 for n, face in zip(heads, face_model.detector.detect([crops[n] for n in heads]), strict=True):
                     if face is not None:
-                        moved = face.moved(offsets[n][0], offsets[n][1], 1.0)
+                        moved = face.moved(offsets[n][0], offsets[n][1], float(steps[n]))
                         result[n] = (faces.look_rank(moved, min_px, size), moved)
-            if plate_model is not None:
+            if plate_model is not None and time.monotonic() - plates_at[0] >= PLATES["scan_interval_s"]:
+                plates_at[0] = time.monotonic()
                 for n, region in enumerate(regions):
                     if kinds[region] != "plate":
                         continue
                     found = plate_model.finder.find(crops[n])
                     if found:
                         best = max(found, key=plates.look_rank)
-                        dx, dy = offsets[n]
+                        (dx, dy), k = offsets[n], steps[n]
                         x1, y1, x2, y2 = best.box
-                        result[n] = (
-                            plates.look_rank(best),
-                            plates.Found((x1 + dx, y1 + dy, x2 + dx, y2 + dy), best.score),
-                        )
+                        moved = plates.Found((x1 * k + dx, y1 * k + dy, x2 * k + dx, y2 * k + dy), best.score)
+                        result[n] = (plates.look_rank(moved), moved)
             return result
 
         return scan

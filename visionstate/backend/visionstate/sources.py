@@ -21,6 +21,7 @@ import numpy as np
 from PIL import Image
 
 from . import imaging
+from .backbones import trim_memory
 from .ha_events import camera_stream, discovered, fetch_registries, integration_names, websocket_url
 from .redact import redact
 from .settings import CAMERA_SETTING_KEYS, FACES, RUNTIME, SOUND, SUPERVISOR_URL, Settings, camera_preset
@@ -662,25 +663,32 @@ def _grey(frame) -> np.ndarray:  # noqa: ANN001 - an av.VideoFrame
     return frame.to_ndarray(format="gray")
 
 
-def crop_rgb(frame, box: tuple[int, int, int, int]) -> Image.Image:  # noqa: ANN001 - an av.VideoFrame
+def crop_rgb(frame, box: tuple[int, int, int, int], step: int = 1) -> Image.Image:  # noqa: ANN001 - an av.VideoFrame
     """A part of a decoded frame (pixels x1, y1, x2, y2) as an RGB picture, without converting the
     whole frame first: a 2560 × 1920 frame takes about 20 ms to convert, its head region well
     under 1 ms. Planar 4:2:0 YUV (what H.264 decodes to) is converted here, as FFmpeg does (BT.601,
-    limited range unless the format says full); any other format through FFmpeg."""
+    limited range unless the format says full); any other format through FFmpeg. ``step`` (1 or
+    even): every step-th pixel only, a picture that many times smaller each way."""
     x1, y1, x2, y2 = box
     name = frame.format.name
     if name not in ("yuv420p", "yuvj420p"):
-        return frame.to_image().crop(box)
+        image = frame.to_image().crop(box)
+        return image if step == 1 else image.resize((max(1, image.width // step), max(1, image.height // step)))
     x1, y1 = x1 & ~1, y1 & ~1  # the colour planes have one sample for 2 × 2 pixels
 
-    def plane(n: int, top: int, bottom: int, left: int, right: int) -> np.ndarray:
+    def plane(n: int, top: int, bottom: int, left: int, right: int, every: int) -> np.ndarray:
         p = frame.planes[n]
         rows = np.frombuffer(p, np.uint8).reshape(p.height, p.line_size)
-        return rows[top:bottom, left:right].astype(np.float32)
+        return rows[top:bottom:every, left:right:every].astype(np.float32)
 
-    y = plane(0, y1, y2, x1, x2)
-    u = plane(1, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2).repeat(2, 0).repeat(2, 1)[: y.shape[0], : y.shape[1]]
-    v = plane(2, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2).repeat(2, 0).repeat(2, 1)[: y.shape[0], : y.shape[1]]
+    y = plane(0, y1, y2, x1, x2, step)
+    if step == 1:
+        u = plane(1, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2, 1).repeat(2, 0).repeat(2, 1)
+        v = plane(2, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2, 1).repeat(2, 0).repeat(2, 1)
+    else:  # one colour sample per 2 × 2: every (step / 2)-th of them lines up with the brightness
+        u = plane(1, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2, step // 2)
+        v = plane(2, y1 // 2, (y2 + 1) // 2, x1 // 2, (x2 + 1) // 2, step // 2)
+    u, v = u[: y.shape[0], : y.shape[1]], v[: y.shape[0], : y.shape[1]]
     u, v = u - 128.0, v - 128.0
     if name == "yuvj420p":
         r, g, b = y + 1.402 * v, y - 0.344 * u - 0.714 * v, y + 1.772 * u
@@ -692,11 +700,13 @@ def crop_rgb(frame, box: tuple[int, int, int, int]) -> Image.Image:  # noqa: ANN
 
 
 # What a stream's scan makes of the regions cut from one frame (their pictures, where each was cut,
-# the frame's size, and which of the focus boxes each is): for each, a look's rank (higher is
-# better) and what was found, or None. Given by the engine (ChecksMixin.stream_scan), which knows
-# the face detector and the plate finder and which focus box is a head and which a vehicle.
+# the frame's size, which of the focus boxes each is, and how much smaller each picture is than the
+# frame: a large region is cut at every step-th pixel): for each, a look's rank (higher is better)
+# and what was found, in the frame's pixels, or None. Given by the engine (ChecksMixin.stream_scan),
+# which knows the face detector and the plate finder and which focus box is a head and which a vehicle.
 Scan = Callable[
-    [list[Image.Image], list[tuple[int, int]], tuple[int, int], list[int]], list[tuple[tuple, object] | None]
+    [list[Image.Image], list[tuple[int, int]], tuple[int, int], list[int], list[int]],
+    list[tuple[tuple, object] | None],
 ]
 
 
@@ -906,19 +916,25 @@ class RtspStream:
                 boxes.append(box)
         if not boxes:
             return []
+        steps = [_step(box) for box in boxes]
         try:
-            crops = [crop_rgb(frame, box) for box in boxes]
-            found = scan(crops, [(box[0], box[1]) for box in boxes], (w, h), regions)
+            crops = [crop_rgb(frame, box, step) for box, step in zip(boxes, steps, strict=True)]
+            found = scan(crops, [(box[0], box[1]) for box in boxes], (w, h), regions, steps)
+            # What the models ran on is freed: glibc keeps it for this thread otherwise (on Linux
+            # the plate finder's runs held about 75 MB more after a burst, measured).
+            trim_memory()
         except Exception:  # noqa: BLE001 - a broken scan must not stop the stream
             if not self._scan_failed:
                 log.exception("Looking for faces or plates in a stream failed")
                 self._scan_failed = True
             return []
-        return [
-            Look(rank=result[0], at=0.0, crop=crop, offset=(box[0], box[1]), size=(w, h), found=result[1], region=n)
-            for n, box, crop, result in zip(regions, boxes, crops, found, strict=True)
-            if result is not None
-        ]
+        looks = []
+        for n, box, crop, result in zip(regions, boxes, crops, found, strict=True):
+            if result is None:
+                continue
+            crop, offset = _around(frame, crop, (box[0], box[1]), getattr(result[1], "box", None))
+            looks.append(Look(rank=result[0], at=0.0, crop=crop, offset=offset, size=(w, h), found=result[1], region=n))
+        return looks
 
     def _run(self) -> None:
         import av
@@ -980,6 +996,41 @@ class RtspStream:
             return True
         with self._changed:
             return not self._changed.wait_for(lambda: self._closed, timeout=seconds)
+
+
+def _step(box: tuple[int, int, int, int]) -> int:
+    """Every how many pixels a region is cut for a scan (1 or even): its longest side at most
+    RUNTIME["scan_side"] (a vehicle close by is 1500 pixels wide; the plate finder looks at 640)."""
+    longest = max(box[2] - box[0], box[3] - box[1])
+    step = 1
+    while longest / step > RUNTIME["scan_side"]:
+        step += 1 if step == 1 else 2
+    return step
+
+
+def _around(
+    frame,  # noqa: ANN001 - an av.VideoFrame
+    crop: Image.Image,
+    offset: tuple[int, int],
+    found: tuple[float, float, float, float] | None,
+) -> tuple[Image.Image, tuple[int, int]]:
+    """A look keeps only what was found in its region (``found``: its box in the frame) and
+    RUNTIME["look_margin"] of its size around it on every side, cut again from the frame at full
+    size: a vehicle's region is megabytes, its plate kilobytes, and a stream keeps the looks of
+    several seconds."""
+    if found is None:
+        return crop, offset
+    x1, y1, x2, y2 = found
+    mx, my = (x2 - x1) * RUNTIME["look_margin"], (y2 - y1) * RUNTIME["look_margin"]
+    box = (
+        max(0, int(x1 - mx)) & ~1,
+        max(0, int(y1 - my)) & ~1,
+        min(frame.width, int(x2 + mx) + 1),
+        min(frame.height, int(y2 + my) + 1),
+    )
+    if box[2] - box[0] < 2 or box[3] - box[1] < 2:
+        return crop, offset
+    return crop_rgb(frame, box), (box[0], box[1])
 
 
 class Pacer:

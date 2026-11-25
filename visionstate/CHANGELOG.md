@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.16.0b15
+
+**Faces and plates read on a camera's stream, within the memory 0.16.0b12 used.** 0.16.0b13 and
+0.16.0b14 were withdrawn: on a full Home Assistant host they used so much memory that the system
+stopped the app. This beta has what they brought, measured on the same doorbell recording against
+0.16.0b12 (about the same memory: 853 MB at most against 821).
+
+### Changed
+
+- **A sensor that recognises faces or reads plates keeps its camera's stream open**, decoding only
+  a frame every second or two until something comes, then every frame from just before: someone
+  walking from the car to the door is named as they come (0.16.0b12 opened a Home Assistant
+  camera's stream only once the person was seen, and Home Assistant takes about eight seconds).
+- **A Home Assistant camera's stream is played as it was filmed**, one frame after another
+  instead of chunks of a few seconds at once, and opened again when it falls behind.
+- **Plates are read between the checks too.** A vehicle not yet known by its plate that comes or
+  moves makes the sensor check about every second, for a minute and a half at most (*Vehicle seen*
+  on the **Live** tab), which also covers whoever gets out of it; a parked car does not, nor one
+  half hidden that is found only now and then. On a stream the plate finder looks at the vehicles
+  between the checks, and a check reads the best few looks.
+- For faces and plates, pick a camera entity that can stream: a Reolink camera's *Clear* entity
+  (switched off in Home Assistant at first), not its *Snapshots* one, which cannot.
+
+### Fixed
+
+- **Less memory while a stream is looked at:** a look keeps only the face or plate and a little
+  around it, a vehicle's region is looked at smaller, the scan waits while the checks' models run,
+  and what it used is given back at once.
+
 ## 0.16.0b14
 
 **Fixes for 0.16.0b13: no endless bursts, no growing lag.**
