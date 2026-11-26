@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 BRIDGE_AVAILABILITY = f"{APP_SLUG}/status"
 ONLINE, OFFLINE = "online", "offline"
 RECONNECT_DELAY_S = 10
+CONNECT_TIMEOUT_S = 10  # how long the broker may take to answer a connect (aiomqtt's own default)
 CONFIRM_TIMEOUT_S = 10  # how long the broker may take to confirm a removal
 SNAPSHOT_SUFFIX = "_snapshot"  # the entity of an object's snapshot: "<key>_snapshot"
 IDENTIFIED_SUFFIX = "_identified"  # a car's "identified by" entity: "<key>_identified"
@@ -794,15 +795,17 @@ class MqttBridge:
                 self.last_error = "No MQTT broker configured"
                 await asyncio.sleep(RECONNECT_DELAY_S * 6)
                 continue
+            client = aiomqtt.Client(
+                hostname=self.config.host,
+                port=self.config.port,
+                username=self.config.username or None,
+                password=self.config.password or None,
+                identifier=f"{APP_SLUG}-{VERSION}",
+                will=aiomqtt.Will(BRIDGE_AVAILABILITY, OFFLINE, qos=1, retain=True),
+                timeout=CONNECT_TIMEOUT_S,
+            )
             try:
-                async with aiomqtt.Client(
-                    hostname=self.config.host,
-                    port=self.config.port,
-                    username=self.config.username or None,
-                    password=self.config.password or None,
-                    identifier=f"{APP_SLUG}-{VERSION}",
-                    will=aiomqtt.Will(BRIDGE_AVAILABILITY, OFFLINE, qos=1, retain=True),
-                ) as client:
+                async with client:
                     self._client = client
                     self.connected = True
                     self.last_error = ""
@@ -815,6 +818,8 @@ class MqttBridge:
                     async for message in client.messages:
                         await self._dispatch(str(message.topic), message.payload)
             except aiomqtt.MqttError as err:
+                if not self.connected:
+                    _close_unconnected(client)
                 self.last_error = str(err)
                 log.warning("MQTT connection lost: %s", err)
             except asyncio.CancelledError:
@@ -957,3 +962,17 @@ class MqttBridge:
                 )
         for topic in object_topics(slug, key).values():
             await self.publish(topic, "", retain=True)
+
+
+def _close_unconnected(client) -> None:
+    """Close the connection of a client that never got connected. aiomqtt 2.5.1 leaves it open when
+    the broker answers too late (aiomqtt issue 409): every retry then kept one more connection with
+    our client ID and last will. Paho's disconnect closes it, and does nothing on one already closed
+    (an aiomqtt that cleans up itself). tests/test_mqtt.py checks that no connection is left either way."""
+    paho = getattr(client, "_client", None)
+    if paho is None:
+        return
+    try:
+        paho.disconnect()
+    except Exception:  # noqa: BLE001 - cleaning up after a failure must not fail the reconnect
+        log.debug("Could not close an unconnected MQTT client", exc_info=True)

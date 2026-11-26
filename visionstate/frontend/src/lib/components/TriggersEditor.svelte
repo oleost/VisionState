@@ -92,18 +92,18 @@
           <span class="col" style="gap:2px">
             <span class="small">React when this much of the region changes</span>
             <span class="xsmall faint">
-              {#if liveScore !== null}Measured just now: <span class="mono">{pct(liveScore, 1)}</span> — keep the threshold above normal noise.{:else}Save and wait a moment to see the measured change here.{/if}
+              {#if liveScore !== null}Changed just now: <span class="mono">{pct(liveScore, 1)}</span> — keep the threshold above what changes when nothing happens.{:else}Save and wait a moment to see the measured change here.{/if}
             </span>
           </span>
           <span class="row"
             ><input
               class="input sm num"
               type="number"
-              min={limits.change_threshold[0] * 100}
-              max={limits.change_threshold[1] * 100}
-              step="0.5"
-              value={+(triggers.change_threshold * 100).toFixed(1)}
-              oninput={(e) => (triggers.change_threshold = Number(e.currentTarget.value) / 100)}
+              min={limits.change_share[0] * 100}
+              max={limits.change_share[1] * 100}
+              step="0.1"
+              value={+(triggers.change_share * 100).toFixed(1)}
+              oninput={(e) => (triggers.change_share = Number(e.currentTarget.value) / 100)}
             /> %</span
           >
         </label>

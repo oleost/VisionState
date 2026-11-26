@@ -864,7 +864,11 @@ TRIGGER_DEFAULTS = {
     "burst_duration_s": 30.0,  # how long a burst lasts after the last trigger
     "change_detection": False,
     "change_interval_s": 2.0,  # how often the region is compared
-    "change_threshold": 0.04,  # mean pixel difference (0-1) in the region that counts as a change
+    # The share of the region that changed that counts as a change: the signature's cells (see
+    # CHANGE_SIGNATURE_SIZE) that differ by more than CHANGE_CELL_DIFFERENCE from the last check's
+    # (imaging.change_score). A car turning in 10-15 m from a doorbell changes 0.3-1 % of it in its
+    # first second or two; the light at dusk and a still night none (docs/SCOPE.md, change detection).
+    "change_share": 0.005,
     # A light or switch that is turned on before a check takes its frame and off afterwards (a
     # lamp or flash next to the camera). Left alone when it is already on.
     "light_entity": "",
@@ -951,7 +955,7 @@ TRIGGER_LIMITS = {
     "burst_interval_s": (0.5, 60.0),
     "burst_duration_s": (0.0, 600.0),
     "change_interval_s": (0.5, 60.0),
-    "change_threshold": (0.005, 0.5),
+    "change_share": (0.001, 0.5),
     "light_delay_s": (0.0, 30.0),
     "flash_level": (1, 100),
 }
@@ -967,6 +971,10 @@ LIGHT_DOMAINS = ("light", "switch", "input_boolean")
 # New entity states that are ignored (the entity going offline is not a real event).
 TRIGGER_IGNORED_STATES = {"unavailable", "unknown"}
 CHANGE_SIGNATURE_SIZE = 48  # edge length of the greyscale thumbnail used for change detection
+# A cell of the signature has changed when its grey value (0-1) moved by more than this: well above
+# sensor noise and JPEG blocks, below a car or a person (like the per-pixel thresholds of other
+# motion detectors, about 30 of 255).
+CHANGE_CELL_DIFFERENCE = 0.10
 # A probe decodes a JPEG only this many times larger than the signature (over its region), not
 # whole: the same signature (to about 0.001), four to six times faster (imaging.decode_for_signature).
 CHANGE_SIGNATURE_DECODE = 4
@@ -1324,6 +1332,9 @@ def merge_triggers(stored: dict | None) -> dict:
     merged = {**TRIGGER_DEFAULTS, **(stored or {})}
     merged["entities"] = list(merged.get("entities") or [])
     merged["only_states"] = dict(merged.get("only_states") or {})
+    # Until 0.16.0b15 a change was a mean difference over the region ("change_threshold"): a
+    # threshold of that means nothing for the share, so the sensor gets the default.
+    merged.pop("change_threshold", None)
     old_use = merged.pop("camera_use", "")
     camera = dict(merged.get("camera") or {})
     if not camera and old_use in CAMERA_PRESETS:

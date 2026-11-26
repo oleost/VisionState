@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.16.0b16
+
+**Change detection sees a car coming, and MQTT reconnects tidy up after themselves.**
+
+### Changed
+
+- **Detect changes in the image counts how much of the region changed clearly**, instead of the
+  average change over all of it. A car turning in at the far end of a driveway changes a small
+  part of the picture a lot, which the average hid: on a doorbell it was found only when someone
+  came to the door, after its plate could no longer be read. It is now seen within a few seconds
+  of coming into view, and noise or light that changes the whole picture a little still does not
+  count. **Every sensor with change detection gets the new default of 0.5 %**, since a threshold
+  for the average means something else; the change measured just now is shown next to the setting.
+
+### Fixed
+
+- **MQTT: a connection attempt the broker answered too late stayed open.** When the broker took
+  longer than ten seconds (a Home Assistant host under pressure), every retry left one more
+  connection behind with the app's client ID. They are now closed. Thanks to @Docter77 for
+  tracing it to the MQTT library (#90).
+
 ## 0.16.0b15
 
 **Faces and plates read on a camera's stream, within the memory 0.16.0b12 used.** 0.16.0b13 and

@@ -907,7 +907,7 @@ Set up per sensor under **Settings → When to check**:
 |---|---|---|
 | Regular check | every 10 s | The safety net. It is counted from the last check, whatever caused it, so with frequent triggers it rarely runs. Switch it **off** to check only when triggered (plus once after start-up). |
 | Check when these change | none | Any state change of these entities starts a check — a motion sensor, a door contact, the garage opener, a Frigate motion sensor… For each entity you can enter the one state that should count (*only when it becomes* `on`, `Flow finished` …). |
-| Detect changes in the image | off | Compares the region every *N* seconds (cheap) and only runs the AI when at least *X* % of it changed. The measured change is shown next to the setting so you can pick a threshold above normal noise. |
+| Detect changes in the image | off | Compares the region every *N* seconds (cheap) with the last check and only runs the AI when at least *X* % of it changed clearly (got much lighter or darker). Noise and light that change the whole picture a little do not count, so the default of 0.5 % is enough to see a car turning in at the far end of a driveway. The change measured just now is shown next to the setting: keep the threshold above what it shows when nothing happens. |
 | After a trigger | every 2 s for 30 s | Keeps checking faster for a while, so both the moving door and its final state are seen. Set the time to 0 for a single check per trigger. |
 
 Sensors on the exact same camera or address take their pictures together: their regular checks

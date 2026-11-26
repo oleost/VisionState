@@ -26,7 +26,7 @@ export interface Triggers {
   burst_duration_s: number;
   change_detection: boolean;
   change_interval_s: number;
-  change_threshold: number;
+  change_share: number;
   /** A light or switch turned on before a check takes its frame, and off afterwards ('' = none). */
   light_entity: string;
   light_delay_s: number;
@@ -807,7 +807,7 @@ export interface AppConfig {
   quality: { min_samples_per_state: number; min_night_samples: number; cv_folds: number };
   trigger_defaults: Triggers;
   trigger_limits: Record<
-    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_threshold' | 'light_delay_s' | 'flash_level',
+    'burst_interval_s' | 'burst_duration_s' | 'change_interval_s' | 'change_share' | 'light_delay_s' | 'flash_level',
     [number, number]
   >;
   light_domains: string[];

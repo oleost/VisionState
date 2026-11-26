@@ -659,8 +659,19 @@ finished file back. It measures speed and memory, not quality: that needs a righ
   - State changes of chosen HA entities (WebSocket `subscribe_trigger`, attribute-only changes
     and `unavailable`/`unknown` ignored). `only_states` limits an entity to one new state
     (compared without regard to case).
-  - Optional region change detection: a small greyscale copy of the ROI is compared every
-    *N* seconds; the AI only runs when the difference exceeds a threshold. The frame is decoded
+  - Optional region change detection: a small greyscale copy of the ROI (`CHANGE_SIGNATURE_SIZE`
+    cells a side) is compared every *N* seconds with the last check's; the AI only runs when
+    `triggers.change_share` of its cells changed by more than `CHANGE_CELL_DIFFERENCE`
+    (`imaging.change_score`). It used to be the mean difference over the region, which hid a car:
+    on a doorbell looking down a driveway a car turning in 10-15 m away changed the mean by
+    0.1-0.5 %, far below its 4 %, and only a person close to the camera got over it. Counting the
+    cells that changed a lot is how motion detectors usually work (a threshold per pixel, then the
+    area over it), and on that doorbell (recorded arrivals and an evening of the live stream, dusk
+    into dark) it fired 1-5 s after a car came into view, about 2 s before its plate faced the
+    camera, and never while nothing moved. Light that changes the whole picture a little stays
+    under the cell threshold; a sudden large change (a light switched on) may start one burst of
+    checks, as before. No background model: comparing with the last check is enough to decide
+    whether to check now. The frame is decoded
     only as large as that copy needs (`imaging.decode_for_signature`: a JPEG decodes at 1/2, 1/4 or
     1/8 of its size), four to six times faster than whole, with the same result; history
     thumbnails are decoded the same way.

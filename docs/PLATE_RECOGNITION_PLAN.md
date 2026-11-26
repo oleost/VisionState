@@ -254,11 +254,12 @@ to the door, recorded from the camera's stream and replayed; kept locally):
 - the plate was read exactly on most frames for about 3.6 s as the car turned in (finder and
   reader on every fourth frame: the exact plate, reader score 0.85-1.0, plates 47-96 px wide),
   and not at all once it was parked (side-on);
-- change detection did not see the car coming: the region changed by 0.001-0.002 (the default
-  threshold is 0.04) until the car was in the drive, and by 0.004-0.014 as the person walked up;
-  the regular checks (every 10 s there) found the car only after its plate could no longer be
-  read. Whether the plate is read on arrival depends on a check finding the car in those seconds:
-  a shorter interval or a camera that looks along the drive helps;
+- change detection did not see the car coming: its measure then, the mean difference over the
+  region, moved by 0.001-0.002 (the threshold was 0.04) until the car was in the drive, and by
+  0.004-0.014 as the person walked up; the regular checks (every 10 s there) found the car only
+  after its plate could no longer be read. Change detection now counts the share of the region
+  that changed a lot, which fires as the car comes into view (docs/SCOPE.md, triggers); without
+  it, a shorter interval or a camera that looks along the drive helps;
 - the whole app replayed against a copy of that Home Assistant's sensors, people and cars (the
   camera faked as a Home Assistant camera whose stream comes 6-8 s late, as measured there):
   with the stream kept open (`RUNTIME["stream_standby_s"]`) and the plate burst holding for

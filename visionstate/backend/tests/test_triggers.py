@@ -70,12 +70,20 @@ def test_merge_triggers_fills_defaults():
     assert merged["burst_duration_s"] == TRIGGER_DEFAULTS["burst_duration_s"]
 
 
+def test_a_mean_threshold_from_before_becomes_the_default_share():
+    """Until 0.16.0b15 a change was a mean difference: its threshold means nothing for the share."""
+    merged = merge_triggers({"change_detection": True, "change_threshold": 0.01})
+    assert "change_threshold" not in merged
+    assert merged["change_share"] == TRIGGER_DEFAULTS["change_share"]
+    assert merge_triggers({"change_share": 0.02})["change_share"] == 0.02
+
+
 def test_trigger_model_validates_entities():
     assert Triggers(entities=["binary_sensor.a", " binary_sensor.a "]).entities == ["binary_sensor.a"]
     with pytest.raises(ValueError):
         Triggers(entities=["not an entity"])
     with pytest.raises(ValueError):
-        Triggers(change_threshold=5)
+        Triggers(change_share=5)
 
 
 def test_change_score():
@@ -86,12 +94,27 @@ def test_change_score():
     b = imaging.region_signature(half, None)
     assert imaging.change_score(None, a) == 0.0
     assert imaging.change_score(a, a) == 0.0
-    assert imaging.change_score(a, b) == pytest.approx(0.5, abs=0.02)
+    assert imaging.change_score(a, b) == pytest.approx(0.5, abs=1 / 48 + 0.001)  # the edge row counts too
     # Only the region counts: a change outside it scores 0.
     top = imaging.region_signature(half, {"x": 0, "y": 0.6, "w": 1, "h": 0.4})
     bottom = imaging.region_signature(black, {"x": 0, "y": 0.6, "w": 1, "h": 0.4})
     assert imaging.change_score(bottom, top) == 0.0
     assert isinstance(a, np.ndarray)
+
+
+def test_a_small_thing_that_changes_a_lot_counts_and_noise_everywhere_does_not():
+    """A car far down a driveway is a few cells that change a lot; light and noise change every cell
+    a little. A mean over the region hid the first (docs/SCOPE.md, change detection)."""
+    rng = np.random.default_rng(1)
+    street = Image.fromarray(rng.integers(60, 120, (480, 640, 3), dtype=np.uint8))
+    car = street.copy()
+    car.paste((230, 230, 230), (500, 300, 560, 330))  # 60x30 px: 0.6 % of the frame
+    brighter = Image.fromarray(np.clip(np.asarray(street, dtype=np.int16) + 15, 0, 255).astype(np.uint8))
+    base = imaging.region_signature(street, None)
+    with_car = imaging.change_score(base, imaging.region_signature(car, None))
+    assert with_car >= TRIGGER_DEFAULTS["change_share"]
+    assert float(np.abs(imaging.region_signature(car, None) - base).mean()) < 0.01  # the mean did not see it
+    assert imaging.change_score(base, imaging.region_signature(brighter, None)) == 0.0  # 6 % brighter everywhere
 
 
 def event(entity, old, new):
@@ -487,7 +510,6 @@ def test_change_detection_with_a_light_reads_a_new_frame_in_the_light(tmp_path, 
             "regular": False,
             "change_detection": True,
             "change_interval_s": 0.5,
-            "change_threshold": 0.005,  # the drawn display changes little (thin segments)
             "burst_duration_s": 0,
             "light_entity": "light.flash",
             "light_delay_s": 0.2,

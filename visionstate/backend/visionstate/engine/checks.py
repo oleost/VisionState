@@ -279,7 +279,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
         signature = await asyncio.to_thread(imaging.region_signature, small, cfg.roi)
         score = imaging.change_score(live.signature, signature)
         live.change_score = score
-        if score >= cfg.triggers["change_threshold"]:
+        if score >= cfg.triggers["change_share"]:
             now = time.time()
             live.burst_until = now + cfg.triggers["burst_duration_s"]
             live.last_trigger = {"source": "change", "detail": f"{score:.1%} of the region changed", "at": now}

@@ -16,6 +16,7 @@ import numpy as np
 from PIL import ExifTags, Image, ImageDraw, ImageOps
 
 from .settings import (
+    CHANGE_CELL_DIFFERENCE,
     CHANGE_SIGNATURE_DECODE,
     CHANGE_SIGNATURE_SIZE,
     JPEG_QUALITY,
@@ -298,10 +299,12 @@ def region_signature(image: Image.Image, roi: dict | None, size: int = CHANGE_SI
 
 
 def change_score(previous: np.ndarray | None, current: np.ndarray) -> float:
-    """Mean absolute pixel difference between two signatures (0 = identical, 1 = inverted)."""
+    """The share of two signatures' cells that differ by more than CHANGE_CELL_DIFFERENCE (0 = none,
+    1 = all). Not the mean difference: a car on a driveway changes a few cells a lot, which a mean over
+    the whole region hides (0.1-0.2 % in 2 s), while noise changes every cell a little."""
     if previous is None or previous.shape != current.shape:
         return 0.0
-    return float(np.abs(current - previous).mean())
+    return float((np.abs(current - previous) > CHANGE_CELL_DIFFERENCE).mean())
 
 
 # --- Object detection helpers ---------------------------------------------------------------

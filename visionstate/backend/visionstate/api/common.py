@@ -199,9 +199,7 @@ class Triggers(BaseModel):
     change_interval_s: float = Field(
         TRIGGER_DEFAULTS["change_interval_s"], ge=_tlo["change_interval_s"], le=_thi["change_interval_s"]
     )
-    change_threshold: float = Field(
-        TRIGGER_DEFAULTS["change_threshold"], ge=_tlo["change_threshold"], le=_thi["change_threshold"]
-    )
+    change_share: float = Field(TRIGGER_DEFAULTS["change_share"], ge=_tlo["change_share"], le=_thi["change_share"])
     light_entity: str = TRIGGER_DEFAULTS["light_entity"]
     light_delay_s: float = Field(TRIGGER_DEFAULTS["light_delay_s"], ge=_tlo["light_delay_s"], le=_thi["light_delay_s"])
     light_when: str = TRIGGER_DEFAULTS["light_when"]  # settings.LIGHT_WHEN
