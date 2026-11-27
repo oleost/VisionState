@@ -275,6 +275,26 @@ Since 0.16.0b14 a vehicle where one was in the last `PLATES["burst_seen_s"]` has
 burst lasts `PLATES["burst_max_s"]` at most. The plate scan adds about 60 MB at the peak of a burst
 (measured on the recording).
 
+**Too far to read (measured 2026-11-27):** on the same doorbell (2560 px wide) a car
+somewhere far in view was found and lost 66 times in a day, 35-140 px wide; each time it could
+start a burst, and a burst that ran its `burst_max_s` then rested, starting none for a car that
+came home in that minute. The only reads of boxes that narrow were nonsense. On the recording the
+car coming home was 100-117 px on the road like the cars passing, and read right first at a 248-px
+box (a 47-px plate: about a fifth of the box); reads below that scored under `PLATES["min_score"]`.
+Since then a vehicle narrower than `PLATES["min_vehicle_px"]` (`plates.readable`) is not read,
+starts no burst and is not scanned between the checks (before, the limit was 60 px and only for
+reading). Change detection still checks the far car while it comes, and the first check that finds
+it near enough starts the burst: on the recording that check came before the plate could be read.
+The limit is in pixels of the picture, not a share of it, because what a reader needs is pixels on
+the plate, whatever the camera: on a 640-px sub-stream a vehicle must fill a quarter of the picture,
+where its plate is still too small to read. It is the same for every class in
+`settings.VEHICLE_CLASSES`, and set well below what can be read, not at it: a car's plate is a fifth
+to a third of its box seen from the front or the back (less from an angle), a motorcycle's (at the
+back only, two lines of smaller characters) about a quarter of its box seen from behind, a truck's
+or a bus's less; at the limit every one of them has a plate of at most about 50 px, below the 80 px
+DOCS.md asks of a camera and close to the 45 px under which nothing was read right. Not measured on
+a real motorcycle yet (no recording of one).
+
 **Why.** A car driving in shows a readable plate for a few seconds, like a face walking up to a
 door; the regular checks (every `interval_s`, or a change-detection burst) may miss them all. Faces
 had the same problem, and what fixed it there:

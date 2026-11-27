@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 import zlib
 
-from .. import detectors, imaging, readers, teach
+from .. import detectors, imaging, plates, readers, teach
 from ..settings import DETECTION, FACES, PLATES, RUNTIME, SOUND, TEACH, VEHICLE_CLASSES
 from .state import FaceBurst, LiveState, ObjectTrack, SensorConfig, SoundTrack
 
@@ -200,16 +200,21 @@ def in_burst(live: LiveState, now: float) -> bool:
     return now < max(live.burst_until, live.face_burst.until, live.plate_burst_until)
 
 
-def steer_plate_burst(until: float, found: list[dict], seen: list[tuple[list[float], float]], now: float) -> float:
+def steer_plate_burst(
+    until: float, found: list[dict], seen: list[tuple[list[float], float]], now: float, frame: tuple[int, int]
+) -> float:
     """After a check of a sensor that reads plates: until when to check every
     PLATES["burst_interval_s"]. A vehicle not named surely by its plate where no vehicle was in
     the last PLATES["burst_seen_s"] (``seen``: the vehicle boxes of the checks and when, kept up to
     date here; the same place: teach.box_iou) came or moved, and holds it PLATES["burst_hold_s"]
     longer: a car turning in shows its plate for a few seconds only, maybe between two regular
     checks, and a small change far away does not trigger a burst of its own. A parked car does
-    not, nor one the detector finds only now and then (half hidden behind another); a burst ends
-    when every vehicle is named surely."""
-    vehicles = [d for d in found if d["key"] in VEHICLE_CLASSES and not d.get("filtered")]
+    not, nor one the detector finds only now and then (half hidden behind another), nor one too
+    far for its plate to be read (plates.readable in a frame of ``frame`` pixels: cars passing on
+    a road); a burst ends when every vehicle is named surely."""
+    vehicles = [
+        d for d in found if d["key"] in VEHICLE_CLASSES and not d.get("filtered") and plates.readable(d["box"], frame)
+    ]
 
     def known(box: list[float]) -> bool:
         return any(teach.box_iou(b, box) >= TEACH["keep_iou"] for b, _ in seen)
@@ -223,13 +228,13 @@ def steer_plate_burst(until: float, found: list[dict], seen: list[tuple[list[flo
     return max(until, now + PLATES["burst_hold_s"]) if moving else until
 
 
-def follow_plate_burst(live: LiveState, found: list[dict], now: float) -> bool:
+def follow_plate_burst(live: LiveState, found: list[dict], now: float, frame: tuple[int, int]) -> bool:
     """After a check of a sensor that reads plates: start, hold or end its burst
     (steer_plate_burst). A burst lasts PLATES["burst_max_s"] at most, and then none comes for
     PLATES["burst_seen_s"]: vehicles moving about all the time (a busy road in view) must not keep
     the sensor checking every second. True: a burst started."""
     running = live.plate_burst_until > now
-    until = steer_plate_burst(live.plate_burst_until, found, live.vehicles_seen, now)
+    until = steer_plate_burst(live.plate_burst_until, found, live.vehicles_seen, now, frame)
     started = False
     if not running and until > now:
         if now < live.plate_burst_rest_until:

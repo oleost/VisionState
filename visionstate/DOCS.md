@@ -448,7 +448,8 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
 - **When a car comes**: a car turning in shows its plate for a few seconds only. When a check
   finds a vehicle not yet named by its plate that came or moved, the sensor checks about every
   second until it has stood still for a while (*Vehicle seen* on the **Live** tab), for a minute
-  and a half at most; a parked car does not, nor one half hidden that is found only now and then. On a camera's stream (as for faces, above) the plate finder also looks at the
+  and a half at most; a parked car does not, nor one half hidden that is found only now and then,
+  nor one too far away for its plate to be read (a car passing on a road far off). On a camera's stream (as for faces, above) the plate finder also looks at the
   vehicles several times a second between these checks: each check takes the frame with the best
   look at a plate (the widest and surest) and reads a few other good looks too.
 - **How it decides**: a plate read exactly as one of your cars names the car at once. A read one
@@ -483,7 +484,8 @@ neighbour's drive may not be allowed to record the plates of passers-by where yo
   under **What you taught**, where a wrong one is forgotten like any other. A car that overlaps
   another vehicle is not learned from (the plate may be the other one's).
 - **Which camera works?** The plate must be sharp and big enough: at least about 80 pixels wide in
-  the camera's picture, straight on or a little from the side (a plate seen at an angle is
+  the camera's picture (a car, truck, bus or motorcycle too small in the picture for that is not
+  looked at for a plate), straight on or a little from the side (a plate seen at an angle is
   straightened before it is read), in daylight or under a light. Use
   the camera's **main stream**. A camera at the gate or drive, at car height, sees plates best;
   one high above a road sees them from above and too small. Infrared at night makes reflecting

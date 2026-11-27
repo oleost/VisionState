@@ -321,13 +321,13 @@ class PlatesMixin(TeachingMixin, ModelsMixin, PublishingMixin, RuntimeBase):
                 -((result[t[0]]["box"][2] - result[t[0]]["box"][0]) * (result[t[0]]["box"][3] - result[t[0]]["box"][1]))
             )
         )
-        w, h = image.width, image.height
+        w, h = live.plate_frame = image.width, image.height
         looks, live.plate_looks = live.plate_looks, []
         boxes = {}
         for n, (i, _) in enumerate(todo):
             x1, y1, x2, y2 = result[i]["box"]
             px = (max(0, round(x1 * w)), max(0, round(y1 * h)), min(w, round(x2 * w)), min(h, round(y2 * h)))
-            if n < PLATES["max_vehicles"] and px[2] - px[0] >= PLATES["min_vehicle_px"]:
+            if n < PLATES["max_vehicles"] and plates.readable(result[i]["box"], (w, h)):
                 boxes[i] = px
         between = await self._plates_between(model, looks, boxes, (w, h)) if boxes else {}
         for i, before in todo:

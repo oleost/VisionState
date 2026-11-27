@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.16.0b17
+
+**A car far away no longer keeps the plate reader busy.**
+
+### Changed
+
+- **A vehicle too small in the picture for its plate to be read is left alone**: it is not read,
+  starts no burst of checks and is not looked at on the stream between checks. On a doorbell,
+  cars passing on a road far off were found and lost all day; each could start a minute and a
+  half of checks every second, after which the sensor rested, and a car coming home in that
+  minute could be missed. The limit is in pixels of the camera's picture and the same for cars,
+  trucks, buses and motorcycles, well below the size at which a plate can be read: nothing that
+  could be read is lost (on a recording of a car coming home, its plate was read as before).
+
 ## 0.16.0b16
 
 **Change detection sees a car coming, and MQTT reconnects tidy up after themselves.**

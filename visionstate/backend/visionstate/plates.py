@@ -389,6 +389,13 @@ class PlateRead:
     between: bool = False  # read in a look of the stream between two checks (read_look)
 
 
+def readable(box: Sequence[float], frame: tuple[int, int]) -> bool:
+    """Whether a vehicle box (normalised) is wide enough in a frame of ``frame`` pixels for its
+    plate to be read: PLATES["min_vehicle_px"]. A narrower one is not read, starts no burst and
+    is not scanned between the checks."""
+    return (box[2] - box[0]) * frame[0] >= PLATES["min_vehicle_px"]
+
+
 def look_rank(found: Found) -> tuple[int, float]:
     """How good a look at a plate a stream's scan found (sources.Look): the wider and the surer, the
     better (the reader reads a wide plate best). The 1 makes it as usable as a face that is."""

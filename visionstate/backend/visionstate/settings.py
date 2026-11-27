@@ -800,7 +800,14 @@ PLATES = {
     "burst_seen_s": 60.0,  # a vehicle where one was within this long has not come or moved
     # A burst lasts this long at most; then none for burst_seen_s (vehicles moving about all the time).
     "burst_max_s": 90.0,
-    "min_vehicle_px": 60,  # a vehicle box narrower than this (frame pixels) is too far to read
+    # A vehicle box narrower than this (frame pixels) is too far to read (plates.readable): it is
+    # not read, starts no burst and is not scanned. Pixels, not a share of the picture: a reader
+    # needs pixels on the plate, whatever the camera. Every vehicle class: a plate is a fifth to a
+    # third of a car's box from the front or back, about a quarter of a motorcycle's from behind,
+    # so at this width it is at most ~50 px, and nothing under ~45 px was read right (a car coming
+    # home on a 2560-px doorbell: first right read at a 248-px box; cars passing on the road:
+    # 35-140 px). Why: docs/PLATE_RECOGNITION_PLAN.md §11.
+    "min_vehicle_px": 160,
     # A read is a car's plate when it is at most this far from it (plates.distance: a confusable
     # character costs 0.5, any other 1). Only an exact read names the car at once; a close one
     # must be read on two checks while the box stays.

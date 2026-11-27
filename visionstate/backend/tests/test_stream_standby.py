@@ -347,30 +347,33 @@ def test_reads_between_the_checks_count_like_checks_of_their_own():
 # --- a burst while a car comes -----------------------------------------------------------------------
 
 
+FRAME = (2560, 1920)  # a doorbell's main stream
+
+
 def test_a_vehicle_not_known_by_its_plate_that_moves_makes_the_sensor_check_often():
     now = 1000.0
     seen: list = []
     coming = {"key": "car", "box": [0.1, 0.4, 0.3, 0.6]}
     turned = {"key": "car", "box": [0.3, 0.45, 0.6, 0.75]}
-    until = steer_plate_burst(0.0, [coming], seen, now)
+    until = steer_plate_burst(0.0, [coming], seen, now, FRAME)
     assert until == now + PLATES["burst_hold_s"]
-    until = steer_plate_burst(until, [turned], seen, now + 1)
+    until = steer_plate_burst(until, [turned], seen, now + 1, FRAME)
     assert until == now + 1 + PLATES["burst_hold_s"]
     # Parked (where it was): the burst is not held longer, and ends in time.
-    assert steer_plate_burst(until, [turned], seen, now + 2) == until
+    assert steer_plate_burst(until, [turned], seen, now + 2, FRAME) == until
     # A car half hidden behind it, found only now and then (main HA, 2026-11-25: two parked cars
     # held a burst for an hour): back where it was a minute ago, it did not come.
     behind = {"key": "car", "box": [0.42, 0.51, 0.57, 0.6]}
-    until = steer_plate_burst(until, [turned, behind], seen, now + 3)
+    until = steer_plate_burst(until, [turned, behind], seen, now + 3, FRAME)
     assert until == now + 3 + PLATES["burst_hold_s"]  # the first time it is new
     for k in range(4, 40):
         found = [turned, behind] if k % 3 else [turned]
-        assert steer_plate_burst(until, found, seen, now + k) == until
+        assert steer_plate_burst(until, found, seen, now + k, FRAME) == until
     # Gone long enough, the same place is new again.
-    assert steer_plate_burst(0.0, [behind], seen, now + 40 + PLATES["burst_seen_s"] + 1) > 0
+    assert steer_plate_burst(0.0, [behind], seen, now + 40 + PLATES["burst_seen_s"] + 1, FRAME) > 0
     # Named surely by its plate: no reason to look at it.
     known = {**turned, "plate": {"state": "match", "sure": True}}
-    assert steer_plate_burst(until, [known], [], now + 3) == 0.0
+    assert steer_plate_burst(until, [known], [], now + 3, FRAME) == 0.0
     live = LiveState()
     live.plate_burst_until = now + 5
     assert burst_pace(2.0, live, now) == PLATES["burst_interval_s"] and in_burst(live, now)
@@ -395,15 +398,43 @@ def test_a_stream_that_falls_behind_is_noticed(monkeypatch):
 def test_vehicles_moving_about_all_the_time_do_not_keep_the_sensor_checking_every_second():
     live = LiveState()
     now = 1000.0
+    wide = (20000, 15000)  # a 0.01-wide box is then 200 px: near enough to read
     k = 0
-    assert follow_plate_burst(live, [{"key": "car", "box": [0.0, 0.4, 0.1, 0.5]}], now)  # started
+    assert follow_plate_burst(live, [{"key": "car", "box": [0.0, 0.4, 0.1, 0.5]}], now, wide)  # started
     while live.plate_burst_until > now + k:  # a new car somewhere every second
         k += 1
         x = k * 0.0102  # a place no vehicle was before
-        assert not follow_plate_burst(live, [{"key": "car", "box": [x, 0.4, x + 0.01, 0.41]}], now + k)
+        assert not follow_plate_burst(live, [{"key": "car", "box": [x, 0.4, x + 0.01, 0.41]}], now + k, wide)
     assert PLATES["burst_max_s"] <= k <= PLATES["burst_max_s"] + 2
     # Resting: a car that comes now starts none until burst_seen_s has passed.
-    assert not follow_plate_burst(live, [{"key": "car", "box": [0.5, 0.0, 0.6, 0.1]}], now + k + 1)
+    assert not follow_plate_burst(live, [{"key": "car", "box": [0.5, 0.0, 0.6, 0.1]}], now + k + 1, wide)
     assert live.plate_burst_until == 0.0
     later = now + k + PLATES["burst_seen_s"] + 1
-    assert follow_plate_burst(live, [{"key": "car", "box": [0.7, 0.0, 0.8, 0.1]}], later)
+    assert follow_plate_burst(live, [{"key": "car", "box": [0.7, 0.0, 0.8, 0.1]}], later, wide)
+
+
+def test_a_vehicle_too_far_for_its_plate_starts_no_burst_and_is_not_scanned():
+    """Cars passing on a road far away (a doorbell's 2560-px main stream, 2026-11-27: 35-140 px
+    wide, found now and then all day) start no burst, which would also have left the sensor
+    resting when a car came home, and the stream's scan does not look at them."""
+    now = time.time()
+    w = PLATES["min_vehicle_px"] / FRAME[0]
+    assert plates.readable([0.2, 0.0, 0.2 + w, 0.1], FRAME)
+    assert not plates.readable([0.2, 0.0, 0.2 + w * 0.99, 0.1], FRAME)
+    far = {"key": "car", "box": [0.40, 0.45, 0.43, 0.47]}  # 77 px
+    near = {"key": "car", "box": [0.40, 0.55, 0.50, 0.70]}  # 256 px
+    seen: list = []
+    assert steer_plate_burst(0.0, [far], seen, now, FRAME) == 0.0
+    assert steer_plate_burst(0.0, [far, near], seen, now + 1, FRAME) == now + 1 + PLATES["burst_hold_s"]
+    # The same for every vehicle class, in pixels whatever the camera: a motorcycle from behind
+    # near enough to read starts a burst, a far one does not; on a 640-px sub-stream a car must
+    # fill a quarter of the picture.
+    bike_far = {"key": "motorcycle", "box": [0.70, 0.40, 0.72, 0.50]}  # 51 px
+    bike_near = {"key": "motorcycle", "box": [0.70, 0.40, 0.78, 0.70]}  # 205 px
+    assert steer_plate_burst(0.0, [bike_far], [], now, FRAME) == 0.0
+    assert steer_plate_burst(0.0, [bike_near], [], now, FRAME) == now + PLATES["burst_hold_s"]
+    assert not plates.readable(near["box"], (640, 480))
+    assert plates.readable([0.3, 0.3, 0.3 + w * FRAME[0] / 640, 0.6], (640, 480))
+    live = LiveState()
+    live.detections, live.plate_frame, live.plate_burst_until = [far, near], FRAME, now + 5
+    assert ChecksMixin.stream_focus(runtime(live), config()) == ([near["box"]], ["plate"])

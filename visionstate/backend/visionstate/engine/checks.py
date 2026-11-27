@@ -346,6 +346,7 @@ class ChecksMixin(ObjectChecksMixin, ReadingChecksMixin, SoundMixin, RuntimeBase
                 for d in live.detections
                 if d["key"] in VEHICLE_CLASSES
                 and not d.get("filtered")
+                and (live.plate_frame is None or plates.readable(d["box"], live.plate_frame))
                 and not ((d.get("plate") or {}).get("state") == "match" and (d.get("plate") or {}).get("sure"))
             ]
             vehicles.sort(key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))

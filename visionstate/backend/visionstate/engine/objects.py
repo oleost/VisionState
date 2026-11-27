@@ -59,7 +59,7 @@ class ObjectChecksMixin(FacesMixin, PlatesMixin, TeachingMixin, PublishingMixin,
         if cfg.plates_on:
             with timing.step("plates"):
                 found = await self.apply_plates(cfg, image, found, live.detections)
-            if follow_plate_burst(live, found, time.time()):
+            if follow_plate_burst(live, found, time.time(), image.size):
                 live.last_trigger = {"source": "vehicle", "detail": "reading a plate", "at": time.time()}
         counted = [d for d in found if not d.get("filtered")]
         now = time.time()
